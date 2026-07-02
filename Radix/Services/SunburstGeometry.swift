@@ -324,17 +324,17 @@ enum SunburstLayout {
         return indexes
     }
 
-    private struct ColorBranch {
+    private nonisolated struct ColorBranch {
         let id: String
         let index: Int
         let count: Int
     }
 
-    private struct ColorBranchContext {
+    private nonisolated struct ColorBranchContext {
         private let indexByID: [String: Int]
         private let count: Int
 
-        init(rootChildIDs: [String]) {
+        nonisolated init(rootChildIDs: [String]) {
             var indexByID: [String: Int] = [:]
             indexByID.reserveCapacity(rootChildIDs.count)
 
@@ -346,13 +346,13 @@ enum SunburstLayout {
             self.count = max(indexByID.count, 1)
         }
 
-        func branch(id: String) -> ColorBranch? {
+        nonisolated func branch(id: String) -> ColorBranch? {
             guard let index = indexByID[id] else { return nil }
             return ColorBranch(id: id, index: index, count: count)
         }
     }
 
-    private struct GroupEntry {
+    private nonisolated struct GroupEntry {
         let id: String
         let nodeID: String?
         let label: String
