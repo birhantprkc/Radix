@@ -387,6 +387,7 @@ final class ScanModelTests: XCTestCase {
 
         let updatedSnapshot = try XCTUnwrap(snapshot.removingNode(id: removedLeaf.id))
 
+        XCTAssertEqual(updatedSnapshot.id, snapshot.id)
         let updatedFolder = try XCTUnwrap(updatedSnapshot.treeStore.node(id: folder.id))
         XCTAssertNil(updatedSnapshot.treeStore.node(id: removedLeaf.id))
         XCTAssertEqual(updatedSnapshot.treeStore.children(of: folder.id).map(\.id), [keptLeaf.id])

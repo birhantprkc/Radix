@@ -79,6 +79,15 @@ final class AppModel: ObservableObject {
 
     struct PendingTrashSelection {
         let nodes: [FileNodeRecord]
+        let allowsHiddenNodes: Bool
+
+        init(
+            nodes: [FileNodeRecord],
+            allowsHiddenNodes: Bool = false
+        ) {
+            self.nodes = nodes
+            self.allowsHiddenNodes = allowsHiddenNodes
+        }
     }
 
     private enum NavigationAction: Sendable {
@@ -1241,9 +1250,23 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func requestMoveNodesToTrash(_ nodes: [FileNodeRecord]) -> Bool {
+        requestMoveNodesToTrash(nodes, allowingHiddenNodes: false)
+    }
+
+    @discardableResult
+    private func requestMoveNodesToTrash(
+        _ nodes: [FileNodeRecord],
+        allowingHiddenNodes: Bool
+    ) -> Bool {
         do {
-            let nodes = try validatedNodesForMutation(nodes)
-            try requestTrashMove(for: nodes)
+            let nodes = try validatedNodesForMutation(
+                nodes,
+                allowingHiddenNodes: allowingHiddenNodes
+            )
+            try requestTrashMove(
+                for: nodes,
+                allowingHiddenNodes: allowingHiddenNodes
+            )
             return true
         } catch {
             presentError(error)
@@ -1251,7 +1274,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func requestTrashMove(for nodes: [FileNodeRecord]) throws {
+    private func requestTrashMove(
+        for nodes: [FileNodeRecord],
+        allowingHiddenNodes: Bool = false
+    ) throws {
         guard nodes.allSatisfy({ node in
             node.supportsMoveToTrash(
                 activeTarget: scanCoordinator.selectedTarget,
@@ -1263,7 +1289,10 @@ final class AppModel: ObservableObject {
 
         let trashNodes = topLevelTrashNodes(from: nodes)
         pendingTrashNode = trashNodes.first
-        pendingTrashSelection = PendingTrashSelection(nodes: trashNodes)
+        pendingTrashSelection = PendingTrashSelection(
+            nodes: trashNodes,
+            allowsHiddenNodes: allowingHiddenNodes
+        )
     }
 
     @discardableResult
@@ -1384,7 +1413,10 @@ final class AppModel: ObservableObject {
     @discardableResult
     func requestMoveDiscardPileToTrash() -> Bool {
         reconcileDiscardPile()
-        return requestMoveNodesToTrash(topLevelTrashNodes(from: resolvedDiscardPileNodes()))
+        return requestMoveNodesToTrash(
+            topLevelTrashNodes(from: resolvedDiscardPileNodes()),
+            allowingHiddenNodes: true
+        )
     }
 
     func confirmMovePendingNodeToTrash() {
@@ -1392,10 +1424,20 @@ final class AppModel: ObservableObject {
     }
 
     func confirmMovePendingSelectionToTrash() {
+        let allowsHiddenNodes = pendingTrashSelection?.allowsHiddenNodes == true
         let nodes = pendingTrashSelection?.nodes ?? pendingTrashNode.map { [$0] }
         guard let nodes, !nodes.isEmpty else { return }
         pendingTrashNode = nil
         self.pendingTrashSelection = nil
+
+        if !allowsHiddenNodes {
+            do {
+                try validateMutationDoesNotIncludeHiddenNodes(nodes)
+            } catch {
+                presentError(error)
+                return
+            }
+        }
 
         let originalSnapshotID = scanCoordinator.snapshot?.id
         let statsFileTreeStore = scanCoordinator.fileTreeStore
@@ -1783,17 +1825,28 @@ final class AppModel: ObservableObject {
 
     private func validatedSelectionForMutation() throws -> FileNodeRecord {
         try validateSnapshotAllowsMutation()
-        return try validatedSelection(requiresLivePath: true)
+        let node = try validatedSelection(requiresLivePath: true)
+        try validateMutationDoesNotIncludeHiddenNodes([node])
+        return node
     }
 
-    private func validatedNodesForMutation(_ nodes: [FileNodeRecord]) throws -> [FileNodeRecord] {
+    private func validatedNodesForMutation(
+        _ nodes: [FileNodeRecord],
+        allowingHiddenNodes: Bool = false
+    ) throws -> [FileNodeRecord] {
         try validateSnapshotAllowsMutation()
-        return try validatedNodes(nodes, requiresLivePath: true)
+        let nodes = try validatedNodes(nodes, requiresLivePath: true)
+        if !allowingHiddenNodes {
+            try validateMutationDoesNotIncludeHiddenNodes(nodes)
+        }
+        return nodes
     }
 
     private func validatedSelectedNodesForMutation() throws -> [FileNodeRecord] {
         try validateSnapshotAllowsMutation()
-        return try validatedSelectedNodes(requiresLivePath: true)
+        let nodes = try validatedSelectedNodes(requiresLivePath: true)
+        try validateMutationDoesNotIncludeHiddenNodes(nodes)
+        return nodes
     }
 
     private func validatedNodesForDiscardPile(_ nodes: [FileNodeRecord]) throws -> [FileNodeRecord] {
@@ -1840,6 +1893,28 @@ final class AppModel: ObservableObject {
     private func validateSnapshotAllowsMutation() throws {
         guard scanCoordinator.snapshotSource.allowsFileMutation else {
             throw FileActionError.readOnlySnapshot
+        }
+    }
+
+    private func validateMutationDoesNotIncludeHiddenNodes(_ nodes: [FileNodeRecord]) throws {
+        guard let snapshotID = scanCoordinator.snapshot?.id,
+              let fileTreeStore = scanCoordinator.fileTreeStore else {
+            return
+        }
+
+        let hiddenIDs = hiddenNodeIDs(for: snapshotID)
+        guard !hiddenIDs.isEmpty else { return }
+
+        let requestedIDs = Set(nodes.map(\.id))
+        let requestedNodeIsHidden = requestedIDs.contains(where: { requestedID in
+            fileTreeStore.isNodeOrDescendant(requestedID, of: hiddenIDs)
+        })
+        let requestedNodeContainsHiddenNode = hiddenIDs.contains(where: { hiddenID in
+            requestedIDs.contains(hiddenID) || fileTreeStore.hasAncestor(in: requestedIDs, of: hiddenID)
+        })
+
+        guard !requestedNodeIsHidden && !requestedNodeContainsHiddenNode else {
+            throw FileActionError.unsupported
         }
     }
 

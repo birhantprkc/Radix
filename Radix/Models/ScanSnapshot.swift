@@ -157,6 +157,7 @@ struct ScanSnapshot: Identifiable, Sendable {
         ) else { return nil }
 
         return ScanSnapshot(
+            id: id,
             target: target,
             treeStore: updatedStore,
             startedAt: startedAt,

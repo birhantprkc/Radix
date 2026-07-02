@@ -932,6 +932,135 @@ final class AppModelDependencyTests: XCTestCase {
             model.scanState.snapshot?.treeStore.node(id: visible.id) == nil
         }
         XCTAssertNotNil(model.scanState.snapshot?.treeStore.node(id: queued.id))
+        XCTAssertEqual(model.discardPile.nodeIDs, [queued.id])
+        XCTAssertEqual(model.discardPile.snapshotID, snapshot.id)
+    }
+
+    @MainActor
+    func testPrimaryTrashDoesNotClearUnrelatedDiscardPileNodes() async throws {
+        let recorder = AppModelActionRecorder()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let firstQueued = makeTestFileNode(id: "/selection/firstQueued.txt", name: "firstQueued.txt", size: 40)
+        let secondQueued = makeTestFileNode(id: "/selection/secondQueued.txt", name: "secondQueued.txt", size: 60)
+        let visible = makeTestFileNode(id: "/selection/visible.txt", name: "visible.txt", size: 80)
+        let root = makeTestDirectoryNode(
+            id: "/selection",
+            name: "selection",
+            children: [firstQueued, secondQueued, visible]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [firstQueued, secondQueued, visible]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+
+        XCTAssertTrue(model.addNodesToDiscardPile([firstQueued, secondQueued]))
+        model.select(nodeID: visible.id)
+        model.requestMovePrimarySelectionToTrash()
+        model.confirmMovePendingSelectionToTrash()
+
+        XCTAssertEqual(recorder.movedToTrashURLs, [visible.url])
+
+        try await waitUntil("visible node removed from snapshot", timeout: 2) {
+            model.scanState.snapshot?.treeStore.node(id: visible.id) == nil
+        }
+        XCTAssertEqual(model.discardPile.nodeIDs, [firstQueued.id, secondQueued.id])
+        XCTAssertEqual(model.discardPile.snapshotID, snapshot.id)
+    }
+
+    @MainActor
+    func testContextTrashRejectsAncestorOfDiscardPileNode() {
+        let recorder = AppModelActionRecorder()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let queued = makeTestFileNode(id: "/selection/folder/queued.txt", name: "queued.txt", size: 40)
+        let sibling = makeTestFileNode(id: "/selection/folder/sibling.txt", name: "sibling.txt", size: 80)
+        let folder = makeTestDirectoryNode(id: "/selection/folder", name: "folder", children: [queued, sibling])
+        let root = makeTestDirectoryNode(id: "/selection", name: "selection", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [queued, sibling]
+        ])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+
+        XCTAssertTrue(model.addNodesToDiscardPile([queued]))
+        XCTAssertFalse(model.requestMoveNodesToTrash([folder]))
+
+        XCTAssertNil(model.pendingTrashNode)
+        XCTAssertNil(model.pendingTrashSelection)
+        XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
+        XCTAssertEqual(model.discardPile.nodeIDs, [queued.id])
+        XCTAssertEqual(model.lastErrorMessage, "This item does not support that action.")
+    }
+
+    @MainActor
+    func testPrimaryTrashRejectsAncestorOfDiscardPileNode() {
+        let recorder = AppModelActionRecorder()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let queued = makeTestFileNode(id: "/selection/folder/queued.txt", name: "queued.txt", size: 40)
+        let sibling = makeTestFileNode(id: "/selection/folder/sibling.txt", name: "sibling.txt", size: 80)
+        let folder = makeTestDirectoryNode(id: "/selection/folder", name: "folder", children: [queued, sibling])
+        let root = makeTestDirectoryNode(id: "/selection", name: "selection", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [queued, sibling]
+        ])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+
+        XCTAssertTrue(model.addNodesToDiscardPile([queued]))
+        model.select(nodeID: folder.id)
+        model.requestMovePrimarySelectionToTrash()
+
+        XCTAssertNil(model.pendingTrashNode)
+        XCTAssertNil(model.pendingTrashSelection)
+        XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
+        XCTAssertEqual(model.discardPile.nodeIDs, [queued.id])
+        XCTAssertEqual(model.lastErrorMessage, "This item does not support that action.")
+    }
+
+    @MainActor
+    func testPendingTrashRejectsNewDiscardPileDescendantBeforeConfirm() {
+        let recorder = AppModelActionRecorder()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let queued = makeTestFileNode(id: "/selection/folder/queued.txt", name: "queued.txt", size: 40)
+        let sibling = makeTestFileNode(id: "/selection/folder/sibling.txt", name: "sibling.txt", size: 80)
+        let folder = makeTestDirectoryNode(id: "/selection/folder", name: "folder", children: [queued, sibling])
+        let root = makeTestDirectoryNode(id: "/selection", name: "selection", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [queued, sibling]
+        ])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+
+        XCTAssertTrue(model.requestMoveNodesToTrash([folder]))
+        XCTAssertTrue(model.addNodesToDiscardPile([queued]))
+        model.confirmMovePendingSelectionToTrash()
+
+        XCTAssertNil(model.pendingTrashNode)
+        XCTAssertNil(model.pendingTrashSelection)
+        XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
+        XCTAssertEqual(model.discardPile.nodeIDs, [queued.id])
+        XCTAssertEqual(model.lastErrorMessage, "This item does not support that action.")
     }
 
     @MainActor
