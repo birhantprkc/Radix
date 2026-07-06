@@ -37,8 +37,7 @@ struct WorkspaceNavigationState: Equatable {
 
     static func == (lhs: WorkspaceNavigationState, rhs: WorkspaceNavigationState) -> Bool {
         lhs.snapshotID == rhs.snapshotID &&
-            lhs.fileTreeStore?.rootID == rhs.fileTreeStore?.rootID &&
-            lhs.fileTreeStore?.nodeCount == rhs.fileTreeStore?.nodeCount &&
+            lhs.fileTreeStore?.contentID == rhs.fileTreeStore?.contentID &&
             lhs.selectedNodeID == rhs.selectedNodeID &&
             lhs.selectedNodeIDs == rhs.selectedNodeIDs &&
             lhs.focusedNodeID == rhs.focusedNodeID &&

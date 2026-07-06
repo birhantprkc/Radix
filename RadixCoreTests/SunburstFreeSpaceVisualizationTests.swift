@@ -92,6 +92,58 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
         XCTAssertFalse(SunburstFreeSpaceVisualization.isFreeSpaceNodeID("/tmp/file#radix-free-space"))
     }
 
+    func testVisualizationInputTracksBaseTreeContentID() {
+        let used = makeTestFileNode(id: "/volume/used.bin", name: "used.bin", size: 60)
+        let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [used])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [used]])
+        let snapshot = makeTestSnapshot(
+            target: ScanTarget(url: root.url, kind: .volume),
+            root: root,
+            store: store
+        )
+
+        let firstInput = SunburstFreeSpaceVisualization.input(
+            snapshot: snapshot,
+            focusNode: root,
+            showFreeSpace: true,
+            availableCapacity: 40
+        )
+        let repeatedInput = SunburstFreeSpaceVisualization.input(
+            snapshot: snapshot,
+            focusNode: root,
+            showFreeSpace: true,
+            availableCapacity: 40
+        )
+
+        XCTAssertEqual(firstInput.treeContentID, snapshot.treeStore.contentID)
+        XCTAssertEqual(repeatedInput.treeContentID, firstInput.treeContentID)
+
+        let resizedUsed = makeTestFileNode(id: used.id, name: used.name, size: 90)
+        let updatedRoot = makeTestDirectoryNode(id: root.id, name: root.name, children: [resizedUsed])
+        let updatedStore = FileTreeStore(root: updatedRoot, childrenByID: [updatedRoot.id: [resizedUsed]])
+        let updatedSnapshot = ScanSnapshot(
+            id: snapshot.id,
+            target: snapshot.target,
+            treeStore: updatedStore,
+            startedAt: snapshot.startedAt,
+            finishedAt: snapshot.finishedAt,
+            scanWarnings: snapshot.scanWarnings,
+            aggregateStats: updatedStore.aggregateStats,
+            isComplete: snapshot.isComplete,
+            scanOptions: snapshot.scanOptions,
+            source: snapshot.source
+        )
+        let updatedInput = SunburstFreeSpaceVisualization.input(
+            snapshot: updatedSnapshot,
+            focusNode: updatedRoot,
+            showFreeSpace: true,
+            availableCapacity: 40
+        )
+
+        XCTAssertNotEqual(updatedInput.treeContentID, firstInput.treeContentID)
+        XCTAssertEqual(updatedInput.treeContentID, updatedSnapshot.treeStore.contentID)
+    }
+
     func testFreeSpaceNodeCannotBecomeSelectionOrFileActionTarget() throws {
         let used = makeTestFileNode(id: "/volume/used.bin", name: "used.bin", size: 60)
         let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [used])

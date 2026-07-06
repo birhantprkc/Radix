@@ -123,6 +123,89 @@ final class SunburstVisualizationFilterModelTests: XCTestCase {
         XCTAssertNil(secondFilteredInput.treeStore.node(id: secondHidden.id))
     }
 
+    func testDiscardPileFilterInvalidatesWhenBaseTreeContentChanges() async throws {
+        let hidden = makeTestFileNode(id: "/root/hidden.bin", name: "hidden.bin", size: 20)
+        let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 30)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [hidden, visible])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [hidden, visible]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        let model = SunburstVisualizationFilterModel()
+        let baseInput = SunburstFreeSpaceVisualization.input(
+            snapshot: snapshot,
+            focusNode: root,
+            showFreeSpace: false,
+            availableCapacity: nil
+        )
+
+        model.update(
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id]
+        )
+        let firstFilteredInput = try await waitForFilteredInput(
+            model: model,
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id],
+            removedNodeID: hidden.id
+        )
+        XCTAssertEqual(firstFilteredInput.rootNode.allocatedSize, visible.allocatedSize)
+
+        let resizedVisible = makeTestFileNode(id: visible.id, name: visible.name, size: 70)
+        let updatedRoot = makeTestDirectoryNode(id: root.id, name: root.name, children: [hidden, resizedVisible])
+        let updatedStore = FileTreeStore(
+            root: updatedRoot,
+            childrenByID: [updatedRoot.id: [hidden, resizedVisible]]
+        )
+        let updatedSnapshot = ScanSnapshot(
+            id: snapshot.id,
+            target: snapshot.target,
+            treeStore: updatedStore,
+            startedAt: snapshot.startedAt,
+            finishedAt: snapshot.finishedAt,
+            scanWarnings: snapshot.scanWarnings,
+            aggregateStats: updatedStore.aggregateStats,
+            isComplete: snapshot.isComplete,
+            scanOptions: snapshot.scanOptions,
+            source: snapshot.source
+        )
+        let updatedBaseInput = SunburstFreeSpaceVisualization.input(
+            snapshot: updatedSnapshot,
+            focusNode: updatedRoot,
+            showFreeSpace: false,
+            availableCapacity: nil
+        )
+
+        let immediateInput = model.input(
+            baseInput: updatedBaseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id]
+        )
+        XCTAssertNotNil(immediateInput.treeStore.node(id: hidden.id))
+        XCTAssertEqual(immediateInput.rootNode.allocatedSize, updatedRoot.allocatedSize)
+
+        model.update(
+            baseInput: updatedBaseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id]
+        )
+        let secondFilteredInput = try await waitForFilteredInput(
+            model: model,
+            baseInput: updatedBaseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id],
+            removedNodeID: hidden.id
+        )
+
+        XCTAssertNil(secondFilteredInput.treeStore.node(id: hidden.id))
+        XCTAssertEqual(secondFilteredInput.rootNode.allocatedSize, resizedVisible.allocatedSize)
+    }
+
     func testEmptyHiddenNodeUpdateClearsCachedFilter() async throws {
         let hidden = makeTestFileNode(id: "/root/hidden.bin", name: "hidden.bin", size: 20)
         let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 30)

@@ -8,6 +8,7 @@
 import Foundation
 
 struct FileTreeStore: Sendable {
+    let contentID: UUID
     let rootID: String
     let nodesByID: [String: FileNodeRecord]
     let childIDsByID: [String: [String]]
@@ -145,6 +146,7 @@ struct FileTreeStore: Sendable {
             nodesByID: nodesByID,
             childIDsByID: childIDsByID
         )
+        self.contentID = UUID()
         self.rootID = rootID
         self.nodesByID = topology.didDropReferences || aggregateStats == nil
             ? Self.repairMaterializedDirectoryTotals(

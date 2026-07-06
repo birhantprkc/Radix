@@ -85,6 +85,7 @@ struct ActiveWorkspaceView: View {
                 snapshot.id.uuidString,
                 focusNode.id,
                 visualizationInput.rootNode.id,
+                visualizationInput.treeContentID.uuidString,
                 String(maxRenderedDepth),
                 visualizationInput.layoutIDComponent
             ].joined(separator: "|"),
@@ -177,6 +178,7 @@ private struct VisualizationFilterUpdateToken: Equatable {
     let snapshotID: UUID
     let focusNodeID: FileNodeRecord.ID
     let rootNodeID: FileNodeRecord.ID
+    let treeContentID: UUID
     let baseLayoutIDComponent: String
     let hiddenNodeIDs: [FileNodeRecord.ID]
 
@@ -189,6 +191,7 @@ private struct VisualizationFilterUpdateToken: Equatable {
         self.snapshotID = snapshotID
         self.focusNodeID = focusNodeID
         rootNodeID = baseInput.rootNode.id
+        treeContentID = baseInput.treeContentID
         baseLayoutIDComponent = baseInput.layoutIDComponent
         self.hiddenNodeIDs = hiddenNodeIDs.sorted()
     }

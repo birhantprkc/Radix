@@ -76,6 +76,7 @@ final class SunburstVisualizationFilterModel: ObservableObject {
             snapshotID: snapshotID,
             focusNodeID: focusNodeID,
             rootNodeID: baseInput.rootNode.id,
+            baseTreeContentID: baseInput.treeContentID,
             baseLayoutIDComponent: baseInput.layoutIDComponent,
             hiddenNodeIDs: hiddenNodeIDs.sorted()
         )
@@ -97,6 +98,7 @@ final class SunburstVisualizationFilterModel: ObservableObject {
                 return SunburstVisualizationInput(
                     rootNode: filteredStore.node(id: baseInput.rootNode.id) ?? filteredStore.root,
                     treeStore: filteredStore,
+                    treeContentID: filteredStore.contentID,
                     layoutIDComponent: [
                         baseInput.layoutIDComponent,
                         key.discardPileLayoutComponent
@@ -150,6 +152,7 @@ private nonisolated struct SunburstVisualizationFilterKey: Hashable, Sendable {
     let snapshotID: UUID
     let focusNodeID: FileNodeRecord.ID
     let rootNodeID: FileNodeRecord.ID
+    let baseTreeContentID: UUID
     let baseLayoutIDComponent: String
     let hiddenNodeIDs: [FileNodeRecord.ID]
 

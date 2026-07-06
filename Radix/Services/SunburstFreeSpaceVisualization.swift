@@ -8,6 +8,7 @@ import Foundation
 struct SunburstVisualizationInput: Sendable {
     let rootNode: FileNodeRecord
     let treeStore: FileTreeStore
+    let treeContentID: UUID
     let layoutIDComponent: String
 }
 
@@ -30,6 +31,7 @@ enum SunburstFreeSpaceVisualization {
             return SunburstVisualizationInput(
                 rootNode: focusNode,
                 treeStore: snapshot.treeStore,
+                treeContentID: snapshot.treeStore.contentID,
                 layoutIDComponent: disabledLayoutComponent
             )
         }
@@ -86,6 +88,7 @@ enum SunburstFreeSpaceVisualization {
         return SunburstVisualizationInput(
             rootNode: treeStore.root,
             treeStore: treeStore,
+            treeContentID: snapshot.treeStore.contentID,
             layoutIDComponent: "free-space:\(availableCapacity)"
         )
     }
