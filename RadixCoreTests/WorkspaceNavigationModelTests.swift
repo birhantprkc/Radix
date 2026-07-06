@@ -318,6 +318,61 @@ final class WorkspaceNavigationModelTests: XCTestCase {
     }
 
     @MainActor
+    func testSameSnapshotIDNodeMetadataChangeAdvancesTableRevision() throws {
+        let fixture = makeNavigationFixture()
+        let model = makeConfiguredNavigationModel(fixture: fixture)
+        let initialRevision = model.tableContentRevision
+        var publishedStates: [WorkspaceNavigationState] = []
+        var cancellables = Set<AnyCancellable>()
+
+        let updatedDocFile = makeTestFileNode(
+            id: fixture.docFile.id,
+            name: fixture.docFile.name,
+            size: 80
+        )
+        let updatedDocs = makeTestDirectoryNode(
+            id: fixture.docs.id,
+            name: fixture.docs.name,
+            children: [updatedDocFile]
+        )
+        let updatedRoot = makeTestDirectoryNode(
+            id: fixture.root.id,
+            name: fixture.root.name,
+            children: [updatedDocs, fixture.cache, fixture.rootFile]
+        )
+        let updatedStore = FileTreeStore(root: updatedRoot, childrenByID: [
+            updatedRoot.id: [updatedDocs, fixture.cache, fixture.rootFile],
+            updatedDocs.id: [updatedDocFile],
+            fixture.cache.id: [fixture.cacheFile]
+        ])
+        let updatedSnapshot = ScanSnapshot(
+            id: fixture.snapshot.id,
+            target: fixture.snapshot.target,
+            treeStore: updatedStore,
+            startedAt: fixture.snapshot.startedAt,
+            finishedAt: fixture.snapshot.finishedAt,
+            scanWarnings: fixture.snapshot.scanWarnings,
+            aggregateStats: updatedStore.aggregateStats,
+            isComplete: fixture.snapshot.isComplete,
+            scanOptions: fixture.snapshot.scanOptions,
+            source: fixture.snapshot.source
+        )
+
+        model.$state
+            .dropFirst()
+            .sink { publishedStates.append($0) }
+            .store(in: &cancellables)
+
+        model.updateScanContext(snapshot: updatedSnapshot)
+
+        XCTAssertEqual(publishedStates.count, 1)
+        XCTAssertEqual(model.tableContentRevision, initialRevision + 1)
+        XCTAssertEqual(model.tableNodes.map(\.id), [updatedDocs.id, fixture.cache.id, fixture.rootFile.id])
+        XCTAssertEqual(model.tableNodes.first?.allocatedSize, 80)
+        XCTAssertEqual(model.currentFocusNode?.allocatedSize, updatedRoot.allocatedSize)
+    }
+
+    @MainActor
     func testReconcilingSnapshotReplacementClearsInvalidNavigationState() {
         let fixture = makeNavigationFixture()
         let replacement = makeNavigationFixture(rootID: "/replacement")

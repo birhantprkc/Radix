@@ -46,7 +46,7 @@ struct WorkspaceNavigationState: Equatable {
             lhs.focusForwardStack == rhs.focusForwardStack &&
             lhs.tableContentID == rhs.tableContentID &&
             lhs.tableContentRevision == rhs.tableContentRevision &&
-            lhs.tableNodes.map(\.id) == rhs.tableNodes.map(\.id) &&
+            lhs.tableNodes == rhs.tableNodes &&
             lhs.selectedAncestorIDs == rhs.selectedAncestorIDs
     }
 }
@@ -352,7 +352,7 @@ private extension WorkspaceNavigationState {
     }
 
     mutating func replaceTableNodes(_ nodes: [FileNodeRecord]) {
-        guard !tableNodes.haveSameIDs(as: nodes) else { return }
+        guard tableNodes != nodes else { return }
         tableNodes = nodes
         tableContentRevision &+= 1
     }
@@ -532,17 +532,5 @@ final class WorkspaceNavigationModel: ObservableObject {
         if oldSelectionID != nextState.selectedNodeID || oldSelectionIDs != nextState.selectedNodeIDs {
             onSelectionChanged?()
         }
-    }
-}
-
-private extension [FileNodeRecord] {
-    func haveSameIDs(as other: [FileNodeRecord]) -> Bool {
-        guard count == other.count else { return false }
-
-        for index in indices where self[index].id != other[index].id {
-            return false
-        }
-
-        return true
     }
 }

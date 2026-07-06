@@ -29,6 +29,33 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(model.displayedNodes.map(\.id), [folder.id, large.id, small.id])
     }
 
+    @MainActor
+    func testCurrentContentsRefreshesRowsWhenIDsStayTheSame() {
+        let small = makeTestFileNode(id: "/root/small.txt", name: "small.txt", size: 10)
+        let large = makeTestFileNode(id: "/root/large.log", name: "large.log", size: 30)
+        let model = FileBrowserModel()
+
+        model.updateContent(
+            nodes: [small, large],
+            contentID: "snapshot|/root",
+            snapshot: nil,
+            fileTreeStore: nil
+        )
+        XCTAssertEqual(model.displayedNodes.map(\.id), [large.id, small.id])
+        XCTAssertEqual(model.displayedNode(id: small.id)?.allocatedSize, 10)
+
+        let resizedSmall = makeTestFileNode(id: small.id, name: small.name, size: 100)
+        model.updateContent(
+            nodes: [resizedSmall, large],
+            contentID: "snapshot|/root",
+            snapshot: nil,
+            fileTreeStore: nil
+        )
+
+        XCTAssertEqual(model.displayedNodes.map(\.id), [small.id, large.id])
+        XCTAssertEqual(model.displayedNode(id: small.id)?.allocatedSize, 100)
+    }
+
     func testCurrentContentsFiltersBeforeReturningSortedMatches() {
         let smallMatch = makeTestFileNode(id: "/root/matches/small.txt", name: "small-match.txt", size: 10)
         let largeMatch = makeTestFileNode(id: "/root/matches/large.txt", name: "large-match.txt", size: 30)

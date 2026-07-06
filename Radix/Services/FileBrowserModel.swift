@@ -106,7 +106,7 @@ final class FileBrowserModel: ObservableObject {
             self.contentID != contentID ||
             snapshotID != nextSnapshotID ||
             self.hiddenNodeIDs != hiddenNodeIDs ||
-            !self.nodes.haveSameIDs(as: nodes) else {
+            self.nodes != nodes else {
             return
         }
 
@@ -400,17 +400,5 @@ final class FileBrowserModel: ObservableObject {
         return nodes.filter { node in
             !fileTreeStore.isNodeOrDescendant(node.id, of: hiddenNodeIDs)
         }
-    }
-}
-
-private extension [FileNodeRecord] {
-    func haveSameIDs(as other: [FileNodeRecord]) -> Bool {
-        guard count == other.count else { return false }
-
-        for index in indices where self[index].id != other[index].id {
-            return false
-        }
-
-        return true
     }
 }
