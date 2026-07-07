@@ -318,7 +318,8 @@ extension AtomicDirectorySummarizer {
             state.descendantFileCount += 1
         }
 
-        if let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: state.ownerNodeID, path: url.path) {
+        if metadata.linkCount > 1,
+           let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: state.ownerNodeID, path: url.path) {
             state.hardLinkClaims.append(claim)
         }
     }

@@ -273,21 +273,34 @@ nonisolated struct ScanMetadataLoader: Sendable {
             #endif
             throw error
         }
-        return metadata(for: url, prefetchedResourceValues: values)
+        return atomicSummaryMetadata(for: url, prefetchedResourceValues: values)
     }
 
     nonisolated func metadata(
         for url: URL,
         prefetchedResourceValues values: URLResourceValues,
-        includeVolumeDetails: Bool = false
+        includeVolumeDetails: Bool = false,
+        loadsSymbolicLinkFileSystemInfo: Bool = true
     ) -> NodeMetadata {
         Self.nodeMetadata(
             for: url,
             resourceValues: values,
             includeVolumeDetails: includeVolumeDetails,
+            loadsSymbolicLinkFileSystemInfo: loadsSymbolicLinkFileSystemInfo,
             diagnostics: diagnostics,
             linkCountCapabilityCache: linkCountCapabilityCache,
             fileSystemInfoProvider: fileSystemInfoProvider
+        )
+    }
+
+    nonisolated func atomicSummaryMetadata(
+        for url: URL,
+        prefetchedResourceValues values: URLResourceValues
+    ) -> NodeMetadata {
+        metadata(
+            for: url,
+            prefetchedResourceValues: values,
+            loadsSymbolicLinkFileSystemInfo: false
         )
     }
 
@@ -295,6 +308,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         for url: URL,
         resourceValues values: URLResourceValues,
         includeVolumeDetails: Bool = false,
+        loadsSymbolicLinkFileSystemInfo: Bool,
         diagnostics: ScanDiagnosticsContext? = nil,
         linkCountCapabilityCache: LinkCountCapabilityCache,
         fileSystemInfoProvider: FileSystemInfoProvider
@@ -307,7 +321,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         let isReadable = values.isReadable ?? false
         var fileIdentity = Self.fileIdentity(from: values.fileResourceIdentifier)
         var linkCount = values.linkCount.map(UInt64.init) ?? 1
-        if isSymbolicLink {
+        if isSymbolicLink && loadsSymbolicLinkFileSystemInfo {
             let fileSystemInfo = fileSystemInfoProvider(url, diagnostics)
             fileIdentity = fileSystemInfo.identity
             linkCount = fileSystemInfo.linkCount

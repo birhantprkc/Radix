@@ -83,14 +83,6 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
     private var hardLinkClaims: [HardLinkClaim] = []
     private var visitedItemCount = 0
 
-    func recordVisitedItem() -> Int {
-        lock.lock()
-        visitedItemCount += 1
-        let count = visitedItemCount
-        lock.unlock()
-        return count
-    }
-
     func updateAccessibility(_ readable: Bool) {
         lock.lock()
         isAccessible = isAccessible && readable
@@ -104,16 +96,15 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
         lock.unlock()
     }
 
-    func accumulateFile(_ metadata: NodeMetadata, url: URL, ownerNodeID: String) {
+    func merge(_ partial: AtomicSummaryPartial) {
         lock.lock()
-        allocatedSize += metadata.allocatedSize
-        logicalSize += metadata.logicalSize
-        if !metadata.isSymbolicLink {
-            descendantFileCount += 1
-        }
-        if let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {
-            hardLinkClaims.append(claim)
-        }
+        allocatedSize += partial.allocatedSize
+        logicalSize += partial.logicalSize
+        descendantFileCount += partial.descendantFileCount
+        isAccessible = isAccessible && partial.isAccessible
+        warnings.append(contentsOf: partial.warnings)
+        hardLinkClaims.append(contentsOf: partial.hardLinkClaims)
+        visitedItemCount += partial.visitedItemCount
         lock.unlock()
     }
 
@@ -128,6 +119,41 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
             warnings: warnings,
             hardLinkClaims: hardLinkClaims
         )
+    }
+}
+
+nonisolated private struct AtomicSummaryPartial: Sendable {
+    var allocatedSize: Int64 = 0
+    var logicalSize: Int64 = 0
+    var descendantFileCount = 0
+    var isAccessible = true
+    var warnings: [ScanWarning] = []
+    var hardLinkClaims: [HardLinkClaim] = []
+    var visitedItemCount = 0
+
+    mutating func recordVisitedItem() {
+        visitedItemCount += 1
+    }
+
+    mutating func updateAccessibility(_ readable: Bool) {
+        isAccessible = isAccessible && readable
+    }
+
+    mutating func recordWarning(for url: URL, error: Error) {
+        isAccessible = false
+        warnings.append(ScanWarningFactory.makeWarning(for: url, error: error))
+    }
+
+    mutating func accumulateFile(_ metadata: NodeMetadata, url: URL, ownerNodeID: String) {
+        allocatedSize += metadata.allocatedSize
+        logicalSize += metadata.logicalSize
+        if !metadata.isSymbolicLink {
+            descendantFileCount += 1
+        }
+        if metadata.linkCount > 1,
+           let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {
+            hardLinkClaims.append(claim)
+        }
     }
 }
 
@@ -200,6 +226,7 @@ extension AtomicDirectorySummarizer {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for _ in 0..<workerCount {
                 group.addTask {
+                    var workerVisitedItemCount = 0
                     while true {
                         try Task.checkCancellation()
                         guard let item = try queue.take() else { return }
@@ -212,7 +239,8 @@ extension AtomicDirectorySummarizer {
                                 accumulator: accumulator,
                                 queue: queue,
                                 metadataLoader: metadataLoader,
-                                progressReporter: progressReporter
+                                progressReporter: progressReporter,
+                                workerVisitedItemCount: &workerVisitedItemCount
                             )
                             queue.finishCurrentItem()
                         } catch {
@@ -243,7 +271,8 @@ extension AtomicDirectorySummarizer {
         accumulator: AtomicSummaryAccumulator,
         queue: AtomicSummaryWorkQueue,
         metadataLoader: ScanMetadataLoader,
-        progressReporter: AtomicSummaryProgressReporter
+        progressReporter: AtomicSummaryProgressReporter,
+        workerVisitedItemCount: inout Int
     ) throws {
         try Task.checkCancellation()
 
@@ -252,37 +281,33 @@ extension AtomicDirectorySummarizer {
             options.insert(.skipsHiddenFiles)
         }
 
-        let childURLs: [URL]
-        do {
-            let enumerationResult = try ScanEngine.enumeratedDirectoryContents(
-                url: item.url,
-                keys: ScanMetadataLoader.atomicSummaryResourceKeys,
-                options: options,
-                cancellationCheck: { try Task.checkCancellation() },
-                makeEnumerator: { url, keys, options in
-                    FileManager.default.enumerator(
-                        at: url,
-                        includingPropertiesForKeys: keys,
-                        options: options,
-                        errorHandler: { childURL, error in
-                            accumulator.recordWarning(for: childURL, error: error)
-                            return true
-                        }
-                    )
-                }
+        guard let enumerator = FileManager.default.enumerator(
+            at: item.url,
+            includingPropertiesForKeys: ScanMetadataLoader.atomicSummaryResourceKeys,
+            options: options,
+            errorHandler: { childURL, error in
+                accumulator.recordWarning(for: childURL, error: error)
+                return true
+            }
+        ) else {
+            accumulator.recordWarning(
+                for: item.url,
+                error: NSError(
+                    domain: NSCocoaErrorDomain,
+                    code: NSFileReadUnknownError,
+                    userInfo: [NSURLErrorKey: item.url]
+                )
             )
-            childURLs = enumerationResult.urls
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            accumulator.recordWarning(for: item.url, error: error)
             return
         }
 
-        for childURL in childURLs {
+        var partial = AtomicSummaryPartial()
+        while let nextObject = enumerator.nextObject() {
             try Task.checkCancellation()
-            let visitedItemCount = accumulator.recordVisitedItem()
-            if visitedItemCount == 1 || visitedItemCount.isMultiple(of: 64) {
+            guard let childURL = nextObject as? URL else { continue }
+            partial.recordVisitedItem()
+            workerVisitedItemCount += 1
+            if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
                 progressReporter.emit(currentURL: childURL)
             }
 
@@ -294,9 +319,9 @@ extension AtomicDirectorySummarizer {
             let childMetadata: NodeMetadata
             do {
                 let values = try childURL.resourceValues(forKeys: ScanMetadataLoader.atomicSummaryResourceKeySet)
-                childMetadata = metadataLoader.metadata(for: childURL, prefetchedResourceValues: values)
+                childMetadata = metadataLoader.atomicSummaryMetadata(for: childURL, prefetchedResourceValues: values)
             } catch {
-                accumulator.recordWarning(for: childURL, error: error)
+                partial.recordWarning(for: childURL, error: error)
                 continue
             }
 
@@ -304,10 +329,10 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
-            accumulator.updateAccessibility(childMetadata.isReadable)
+            partial.updateAccessibility(childMetadata.isReadable)
 
             guard childMetadata.isDirectory else {
-                accumulator.accumulateFile(childMetadata, url: childURL, ownerNodeID: item.ownerNodeID)
+                partial.accumulateFile(childMetadata, url: childURL, ownerNodeID: item.ownerNodeID)
                 continue
             }
 
@@ -326,5 +351,6 @@ extension AtomicDirectorySummarizer {
                 )
             )
         }
+        accumulator.merge(partial)
     }
 }

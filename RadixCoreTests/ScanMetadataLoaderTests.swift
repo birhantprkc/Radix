@@ -186,6 +186,63 @@ final class ScanMetadataLoaderTests: XCTestCase {
         XCTAssertEqual(counters.lstatCount, 1)
     }
 
+    func testVisibleSymlinkMetadataUsesLstatIdentity() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let targetURL = rootURL.appending(path: "target.bin")
+        let symlinkURL = rootURL.appending(path: "target-link")
+        try Data(repeating: 0xA5, count: 128).write(to: targetURL)
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
+
+        let counters = LinkCountProbeCounters()
+        let loader = ScanMetadataLoader(
+            diagnostics: nil,
+            fileSystemInfoProvider: { _, _ in
+                counters.recordLstat()
+                return (FileIdentity(device: 1, inode: 42), 1)
+            }
+        )
+
+        let metadata = loader.metadata(
+            for: symlinkURL,
+            prefetchedResourceValues: try resourceValuesWithoutIdentity(for: symlinkURL)
+        )
+
+        XCTAssertTrue(metadata.isSymbolicLink)
+        XCTAssertEqual(metadata.fileIdentity, FileIdentity(device: 1, inode: 42))
+        XCTAssertEqual(counters.lstatCount, 1)
+    }
+
+    func testAtomicSummarySymlinkMetadataSkipsLstatIdentity() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let targetURL = rootURL.appending(path: "target.bin")
+        let symlinkURL = rootURL.appending(path: "target-link")
+        try Data(repeating: 0xA5, count: 128).write(to: targetURL)
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
+
+        let counters = LinkCountProbeCounters()
+        let loader = ScanMetadataLoader(
+            diagnostics: nil,
+            fileSystemInfoProvider: { _, _ in
+                counters.recordLstat()
+                return (FileIdentity(device: 1, inode: 42), 1)
+            }
+        )
+
+        let metadata = loader.atomicSummaryMetadata(
+            for: symlinkURL,
+            prefetchedResourceValues: try resourceValuesWithoutIdentity(for: symlinkURL)
+        )
+
+        XCTAssertTrue(metadata.isSymbolicLink)
+        XCTAssertNil(metadata.fileIdentity)
+        XCTAssertEqual(metadata.linkCount, 1)
+        XCTAssertEqual(counters.lstatCount, 0)
+    }
+
     private func resourceValuesWithoutIdentity(for url: URL) throws -> URLResourceValues {
         try url.resourceValues(forKeys: [
             .isDirectoryKey,

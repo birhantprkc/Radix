@@ -115,6 +115,11 @@ actor ScanEngine {
         #endif
     }
 
+    private struct ClassifiedDirectoryEntriesChunk: Sendable {
+        let index: Int
+        let entries: [DirectoryEntry]
+    }
+
     private struct DirectoryTraversalSuccess: Sendable {
         let item: ScanWorkItem
         let itemKey: Int
@@ -626,7 +631,7 @@ actor ScanEngine {
             )
         ]
         // Maps a key to its completed result (leaf or assembled directory).
-        var completedByKey: [Int: CompletedDirScan] = [:]
+        var completedByKey: [CompletedDirScan?] = []
         // Maps parent key → child keys, built during phase 1.
         var childrenKeysByKey: [Int: [Int]] = [:]
         var seenScannedNodeIDs = Set<String>()
@@ -655,6 +660,7 @@ actor ScanEngine {
 
                     let itemKey = nextKey
                     nextKey += 1
+                    completedByKey.append(nil)
 
                     // Register this child with its parent (skip root which has parentKey -1).
                     if item.parentKey >= 0 {
@@ -818,9 +824,14 @@ actor ScanEngine {
                     metrics.enumeratedDirectoryCount += 1
                     releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
                     var childDirectoryCount = 0
-                    for childEntry in childEntries
-                    where Self.isLikelyTraversableDirectory(entry: childEntry) {
-                        childDirectoryCount += 1
+                    var totalWeightUnits = 0.0
+                    for childEntry in childEntries {
+                        if Self.isLikelyTraversableDirectory(entry: childEntry) {
+                            childDirectoryCount += 1
+                            totalWeightUnits += Self.directoryChildWeightUnits
+                        } else {
+                            totalWeightUnits += 1
+                        }
                     }
                     metrics.discoveredDirectoryCount += childDirectoryCount
                     metrics.pendingDirectoryCount += childDirectoryCount
@@ -911,12 +922,6 @@ actor ScanEngine {
                         metrics.recalculateProgress()
                     }
 
-                    // Split this directory's progress weight among its children.
-                    var totalWeightUnits = 0.0
-                    for childEntry in childEntries {
-                        totalWeightUnits += Self.traversalWeightUnits(for: childEntry)
-                    }
-
                     // Enqueue children onto the stack. Each child records its parent key.
                     for (offset, childEntry) in childEntries.enumerated() {
                         if offset.isMultiple(of: 256) {
@@ -1003,12 +1008,11 @@ actor ScanEngine {
         let finalizationTotal = max(completedByKey.count, 1)
         let finalizationProgressInterval = 512
         var finalizedItems = 0
-        var resolvedNodeByKey: [Int: FileNodeRecord] = [:]
+        var resolvedNodeByKey = Array<FileNodeRecord?>(repeating: nil, count: nextKey)
         var childIDsByID: [String: [String]] = [:]
         var parentIDByID: [String: String] = [:]
         var nodesByID: [String: FileNodeRecord] = [:]
         var aggregateStats = AggregateStatsAccumulator()
-        resolvedNodeByKey.reserveCapacity(completedByKey.count)
         childIDsByID.reserveCapacity(completedByKey.count)
         parentIDByID.reserveCapacity(completedByKey.count)
         nodesByID.reserveCapacity(completedByKey.count)
@@ -1019,7 +1023,8 @@ actor ScanEngine {
             if finalizedItems.isMultiple(of: 256) {
                 try Task.checkCancellation()
             }
-            guard let completed = completedByKey.removeValue(forKey: key) else { continue }
+            guard let completed = completedByKey[key] else { continue }
+            completedByKey[key] = nil
             finalizedItems += 1
 
             if completed.isTraversable {
@@ -1031,23 +1036,53 @@ actor ScanEngine {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
-                    if let childNode = resolvedNodeByKey.removeValue(forKey: childKey) {
+                    if let childNode = resolvedNodeByKey[childKey] {
                         childNodes.append(childNode)
+                        resolvedNodeByKey[childKey] = nil
                     }
                 }
                 let sortedChildren = FileTreeStore.sortedChildren(Self.uniqueNodesForAssembly(childNodes))
                 try Task.checkCancellation()
-                let assembled = FileNodeRecord.directory(
-                    id: completed.url.path,
+                let directoryID = completed.url.path
+                var allocatedSize: Int64 = 0
+                var logicalSize: Int64 = 0
+                var descendantFileCount = 0
+                var childrenAreAccessible = true
+                var sortedChildIDs: [String] = []
+                sortedChildIDs.reserveCapacity(sortedChildren.count)
+                for (offset, child) in sortedChildren.enumerated() {
+                    if offset.isMultiple(of: 256) {
+                        try Task.checkCancellation()
+                    }
+                    allocatedSize += child.allocatedSize
+                    logicalSize += child.logicalSize
+                    childrenAreAccessible = childrenAreAccessible && child.isAccessible
+                    if child.isDirectory {
+                        descendantFileCount += child.descendantFileCount
+                    } else if !child.isSymbolicLink && !child.isSynthetic {
+                        descendantFileCount += 1
+                    }
+                    sortedChildIDs.append(child.id)
+                    parentIDByID[child.id] = directoryID
+                }
+
+                let assembled = FileNodeRecord(
+                    id: directoryID,
                     url: completed.url,
                     name: ScanTarget.displayName(for: completed.url),
-                    children: sortedChildren,
+                    isDirectory: true,
+                    isSymbolicLink: false,
+                    allocatedSize: allocatedSize,
+                    logicalSize: logicalSize,
+                    descendantFileCount: descendantFileCount,
                     lastModified: completed.metadata.lastModified,
                     fileIdentity: completed.metadata.fileIdentity,
                     linkCount: completed.metadata.linkCount,
                     isPackage: completed.metadata.isPackage,
-                    isAccessible: completed.metadata.isReadable,
-                    childrenAreSorted: true
+                    isAccessible: completed.metadata.isReadable && childrenAreAccessible,
+                    isSelfAccessible: completed.metadata.isReadable,
+                    isSynthetic: false,
+                    isAutoSummarized: false
                 )
                 if insertNode(
                     assembled,
@@ -1059,15 +1094,6 @@ actor ScanEngine {
                     aggregateStats.include(assembled, hasChildren: !sortedChildren.isEmpty)
                 }
 
-                var sortedChildIDs: [String] = []
-                sortedChildIDs.reserveCapacity(sortedChildren.count)
-                for (offset, child) in sortedChildren.enumerated() {
-                    if offset.isMultiple(of: 256) {
-                        try Task.checkCancellation()
-                    }
-                    sortedChildIDs.append(child.id)
-                    parentIDByID[child.id] = assembled.id
-                }
                 childIDsByID[assembled.id] = sortedChildIDs
 
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
@@ -1247,7 +1273,7 @@ actor ScanEngine {
         warnings: inout [ScanWarning],
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState,
-        completedByKey: inout [Int: CompletedDirScan]
+        completedByKey: inout [CompletedDirScan?]
     ) {
         let isDirectory = Self.isLikelyTraversableDirectory(
             metadata: item.metadata,
@@ -1405,14 +1431,14 @@ actor ScanEngine {
               contents.count >= ScanConcurrencyPolicy.directoryClassificationParallelThreshold else {
             return try classifiedDirectoryEntries(
                 contents,
-                offset: 0,
+                range: contents.indices,
                 under: parentURL,
                 behavior: behavior,
                 exclusionMatcher: exclusionMatcher,
                 resourceKeys: resourceKeys,
                 metadataLoader: metadataLoader,
                 cancellationCheck: cancellationCheck
-            ).map(\.entry)
+            )
         }
 
         let workerCount = min(max(1, workerLimit), contents.count)
@@ -1420,19 +1446,20 @@ actor ScanEngine {
             ScanConcurrencyPolicy.directoryClassificationParallelThreshold,
             (contents.count + workerCount - 1) / workerCount
         )
-        var classifiedEntries: [(offset: Int, entry: DirectoryEntry)] = []
-        classifiedEntries.reserveCapacity(contents.count)
+        let chunkCount = (contents.count + chunkSize - 1) / chunkSize
+        var chunks = Array<[DirectoryEntry]?>(repeating: nil, count: chunkCount)
 
-        try await withThrowingTaskGroup(of: [(offset: Int, entry: DirectoryEntry)].self) { group in
+        try await withThrowingTaskGroup(of: ClassifiedDirectoryEntriesChunk.self) { group in
+            var chunkIndex = 0
             var chunkStart = 0
             while chunkStart < contents.count {
                 let chunkEnd = min(chunkStart + chunkSize, contents.count)
-                let chunk = Array(contents[chunkStart..<chunkEnd])
-                let offset = chunkStart
+                let range = chunkStart..<chunkEnd
+                let index = chunkIndex
                 group.addTask {
-                    try classifiedDirectoryEntries(
-                        chunk,
-                        offset: offset,
+                    let entries = try classifiedDirectoryEntries(
+                        contents,
+                        range: range,
                         under: parentURL,
                         behavior: behavior,
                         exclusionMatcher: exclusionMatcher,
@@ -1440,36 +1467,44 @@ actor ScanEngine {
                         metadataLoader: metadataLoader,
                         cancellationCheck: cancellationCheck
                     )
+                    return ClassifiedDirectoryEntriesChunk(index: index, entries: entries)
                 }
+                chunkIndex += 1
                 chunkStart = chunkEnd
             }
 
-            for try await chunkEntries in group {
-                classifiedEntries.append(contentsOf: chunkEntries)
+            for try await chunk in group {
+                chunks[chunk.index] = chunk.entries
             }
         }
 
-        classifiedEntries.sort { $0.offset < $1.offset }
-        return classifiedEntries.map(\.entry)
+        var entries: [DirectoryEntry] = []
+        entries.reserveCapacity(contents.count)
+        for chunk in chunks {
+            guard let chunk else { continue }
+            entries.append(contentsOf: chunk)
+        }
+        return entries
     }
 
     private nonisolated static func classifiedDirectoryEntries(
         _ contents: [URL],
-        offset: Int,
+        range: Range<Int>,
         under parentURL: URL,
         behavior: ScanBehavior,
         exclusionMatcher: ScanExclusionMatcher,
         resourceKeys: Set<URLResourceKey>,
         metadataLoader: ScanMetadataLoader,
         cancellationCheck: CancellationCheck
-    ) throws -> [(offset: Int, entry: DirectoryEntry)] {
-        var entries: [(offset: Int, entry: DirectoryEntry)] = []
-        entries.reserveCapacity(contents.count)
+    ) throws -> [DirectoryEntry] {
+        var entries: [DirectoryEntry] = []
+        entries.reserveCapacity(range.count)
 
-        for (localOffset, childURL) in contents.enumerated() {
-            if localOffset.isMultiple(of: 64) {
+        for index in range {
+            if index.isMultiple(of: 64) {
                 try cancellationCheck()
             }
+            let childURL = contents[index]
             guard includedChildURL(childURL, under: parentURL, behavior: behavior) else {
                 continue
             }
@@ -1485,7 +1520,7 @@ actor ScanEngine {
                 continue
             }
 
-            entries.append((offset + localOffset, DirectoryEntry(url: childURL, metadata: childMetadata)))
+            entries.append(DirectoryEntry(url: childURL, metadata: childMetadata))
         }
 
         try cancellationCheck()
@@ -1564,10 +1599,13 @@ actor ScanEngine {
                 url: url,
                 metadata: metadata
             )
+            let hardLinkClaim = metadata.linkCount > 1
+                ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
+                : nil
             return (
                 node,
                 [],
-                HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path).map { [$0] } ?? [],
+                hardLinkClaim.map { [$0] } ?? [],
                 nil
             )
         }
@@ -1588,10 +1626,13 @@ actor ScanEngine {
                 url: url,
                 metadata: metadata
             )
+            let hardLinkClaim = metadata.linkCount > 1
+                ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
+                : nil
             return (
                 node,
                 [],
-                HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path).map { [$0] } ?? [],
+                hardLinkClaim.map { [$0] } ?? [],
                 nil
             )
         }

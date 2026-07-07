@@ -17,6 +17,7 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     private let rootPath: String
     private let patterns: [CompiledPattern]
     private let cloudLocations: [CloudLocation]
+    private let hasActiveRule: Bool
 
     init(
         patterns: [String],
@@ -42,9 +43,8 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         iCloudDriveRootPath: String = ScanOptions.defaultICloudDriveRootPath
     ) {
         let normalizedRootPath = Self.normalizedRootPath(rootPath)
-        self.rootPath = normalizedRootPath
-        self.patterns = Self.normalizedPatterns(patterns).compactMap(CompiledPattern.init(rawPattern:))
-        self.cloudLocations = [
+        let compiledPatterns = Self.normalizedPatterns(patterns).compactMap(CompiledPattern.init(rawPattern:))
+        let cloudLocations = [
             Self.cloudLocation(
                 configuredRootPath: cloudStorageRootPath,
                 userRelativeComponents: ["Library", "CloudStorage"],
@@ -58,10 +58,14 @@ nonisolated struct ScanExclusionMatcher: Sendable {
                 includeCloudStorage: includeCloudStorage
             )
         ]
+        self.rootPath = normalizedRootPath
+        self.patterns = compiledPatterns
+        self.cloudLocations = cloudLocations
+        self.hasActiveRule = !compiledPatterns.isEmpty || cloudLocations.contains { $0.isActive }
     }
 
     var isEmpty: Bool {
-        patterns.isEmpty && !cloudLocations.contains { $0.isActive }
+        !hasActiveRule
     }
 
     var hasUserExclusions: Bool {
@@ -69,6 +73,7 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     }
 
     func excludes(_ url: URL, isDirectory: Bool) -> Bool {
+        guard hasActiveRule else { return false }
         let normalizedPath = url.standardizedFileURL.path
         return excludes(normalizedPath: normalizedPath, isDirectory: isDirectory)
     }

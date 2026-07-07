@@ -247,6 +247,100 @@ final class ScanBenchmarkTests: XCTestCase {
         }
     }
 
+    func testPackageSummaryBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_PACKAGE_SUMMARY"] == "1" else {
+            throw XCTSkip("Set RADIX_BENCH_PACKAGE_SUMMARY=1 to run the package summary benchmark.")
+        }
+
+        let directoryCounts = Self.integerList(
+            from: environment["RADIX_BENCH_PACKAGE_DIR_COUNTS"],
+            defaultValues: [16]
+        )
+        let filesPerDirectoryCounts = Self.integerList(
+            from: environment["RADIX_BENCH_PACKAGE_FILES_PER_DIR"],
+            defaultValues: [2_500]
+        )
+        let symlinksPerDirectoryCounts = Self.integerList(
+            from: environment["RADIX_BENCH_PACKAGE_SYMLINKS_PER_DIR"],
+            defaultValues: [0]
+        )
+        let iterations = environment["RADIX_BENCH_PACKAGE_ITERATIONS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 3
+        let summaryWorkers = environment["RADIX_BENCH_PACKAGE_SUMMARY_WORKERS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 8
+
+        let configurations = [
+            PackageSummaryBenchmarkConfiguration(name: "default-policy", atomicSummaryWorkerLimit: nil),
+            PackageSummaryBenchmarkConfiguration(name: "serial-summary", atomicSummaryWorkerLimit: 1),
+            PackageSummaryBenchmarkConfiguration(name: "parallel-summary", atomicSummaryWorkerLimit: summaryWorkers)
+        ]
+
+        for directoryCount in directoryCounts {
+            for filesPerDirectory in filesPerDirectoryCounts {
+                for symlinksPerDirectory in symlinksPerDirectoryCounts {
+                    let rootURL = try makePackageSummaryBenchmarkDirectory(
+                        directoryCount: directoryCount,
+                        filesPerDirectory: filesPerDirectory,
+                        symlinksPerDirectory: symlinksPerDirectory
+                    )
+                    defer { try? FileManager.default.removeItem(at: rootURL) }
+                    let fileCount = directoryCount * filesPerDirectory + (symlinksPerDirectory > 0 ? directoryCount : 0)
+                    let symlinkCount = directoryCount * symlinksPerDirectory
+
+                    for configuration in configurations {
+                        _ = try await runPackageSummaryBenchmark(
+                            rootURL: rootURL,
+                            fileCount: fileCount,
+                            symlinkCount: symlinkCount,
+                            configuration: configuration,
+                            iteration: 0,
+                            isWarmup: true
+                        )
+                    }
+
+                    var elapsedByConfiguration: [String: [Double]] = [:]
+                    for iteration in 1...iterations {
+                        for configuration in configurations {
+                            let elapsedSeconds = try await runPackageSummaryBenchmark(
+                                rootURL: rootURL,
+                                fileCount: fileCount,
+                                symlinkCount: symlinkCount,
+                                configuration: configuration,
+                                iteration: iteration,
+                                isWarmup: false
+                            )
+                            elapsedByConfiguration[configuration.name, default: []].append(elapsedSeconds)
+                        }
+                    }
+
+                    for configuration in configurations {
+                        let elapsed = elapsedByConfiguration[configuration.name, default: []]
+                        guard !elapsed.isEmpty else { continue }
+                        let average = elapsed.reduce(0, +) / Double(elapsed.count)
+                        print(
+                            """
+                            RADIX_BENCH_PACKAGE_SUMMARY dirs=\(directoryCount)
+                            files_per_dir=\(filesPerDirectory)
+                            symlinks_per_dir=\(symlinksPerDirectory)
+                            files=\(fileCount)
+                            symlinks=\(symlinkCount)
+                            config=\(configuration.name)
+                            summary_workers=\(configuration.workerDescription)
+                            iterations=\(elapsed.count)
+                            avg_elapsed=\(String(format: "%.3f", average))s
+                            min_elapsed=\(String(format: "%.3f", elapsed.min() ?? average))s
+                            max_elapsed=\(String(format: "%.3f", elapsed.max() ?? average))s
+                            """
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private struct WideDirectoryBenchmarkConfiguration {
         let name: String
         let traversalWorkerLimit: Int?
@@ -258,6 +352,15 @@ final class ScanBenchmarkTests: XCTestCase {
 
         var classificationWorkerDescription: String {
             classificationWorkerLimit.map(String.init) ?? "default"
+        }
+    }
+
+    private struct PackageSummaryBenchmarkConfiguration {
+        let name: String
+        let atomicSummaryWorkerLimit: Int?
+
+        var workerDescription: String {
+            atomicSummaryWorkerLimit.map(String.init) ?? "default"
         }
     }
 
@@ -306,6 +409,41 @@ final class ScanBenchmarkTests: XCTestCase {
         return rootURL
     }
 
+    private func makePackageSummaryBenchmarkDirectory(
+        directoryCount: Int,
+        filesPerDirectory: Int,
+        symlinksPerDirectory: Int
+    ) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "radix-package-summary-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let packageURL = rootURL.appending(path: "Payload.app", directoryHint: .isDirectory)
+        let resourcesURL = packageURL
+            .appending(path: "Contents", directoryHint: .isDirectory)
+            .appending(path: "Resources", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+
+        let payload = Data([0x41])
+        for directoryIndex in 0..<directoryCount {
+            let directoryURL = resourcesURL.appending(path: String(format: "bucket-%03d", directoryIndex), directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+            let targetURL = directoryURL.appending(path: "symlink-target.dat")
+            if symlinksPerDirectory > 0 {
+                try payload.write(to: targetURL, options: .atomic)
+            }
+            for fileIndex in 0..<filesPerDirectory {
+                let fileURL = directoryURL.appending(path: String(format: "asset-%08d.dat", fileIndex))
+                try payload.write(to: fileURL, options: .atomic)
+            }
+            for symlinkIndex in 0..<symlinksPerDirectory {
+                let symlinkURL = directoryURL.appending(path: String(format: "alias-%08d.dat", symlinkIndex))
+                try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
+            }
+        }
+
+        return rootURL
+    }
+
     private func runWideDirectoryBenchmark(
         rootURL: URL,
         fileCount: Int,
@@ -343,6 +481,52 @@ final class ScanBenchmarkTests: XCTestCase {
             iteration=\(iteration)
             traversal_workers=\(configuration.traversalWorkerDescription)
             requested_classification_workers=\(configuration.classificationWorkerDescription)
+            elapsed=\(String(format: "%.3f", elapsedSeconds))s
+            """
+        )
+
+        return elapsedSeconds
+    }
+
+    private func runPackageSummaryBenchmark(
+        rootURL: URL,
+        fileCount: Int,
+        symlinkCount: Int,
+        configuration: PackageSummaryBenchmarkConfiguration,
+        iteration: Int,
+        isWarmup: Bool
+    ) async throws -> Double {
+        var options = ScanOptions()
+        options.atomicSummaryWorkerLimit = configuration.atomicSummaryWorkerLimit
+
+        let engine = ScanEngine()
+        let startedAt = ContinuousClock.now
+        var finalSnapshot: ScanSnapshot?
+
+        for try await event in engine.scan(target: ScanTarget(url: rootURL), options: options) {
+            if case .finished(let snapshot) = event {
+                finalSnapshot = snapshot
+            }
+        }
+
+        let elapsed = startedAt.duration(to: .now)
+        let elapsedSeconds = Double(elapsed.components.seconds) +
+            (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        let snapshot = try XCTUnwrap(finalSnapshot)
+        let packageNode = try XCTUnwrap(snapshot.treeStore.children(of: snapshot.root.id).first { $0.name == "Payload.app" })
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, fileCount)
+        XCTAssertEqual(packageNode.descendantFileCount, fileCount)
+        XCTAssertFalse(snapshot.treeStore.childIDsByID.keys.contains(packageNode.id))
+
+        let phase = isWarmup ? "warmup" : "measure"
+        print(
+            """
+            RADIX_BENCH_PACKAGE_RESULT phase=\(phase)
+            files=\(fileCount)
+            symlinks=\(symlinkCount)
+            config=\(configuration.name)
+            iteration=\(iteration)
+            summary_workers=\(configuration.workerDescription)
             elapsed=\(String(format: "%.3f", elapsedSeconds))s
             """
         )
