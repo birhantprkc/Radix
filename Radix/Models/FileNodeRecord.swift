@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct FileNodeRecord: Equatable, Identifiable, Sendable {
+nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
     let id: String
     let url: URL
     let name: String
