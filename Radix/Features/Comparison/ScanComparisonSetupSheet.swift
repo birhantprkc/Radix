@@ -33,7 +33,7 @@ struct ScanComparisonSetupSheet: View {
 
             Divider()
 
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 16) {
                 ScanComparisonCandidateGroup(
                     slot: .before,
                     candidate: setup.before,
@@ -94,7 +94,7 @@ struct ScanComparisonSetupSheet: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
-        .frame(width: 700)
+        .frame(width: 780)
     }
 }
 
@@ -114,20 +114,18 @@ private struct ScanComparisonCandidateGroup: View {
                 if isLoading {
                     loadingContent
                 } else if let candidate {
-                    VStack(alignment: .leading, spacing: 12) {
-                        candidateContent(candidate)
-                            .frame(maxWidth: .infinity, minHeight: 138, alignment: .topLeading)
-
-                        Divider()
-
-                        selectedActions
-                    }
+                    candidateContent(candidate)
                 } else {
                     emptyContent
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 180)
-            .padding(.top, 4)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: 170,
+                maxHeight: 170,
+                alignment: .topLeading
+            )
+            .padding(8)
         } label: {
             HStack(spacing: 8) {
                 Text(slot.title)
@@ -152,7 +150,7 @@ private struct ScanComparisonCandidateGroup: View {
             Text("No Snapshot Selected")
                 .font(.subheadline.weight(.medium))
 
-            Text("Choose a saved snapshot or use the current scan.")
+            Text(emptyStateMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -179,15 +177,15 @@ private struct ScanComparisonCandidateGroup: View {
     }
 
     private func candidateContent(_ candidate: ScanComparisonCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(candidate.displayName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Text(candidate.path)
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -195,26 +193,37 @@ private struct ScanComparisonCandidateGroup: View {
                     .help(candidate.path)
             }
 
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
-                GridRow {
-                    metric("Scanned", RadixFormatters.date(candidate.scanDate))
-                    metric("Size", RadixFormatters.size(candidate.totalAllocatedSize))
-                }
+            Label(
+                "Scanned \(RadixFormatters.date(candidate.scanDate))",
+                systemImage: "clock"
+            )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
-                GridRow {
-                    metric("Files", candidate.fileCount.formatted())
-                    metric("Folders", candidate.directoryCount.formatted())
-                }
+            HStack(spacing: 28) {
+                metric("Size", RadixFormatters.size(candidate.totalAllocatedSize))
+                metric("Files", candidate.fileCount.formatted())
+                metric("Folders", candidate.directoryCount.formatted())
 
                 if candidate.warningCount > 0 {
-                    GridRow {
-                        metric("Warnings", candidate.warningCount.formatted())
-                        Color.clear
-                            .frame(width: 1, height: 1)
-                    }
+                    metric("Warnings", candidate.warningCount.formatted())
                 }
             }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Spacer()
+                selectedControls(for: candidate)
+            }
         }
+    }
+
+    private var emptyStateMessage: String {
+        canUseCurrentScan
+            ? "Choose a saved snapshot or use the current scan."
+            : "Choose a saved snapshot."
     }
 
     private var sourceActions: some View {
@@ -223,20 +232,34 @@ private struct ScanComparisonCandidateGroup: View {
                 onChooseSnapshot(slot)
             }
 
-            Button("Use Current Scan") {
-                onUseCurrentScan(slot)
+            if canUseCurrentScan {
+                Button("Use Current Scan") {
+                    onUseCurrentScan(slot)
+                }
             }
-            .disabled(!canUseCurrentScan)
         }
         .controlSize(.small)
         .disabled(actionsDisabled)
     }
 
-    private var selectedActions: some View {
+    private func selectedControls(for candidate: ScanComparisonCandidate) -> some View {
         HStack(spacing: 8) {
-            sourceActions
+            Button("Replace…") {
+                onChooseSnapshot(slot)
+            }
 
-            Spacer(minLength: 0)
+            if canUseCurrentScan, !candidate.isCurrentScan {
+                Button {
+                    onUseCurrentScan(slot)
+                } label: {
+                    Label(
+                        "Use Current Scan for \(slot.title)",
+                        systemImage: "dot.radiowaves.left.and.right"
+                    )
+                }
+                .labelStyle(.iconOnly)
+                .help("Use Current Scan")
+            }
 
             Button {
                 onClear(slot)

@@ -140,7 +140,7 @@ enum SystemIntegration {
     }
 
     @MainActor
-    static func presentComparisonSnapshotPanel() -> URL? {
+    static func presentComparisonSnapshotPanel() async -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [radixScanArchiveContentType]
         panel.allowsMultipleSelection = false
@@ -150,10 +150,29 @@ enum SystemIntegration {
         panel.prompt = "Choose"
         panel.message = "Choose a Radix scan snapshot."
 
-        guard panel.runModal() == .OK else {
-            return nil
+        return await withCheckedContinuation { continuation in
+            let completionHandler: (NSApplication.ModalResponse) -> Void = { response in
+                let selectedURL = response == .OK ? panel.url : nil
+                DispatchQueue.main.async {
+                    continuation.resume(returning: selectedURL)
+                }
+            }
+
+            if let parentWindow = comparisonPanelParentWindow {
+                panel.beginSheetModal(for: parentWindow, completionHandler: completionHandler)
+            } else {
+                panel.begin(completionHandler: completionHandler)
+            }
         }
-        return panel.url
+    }
+
+    @MainActor
+    private static var comparisonPanelParentWindow: NSWindow? {
+        NSApp.keyWindow ??
+            NSApp.mainWindow ??
+            NSApp.windows.first { window in
+                window.isVisible && !window.isMiniaturized
+            }
     }
 
     @MainActor

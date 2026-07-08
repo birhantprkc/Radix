@@ -984,8 +984,17 @@ final class AppModel: ObservableObject {
     func chooseComparisonSnapshot(for slot: ScanComparisonSlot) {
         guard pendingComparisonSetup != nil else { return }
         guard pendingComparisonSetup?.loadingSlot == nil else { return }
-        guard let sourceURL = dependencies.systemActions.presentComparisonSnapshotPanel() else { return }
-        previewComparisonSnapshot(from: sourceURL, for: slot)
+        let setupID = pendingComparisonSetup?.id
+
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let sourceURL = await self.dependencies.systemActions.presentComparisonSnapshotPanel(),
+                  self.pendingComparisonSetup?.id == setupID,
+                  self.pendingComparisonSetup?.loadingSlot == nil else {
+                return
+            }
+            self.previewComparisonSnapshot(from: sourceURL, for: slot)
+        }
     }
 
     func useCurrentScanForComparisonSlot(_ slot: ScanComparisonSlot) {
