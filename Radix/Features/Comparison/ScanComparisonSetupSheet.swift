@@ -19,15 +19,22 @@ struct ScanComparisonSetupSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label("Compare Snapshots", systemImage: "rectangle.split.2x1")
-                .font(.title3.weight(.semibold))
-                .labelStyle(.titleAndIcon)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.primary, .tint)
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Compare Snapshots")
+                    .font(.title3.weight(.semibold))
+
+                Text("Choose the earlier and later snapshots you want to compare.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+
+            Divider()
 
             HStack(alignment: .center, spacing: 12) {
-                ScanComparisonCandidateSlotCard(
+                ScanComparisonCandidateGroup(
                     slot: .before,
                     candidate: setup.before,
                     isLoading: setup.loadingSlot == .before,
@@ -41,15 +48,14 @@ struct ScanComparisonSetupSheet: View {
                 Button {
                     onSwap()
                 } label: {
-                    Label("Swap", systemImage: "arrow.left.arrow.right")
+                    Label("Swap Before and After", systemImage: "arrow.left.arrow.right")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(isBusy)
+                .disabled(isBusy || (setup.before == nil && setup.after == nil))
                 .help("Swap Before and After")
 
-                ScanComparisonCandidateSlotCard(
+                ScanComparisonCandidateGroup(
                     slot: .after,
                     candidate: setup.after,
                     isLoading: setup.loadingSlot == .after,
@@ -60,14 +66,18 @@ struct ScanComparisonSetupSheet: View {
                     onClear: onClear
                 )
             }
+            .padding(20)
 
-            if let statusMessage {
-                Label(statusMessage, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
+            Divider()
 
-            HStack {
+            HStack(spacing: 12) {
+                if let statusMessage {
+                    Label(statusMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
+
                 Spacer()
 
                 Button("Cancel", role: .cancel) {
@@ -81,13 +91,14 @@ struct ScanComparisonSetupSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!setup.canCompare)
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
         }
-        .padding(24)
-        .frame(width: 760, alignment: .topLeading)
+        .frame(width: 700)
     }
 }
 
-private struct ScanComparisonCandidateSlotCard: View {
+private struct ScanComparisonCandidateGroup: View {
     let slot: ScanComparisonSlot
     let candidate: ScanComparisonCandidate?
     let isLoading: Bool
@@ -98,96 +109,78 @@ private struct ScanComparisonCandidateSlotCard: View {
     let onClear: (ScanComparisonSlot) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 8) {
+        GroupBox {
+            Group {
+                if isLoading {
+                    loadingContent
+                } else if let candidate {
+                    VStack(alignment: .leading, spacing: 12) {
+                        candidateContent(candidate)
+                            .frame(maxWidth: .infinity, minHeight: 138, alignment: .topLeading)
+
+                        Divider()
+
+                        selectedActions
+                    }
+                } else {
+                    emptyContent
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 180)
+            .padding(.top, 4)
+        } label: {
+            HStack(spacing: 8) {
                 Text(slot.title)
                     .font(.headline)
 
                 if candidate?.isCurrentScan == true {
                     Label("Current Scan", systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption.weight(.medium))
-                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
-                Spacer()
-
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
             }
-
-            Group {
-                if isLoading {
-                    loadingContent
-                } else if let candidate {
-                    candidateContent(candidate)
-                } else {
-                    emptyContent
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-
-            HStack(spacing: 8) {
-                Button {
-                    onChooseSnapshot(slot)
-                } label: {
-                    Label("Choose Snapshot", systemImage: "folder")
-                }
-                .disabled(actionsDisabled)
-
-                Button {
-                    onUseCurrentScan(slot)
-                } label: {
-                    Label("Use Current Scan", systemImage: "dot.radiowaves.left.and.right")
-                }
-                .disabled(actionsDisabled || !canUseCurrentScan)
-
-                if candidate != nil {
-                    Button {
-                        onClear(slot)
-                    } label: {
-                        Label("Clear", systemImage: "xmark")
-                    }
-                    .labelStyle(.iconOnly)
-                    .disabled(actionsDisabled)
-                    .help("Clear \(slot.title)")
-                }
-            }
-            .controlSize(.small)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 246, alignment: .topLeading)
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+        .frame(maxWidth: .infinity)
     }
 
     private var emptyContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 8) {
             Image(systemName: "doc.badge.plus")
                 .font(.title2)
                 .foregroundStyle(.secondary)
 
-            Text("No snapshot selected")
-                .font(.subheadline.weight(.semibold))
+            Text("No Snapshot Selected")
+                .font(.subheadline.weight(.medium))
+
+            Text("Choose a saved snapshot or use the current scan.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            sourceActions
+                .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var loadingContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Reading snapshot")
-                .font(.subheadline.weight(.semibold))
-            Text("...")
+        VStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text("Reading Snapshot…")
+                .font(.subheadline.weight(.medium))
+
+            Text("Validating snapshot contents")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ViewBuilder
     private func candidateContent(_ candidate: ScanComparisonCandidate) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(candidate.displayName)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
@@ -202,32 +195,72 @@ private struct ScanComparisonCandidateSlotCard: View {
                     .help(candidate.path)
             }
 
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
                 GridRow {
-                    setupMetric("Scanned", RadixFormatters.date(candidate.scanDate))
-                    setupMetric("Size", RadixFormatters.size(candidate.totalAllocatedSize))
+                    metric("Scanned", RadixFormatters.date(candidate.scanDate))
+                    metric("Size", RadixFormatters.size(candidate.totalAllocatedSize))
                 }
+
                 GridRow {
-                    setupMetric("Files", candidate.fileCount.formatted())
-                    setupMetric("Folders", candidate.directoryCount.formatted())
+                    metric("Files", candidate.fileCount.formatted())
+                    metric("Folders", candidate.directoryCount.formatted())
                 }
-                GridRow {
-                    setupMetric("Warnings", candidate.warningCount.formatted())
-                    Color.clear.frame(width: 1, height: 1)
+
+                if candidate.warningCount > 0 {
+                    GridRow {
+                        metric("Warnings", candidate.warningCount.formatted())
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                    }
                 }
             }
         }
     }
 
-    private func setupMetric(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+    private var sourceActions: some View {
+        HStack(spacing: 8) {
+            Button("Choose Snapshot…") {
+                onChooseSnapshot(slot)
+            }
+
+            Button("Use Current Scan") {
+                onUseCurrentScan(slot)
+            }
+            .disabled(!canUseCurrentScan)
+        }
+        .controlSize(.small)
+        .disabled(actionsDisabled)
+    }
+
+    private var selectedActions: some View {
+        HStack(spacing: 8) {
+            sourceActions
+
+            Spacer(minLength: 0)
+
+            Button {
+                onClear(slot)
+            } label: {
+                Label("Clear \(slot.title)", systemImage: "xmark")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Clear \(slot.title)")
+        }
+        .controlSize(.small)
+        .disabled(actionsDisabled)
+    }
+
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
             Text(value)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
+                .font(.caption.weight(.medium))
                 .monospacedDigit()
+                .lineLimit(1)
         }
     }
 }
