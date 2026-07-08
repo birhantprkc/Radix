@@ -148,7 +148,9 @@ nonisolated struct ScanComparisonRow: Identifiable, Equatable, Sendable {
         relativePath: String,
         kind: ScanComparisonChangeKind,
         beforeNode: FileNodeRecord?,
-        afterNode: FileNodeRecord?
+        afterNode: FileNodeRecord?,
+        beforeAllocatedSize: Int64? = nil,
+        afterAllocatedSize: Int64? = nil
     ) {
         let displayNode = afterNode ?? beforeNode
         self.id = "\(kind.rawValue):\(relativePath)"
@@ -157,8 +159,8 @@ nonisolated struct ScanComparisonRow: Identifiable, Equatable, Sendable {
         self.kind = kind
         self.beforeNode = beforeNode
         self.afterNode = afterNode
-        self.beforeAllocatedSize = beforeNode?.allocatedSize
-        self.afterAllocatedSize = afterNode?.allocatedSize
+        self.beforeAllocatedSize = beforeNode.map { beforeAllocatedSize ?? $0.allocatedSize }
+        self.afterAllocatedSize = afterNode.map { afterAllocatedSize ?? $0.allocatedSize }
         self.beforeLogicalSize = beforeNode?.logicalSize
         self.afterLogicalSize = afterNode?.logicalSize
         self.isDirectory = displayNode?.isDirectory ?? false
@@ -216,26 +218,43 @@ nonisolated struct ScanComparisonService: Sendable {
         let addedPaths = afterPaths.subtracting(beforePaths)
         let removedPaths = beforePaths.subtracting(afterPaths)
         let sharedPaths = beforePaths.intersection(afterPaths)
+        let materializationBoundaryPaths = Self.materializationBoundaryPaths(
+            sharedPaths: sharedPaths,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes,
+            beforeStore: before.treeStore,
+            afterStore: after.treeStore
+        )
+        let allocatedSizes = Self.normalizedAllocatedSizes(
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
 
         rows.reserveCapacity(addedPaths.count + removedPaths.count + sharedPaths.count)
 
-        for relativePath in addedPaths where !Self.hasAncestor(of: relativePath, in: addedPaths) {
+        for relativePath in addedPaths
+        where !Self.hasAncestor(of: relativePath, in: addedPaths)
+            && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths) {
             try Task.checkCancellation()
             rows.append(ScanComparisonRow(
                 relativePath: relativePath,
                 kind: .added,
                 beforeNode: nil,
-                afterNode: afterNodes[relativePath]
+                afterNode: afterNodes[relativePath],
+                afterAllocatedSize: allocatedSizes.after[relativePath]
             ))
         }
 
-        for relativePath in removedPaths where !Self.hasAncestor(of: relativePath, in: removedPaths) {
+        for relativePath in removedPaths
+        where !Self.hasAncestor(of: relativePath, in: removedPaths)
+            && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths) {
             try Task.checkCancellation()
             rows.append(ScanComparisonRow(
                 relativePath: relativePath,
                 kind: .removed,
                 beforeNode: beforeNodes[relativePath],
-                afterNode: nil
+                afterNode: nil,
+                beforeAllocatedSize: allocatedSizes.before[relativePath]
             ))
         }
 
@@ -255,13 +274,17 @@ nonisolated struct ScanComparisonService: Sendable {
                 && before.treeStore.containsChildren(id: beforeNode.id)
                 && after.treeStore.containsChildren(id: afterNode.id)
             guard !isRedundantDirectory else { continue }
-            let delta = afterNode.allocatedSize - beforeNode.allocatedSize
+            let beforeAllocatedSize = allocatedSizes.before[relativePath] ?? beforeNode.allocatedSize
+            let afterAllocatedSize = allocatedSizes.after[relativePath] ?? afterNode.allocatedSize
+            let delta = afterAllocatedSize - beforeAllocatedSize
             guard delta != 0 else { continue }
             rows.append(ScanComparisonRow(
                 relativePath: relativePath,
                 kind: delta > 0 ? .grew : .shrank,
                 beforeNode: beforeNode,
-                afterNode: afterNode
+                afterNode: afterNode,
+                beforeAllocatedSize: beforeAllocatedSize,
+                afterAllocatedSize: afterAllocatedSize
             ))
         }
 
@@ -311,6 +334,155 @@ nonisolated struct ScanComparisonService: Sendable {
             }
         }
         return false
+    }
+
+    private static func materializationBoundaryPaths(
+        sharedPaths: Set<String>,
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord],
+        beforeStore: FileTreeStore,
+        afterStore: FileTreeStore
+    ) -> Set<String> {
+        Set(sharedPaths.filter { relativePath in
+            guard let beforeNode = beforeNodes[relativePath],
+                  let afterNode = afterNodes[relativePath],
+                  beforeNode.isDirectory,
+                  afterNode.isDirectory else {
+                return false
+            }
+
+            let beforeHasChildren = beforeStore.containsChildren(id: beforeNode.id)
+            let afterHasChildren = afterStore.containsChildren(id: afterNode.id)
+            guard beforeHasChildren != afterHasChildren else { return false }
+
+            return Self.isOpaqueDirectory(beforeNode, hasIndexedChildren: beforeHasChildren)
+                || Self.isOpaqueDirectory(afterNode, hasIndexedChildren: afterHasChildren)
+        })
+    }
+
+    private static func isOpaqueDirectory(
+        _ node: FileNodeRecord,
+        hasIndexedChildren: Bool
+    ) -> Bool {
+        guard node.isDirectory, !hasIndexedChildren else { return false }
+        return node.isAutoSummarized || node.isPackage || !node.isAccessible
+    }
+
+    private static func normalizedAllocatedSizes(
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord]
+    ) -> (
+        before: [String: Int64],
+        after: [String: Int64]
+    ) {
+        let identities = hardLinkIdentities(in: beforeNodes).union(hardLinkIdentities(in: afterNodes))
+        guard !identities.isEmpty else {
+            return (
+                beforeNodes.mapValues(\.allocatedSize),
+                afterNodes.mapValues(\.allocatedSize)
+            )
+        }
+
+        let beforeGroups = hardLinkPathsByIdentity(in: beforeNodes, identities: identities)
+        let afterGroups = hardLinkPathsByIdentity(in: afterNodes, identities: identities)
+        var beforeSizes = beforeNodes.mapValues(\.allocatedSize)
+        var afterSizes = afterNodes.mapValues(\.allocatedSize)
+
+        for identity in identities {
+            let beforePaths = beforeGroups[identity] ?? []
+            let afterPaths = afterGroups[identity] ?? []
+            let sharedPaths = Set(beforePaths).intersection(afterPaths)
+
+            if !sharedPaths.isEmpty, let ownerPath = sharedPaths.min() {
+                normalizeHardLinkGroup(
+                    paths: beforePaths,
+                    ownerPath: ownerPath,
+                    nodes: beforeNodes,
+                    sizes: &beforeSizes
+                )
+                normalizeHardLinkGroup(
+                    paths: afterPaths,
+                    ownerPath: ownerPath,
+                    nodes: afterNodes,
+                    sizes: &afterSizes
+                )
+            } else {
+                if let ownerPath = beforePaths.min() {
+                    normalizeHardLinkGroup(
+                        paths: beforePaths,
+                        ownerPath: ownerPath,
+                        nodes: beforeNodes,
+                        sizes: &beforeSizes
+                    )
+                }
+                if let ownerPath = afterPaths.min() {
+                    normalizeHardLinkGroup(
+                        paths: afterPaths,
+                        ownerPath: ownerPath,
+                        nodes: afterNodes,
+                        sizes: &afterSizes
+                    )
+                }
+            }
+        }
+
+        return (beforeSizes, afterSizes)
+    }
+
+    private static func hardLinkIdentities(
+        in nodes: [String: FileNodeRecord]
+    ) -> Set<FileIdentity> {
+        Set(nodes.values.lazy.compactMap { node in
+            guard !node.isDirectory,
+                  !node.isSymbolicLink,
+                  !node.isSynthetic,
+                  node.linkCount > 1 else {
+                return nil
+            }
+            return node.fileIdentity
+        })
+    }
+
+    private static func hardLinkPathsByIdentity(
+        in nodes: [String: FileNodeRecord],
+        identities: Set<FileIdentity>
+    ) -> [FileIdentity: [String]] {
+        let entries: [(identity: FileIdentity, relativePath: String)] = nodes.compactMap { relativePath, node in
+            guard !node.isDirectory,
+                  !node.isSymbolicLink,
+                  !node.isSynthetic,
+                  let identity = node.fileIdentity,
+                  identities.contains(identity) else {
+                return nil
+            }
+            return (identity, relativePath)
+        }
+        return Dictionary(grouping: entries, by: \.identity)
+            .mapValues { groupedEntries in groupedEntries.map(\.relativePath) }
+    }
+
+    private static func normalizeHardLinkGroup(
+        paths: [String],
+        ownerPath: String,
+        nodes: [String: FileNodeRecord],
+        sizes: inout [String: Int64]
+    ) {
+        let groupAllocatedSize = paths.compactMap { nodes[$0]?.unduplicatedAllocatedSize }.max() ?? 0
+
+        for path in paths {
+            guard let node = nodes[path] else { continue }
+            let normalizedSize = path == ownerPath ? groupAllocatedSize : 0
+            let adjustment = normalizedSize - node.allocatedSize
+            guard adjustment != 0 else { continue }
+
+            sizes[path] = normalizedSize
+            var cursor = path
+            while let slashIndex = cursor.lastIndex(of: "/") {
+                cursor = String(cursor[..<slashIndex])
+                guard sizes[cursor] != nil else { continue }
+                sizes[cursor, default: 0] += adjustment
+            }
+        }
     }
 }
 

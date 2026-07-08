@@ -128,6 +128,105 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.grewCount, 1)
     }
 
+    func testExpandedVersionOfSummarizedDirectorySuppressesMaterializedDescendants() async throws {
+        let beforeCache = makeTestSummarizedDirectoryNode(id: "/before/cache", name: "cache", size: 100)
+        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeCache])
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [beforeCache]])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterLeaf = makeTestFileNode(id: "/after/cache/file.bin", name: "file.bin", size: 100)
+        let afterCache = makeTestDirectoryNode(id: "/after/cache", name: "cache", children: [afterLeaf])
+        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterCache])
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterCache],
+            afterCache.id: [afterLeaf],
+        ])
+        let afterSnapshot = makeTestSnapshot(root: afterRoot, store: afterStore)
+
+        let comparison = try await ScanComparisonService().compare(before: beforeSnapshot, after: afterSnapshot)
+
+        XCTAssertTrue(comparison.rows.isEmpty)
+        XCTAssertEqual(comparison.summary.allocatedDelta, 0)
+        XCTAssertEqual(comparison.summary.changedCount, 0)
+    }
+
+    func testExpandedVersionOfSummarizedDirectoryReportsOnlyBoundaryDelta() async throws {
+        let beforeCache = makeTestSummarizedDirectoryNode(id: "/before/cache", name: "cache", size: 100)
+        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeCache])
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [beforeCache]])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterLeaf = makeTestFileNode(id: "/after/cache/file.bin", name: "file.bin", size: 150)
+        let afterCache = makeTestDirectoryNode(id: "/after/cache", name: "cache", children: [afterLeaf])
+        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterCache])
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterCache],
+            afterCache.id: [afterLeaf],
+        ])
+        let afterSnapshot = makeTestSnapshot(root: afterRoot, store: afterStore)
+
+        let comparison = try await ScanComparisonService().compare(before: beforeSnapshot, after: afterSnapshot)
+
+        XCTAssertEqual(comparison.rows.count, 1)
+        XCTAssertEqual(comparison.rows[0].relativePath, "cache")
+        XCTAssertEqual(comparison.rows[0].kind, .grew)
+        XCTAssertEqual(comparison.rows[0].allocatedDelta, 50)
+        XCTAssertEqual(comparison.summary.allocatedDelta, 50)
+    }
+
+    func testNewHardLinkDoesNotMoveAllocatedSizeFromSharedPath() async throws {
+        let identity = FileIdentity(device: 1, inode: 42)
+        let beforeShared = makeTestFileNode(
+            id: "/before/z.bin",
+            name: "z.bin",
+            size: 100,
+            unduplicatedAllocatedSize: 100,
+            fileIdentity: identity,
+            linkCount: 1
+        )
+        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeShared])
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [beforeShared]])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterNewLink = makeTestFileNode(
+            id: "/after/a/new.bin",
+            name: "new.bin",
+            size: 100,
+            unduplicatedAllocatedSize: 100,
+            fileIdentity: identity,
+            linkCount: 2
+        )
+        let afterFolder = makeTestDirectoryNode(id: "/after/a", name: "a", children: [afterNewLink])
+        let afterShared = makeTestFileNode(
+            id: "/after/z.bin",
+            name: "z.bin",
+            size: 0,
+            unduplicatedAllocatedSize: 100,
+            fileIdentity: identity,
+            linkCount: 2
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/after",
+            name: "after",
+            children: [afterFolder, afterShared]
+        )
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterFolder, afterShared],
+            afterFolder.id: [afterNewLink],
+        ])
+        let afterSnapshot = makeTestSnapshot(root: afterRoot, store: afterStore)
+
+        let comparison = try await ScanComparisonService().compare(before: beforeSnapshot, after: afterSnapshot)
+
+        XCTAssertEqual(comparison.rows.count, 1)
+        XCTAssertEqual(comparison.rows[0].relativePath, "a")
+        XCTAssertEqual(comparison.rows[0].kind, .added)
+        XCTAssertEqual(comparison.rows[0].afterAllocatedSize, 0)
+        XCTAssertEqual(comparison.rows[0].allocatedDelta, 0)
+        XCTAssertFalse(comparison.rows.contains { $0.relativePath == "z.bin" })
+        XCTAssertEqual(comparison.summary.allocatedDelta, 0)
+    }
+
     func testUnchangedAndRootRowsAreExcluded() async throws {
         let unchangedBefore = makeTestFileNode(id: "/before/unchanged.bin", name: "unchanged.bin", size: 20)
         let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [unchangedBefore])
