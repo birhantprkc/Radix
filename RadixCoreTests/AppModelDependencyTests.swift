@@ -2343,6 +2343,7 @@ final class AppModelDependencyTests: XCTestCase {
             systemActions: actions,
             scanArchiveService: archiveService
         ))
+        model.dismissOnboarding()
         model.scanState.restoreCompletedSnapshot(currentSnapshot)
 
         XCTAssertTrue(model.canCompareCurrentScanWithSnapshot)
@@ -2369,6 +2370,13 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.scanComparison?.rows.first?.kind, .grew)
         XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, 20)
         XCTAssertEqual(model.scanState.snapshot?.id, currentSnapshot.id)
+        XCTAssertFalse(model.canUseWorkspaceCommands)
+        XCTAssertTrue(model.isQuickLookKeyboardShortcutBlocked)
+
+        model.closeScanComparison()
+
+        XCTAssertTrue(model.canUseWorkspaceCommands)
+        XCTAssertFalse(model.isQuickLookKeyboardShortcutBlocked)
     }
 
     @MainActor

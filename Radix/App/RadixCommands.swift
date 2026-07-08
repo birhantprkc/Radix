@@ -23,13 +23,21 @@ struct RadixCommands: Commands {
                 workspaceFocusAction?(.chart)
             }
             .keyboardShortcut("2")
-            .disabled(workspaceFocusAction == nil || scanState.snapshot == nil)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    workspaceFocusAction == nil ||
+                    scanState.snapshot == nil
+            )
 
             Button("Focus Contents", systemImage: "list.bullet") {
                 workspaceFocusAction?(.contents)
             }
             .keyboardShortcut("3")
-            .disabled(workspaceFocusAction == nil || scanState.snapshot == nil)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    workspaceFocusAction == nil ||
+                    scanState.snapshot == nil
+            )
 
             Divider()
 
@@ -37,7 +45,7 @@ struct RadixCommands: Commands {
                 inspectorVisibility?.wrappedValue.toggle()
             }
             .keyboardShortcut("i", modifiers: [.control, .command])
-            .disabled(inspectorVisibility == nil)
+            .disabled(!appModel.canUseWorkspaceCommands || inspectorVisibility == nil)
 
             Divider()
 
@@ -45,19 +53,31 @@ struct RadixCommands: Commands {
                 sunburstViewportAction?(.zoomIn)
             }
             .keyboardShortcut("+", modifiers: [.command])
-            .disabled(sunburstViewportAction == nil || scanState.snapshot == nil)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    sunburstViewportAction == nil ||
+                    scanState.snapshot == nil
+            )
 
             Button("Zoom Out", systemImage: "minus.magnifyingglass") {
                 sunburstViewportAction?(.zoomOut)
             }
             .keyboardShortcut("-", modifiers: [.command])
-            .disabled(sunburstViewportAction == nil || scanState.snapshot == nil)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    sunburstViewportAction == nil ||
+                    scanState.snapshot == nil
+            )
 
             Button("Actual Size", systemImage: "arrow.counterclockwise") {
                 sunburstViewportAction?(.reset)
             }
             .keyboardShortcut("0", modifiers: [.command])
-            .disabled(sunburstViewportAction == nil || scanState.snapshot == nil)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    sunburstViewportAction == nil ||
+                    scanState.snapshot == nil
+            )
         }
 
         CommandGroup(replacing: .newItem) {
@@ -127,13 +147,13 @@ struct RadixCommands: Commands {
                 appModel.navigateBack()
             }
             .keyboardShortcut("[", modifiers: [.command])
-            .disabled(!navigation.canNavigateBack)
+            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canNavigateBack)
 
             Button("Forward", systemImage: "chevron.forward") {
                 appModel.navigateForward()
             }
             .keyboardShortcut("]", modifiers: [.command])
-            .disabled(!navigation.canNavigateForward)
+            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canNavigateForward)
 
             Divider()
 
@@ -141,7 +161,7 @@ struct RadixCommands: Commands {
                 appModel.navigateToParent()
             }
             .keyboardShortcut(.upArrow, modifiers: [.command])
-            .disabled(!navigation.canNavigateToParent)
+            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canNavigateToParent)
 
             Divider()
 
@@ -149,13 +169,13 @@ struct RadixCommands: Commands {
                 appModel.zoomIntoSelection()
             }
             .keyboardShortcut(.downArrow, modifiers: [.command])
-            .disabled(!navigation.canZoomIntoSelection)
+            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canZoomIntoSelection)
 
             Button("Back to Scan Root", systemImage: "arrowshape.turn.up.backward") {
                 appModel.resetFocusToRoot()
             }
             .keyboardShortcut("\\", modifiers: [.command, .option])
-            .disabled(navigation.isFocusedAtRoot)
+            .disabled(!appModel.canUseWorkspaceCommands || navigation.isFocusedAtRoot)
 
             Divider()
 
@@ -163,7 +183,7 @@ struct RadixCommands: Commands {
                 appModel.clearSelection()
             }
             .keyboardShortcut(.escape, modifiers: [])
-            .disabled(!navigation.canClearSelection)
+            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canClearSelection)
         }
 
         CommandMenu("Inspect") {
@@ -181,7 +201,10 @@ struct RadixCommands: Commands {
                 appModel.addSelectedNodesToDiscardPile()
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
-            .disabled(!selectedActionAvailability.canMoveToTrash)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    !selectedActionAvailability.canMoveToTrash
+            )
 
             selectedFileActionCommand(.moveToTrash, shortcut: .delete, modifiers: [])
         }
@@ -228,6 +251,9 @@ struct RadixCommands: Commands {
             commandSelectedFileActions.perform(action)
         }
         .keyboardShortcut(shortcut, modifiers: modifiers)
-        .disabled(!action.isEnabled(in: selectedActionAvailability))
+        .disabled(
+            !appModel.canUseWorkspaceCommands ||
+                !action.isEnabled(in: selectedActionAvailability)
+        )
     }
 }

@@ -659,6 +659,10 @@ final class AppModel: ObservableObject {
             pendingImportPreview == nil
     }
 
+    var canUseWorkspaceCommands: Bool {
+        scanComparison == nil
+    }
+
     var canCompareCurrentScanWithSnapshot: Bool {
         canCompareScanSnapshots &&
             scanCoordinator.snapshot?.isComplete == true &&
@@ -1210,6 +1214,7 @@ final class AppModel: ObservableObject {
                    self.scanCoordinator.snapshot?.id != currentSnapshotID {
                     return
                 }
+                self.quickLookController.closePreview()
                 self.scanComparison = comparison
                 self.lastErrorMessage = nil
             } catch is CancellationError {
@@ -3058,6 +3063,7 @@ extension AppModel: AppQuickLookControllerDelegate {
 
     var isQuickLookKeyboardShortcutBlocked: Bool {
         showsOnboarding ||
+            !canUseWorkspaceCommands ||
             pendingTrashNode != nil ||
             pendingTrashSelection != nil ||
             navigationModel.selectedNodeIDs.count > 1
