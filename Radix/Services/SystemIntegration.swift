@@ -140,6 +140,23 @@ enum SystemIntegration {
     }
 
     @MainActor
+    static func presentComparisonSnapshotPanel() -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [radixScanArchiveContentType]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.canCreateDirectories = false
+        panel.prompt = "Choose"
+        panel.message = "Choose a Radix scan snapshot."
+
+        guard panel.runModal() == .OK else {
+            return nil
+        }
+        return panel.url
+    }
+
+    @MainActor
     private static var exportPanelParentWindow: NSWindow? {
         NSApp.mainWindow ??
             NSApp.keyWindow ??

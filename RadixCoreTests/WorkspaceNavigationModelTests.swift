@@ -239,6 +239,30 @@ final class WorkspaceNavigationModelTests: XCTestCase {
     }
 
     @MainActor
+    func testRevealFileFocusesContainingFolderAndSelectsNode() throws {
+        let fixture = makeNavigationFixture()
+        let model = makeConfiguredNavigationModel(fixture: fixture)
+        var publishedStates: [WorkspaceNavigationState] = []
+        var cancellables = Set<AnyCancellable>()
+
+        model.$state
+            .dropFirst()
+            .sink { publishedStates.append($0) }
+            .store(in: &cancellables)
+
+        model.reveal(nodeID: fixture.docFile.id)
+
+        XCTAssertEqual(publishedStates.count, 1)
+        let state = try XCTUnwrap(publishedStates.first)
+        // Unlike selectAndFocus, reveal focuses the parent folder (docs) rather than the
+        // file itself, so the file list shows the file among its siblings.
+        XCTAssertEqual(state.focusedNodeID, fixture.docs.id)
+        XCTAssertEqual(state.selectedNodeID, fixture.docFile.id)
+        XCTAssertEqual(state.tableNodes.map(\.id), [fixture.docFile.id])
+        XCTAssertEqual(state.focusBackStack, [fixture.root.id])
+    }
+
+    @MainActor
     func testSelectionPublishesAncestorsWithoutReplacingTableState() throws {
         let fixture = makeNavigationFixture()
         let model = makeConfiguredNavigationModel(fixture: fixture)

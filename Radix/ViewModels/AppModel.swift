@@ -12,6 +12,7 @@ enum ArchiveOperationKind: String, Equatable, Sendable {
     case export
     case importPreview
     case `import`
+    case compare
 }
 
 struct ArchiveOperationState: Identifiable, Equatable, Sendable {
@@ -29,6 +30,151 @@ struct ArchiveOperationState: Identifiable, Equatable, Sendable {
 struct ExportConfirmationState: Identifiable, Equatable, Sendable {
     let id: UUID
     let archiveURL: URL
+}
+
+nonisolated enum ScanComparisonCandidateSource: Equatable, Sendable {
+    case archive(URL)
+    case currentSnapshot(UUID)
+}
+
+nonisolated enum ScanComparisonSlot: String, CaseIterable, Identifiable, Sendable {
+    case before
+    case after
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .before:
+            return "Before"
+        case .after:
+            return "After"
+        }
+    }
+}
+
+nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let source: ScanComparisonCandidateSource
+    let displayName: String
+    let path: String
+    let scanDate: Date
+    let totalAllocatedSize: Int64
+    let fileCount: Int
+    let directoryCount: Int
+    let warningCount: Int
+
+    init(preview: ScanArchivePreview) {
+        self.id = UUID()
+        self.source = .archive(preview.archiveURL)
+        self.displayName = preview.target.displayName
+        self.path = preview.target.path
+        self.scanDate = preview.finishedAt ?? preview.startedAt
+        self.totalAllocatedSize = preview.totalAllocatedSize
+        self.fileCount = preview.fileCount
+        self.directoryCount = preview.directoryCount
+        self.warningCount = preview.warningCount
+    }
+
+    init(snapshot: ScanSnapshot) {
+        self.id = snapshot.id
+        self.source = .currentSnapshot(snapshot.id)
+        self.displayName = snapshot.target.displayName
+        self.path = snapshot.target.url.path
+        self.scanDate = snapshot.finishedAt ?? snapshot.startedAt
+        self.totalAllocatedSize = snapshot.aggregateStats.totalAllocatedSize
+        self.fileCount = snapshot.aggregateStats.fileCount
+        self.directoryCount = snapshot.aggregateStats.directoryCount
+        self.warningCount = snapshot.scanWarnings.count
+    }
+
+    var isCurrentScan: Bool {
+        if case .currentSnapshot = source {
+            return true
+        }
+        return false
+    }
+}
+
+nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var before: ScanComparisonCandidate?
+    var after: ScanComparisonCandidate?
+    var loadingSlot: ScanComparisonSlot?
+    var errorMessage: String?
+
+    init(
+        before: ScanComparisonCandidate? = nil,
+        after: ScanComparisonCandidate? = nil,
+        loadingSlot: ScanComparisonSlot? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.id = UUID()
+        self.before = before
+        self.after = after
+        self.loadingSlot = loadingSlot
+        self.errorMessage = errorMessage
+    }
+
+    var canCompare: Bool {
+        guard loadingSlot == nil,
+              let before,
+              let after else {
+            return false
+        }
+        return before.source != after.source
+    }
+
+    var validationMessage: String? {
+        guard let before,
+              let after else {
+            return nil
+        }
+        if before.source == after.source {
+            return "Choose two different snapshots."
+        }
+        return nil
+    }
+
+    var resolvedCandidates: (before: ScanComparisonCandidate, after: ScanComparisonCandidate)? {
+        guard let before,
+              let after else {
+            return nil
+        }
+        return (before, after)
+    }
+
+    var currentSnapshotID: UUID? {
+        if case .currentSnapshot(let id)? = before?.source {
+            return id
+        }
+        if case .currentSnapshot(let id)? = after?.source {
+            return id
+        }
+        return nil
+    }
+
+    func candidate(for slot: ScanComparisonSlot) -> ScanComparisonCandidate? {
+        switch slot {
+        case .before:
+            return before
+        case .after:
+            return after
+        }
+    }
+
+    mutating func setCandidate(_ candidate: ScanComparisonCandidate?, for slot: ScanComparisonSlot) {
+        switch slot {
+        case .before:
+            before = candidate
+        case .after:
+            after = candidate
+        }
+    }
+
+    mutating func swap() {
+        Swift.swap(&before, &after)
+    }
 }
 
 struct DiscardPileState: Equatable, Sendable {
@@ -95,6 +241,7 @@ final class AppModel: ObservableObject {
         case selectMultiple(Set<FileNodeRecord.ID>, primary: FileNodeRecord.ID?)
         case focus(FileNodeRecord.ID?)
         case selectAndFocus(FileNodeRecord.ID)
+        case reveal(FileNodeRecord.ID)
         case navigateBack
         case navigateForward
         case navigateToParent
@@ -114,6 +261,7 @@ final class AppModel: ObservableObject {
         case folderRequiredForDrop
         case fullDiskAccessSettingsUnavailable
         case readOnlySnapshot
+        case currentComparisonSnapshotUnavailable
 
         var alertTitle: String? {
             switch self {
@@ -151,6 +299,8 @@ final class AppModel: ObservableObject {
                 return "Radix could not open Full Disk Access settings."
             case .readOnlySnapshot:
                 return "Imported snapshots are read-only."
+            case .currentComparisonSnapshotUnavailable:
+                return "Current scan changed. Start the comparison again."
             }
         }
     }
@@ -185,6 +335,8 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var archiveOperation: ArchiveOperationState?
     @Published private(set) var exportConfirmation: ExportConfirmationState?
+    @Published private(set) var scanComparison: ScanComparison?
+    @Published var pendingComparisonSetup: ScanComparisonSetup?
     @Published var pendingImportPreview: ScanArchivePreview?
     @Published var pendingTrashNode: FileNodeRecord?
     @Published var pendingTrashSelection: PendingTrashSelection?
@@ -295,6 +447,7 @@ final class AppModel: ObservableObject {
         isExportPanelPresented = false
         cancelArchiveOperation()
         dismissExportConfirmation()
+        pendingComparisonSetup = nil
         pendingImportPreview = nil
         quickLookController.setWorkspaceWindowNumber(nil)
         scanCoordinator.stopScan()
@@ -494,7 +647,27 @@ final class AppModel: ObservableObject {
         !scanCoordinator.isScanning &&
             !isExportPanelPresented &&
             !isArchiveOperationInProgress &&
+            pendingComparisonSetup == nil &&
             pendingImportPreview == nil
+    }
+
+    var canCompareScanSnapshots: Bool {
+        !scanCoordinator.isScanning &&
+            !isExportPanelPresented &&
+            !isArchiveOperationInProgress &&
+            pendingComparisonSetup == nil &&
+            pendingImportPreview == nil
+    }
+
+    var canCompareCurrentScanWithSnapshot: Bool {
+        canCompareScanSnapshots &&
+            scanCoordinator.snapshot?.isComplete == true &&
+            scanCoordinator.snapshotSource.allowsFileMutation
+    }
+
+    var canUseCurrentScanInComparisonSetup: Bool {
+        scanCoordinator.snapshot?.isComplete == true &&
+            scanCoordinator.snapshotSource.allowsFileMutation
     }
 
     private var canConfirmImportPreview: Bool {
@@ -636,10 +809,406 @@ final class AppModel: ObservableObject {
         if isArchiveOperationInProgress {
             return "Cancel the current archive operation before importing a snapshot."
         }
+        if pendingComparisonSetup != nil {
+            return "Finish or cancel the current comparison setup before importing a snapshot."
+        }
         if pendingImportPreview != nil {
             return "Finish or cancel the current import preview before importing another snapshot."
         }
         return "Radix cannot import a snapshot right now."
+    }
+
+    private var comparisonUnavailableMessage: String {
+        if scanCoordinator.isScanning {
+            return "Stop the current scan before comparing snapshots."
+        }
+        if isExportPanelPresented {
+            return "Finish choosing an export location before comparing snapshots."
+        }
+        if isArchiveOperationInProgress {
+            return "Cancel the current archive operation before comparing snapshots."
+        }
+        if pendingComparisonSetup != nil {
+            return "Finish or cancel the current comparison setup before comparing snapshots."
+        }
+        if pendingImportPreview != nil {
+            return "Finish or cancel the current import preview before comparing snapshots."
+        }
+        return "Radix cannot compare snapshots right now."
+    }
+
+    func compareScanSnapshots() {
+        guard canCompareScanSnapshots else {
+            presentErrorMessage(comparisonUnavailableMessage)
+            return
+        }
+        beginComparisonSetup()
+    }
+
+    func compareScanSnapshots(from sourceURLs: [URL]) {
+        guard canCompareScanSnapshots else {
+            presentErrorMessage(comparisonUnavailableMessage)
+            return
+        }
+        guard sourceURLs.count == 2 else {
+            presentErrorMessage("Choose exactly two Radix scan snapshots to compare.")
+            return
+        }
+
+        previewArchiveSnapshotComparison(sourceURLs: sourceURLs)
+    }
+
+    func compareCurrentScanWithSnapshot() {
+        guard canCompareCurrentScanWithSnapshot,
+              let currentSnapshot = scanCoordinator.snapshot else {
+            presentErrorMessage(currentScanComparisonUnavailableMessage)
+            return
+        }
+        beginComparisonSetup(after: ScanComparisonCandidate(snapshot: currentSnapshot))
+    }
+
+    func compareCurrentScan(with sourceURL: URL) {
+        guard canCompareCurrentScanWithSnapshot,
+              let currentSnapshot = scanCoordinator.snapshot else {
+            presentErrorMessage(currentScanComparisonUnavailableMessage)
+            return
+        }
+        beginComparisonSetup(after: ScanComparisonCandidate(snapshot: currentSnapshot))
+        previewComparisonSnapshot(from: sourceURL, for: .before)
+    }
+
+    private var currentScanComparisonUnavailableMessage: String {
+        if !canCompareScanSnapshots {
+            return comparisonUnavailableMessage
+        }
+        return "Complete a live scan before comparing it with a snapshot."
+    }
+
+    func closeScanComparison() {
+        scanComparison = nil
+    }
+
+    func canRevealComparisonRowInFinder(_ row: ScanComparisonRow) -> Bool {
+        guard let url = row.fileURL else { return false }
+        return dependencies.systemActions.fileExists(url)
+    }
+
+    func revealComparisonRowInFinder(_ row: ScanComparisonRow) {
+        guard let url = row.fileURL else {
+            presentError(FileActionError.unsupported)
+            return
+        }
+        guard dependencies.systemActions.fileExists(url) else {
+            presentError(FileActionError.unavailable(path: url.path))
+            return
+        }
+        dependencies.systemActions.reveal(url)
+    }
+
+    func copyComparisonRowPath(_ row: ScanComparisonRow) {
+        guard let url = row.fileURL else {
+            presentError(FileActionError.unsupported)
+            return
+        }
+        do {
+            try dependencies.systemActions.copyPath(url)
+        } catch {
+            presentError(error)
+        }
+    }
+
+    func canShowComparisonRowInBrowser(_ row: ScanComparisonRow) -> Bool {
+        guard let nodeID = currentScanNodeID(for: row) else { return false }
+        return isVisibleNavigationNode(nodeID)
+    }
+
+    func showComparisonRowInBrowser(_ row: ScanComparisonRow) {
+        guard let nodeID = currentScanNodeID(for: row) else {
+            presentError(FileActionError.currentComparisonSnapshotUnavailable)
+            return
+        }
+        // Don't tear down the comparison unless the reveal will actually land — a node that
+        // is hidden (e.g. in the discard pile) would be filtered by performNavigationAction,
+        // leaving the user on an empty browser with their comparison gone.
+        guard isVisibleNavigationNode(nodeID) else { return }
+        closeScanComparison()
+        revealAfterViewUpdate(nodeID: nodeID)
+    }
+
+    /// The node ID for a comparison row within the current live scan, or nil when the row's
+    /// side is not the current scan (e.g. comparing two imported archives) or the node is gone.
+    private func currentScanNodeID(for row: ScanComparisonRow) -> String? {
+        guard let comparison = scanComparison,
+              let currentSnapshotID = scanCoordinator.snapshot?.id else {
+            return nil
+        }
+        if comparison.after.id == currentSnapshotID, let node = row.afterNode {
+            return node.id
+        }
+        if comparison.before.id == currentSnapshotID, let node = row.beforeNode {
+            return node.id
+        }
+        return nil
+    }
+
+    func swapPendingComparisonSetup() {
+        pendingComparisonSetup?.swap()
+    }
+
+    func cancelComparisonSetup() {
+        guard pendingComparisonSetup != nil else { return }
+        cancelArchiveOperation()
+        pendingComparisonSetup = nil
+    }
+
+    func confirmComparisonSetup() {
+        guard let setup = pendingComparisonSetup else { return }
+        guard setup.canCompare,
+              setup.resolvedCandidates != nil else {
+            var updatedSetup = setup
+            updatedSetup.errorMessage = setup.validationMessage ?? "Choose two snapshots to compare."
+            pendingComparisonSetup = updatedSetup
+            return
+        }
+        if let currentSnapshotID = setup.currentSnapshotID,
+           scanCoordinator.snapshot?.id != currentSnapshotID {
+            pendingComparisonSetup = nil
+            presentError(FileActionError.currentComparisonSnapshotUnavailable)
+            return
+        }
+
+        pendingComparisonSetup = nil
+        startComparison(setup)
+    }
+
+    func chooseComparisonSnapshot(for slot: ScanComparisonSlot) {
+        guard pendingComparisonSetup != nil else { return }
+        guard pendingComparisonSetup?.loadingSlot == nil else { return }
+        guard let sourceURL = dependencies.systemActions.presentComparisonSnapshotPanel() else { return }
+        previewComparisonSnapshot(from: sourceURL, for: slot)
+    }
+
+    func useCurrentScanForComparisonSlot(_ slot: ScanComparisonSlot) {
+        guard var setup = pendingComparisonSetup else { return }
+        guard canUseCurrentScanInComparisonSetup,
+              let snapshot = scanCoordinator.snapshot else {
+            setup.errorMessage = "Complete a live scan before using it in a comparison."
+            pendingComparisonSetup = setup
+            return
+        }
+        setup.setCandidate(ScanComparisonCandidate(snapshot: snapshot), for: slot)
+        setup.errorMessage = setup.validationMessage
+        pendingComparisonSetup = setup
+    }
+
+    func clearComparisonSlot(_ slot: ScanComparisonSlot) {
+        guard var setup = pendingComparisonSetup else { return }
+        setup.setCandidate(nil, for: slot)
+        setup.errorMessage = nil
+        pendingComparisonSetup = setup
+    }
+
+    private func beginComparisonSetup(
+        before: ScanComparisonCandidate? = nil,
+        after: ScanComparisonCandidate? = nil
+    ) {
+        cancelArchiveOperation()
+        scanComparison = nil
+        pendingComparisonSetup = ScanComparisonSetup(before: before, after: after)
+    }
+
+    private func previewComparisonSnapshot(from sourceURL: URL, for slot: ScanComparisonSlot) {
+        guard var setup = pendingComparisonSetup,
+              setup.loadingSlot == nil else {
+            return
+        }
+
+        cancelArchiveOperation()
+        setup.loadingSlot = slot
+        setup.errorMessage = nil
+        setup.setCandidate(nil, for: slot)
+        pendingComparisonSetup = setup
+        let setupID = setup.id
+
+        snapshotArchiveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.clearComparisonSetupLoadingSlot(setupID: setupID, slot: slot)
+            }
+
+            do {
+                let archiveService = self.dependencies.scanArchiveService
+                let previewTask = Task.detached(priority: .utility) {
+                    try await archiveService.previewSnapshot(from: sourceURL)
+                }
+                let preview = try await Self.value(cancelling: previewTask)
+                guard !Task.isCancelled,
+                      var currentSetup = self.pendingComparisonSetup,
+                      currentSetup.id == setupID,
+                      currentSetup.loadingSlot == slot else {
+                    return
+                }
+                currentSetup.setCandidate(ScanComparisonCandidate(preview: preview), for: slot)
+                currentSetup.loadingSlot = nil
+                currentSetup.errorMessage = currentSetup.validationMessage
+                self.pendingComparisonSetup = currentSetup
+                self.lastErrorMessage = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                guard var currentSetup = self.pendingComparisonSetup,
+                      currentSetup.id == setupID else {
+                    return
+                }
+                currentSetup.loadingSlot = nil
+                currentSetup.errorMessage = error.localizedDescription
+                self.pendingComparisonSetup = currentSetup
+            }
+        }
+    }
+
+    private func clearComparisonSetupLoadingSlot(setupID: UUID, slot: ScanComparisonSlot) {
+        guard var setup = pendingComparisonSetup,
+              setup.id == setupID,
+              setup.loadingSlot == slot else {
+            return
+        }
+        setup.loadingSlot = nil
+        pendingComparisonSetup = setup
+    }
+
+    private func previewArchiveSnapshotComparison(sourceURLs: [URL]) {
+        cancelArchiveOperation()
+        scanComparison = nil
+        pendingComparisonSetup = nil
+        let operationID = beginArchiveOperation(
+            kind: .compare,
+            title: "Preparing Comparison",
+            message: "Reading snapshots",
+            progressReporter: nil
+        )
+        snapshotArchiveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.finishArchiveOperation(id: operationID)
+            }
+
+            do {
+                let archiveService = self.dependencies.scanArchiveService
+                let setupTask = Task.detached(priority: .utility) {
+                    let first = try await archiveService.previewSnapshot(from: sourceURLs[0])
+                    try Task.checkCancellation()
+                    let second = try await archiveService.previewSnapshot(from: sourceURLs[1])
+                    try Task.checkCancellation()
+                    let candidates = Self.orderedComparisonCandidates(
+                        ScanComparisonCandidate(preview: first),
+                        ScanComparisonCandidate(preview: second)
+                    )
+                    return ScanComparisonSetup(before: candidates.before, after: candidates.after)
+                }
+                let setup = try await Self.value(cancelling: setupTask)
+                guard !Task.isCancelled,
+                      self.isCurrentArchiveOperation(id: operationID) else { return }
+                self.pendingComparisonSetup = setup
+                self.lastErrorMessage = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                self.presentError(error, title: "Comparison Failed")
+            }
+        }
+    }
+
+    private func previewCurrentScanComparison(sourceURL: URL, currentSnapshot: ScanSnapshot) {
+        cancelArchiveOperation()
+        scanComparison = nil
+        pendingComparisonSetup = nil
+        let currentSnapshotID = currentSnapshot.id
+        let operationID = beginArchiveOperation(
+            kind: .compare,
+            title: "Preparing Comparison",
+            message: "Reading snapshot",
+            progressReporter: nil
+        )
+        snapshotArchiveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.finishArchiveOperation(id: operationID)
+            }
+
+            do {
+                let archiveService = self.dependencies.scanArchiveService
+                let setupTask = Task.detached(priority: .utility) {
+                    let preview = try await archiveService.previewSnapshot(from: sourceURL)
+                    try Task.checkCancellation()
+                    return ScanComparisonSetup(
+                        before: ScanComparisonCandidate(preview: preview),
+                        after: ScanComparisonCandidate(snapshot: currentSnapshot)
+                    )
+                }
+                let setup = try await Self.value(cancelling: setupTask)
+                guard !Task.isCancelled,
+                      self.isCurrentArchiveOperation(id: operationID),
+                      self.scanCoordinator.snapshot?.id == currentSnapshotID else { return }
+                self.pendingComparisonSetup = setup
+                self.lastErrorMessage = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                self.presentError(error, title: "Comparison Failed")
+            }
+        }
+    }
+
+    private func startComparison(_ setup: ScanComparisonSetup) {
+        guard let candidates = setup.resolvedCandidates else { return }
+        cancelArchiveOperation()
+        scanComparison = nil
+        let currentSnapshot = scanCoordinator.snapshot
+        let operationID = beginArchiveOperation(
+            kind: .compare,
+            title: "Comparing Snapshots",
+            message: "Reading archives",
+            progressReporter: nil
+        )
+        snapshotArchiveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.finishArchiveOperation(id: operationID)
+            }
+
+            do {
+                let archiveService = self.dependencies.scanArchiveService
+                let comparisonTask = Task.detached(priority: .utility) {
+                    let before = try await Self.snapshot(
+                        for: candidates.before.source,
+                        archiveService: archiveService,
+                        currentSnapshot: currentSnapshot
+                    )
+                    try Task.checkCancellation()
+                    let after = try await Self.snapshot(
+                        for: candidates.after.source,
+                        archiveService: archiveService,
+                        currentSnapshot: currentSnapshot
+                    )
+                    try Task.checkCancellation()
+                    return try await ScanComparisonService().compare(before: before, after: after)
+                }
+                let comparison = try await Self.value(cancelling: comparisonTask)
+                guard !Task.isCancelled,
+                      self.isCurrentArchiveOperation(id: operationID) else { return }
+                if let currentSnapshotID = setup.currentSnapshotID,
+                   self.scanCoordinator.snapshot?.id != currentSnapshotID {
+                    return
+                }
+                self.scanComparison = comparison
+                self.lastErrorMessage = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                self.presentError(error, title: "Comparison Failed")
+            }
+        }
     }
 
     func confirmImportPreview() {
@@ -808,6 +1377,37 @@ final class AppModel: ObservableObject {
             try await task.value
         } onCancel: {
             task.cancel()
+        }
+    }
+
+    nonisolated private static func orderedComparisonCandidates(
+        _ lhs: ScanComparisonCandidate,
+        _ rhs: ScanComparisonCandidate
+    ) -> (before: ScanComparisonCandidate, after: ScanComparisonCandidate) {
+        let lhsDate = lhs.scanDate
+        let rhsDate = rhs.scanDate
+        if lhsDate == rhsDate {
+            return lhs.path.localizedStandardCompare(rhs.path) == .orderedDescending
+                ? (rhs, lhs)
+                : (lhs, rhs)
+        }
+        return lhsDate < rhsDate ? (lhs, rhs) : (rhs, lhs)
+    }
+
+    nonisolated private static func snapshot(
+        for source: ScanComparisonCandidateSource,
+        archiveService: any ScanArchiveServicing,
+        currentSnapshot: ScanSnapshot?
+    ) async throws -> ScanSnapshot {
+        switch source {
+        case .archive(let url):
+            return try await archiveService.importSnapshot(from: url).snapshot
+        case .currentSnapshot(let id):
+            guard let currentSnapshot,
+                  currentSnapshot.id == id else {
+                throw FileActionError.currentComparisonSnapshotUnavailable
+            }
+            return currentSnapshot
         }
     }
 
@@ -983,6 +1583,10 @@ final class AppModel: ObservableObject {
         scheduleDeferredNavigationAction(.selectAndFocus(nodeID))
     }
 
+    func revealAfterViewUpdate(nodeID: String) {
+        scheduleDeferredNavigationAction(.reveal(nodeID))
+    }
+
     func clearSelection() {
         cancelDeferredNavigationAction()
         performNavigationAction(.clearSelection)
@@ -1062,6 +1666,9 @@ final class AppModel: ObservableObject {
         case .selectAndFocus(let nodeID):
             guard isVisibleNavigationNode(nodeID) else { return }
             navigationModel.selectAndFocus(nodeID: nodeID)
+        case .reveal(let nodeID):
+            guard isVisibleNavigationNode(nodeID) else { return }
+            navigationModel.reveal(nodeID: nodeID)
         case .navigateBack:
             navigationModel.navigateBack()
         case .navigateForward:
@@ -2125,7 +2732,9 @@ final class AppModel: ObservableObject {
 
     private func prepareForScan(_ target: ScanTarget) {
         lastErrorMessage = nil
+        scanComparison = nil
         navigationModel.reset()
+        pendingComparisonSetup = nil
         pendingImportPreview = nil
         pendingTrashNode = nil
         pendingTrashSelection = nil
@@ -2157,7 +2766,9 @@ final class AppModel: ObservableObject {
 
     private func prepareForImportedSnapshot() {
         lastErrorMessage = nil
+        scanComparison = nil
         navigationModel.reset()
+        pendingComparisonSetup = nil
         pendingImportPreview = nil
         pendingTrashNode = nil
         pendingTrashSelection = nil

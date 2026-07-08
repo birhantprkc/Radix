@@ -57,6 +57,36 @@ func makeTestDirectoryNode(
     )
 }
 
+/// A directory the scan engine collapsed into a single leaf node (an auto-summarized
+/// subtree). Its children are never indexed, so it must be placed in a store without a
+/// `childrenByID` entry for its own id.
+func makeTestSummarizedDirectoryNode(
+    id: String,
+    name: String,
+    size: Int64,
+    descendantFileCount: Int = 100
+) -> FileNodeRecord {
+    FileNodeRecord(
+        id: id,
+        url: URL(filePath: id, directoryHint: .isDirectory),
+        name: name,
+        isDirectory: true,
+        isSymbolicLink: false,
+        allocatedSize: size,
+        unduplicatedAllocatedSize: nil,
+        logicalSize: size,
+        descendantFileCount: descendantFileCount,
+        lastModified: nil,
+        fileIdentity: nil,
+        linkCount: 1,
+        isPackage: false,
+        isAccessible: true,
+        isSelfAccessible: true,
+        isSynthetic: false,
+        isAutoSummarized: true
+    )
+}
+
 func makeTestSnapshot(
     target: ScanTarget? = nil,
     root: FileNodeRecord,

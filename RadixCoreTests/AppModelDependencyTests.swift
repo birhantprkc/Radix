@@ -2241,6 +2241,213 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.scanState.selectedTarget, liveTarget)
         XCTAssertNotEqual(model.scanState.snapshot?.id, importedSnapshot.id)
     }
+
+    @MainActor
+    func testCompareScanSnapshotsOpensSetupBeforeFileSelection() async throws {
+        let oldURL = URL(filePath: "/tmp/old.radixscan", directoryHint: .isDirectory)
+        let newURL = URL(filePath: "/tmp/new.radixscan", directoryHint: .isDirectory)
+        let oldSnapshot = makeComparisonSnapshot(
+            rootPath: "/old-root",
+            fileSize: 10,
+            startedAt: Date(timeIntervalSince1970: 10),
+            finishedAt: Date(timeIntervalSince1970: 20),
+            sourceURL: oldURL
+        )
+        let newSnapshot = makeComparisonSnapshot(
+            rootPath: "/new-root",
+            fileSize: 35,
+            startedAt: Date(timeIntervalSince1970: 30),
+            finishedAt: Date(timeIntervalSince1970: 40),
+            sourceURL: newURL
+        )
+        let archiveService = try SpyScanArchiveService(
+            previewResultsByURL: [
+                oldURL: makeArchivePreview(archiveURL: oldURL, snapshot: oldSnapshot),
+                newURL: makeArchivePreview(archiveURL: newURL, snapshot: newSnapshot),
+            ],
+            importResultsByURL: [
+                oldURL: makeArchiveImportResult(archiveURL: oldURL, snapshot: oldSnapshot),
+                newURL: makeArchiveImportResult(archiveURL: newURL, snapshot: newSnapshot),
+            ]
+        )
+        var selectedSnapshotURLs = [oldURL, newURL]
+        var actions = AppSystemActions.inert
+        actions.presentComparisonSnapshotPanel = {
+            selectedSnapshotURLs.removeFirst()
+        }
+        let model = AppModel(dependencies: makeDependencies(
+            systemActions: actions,
+            scanArchiveService: archiveService
+        ))
+
+        model.compareScanSnapshots()
+        XCTAssertNotNil(model.pendingComparisonSetup)
+        XCTAssertNil(model.pendingComparisonSetup?.before)
+        XCTAssertNil(model.pendingComparisonSetup?.after)
+
+        model.chooseComparisonSnapshot(for: .before)
+
+        try await waitForAppModelCondition("comparison setup built") {
+            model.pendingComparisonSetup?.before?.displayName == oldSnapshot.target.displayName
+        }
+
+        model.chooseComparisonSnapshot(for: .after)
+
+        try await waitForAppModelCondition("comparison setup completed") {
+            model.pendingComparisonSetup?.after?.displayName == newSnapshot.target.displayName
+        }
+
+        let previewedURLs = await archiveService.previewedURLsSnapshot()
+        XCTAssertEqual(previewedURLs, [oldURL, newURL])
+        let importedURLsBeforeConfirm = await archiveService.importedURLsSnapshot()
+        XCTAssertTrue(importedURLsBeforeConfirm.isEmpty)
+
+        model.confirmComparisonSetup()
+
+        try await waitForAppModelCondition("comparison built") {
+            model.scanComparison?.summary.changedCount == 1
+        }
+
+        let importedURLs = await archiveService.importedURLsSnapshot()
+        XCTAssertEqual(importedURLs, [oldURL, newURL])
+        XCTAssertEqual(model.scanComparison?.before.id, oldSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.after.id, newSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.rows.first?.kind, .grew)
+        XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, 25)
+        XCTAssertNil(model.scanState.snapshot)
+    }
+
+    @MainActor
+    func testCompareCurrentScanWithSnapshotUsesCurrentScanAsAfter() async throws {
+        let archiveURL = URL(filePath: "/tmp/current-compare.radixscan", directoryHint: .isDirectory)
+        let archivedSnapshot = makeComparisonSnapshot(
+            rootPath: "/archived-root",
+            fileSize: 10,
+            sourceURL: archiveURL
+        )
+        let currentSnapshot = makeComparisonSnapshot(
+            rootPath: "/current-root",
+            fileSize: 30
+        )
+        let archiveService = try SpyScanArchiveService(
+            previewResultsByURL: [
+                archiveURL: makeArchivePreview(archiveURL: archiveURL, snapshot: archivedSnapshot),
+            ],
+            importResultsByURL: [
+                archiveURL: makeArchiveImportResult(archiveURL: archiveURL, snapshot: archivedSnapshot),
+            ]
+        )
+        var actions = AppSystemActions.inert
+        actions.presentComparisonSnapshotPanel = { archiveURL }
+        let model = AppModel(dependencies: makeDependencies(
+            systemActions: actions,
+            scanArchiveService: archiveService
+        ))
+        model.scanState.restoreCompletedSnapshot(currentSnapshot)
+
+        XCTAssertTrue(model.canCompareCurrentScanWithSnapshot)
+
+        model.compareCurrentScanWithSnapshot()
+
+        XCTAssertNil(model.pendingComparisonSetup?.before)
+        XCTAssertEqual(model.pendingComparisonSetup?.after?.id, currentSnapshot.id)
+
+        model.chooseComparisonSnapshot(for: .before)
+
+        try await waitForAppModelCondition("current comparison setup built") {
+            model.pendingComparisonSetup?.before?.displayName == archivedSnapshot.target.displayName
+        }
+
+        model.confirmComparisonSetup()
+
+        try await waitForAppModelCondition("current comparison built") {
+            model.scanComparison?.summary.changedCount == 1
+        }
+
+        XCTAssertEqual(model.scanComparison?.before.id, archivedSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.after.id, currentSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.rows.first?.kind, .grew)
+        XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, 20)
+        XCTAssertEqual(model.scanState.snapshot?.id, currentSnapshot.id)
+    }
+
+    @MainActor
+    func testComparisonSetupSwapReversesFinalDiffDirection() async throws {
+        let oldURL = URL(filePath: "/tmp/swap-old.radixscan", directoryHint: .isDirectory)
+        let newURL = URL(filePath: "/tmp/swap-new.radixscan", directoryHint: .isDirectory)
+        let oldSnapshot = makeComparisonSnapshot(
+            rootPath: "/swap-old",
+            fileSize: 10,
+            startedAt: Date(timeIntervalSince1970: 10),
+            finishedAt: Date(timeIntervalSince1970: 20),
+            sourceURL: oldURL
+        )
+        let newSnapshot = makeComparisonSnapshot(
+            rootPath: "/swap-new",
+            fileSize: 35,
+            startedAt: Date(timeIntervalSince1970: 30),
+            finishedAt: Date(timeIntervalSince1970: 40),
+            sourceURL: newURL
+        )
+        let archiveService = try SpyScanArchiveService(
+            previewResultsByURL: [
+                oldURL: makeArchivePreview(archiveURL: oldURL, snapshot: oldSnapshot),
+                newURL: makeArchivePreview(archiveURL: newURL, snapshot: newSnapshot),
+            ],
+            importResultsByURL: [
+                oldURL: makeArchiveImportResult(archiveURL: oldURL, snapshot: oldSnapshot),
+                newURL: makeArchiveImportResult(archiveURL: newURL, snapshot: newSnapshot),
+            ]
+        )
+        var selectedSnapshotURLs = [oldURL, newURL]
+        var actions = AppSystemActions.inert
+        actions.presentComparisonSnapshotPanel = {
+            selectedSnapshotURLs.removeFirst()
+        }
+        let model = AppModel(dependencies: makeDependencies(
+            systemActions: actions,
+            scanArchiveService: archiveService
+        ))
+
+        model.compareScanSnapshots()
+        model.chooseComparisonSnapshot(for: .before)
+        try await waitForAppModelCondition("comparison setup built") {
+            model.pendingComparisonSetup?.before?.displayName == oldSnapshot.target.displayName
+        }
+        model.chooseComparisonSnapshot(for: .after)
+        try await waitForAppModelCondition("comparison setup completed") {
+            model.pendingComparisonSetup?.after?.displayName == newSnapshot.target.displayName
+        }
+
+        model.swapPendingComparisonSetup()
+        XCTAssertEqual(model.pendingComparisonSetup?.before?.displayName, newSnapshot.target.displayName)
+
+        model.confirmComparisonSetup()
+
+        try await waitForAppModelCondition("swapped comparison built") {
+            model.scanComparison?.summary.changedCount == 1
+        }
+
+        XCTAssertEqual(model.scanComparison?.before.id, newSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.after.id, oldSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.rows.first?.kind, .shrank)
+        XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, -25)
+    }
+
+    @MainActor
+    func testImportedSnapshotCannotBeComparedAsCurrentScan() {
+        let archiveURL = URL(filePath: "/tmp/imported-current.radixscan", directoryHint: .isDirectory)
+        let importedSnapshot = makeComparisonSnapshot(
+            rootPath: "/imported-current",
+            fileSize: 10,
+            sourceURL: archiveURL
+        )
+        let model = AppModel(dependencies: makeDependencies())
+
+        model.scanState.restoreCompletedSnapshot(importedSnapshot)
+
+        XCTAssertFalse(model.canCompareCurrentScanWithSnapshot)
+    }
 }
 
 @MainActor
@@ -2435,6 +2642,88 @@ private func installSelection(
     return file
 }
 
+private func makeComparisonSnapshot(
+    rootPath: String,
+    fileSize: Int64,
+    startedAt: Date = Date(timeIntervalSince1970: 1),
+    finishedAt: Date? = Date(timeIntervalSince1970: 2),
+    sourceURL: URL? = nil
+) -> ScanSnapshot {
+    let file = makeTestFileNode(id: "\(rootPath)/shared.bin", name: "shared.bin", size: fileSize)
+    let root = makeTestDirectoryNode(id: rootPath, name: URL(filePath: rootPath).lastPathComponent, children: [file])
+    let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
+    let source: ScanSnapshotSource
+    if let sourceURL {
+        source = .imported(ImportedSnapshotContext(
+            sourceURL: sourceURL,
+            pathMode: .absolute,
+            liveActionCapability: .pathValidation
+        ))
+    } else {
+        source = .live
+    }
+
+    return ScanSnapshot(
+        target: ScanTarget(id: root.id, url: root.url, displayName: root.name, kind: .folder),
+        treeStore: store,
+        startedAt: startedAt,
+        finishedAt: finishedAt,
+        scanWarnings: [],
+        aggregateStats: store.aggregateStats,
+        isComplete: true,
+        source: source
+    )
+}
+
+private func makeArchiveImportResult(
+    archiveURL: URL,
+    snapshot: ScanSnapshot
+) throws -> ScanArchiveImportResult {
+    let manifest = try ScanArchiveDocument(
+        exportedAt: Date(timeIntervalSince1970: 3),
+        appVersion: "Tests",
+        snapshot: snapshot,
+        pathMode: .absolute,
+        sections: ScanArchiveSections(
+            nodes: "nodes.jsonl",
+            topology: "topology.json",
+            warnings: "warnings.json",
+            stats: "stats.json"
+        ),
+        nodeChecksum: "checksum"
+    )
+    return ScanArchiveImportResult(
+        archiveURL: archiveURL,
+        snapshot: snapshot,
+        manifest: manifest
+    )
+}
+
+private func makeArchivePreview(
+    archiveURL: URL,
+    snapshot: ScanSnapshot
+) throws -> ScanArchivePreview {
+    let manifest = try ScanArchiveDocument(
+        exportedAt: Date(timeIntervalSince1970: 3),
+        appVersion: "Tests",
+        snapshot: snapshot,
+        pathMode: .absolute,
+        sections: ScanArchiveSections(
+            nodes: "nodes.jsonl",
+            topology: "topology.json",
+            warnings: "warnings.json",
+            stats: "stats.json"
+        ),
+        nodeChecksum: "checksum"
+    )
+    return ScanArchivePreview(
+        archiveURL: archiveURL,
+        archiveSize: 1,
+        manifest: manifest,
+        stats: ScanArchiveStatsV1(snapshot.aggregateStats)
+    )
+}
+
 private final class SpyAppPreferencesStore: AppPreferencesPersisting {
     var preferences: AppPreferences
     var savedScanPreferences: [AppScanPreferences] = []
@@ -2600,7 +2889,9 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
     private(set) var previewedURLs: [URL] = []
     private(set) var importedURLs: [URL] = []
     private let previewResult: ScanArchivePreview?
+    private let previewResultsByURL: [URL: ScanArchivePreview]
     private let importResult: ScanArchiveImportResult?
+    private let importResultsByURL: [URL: ScanArchiveImportResult]
     private let exportWaitProbe: AsyncValueProbe<Void>?
     private let previewWaitProbe: AsyncValueProbe<Void>?
     private let importWaitProbe: AsyncValueProbe<Void>?
@@ -2610,13 +2901,17 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
 
     init(
         previewResult: ScanArchivePreview? = nil,
+        previewResultsByURL: [URL: ScanArchivePreview] = [:],
         importResult: ScanArchiveImportResult? = nil,
+        importResultsByURL: [URL: ScanArchiveImportResult] = [:],
         exportWaitProbe: AsyncValueProbe<Void>? = nil,
         previewWaitProbe: AsyncValueProbe<Void>? = nil,
         importWaitProbe: AsyncValueProbe<Void>? = nil
     ) {
         self.previewResult = previewResult
+        self.previewResultsByURL = previewResultsByURL
         self.importResult = importResult
+        self.importResultsByURL = importResultsByURL
         self.exportWaitProbe = exportWaitProbe
         self.previewWaitProbe = previewWaitProbe
         self.importWaitProbe = importWaitProbe
@@ -2645,6 +2940,9 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
             await previewWaitProbe.wait()
         }
         previewCancellationStates.append(Task.isCancelled)
+        if let result = previewResultsByURL[sourceURL] {
+            return result
+        }
         guard let previewResult else {
             throw ScanArchiveError.invalidArchivePackage("missing spy preview result")
         }
@@ -2660,6 +2958,9 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
             await importWaitProbe.wait()
         }
         importCancellationStates.append(Task.isCancelled)
+        if let result = importResultsByURL[sourceURL] {
+            return result
+        }
         guard let importResult else {
             throw ScanArchiveError.invalidArchivePackage("missing spy import result")
         }

@@ -36,6 +36,7 @@ struct ContentView: View {
             WorkspaceDetailView(
                 scanState: appModel.scanState,
                 navigation: appModel.navigation,
+                scanComparison: appModel.scanComparison,
                 isInspectorPresented: $showsInspector,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
                 maxRenderedDepth: appModel.maxRenderedDepth,
@@ -46,6 +47,10 @@ struct ContentView: View {
                 freeSpaceAvailableCapacity: { snapshot, focusNode in
                     appModel.sunburstFreeSpaceAvailableCapacity(for: snapshot, focusNode: focusNode)
                 },
+                closeScanComparison: {
+                    appModel.closeScanComparison()
+                },
+                comparisonRowActions: comparisonRowActions,
                 actions: workspaceActions
             )
         }
@@ -59,7 +64,10 @@ struct ContentView: View {
         .background(WorkspaceWindowObserver { window in
             appModel.setWorkspaceWindowNumber(window?.windowNumber)
         })
-        .inspector(isPresented: $showsInspector) {
+        .inspector(isPresented: Binding(
+            get: { showsInspector && appModel.scanComparison == nil },
+            set: { showsInspector = $0 }
+        )) {
             SelectionInspectorView(
                 scanState: appModel.scanState,
                 navigation: appModel.navigation,
@@ -127,6 +135,40 @@ struct ContentView: View {
                 }
             )
             .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: Binding(
+            get: { appModel.pendingComparisonSetup != nil },
+            set: { isPresented in
+                if !isPresented {
+                    appModel.cancelComparisonSetup()
+                }
+            }
+        )) {
+            if let setup = appModel.pendingComparisonSetup {
+                ScanComparisonSetupSheet(
+                    setup: setup,
+                    canUseCurrentScan: appModel.canUseCurrentScanInComparisonSetup,
+                    onChooseSnapshot: { slot in
+                        appModel.chooseComparisonSnapshot(for: slot)
+                    },
+                    onUseCurrentScan: { slot in
+                        appModel.useCurrentScanForComparisonSlot(slot)
+                    },
+                    onClear: { slot in
+                        appModel.clearComparisonSlot(slot)
+                    },
+                    onSwap: {
+                        appModel.swapPendingComparisonSetup()
+                    },
+                    onCancel: {
+                        appModel.cancelComparisonSetup()
+                    },
+                    onCompare: {
+                        appModel.confirmComparisonSetup()
+                    }
+                )
+                .interactiveDismissDisabled()
+            }
         }
         .alert(
             appModel.errorAlertTitle,
@@ -562,6 +604,7 @@ private struct WorkspaceWindowObserver: NSViewRepresentable {
 private struct WorkspaceDetailView: View {
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
+    let scanComparison: ScanComparison?
     @Binding var isInspectorPresented: Bool
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
 
@@ -571,41 +614,51 @@ private struct WorkspaceDetailView: View {
     let startupDiskTarget: ScanTarget?
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
+    let closeScanComparison: () -> Void
+    let comparisonRowActions: ScanComparisonRowActions
     let actions: WorkspaceActions
 
     var body: some View {
-        WorkspaceView(
-            scanState: scanState,
-            navigation: navigation,
-            isInspectorPresented: $isInspectorPresented,
-            focusedWorkspaceTarget: $focusedWorkspaceTarget,
-            maxRenderedDepth: maxRenderedDepth,
-            showFreeSpaceInSunburst: showFreeSpaceInSunburst,
-            discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
-            startupDiskTarget: startupDiskTarget,
-            fullDiskAccessStatus: fullDiskAccessStatus,
-            freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
-            actions: actions
-        )
-            .toolbar {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button {
-                        actions.navigateBack()
-                    } label: {
-                        Label("Back", systemImage: "chevron.backward")
-                    }
-                    .disabled(!navigation.canNavigateBack)
-                    .help("Back")
+        if let scanComparison {
+            ScanComparisonView(
+                comparison: scanComparison,
+                actions: comparisonRowActions,
+                onClose: closeScanComparison
+            )
+        } else {
+            WorkspaceView(
+                scanState: scanState,
+                navigation: navigation,
+                isInspectorPresented: $isInspectorPresented,
+                focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                maxRenderedDepth: maxRenderedDepth,
+                showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+                discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
+                startupDiskTarget: startupDiskTarget,
+                fullDiskAccessStatus: fullDiskAccessStatus,
+                freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
+                actions: actions
+            )
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button {
+                            actions.navigateBack()
+                        } label: {
+                            Label("Back", systemImage: "chevron.backward")
+                        }
+                        .disabled(!navigation.canNavigateBack)
+                        .help("Back")
 
-                    Button {
-                        actions.navigateForward()
-                    } label: {
-                        Label("Forward", systemImage: "chevron.forward")
+                        Button {
+                            actions.navigateForward()
+                        } label: {
+                            Label("Forward", systemImage: "chevron.forward")
+                        }
+                        .disabled(!navigation.canNavigateForward)
+                        .help("Forward")
                     }
-                    .disabled(!navigation.canNavigateForward)
-                    .help("Forward")
                 }
-            }
+        }
     }
 }
 
@@ -634,6 +687,16 @@ private extension ContentView {
             openFullDiskAccessSettings: { appModel.prepareAndOpenFullDiskAccessSettings() },
             setDiscardPileDragActive: setDiscardPileDragIsActive,
             setDiscardPileDragActiveAfterThreshold: setDiscardPileDragIsActiveAfterThreshold
+        )
+    }
+
+    var comparisonRowActions: ScanComparisonRowActions {
+        ScanComparisonRowActions(
+            reveal: { appModel.revealComparisonRowInFinder($0) },
+            canReveal: { appModel.canRevealComparisonRowInFinder($0) },
+            showInBrowser: { appModel.showComparisonRowInBrowser($0) },
+            canShowInBrowser: { appModel.canShowComparisonRowInBrowser($0) },
+            copyPath: { appModel.copyComparisonRowPath($0) }
         )
     }
 

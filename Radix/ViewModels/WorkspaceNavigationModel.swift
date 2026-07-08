@@ -166,6 +166,29 @@ private extension WorkspaceNavigationState {
         return next.refreshedDerivedState()
     }
 
+    func revealing(_ nodeID: FileNodeRecord.ID) -> WorkspaceNavigationState {
+        guard fileTreeStore?.node(id: nodeID) != nil else {
+            return selecting(nil)
+        }
+
+        // Reveal the node in context: focus its containing folder (so the file list
+        // shows its siblings) and select it. Unlike selectingAndFocusing, this does not
+        // zoom into the node itself, which would show an empty view for a file.
+        let focusTarget = fileTreeStore?.parent(of: nodeID)?.id ?? nodeID
+        var next = self
+        if next.focusedNodeID != focusTarget {
+            if let currentFocusID = next.focusedNodeID {
+                next.focusBackStack.append(currentFocusID)
+            }
+            next.focusForwardStack.removeAll()
+            next.focusedNodeID = focusTarget
+        }
+        next.selectedNodeID = nodeID
+        next.selectedNodeIDs = [nodeID]
+
+        return next.refreshedDerivedState()
+    }
+
     func settingFocusedNodeID(_ nodeID: FileNodeRecord.ID?) -> WorkspaceNavigationState {
         guard let nodeID else {
             var next = self
@@ -487,6 +510,10 @@ final class WorkspaceNavigationModel: ObservableObject {
 
     func selectAndFocus(nodeID: String) {
         publish(state.selectingAndFocusing(nodeID))
+    }
+
+    func reveal(nodeID: String) {
+        publish(state.revealing(nodeID))
     }
 
     func setFocusedNodeID(_ nodeID: String?) {
