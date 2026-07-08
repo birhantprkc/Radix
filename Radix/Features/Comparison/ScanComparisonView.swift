@@ -9,14 +9,37 @@ struct ScanComparisonRowActions {
 }
 
 struct ScanComparisonView: View {
+    private static let initialSortOrder = [
+        ScanComparisonRowComparator.defaultOrder
+    ]
+
     let comparison: ScanComparison
     let actions: ScanComparisonRowActions
     let onClose: () -> Void
 
     @State private var filter: ScanComparisonRowFilter = .all
     @State private var searchText = ""
-    @State private var sortOrder = [ScanComparisonRowComparator.defaultOrder]
+    @State private var sortOrder: [ScanComparisonRowComparator]
     @State private var selection = Set<ScanComparisonRow.ID>()
+    @State private var displayedRows: [ScanComparisonRow]
+
+    init(
+        comparison: ScanComparison,
+        actions: ScanComparisonRowActions,
+        onClose: @escaping () -> Void
+    ) {
+        self.comparison = comparison
+        self.actions = actions
+        self.onClose = onClose
+
+        let sortOrder = Self.initialSortOrder
+        self._sortOrder = State(initialValue: sortOrder)
+        self._displayedRows = State(initialValue: ScanComparisonRowQuery(
+            changeKind: nil,
+            searchText: "",
+            sortOrder: sortOrder
+        ).applying(to: comparison.rows))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,6 +64,12 @@ struct ScanComparisonView: View {
                 }
                 .help("Close Comparison")
             }
+        }
+        .onChange(of: rowQuery) { _, query in
+            refreshDisplayedRows(using: query)
+        }
+        .onChange(of: comparison.id) { _, _ in
+            refreshDisplayedRows(using: rowQuery)
         }
     }
 
@@ -202,7 +231,7 @@ struct ScanComparisonView: View {
             }
             .width(min: 105, ideal: 120)
 
-            TableColumn("Delta", sortUsing: ScanComparisonRowComparator(field: .absoluteAllocatedDelta)) { row in
+            TableColumn("Delta", sortUsing: ScanComparisonRowComparator(field: .allocatedDelta)) { row in
                 Text(signedSize(row.allocatedDelta))
                     .foregroundStyle(deltaColor(row.allocatedDelta))
                     .monospacedDigit()
@@ -281,37 +310,18 @@ struct ScanComparisonView: View {
             : "Adjust filter or search."
     }
 
-    private var displayedRows: [ScanComparisonRow] {
-        let filtered = comparison.rows.filter { row in
-            filter.matches(row) && searchMatches(row)
-        }
-        return sorted(filtered)
+    private var rowQuery: ScanComparisonRowQuery {
+        ScanComparisonRowQuery(
+            changeKind: filter.changeKind,
+            searchText: searchText,
+            sortOrder: sortOrder
+        )
     }
 
-    private func searchMatches(_ row: ScanComparisonRow) -> Bool {
-        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedSearchText.isEmpty else { return true }
-        let query = SearchNormalizer.normalize(trimmedSearchText)
-        return SearchNormalizer.normalize(row.name).contains(query) ||
-            SearchNormalizer.normalize(row.relativePath).contains(query)
-    }
-
-    private func sorted(_ rows: [ScanComparisonRow]) -> [ScanComparisonRow] {
-        rows.sorted { lhs, rhs in
-            for comparator in sortOrder {
-                switch comparator.compare(lhs, rhs) {
-                case .orderedAscending:
-                    return true
-                case .orderedDescending:
-                    return false
-                case .orderedSame:
-                    continue
-                @unknown default:
-                    continue
-                }
-            }
-            return false
-        }
+    private func refreshDisplayedRows(using query: ScanComparisonRowQuery) {
+        let rows = query.applying(to: comparison.rows)
+        displayedRows = rows
+        selection.formIntersection(rows.lazy.map(\.id))
     }
 
     private func sizeText(_ size: Int64?) -> String {
@@ -367,18 +377,18 @@ private enum ScanComparisonRowFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    func matches(_ row: ScanComparisonRow) -> Bool {
+    var changeKind: ScanComparisonChangeKind? {
         switch self {
         case .all:
-            return true
+            return nil
         case .added:
-            return row.kind == .added
+            return .added
         case .removed:
-            return row.kind == .removed
+            return .removed
         case .grew:
-            return row.kind == .grew
+            return .grew
         case .shrank:
-            return row.kind == .shrank
+            return .shrank
         }
     }
 }

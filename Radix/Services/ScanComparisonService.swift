@@ -535,6 +535,41 @@ nonisolated struct ScanComparisonRowComparator: Equatable, SortComparator, Senda
     }
 }
 
+nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
+    let changeKind: ScanComparisonChangeKind?
+    let searchText: String
+    let sortOrder: [ScanComparisonRowComparator]
+
+    func applying(to rows: [ScanComparisonRow]) -> [ScanComparisonRow] {
+        let query = SearchNormalizer.normalize(
+            searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        let filteredRows = rows.filter { row in
+            guard changeKind == nil || row.kind == changeKind else { return false }
+            guard !query.isEmpty else { return true }
+            return SearchNormalizer.normalize(row.name).contains(query)
+                || SearchNormalizer.normalize(row.relativePath).contains(query)
+        }
+
+        guard !sortOrder.isEmpty else { return filteredRows }
+        return filteredRows.sorted { lhs, rhs in
+            for comparator in sortOrder {
+                switch comparator.compare(lhs, rhs) {
+                case .orderedAscending:
+                    return true
+                case .orderedDescending:
+                    return false
+                case .orderedSame:
+                    continue
+                @unknown default:
+                    continue
+                }
+            }
+            return false
+        }
+    }
+}
+
 private nonisolated extension String {
     func trimmingPrefix(_ prefix: String) -> String {
         guard hasPrefix(prefix) else { return self }

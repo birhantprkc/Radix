@@ -227,6 +227,68 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.allocatedDelta, 0)
     }
 
+    func testRowQuerySortsDeltaByDisplayedSignedValue() {
+        let grewBefore = makeTestFileNode(id: "/before/grew.bin", name: "grew.bin", size: 10)
+        let grewAfter = makeTestFileNode(id: "/after/grew.bin", name: "grew.bin", size: 20)
+        let shrankBefore = makeTestFileNode(id: "/before/shrank.bin", name: "shrank.bin", size: 100)
+        let shrankAfter = makeTestFileNode(id: "/after/shrank.bin", name: "shrank.bin", size: 20)
+        let rows = [
+            ScanComparisonRow(
+                relativePath: "shrank.bin",
+                kind: .shrank,
+                beforeNode: shrankBefore,
+                afterNode: shrankAfter
+            ),
+            ScanComparisonRow(
+                relativePath: "grew.bin",
+                kind: .grew,
+                beforeNode: grewBefore,
+                afterNode: grewAfter
+            ),
+        ]
+        let query = ScanComparisonRowQuery(
+            changeKind: nil,
+            searchText: "",
+            sortOrder: [ScanComparisonRowComparator(field: .allocatedDelta, order: .reverse)]
+        )
+
+        let result = query.applying(to: rows)
+
+        XCTAssertEqual(result.map(\.relativePath), ["grew.bin", "shrank.bin"])
+    }
+
+    func testRowQueryFiltersKindAndNormalizedPath() {
+        let addedNode = makeTestFileNode(
+            id: "/after/Library/Application Support/cache.bin",
+            name: "cache.bin",
+            size: 10
+        )
+        let removedNode = makeTestFileNode(id: "/before/other.bin", name: "other.bin", size: 20)
+        let rows = [
+            ScanComparisonRow(
+                relativePath: "Library/Application Support/cache.bin",
+                kind: .added,
+                beforeNode: nil,
+                afterNode: addedNode
+            ),
+            ScanComparisonRow(
+                relativePath: "other.bin",
+                kind: .removed,
+                beforeNode: removedNode,
+                afterNode: nil
+            ),
+        ]
+        let query = ScanComparisonRowQuery(
+            changeKind: .added,
+            searchText: "application support",
+            sortOrder: []
+        )
+
+        let result = query.applying(to: rows)
+
+        XCTAssertEqual(result.map(\.relativePath), ["Library/Application Support/cache.bin"])
+    }
+
     func testUnchangedAndRootRowsAreExcluded() async throws {
         let unchangedBefore = makeTestFileNode(id: "/before/unchanged.bin", name: "unchanged.bin", size: 20)
         let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [unchangedBefore])
