@@ -2438,6 +2438,49 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testDroppedComparisonSnapshotLoadsIntoRequestedSlot() async throws {
+        let archiveURL = URL(filePath: "/tmp/dropped.radixscan", directoryHint: .isDirectory)
+        let snapshot = makeComparisonSnapshot(
+            rootPath: "/dropped-root",
+            fileSize: 10,
+            sourceURL: archiveURL
+        )
+        let archiveService = try SpyScanArchiveService(
+            previewResultsByURL: [
+                archiveURL: makeArchivePreview(archiveURL: archiveURL, snapshot: snapshot),
+            ]
+        )
+        let model = AppModel(dependencies: makeDependencies(scanArchiveService: archiveService))
+
+        model.compareScanSnapshots()
+        model.dropComparisonSnapshot(archiveURL, for: .after)
+
+        try await waitForAppModelCondition("dropped comparison snapshot loaded") {
+            model.pendingComparisonSetup?.after?.displayName == snapshot.target.displayName
+        }
+
+        XCTAssertNil(model.pendingComparisonSetup?.before)
+        let previewedURLs = await archiveService.previewedURLsSnapshot()
+        XCTAssertEqual(previewedURLs, [archiveURL])
+    }
+
+    @MainActor
+    func testDroppedComparisonSnapshotRejectsOtherFileTypes() async throws {
+        let archiveService = SpyScanArchiveService()
+        let model = AppModel(dependencies: makeDependencies(scanArchiveService: archiveService))
+
+        model.compareScanSnapshots()
+        model.dropComparisonSnapshot(URL(filePath: "/tmp/not-a-scan.zip"), for: .before)
+
+        XCTAssertEqual(
+            model.pendingComparisonSetup?.errorMessage,
+            "Drop a .radixscan saved scan."
+        )
+        let previewedURLs = await archiveService.previewedURLsSnapshot()
+        XCTAssertTrue(previewedURLs.isEmpty)
+    }
+
+    @MainActor
     func testComparisonSetupRejectsReverseChronologicalOrder() async throws {
         let oldURL = URL(filePath: "/tmp/swap-old.radixscan", directoryHint: .isDirectory)
         let newURL = URL(filePath: "/tmp/swap-new.radixscan", directoryHint: .isDirectory)

@@ -4,6 +4,7 @@ struct ScanComparisonSetupSheet: View {
     let setup: ScanComparisonSetup
     let canUseCurrentScan: Bool
     let onChooseSnapshot: (ScanComparisonSlot) -> Void
+    let onDropSnapshot: (URL, ScanComparisonSlot) -> Void
     let onUseCurrentScan: (ScanComparisonSlot) -> Void
     let onClear: (ScanComparisonSlot) -> Void
     let onSwap: () -> Void
@@ -41,6 +42,7 @@ struct ScanComparisonSetupSheet: View {
                     canUseCurrentScan: canUseCurrentScan && setup.canAssignCurrentScan(to: .before),
                     actionsDisabled: isBusy,
                     onChooseSnapshot: onChooseSnapshot,
+                    onDropSnapshot: onDropSnapshot,
                     onUseCurrentScan: onUseCurrentScan,
                     onClear: onClear
                 )
@@ -62,6 +64,7 @@ struct ScanComparisonSetupSheet: View {
                     canUseCurrentScan: canUseCurrentScan && setup.canAssignCurrentScan(to: .after),
                     actionsDisabled: isBusy,
                     onChooseSnapshot: onChooseSnapshot,
+                    onDropSnapshot: onDropSnapshot,
                     onUseCurrentScan: onUseCurrentScan,
                     onClear: onClear
                 )
@@ -109,8 +112,10 @@ private struct ScanComparisonCandidateGroup: View {
     let canUseCurrentScan: Bool
     let actionsDisabled: Bool
     let onChooseSnapshot: (ScanComparisonSlot) -> Void
+    let onDropSnapshot: (URL, ScanComparisonSlot) -> Void
     let onUseCurrentScan: (ScanComparisonSlot) -> Void
     let onClear: (ScanComparisonSlot) -> Void
+    @State private var isDropTargeted = false
 
     var body: some View {
         GroupBox {
@@ -143,6 +148,24 @@ private struct ScanComparisonCandidateGroup: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.accentColor.opacity(isDropTargeted ? 0.1 : 0))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    Color.accentColor.opacity(isDropTargeted ? 0.9 : 0),
+                    style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+                )
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !actionsDisabled, let sourceURL = urls.first else { return false }
+            onDropSnapshot(sourceURL, slot)
+            return true
+        } isTargeted: { isTargeted in
+            isDropTargeted = isTargeted && !actionsDisabled
+        }
     }
 
     private var emptyContent: some View {
@@ -158,6 +181,10 @@ private struct ScanComparisonCandidateGroup: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            Text("or drop a saved scan here")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
 
             sourceActions
                 .padding(.top, 4)

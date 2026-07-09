@@ -1120,6 +1120,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func dropComparisonSnapshot(_ sourceURL: URL, for slot: ScanComparisonSlot) {
+        guard pendingComparisonSetup != nil else { return }
+        guard pendingComparisonSetup?.loadingSlot == nil else { return }
+        guard sourceURL.pathExtension.lowercased() == ScanArchiveService.fileExtension else {
+            pendingComparisonSetup?.errorMessage =
+                "Drop a .\(ScanArchiveService.fileExtension) saved scan."
+            return
+        }
+
+        previewComparisonSnapshot(from: sourceURL, for: slot)
+    }
+
     func useCurrentScanForComparisonSlot(_ slot: ScanComparisonSlot) {
         guard var setup = pendingComparisonSetup else { return }
         guard canUseCurrentScanInComparisonSetup,

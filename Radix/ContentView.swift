@@ -155,6 +155,9 @@ struct ContentView: View {
                     onChooseSnapshot: { slot in
                         appModel.chooseComparisonSnapshot(for: slot)
                     },
+                    onDropSnapshot: { url, slot in
+                        appModel.dropComparisonSnapshot(url, for: slot)
+                    },
                     onUseCurrentScan: { slot in
                         appModel.useCurrentScanForComparisonSlot(slot)
                     },
