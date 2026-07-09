@@ -142,8 +142,9 @@ nonisolated struct ScanComparisonSummary: Equatable, Sendable {
         afterWarningCount - beforeWarningCount
     }
 
+    /// Items at the same relative path in both scans whose tracked size changed.
     var changedCount: Int {
-        addedCount + removedCount + grewCount + shrankCount + movedCount
+        grewCount + shrankCount
     }
 
     /// Net allocated change that can be attributed to final comparison rows.
@@ -250,7 +251,8 @@ nonisolated struct ScanComparisonLocationChange: Identifiable, Equatable, Sendab
     /// The node at `relativePath` in the after snapshot, when it was indexed.
     let afterNode: FileNodeRecord?
 
-    var changedCount: Int {
+    /// Non-overlapping comparison rows attributed to this location.
+    var affectedCount: Int {
         addedCount + removedCount + grewCount + shrankCount + movedCount
     }
 

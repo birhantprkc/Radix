@@ -53,7 +53,6 @@ struct ContentView: View {
                 },
                 workspaceDidAppear: workspaceDidAppear,
                 comparisonRowActions: comparisonRowActions,
-                comparisonLocationActions: comparisonLocationActions,
                 actions: workspaceActions
             )
         }
@@ -628,7 +627,6 @@ private struct WorkspaceDetailView: View {
     let closeScanComparison: () -> Void
     let workspaceDidAppear: () -> Void
     let comparisonRowActions: ScanComparisonRowActions
-    let comparisonLocationActions: ScanComparisonLocationActions
     let actions: WorkspaceActions
 
     var body: some View {
@@ -636,7 +634,6 @@ private struct WorkspaceDetailView: View {
             ScanComparisonView(
                 comparison: scanComparison,
                 actions: comparisonRowActions,
-                locationActions: comparisonLocationActions,
                 onClose: closeScanComparison
             )
         } else {
@@ -764,15 +761,6 @@ private extension ContentView {
             showInBrowser: { appModel.showComparisonRowInBrowser($0) },
             canShowInBrowser: { appModel.canShowComparisonRowInBrowser($0) },
             copyPath: { appModel.copyComparisonRowPath($0) }
-        )
-    }
-
-    var comparisonLocationActions: ScanComparisonLocationActions {
-        ScanComparisonLocationActions(
-            reveal: { appModel.revealComparisonLocationInFinder($0) },
-            canReveal: { appModel.canRevealComparisonLocationInFinder($0) },
-            showInBrowser: { appModel.showComparisonLocationInBrowser($0) },
-            canShowInBrowser: { appModel.canShowComparisonLocationInBrowser($0) }
         )
     }
 

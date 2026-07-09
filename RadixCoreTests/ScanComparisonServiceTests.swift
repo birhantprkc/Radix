@@ -66,7 +66,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.addedCount, 1)
         XCTAssertEqual(comparison.summary.removedCount, 1)
         XCTAssertEqual(comparison.summary.grewCount, 1)
-        XCTAssertEqual(comparison.summary.changedCount, 3)
+        XCTAssertEqual(comparison.summary.changedCount, 1)
     }
 
     func testNestedFileGrowthDoesNotEmitAncestorDirectoryRows() async throws {
@@ -99,6 +99,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.rows[0].kind, .grew)
         XCTAssertEqual(comparison.rows[0].allocatedDelta, 90)
         XCTAssertFalse(comparison.rows.contains { $0.isDirectory })
+        XCTAssertEqual(comparison.summary.fileCountDelta, 0)
         XCTAssertEqual(comparison.summary.grewCount, 1)
         XCTAssertEqual(comparison.summary.changedCount, 1)
         // The aggregate delta still reflects the full change even though no directory row is emitted.
@@ -430,7 +431,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.topLevelChanges[1].removedCount, 1)
         XCTAssertEqual(comparison.topLevelChanges[2].grewCount, 1)
         XCTAssertEqual(comparison.topLevelChanges.reduce(0) { $0 + $1.allocatedDelta }, 40)
-        XCTAssertEqual(comparison.topLevelChanges.reduce(0) { $0 + $1.changedCount }, comparison.summary.changedCount)
+        XCTAssertEqual(comparison.topLevelChanges.reduce(0) { $0 + $1.affectedCount }, 3)
         XCTAssertEqual(comparison.summary.grossIncreasedAllocatedSize, 60)
         XCTAssertEqual(comparison.summary.grossReclaimedAllocatedSize, 20)
         XCTAssertEqual(comparison.summary.attributedAllocatedDelta, 40)

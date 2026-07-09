@@ -8,13 +8,6 @@ struct ScanComparisonRowActions {
     let copyPath: (ScanComparisonRow) -> Void
 }
 
-struct ScanComparisonLocationActions {
-    let reveal: (ScanComparisonLocationChange) -> Void
-    let canReveal: (ScanComparisonLocationChange) -> Bool
-    let showInBrowser: (ScanComparisonLocationChange) -> Void
-    let canShowInBrowser: (ScanComparisonLocationChange) -> Bool
-}
-
 struct ScanComparisonView: View {
     private static let initialSortOrder = [
         ScanComparisonRowComparator.defaultOrder
@@ -22,7 +15,6 @@ struct ScanComparisonView: View {
 
     let comparison: ScanComparison
     let actions: ScanComparisonRowActions
-    let locationActions: ScanComparisonLocationActions
     let onClose: () -> Void
 
     @State private var filter: ScanComparisonRowFilter = .all
@@ -35,12 +27,10 @@ struct ScanComparisonView: View {
     init(
         comparison: ScanComparison,
         actions: ScanComparisonRowActions,
-        locationActions: ScanComparisonLocationActions,
         onClose: @escaping () -> Void
     ) {
         self.comparison = comparison
         self.actions = actions
-        self.locationActions = locationActions
         self.onClose = onClose
 
         let sortOrder = Self.initialSortOrder
@@ -97,31 +87,8 @@ struct ScanComparisonView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Storage Changes")
-                        .font(.title2.weight(.semibold))
-
-                    Text(storageChangeHeadline)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-
-                Spacer(minLength: 16)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Tracked Storage")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(signedSize(comparison.summary.allocatedDelta))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(deltaColor(comparison.summary.allocatedDelta))
-                        .monospacedDigit()
-                }
-            }
+            Text("Storage Changes")
+                .font(.title2.weight(.semibold))
 
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 18) {
@@ -148,7 +115,9 @@ struct ScanComparisonView: View {
                 }
             }
 
-            coverageBanner
+            if comparison.coverage.confidence != .high {
+                coverageBanner
+            }
 
             if !highlightedLocations.isEmpty {
                 locationOverview
@@ -183,17 +152,6 @@ struct ScanComparisonView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-    }
-
-    private var storageChangeHeadline: String {
-        let delta = comparison.summary.allocatedDelta
-        if delta > 0 {
-            return "Tracked storage increased by \(RadixFormatters.size(delta))."
-        }
-        if delta < 0 {
-            return "Tracked storage decreased by \(RadixFormatters.size(-delta))."
-        }
-        return "Tracked storage did not change."
     }
 
     private var coverageBanner: some View {
@@ -298,7 +256,7 @@ struct ScanComparisonView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Text("\(location.changedCount.formatted()) change\(location.changedCount == 1 ? "" : "s")")
+                Text("\(location.affectedCount.formatted()) affected item\(location.affectedCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -314,26 +272,6 @@ struct ScanComparisonView: View {
                 focusedLocationPath = location.relativePath
             }
             .controlSize(.small)
-
-            Button {
-                locationActions.showInBrowser(location)
-            } label: {
-                Label("Show in Browser", systemImage: "sidebar.squares.left")
-            }
-            .labelStyle(.iconOnly)
-            .controlSize(.small)
-            .disabled(!locationActions.canShowInBrowser(location))
-            .help("Show in Browser")
-
-            Button {
-                locationActions.reveal(location)
-            } label: {
-                Label("Reveal Current Location in Finder", systemImage: "folder")
-            }
-            .labelStyle(.iconOnly)
-            .controlSize(.small)
-            .disabled(!locationActions.canReveal(location))
-            .help("Reveal Current Location in Finder")
         }
         .padding(.vertical, 2)
     }
@@ -364,7 +302,11 @@ struct ScanComparisonView: View {
                 comparisonMetric("Files", signedCount(comparison.summary.fileCountDelta))
                 comparisonMetric("Folders", signedCount(comparison.summary.directoryCountDelta))
                 comparisonMetric("Warnings", signedCount(comparison.summary.warningCountDelta))
-                comparisonMetric("Changed", comparison.summary.changedCount.formatted())
+                comparisonMetric(
+                    "Changed",
+                    comparison.summary.changedCount.formatted()
+                )
+                .help("Items present in both scans whose tracked size changed")
             }
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
@@ -375,7 +317,11 @@ struct ScanComparisonView: View {
                 }
                 GridRow {
                     comparisonMetric("Warnings", signedCount(comparison.summary.warningCountDelta))
-                    comparisonMetric("Changed", comparison.summary.changedCount.formatted())
+                    comparisonMetric(
+                        "Changed",
+                        comparison.summary.changedCount.formatted()
+                    )
+                    .help("Items present in both scans whose tracked size changed")
                     Color.clear.frame(width: 1, height: 1)
                 }
             }
