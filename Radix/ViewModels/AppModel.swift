@@ -1191,7 +1191,6 @@ final class AppModel: ObservableObject {
         after: ScanComparisonCandidate? = nil
     ) {
         cancelArchiveOperation()
-        scanComparison = nil
         pendingComparisonSetup = ScanComparisonSetup(before: before, after: after)
     }
 
@@ -1257,7 +1256,6 @@ final class AppModel: ObservableObject {
 
     private func previewArchiveSnapshotComparison(sourceURLs: [URL]) {
         cancelArchiveOperation()
-        scanComparison = nil
         pendingComparisonSetup = nil
         let operationID = beginArchiveOperation(
             kind: .compare,
@@ -1299,7 +1297,6 @@ final class AppModel: ObservableObject {
 
     private func previewCurrentScanComparison(sourceURL: URL, currentSnapshot: ScanSnapshot) {
         cancelArchiveOperation()
-        scanComparison = nil
         pendingComparisonSetup = nil
         let currentSnapshotID = currentSnapshot.id
         let operationID = beginArchiveOperation(

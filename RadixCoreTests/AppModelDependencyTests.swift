@@ -2379,6 +2379,18 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.scanComparison?.rows.first?.kind, .grew)
         XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, 25)
         XCTAssertNil(model.scanState.snapshot)
+
+        let activeComparisonID = try XCTUnwrap(model.scanComparison?.id)
+
+        model.compareScanSnapshots()
+
+        XCTAssertEqual(model.scanComparison?.id, activeComparisonID)
+        XCTAssertNotNil(model.pendingComparisonSetup)
+
+        model.cancelComparisonSetup()
+
+        XCTAssertEqual(model.scanComparison?.id, activeComparisonID)
+        XCTAssertNil(model.pendingComparisonSetup)
     }
 
     @MainActor
