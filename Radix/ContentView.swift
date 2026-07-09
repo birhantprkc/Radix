@@ -51,6 +51,7 @@ struct ContentView: View {
                     appModel.closeScanComparison()
                 },
                 comparisonRowActions: comparisonRowActions,
+                comparisonLocationActions: comparisonLocationActions,
                 actions: workspaceActions
             )
         }
@@ -64,17 +65,20 @@ struct ContentView: View {
         .background(WorkspaceWindowObserver { window in
             appModel.setWorkspaceWindowNumber(window?.windowNumber)
         })
-        .inspector(isPresented: Binding(
-            get: { showsInspector && appModel.scanComparison == nil },
-            set: { showsInspector = $0 }
-        )) {
-            SelectionInspectorView(
-                scanState: appModel.scanState,
-                navigation: appModel.navigation,
-                fullDiskAccessStatus: appModel.fullDiskAccessStatus,
-                actions: selectionInspectorActions
-            )
-                .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
+        .inspector(isPresented: $showsInspector) {
+            Group {
+                if appModel.scanComparison == nil {
+                    SelectionInspectorView(
+                        scanState: appModel.scanState,
+                        navigation: appModel.navigation,
+                        fullDiskAccessStatus: appModel.fullDiskAccessStatus,
+                        actions: selectionInspectorActions
+                    )
+                } else {
+                    ComparisonInspectorPlaceholder()
+                }
+            }
+            .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
         }
         .focusedSceneValue(\.inspectorVisibility, $showsInspector)
         .overlay(alignment: .top) {
@@ -557,6 +561,17 @@ private extension ContentView {
     }
 }
 
+private struct ComparisonInspectorPlaceholder: View {
+    var body: some View {
+        ContentUnavailableView(
+            "Storage Changes",
+            systemImage: "chart.bar.xaxis",
+            description: Text("Close the comparison to inspect files in the current scan.")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 private struct WorkspaceWindowObserver: NSViewRepresentable {
     let onWindowChange: (NSWindow?) -> Void
 
@@ -616,6 +631,7 @@ private struct WorkspaceDetailView: View {
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
     let closeScanComparison: () -> Void
     let comparisonRowActions: ScanComparisonRowActions
+    let comparisonLocationActions: ScanComparisonLocationActions
     let actions: WorkspaceActions
 
     var body: some View {
@@ -623,6 +639,7 @@ private struct WorkspaceDetailView: View {
             ScanComparisonView(
                 comparison: scanComparison,
                 actions: comparisonRowActions,
+                locationActions: comparisonLocationActions,
                 onClose: closeScanComparison
             )
         } else {
@@ -669,6 +686,8 @@ private extension ContentView {
             startScan: { appModel.startScan($0) },
             stopScan: { appModel.stopScan() },
             rescan: { appModel.rescan() },
+            compareWithPreviousScan: { appModel.compareCurrentScanWithPreviousScan() },
+            canCompareWithPreviousScan: { appModel.canCompareCurrentScanWithPreviousScan },
             handleDroppedURLs: { appModel.handleDroppedURLs($0) },
             selectNodeImmediately: { appModel.select(nodeID: $0) },
             selectNode: { appModel.selectAfterViewUpdate(nodeID: $0) },
@@ -697,6 +716,15 @@ private extension ContentView {
             showInBrowser: { appModel.showComparisonRowInBrowser($0) },
             canShowInBrowser: { appModel.canShowComparisonRowInBrowser($0) },
             copyPath: { appModel.copyComparisonRowPath($0) }
+        )
+    }
+
+    var comparisonLocationActions: ScanComparisonLocationActions {
+        ScanComparisonLocationActions(
+            reveal: { appModel.revealComparisonLocationInFinder($0) },
+            canReveal: { appModel.canRevealComparisonLocationInFinder($0) },
+            showInBrowser: { appModel.showComparisonLocationInBrowser($0) },
+            canShowInBrowser: { appModel.canShowComparisonLocationInBrowser($0) }
         )
     }
 

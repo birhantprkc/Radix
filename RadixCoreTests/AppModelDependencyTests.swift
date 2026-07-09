@@ -243,6 +243,64 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testCompareWithPreviousScanUsesCompatibleRescanBaseline() async throws {
+        let scanService = ControlledAppModelScanService()
+        let model = AppModel(dependencies: makeDependencies(scanService: scanService))
+        let target = makeTestTarget("/comparison-baseline")
+
+        model.startScan(target)
+        try await waitUntil("first comparison scan started") {
+            scanService.requests.count == 1
+        }
+        let firstOptions = try XCTUnwrap(scanService.options.first)
+        let firstSnapshot = makeComparisonSnapshot(
+            rootPath: "/comparison-baseline",
+            fileSize: 10,
+            startedAt: Date(timeIntervalSince1970: 10),
+            finishedAt: Date(timeIntervalSince1970: 20),
+            scanOptions: firstOptions
+        )
+        scanService.yield(.finished(firstSnapshot), scanIndex: 0)
+        scanService.finish(scanIndex: 0)
+        try await waitUntil("first comparison scan completed") {
+            model.scanState.snapshot?.id == firstSnapshot.id
+        }
+
+        model.rescan()
+        try await waitUntil("second comparison scan started") {
+            scanService.requests.count == 2
+        }
+        let secondOptions = try XCTUnwrap(scanService.options.last)
+        XCTAssertEqual(secondOptions, firstOptions)
+        let secondSnapshot = makeComparisonSnapshot(
+            rootPath: "/comparison-baseline",
+            fileSize: 35,
+            startedAt: Date(timeIntervalSince1970: 30),
+            finishedAt: Date(timeIntervalSince1970: 40),
+            scanOptions: secondOptions
+        )
+        scanService.yield(.finished(secondSnapshot), scanIndex: 1)
+        scanService.finish(scanIndex: 1)
+        try await waitUntil("second comparison scan completed") {
+            model.scanState.snapshot?.id == secondSnapshot.id
+        }
+
+        XCTAssertTrue(model.canCompareCurrentScanWithPreviousScan)
+        model.compareCurrentScanWithPreviousScan()
+
+        try await waitForAppModelCondition("previous scan comparison built") {
+            model.scanComparison?.after.id == secondSnapshot.id
+        }
+
+        XCTAssertEqual(model.scanComparison?.before.id, firstSnapshot.id)
+        XCTAssertEqual(model.scanComparison?.rows.first?.kind, .grew)
+        XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, 25)
+        let location = try XCTUnwrap(model.scanComparison?.topLevelChanges.first)
+        XCTAssertEqual(location.relativePath, "shared.bin")
+        XCTAssertTrue(model.canShowComparisonLocationInBrowser(location))
+    }
+
+    @MainActor
     func testFullDiskAccessFromOnboardingShowsWelcomeAfterRelaunch() {
         let preferences = SpyAppPreferencesStore(
             preferences: AppPreferences(
@@ -2247,14 +2305,14 @@ final class AppModelDependencyTests: XCTestCase {
         let oldURL = URL(filePath: "/tmp/old.radixscan", directoryHint: .isDirectory)
         let newURL = URL(filePath: "/tmp/new.radixscan", directoryHint: .isDirectory)
         let oldSnapshot = makeComparisonSnapshot(
-            rootPath: "/old-root",
+            rootPath: "/comparison-root",
             fileSize: 10,
             startedAt: Date(timeIntervalSince1970: 10),
             finishedAt: Date(timeIntervalSince1970: 20),
             sourceURL: oldURL
         )
         let newSnapshot = makeComparisonSnapshot(
-            rootPath: "/new-root",
+            rootPath: "/comparison-root",
             fileSize: 35,
             startedAt: Date(timeIntervalSince1970: 30),
             finishedAt: Date(timeIntervalSince1970: 40),
@@ -2321,7 +2379,7 @@ final class AppModelDependencyTests: XCTestCase {
     func testCompareCurrentScanWithSnapshotUsesCurrentScanAsAfter() async throws {
         let archiveURL = URL(filePath: "/tmp/current-compare.radixscan", directoryHint: .isDirectory)
         let archivedSnapshot = makeComparisonSnapshot(
-            rootPath: "/archived-root",
+            rootPath: "/current-root",
             fileSize: 10,
             sourceURL: archiveURL
         )
@@ -2380,18 +2438,18 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
-    func testComparisonSetupSwapReversesFinalDiffDirection() async throws {
+    func testComparisonSetupRejectsReverseChronologicalOrder() async throws {
         let oldURL = URL(filePath: "/tmp/swap-old.radixscan", directoryHint: .isDirectory)
         let newURL = URL(filePath: "/tmp/swap-new.radixscan", directoryHint: .isDirectory)
         let oldSnapshot = makeComparisonSnapshot(
-            rootPath: "/swap-old",
+            rootPath: "/swap-root",
             fileSize: 10,
             startedAt: Date(timeIntervalSince1970: 10),
             finishedAt: Date(timeIntervalSince1970: 20),
             sourceURL: oldURL
         )
         let newSnapshot = makeComparisonSnapshot(
-            rootPath: "/swap-new",
+            rootPath: "/swap-root",
             fileSize: 35,
             startedAt: Date(timeIntervalSince1970: 30),
             finishedAt: Date(timeIntervalSince1970: 40),
@@ -2429,17 +2487,11 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.swapPendingComparisonSetup()
         XCTAssertEqual(model.pendingComparisonSetup?.before?.displayName, newSnapshot.target.displayName)
-
-        model.confirmComparisonSetup()
-
-        try await waitForAppModelCondition("swapped comparison built") {
-            model.scanComparison?.summary.changedCount == 1
-        }
-
-        XCTAssertEqual(model.scanComparison?.before.id, newSnapshot.id)
-        XCTAssertEqual(model.scanComparison?.after.id, oldSnapshot.id)
-        XCTAssertEqual(model.scanComparison?.rows.first?.kind, .shrank)
-        XCTAssertEqual(model.scanComparison?.rows.first?.allocatedDelta, -25)
+        XCTAssertFalse(model.pendingComparisonSetup?.canCompare ?? true)
+        XCTAssertEqual(
+            model.pendingComparisonSetup?.validationMessage,
+            "The earlier scan must precede the later scan."
+        )
     }
 
     @MainActor
@@ -2457,7 +2509,7 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertFalse(model.canCompareCurrentScanWithSnapshot)
     }
 
-    func testComparisonSetupWarnsAboutUnrelatedRootsAndDifferentScanOptions() {
+    func testComparisonSetupBlocksDifferentScanSettings() {
         var beforeOptions = ScanOptions()
         beforeOptions.includeHiddenFiles = true
         var afterOptions = beforeOptions
@@ -2470,20 +2522,20 @@ final class AppModelDependencyTests: XCTestCase {
                 scanOptions: beforeOptions
             )),
             after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Volumes/Backup/Documents",
+                rootPath: "/Users/example/Documents",
                 fileSize: 20,
                 scanOptions: afterOptions
             ))
         )
 
-        XCTAssertTrue(setup.canCompare)
+        XCTAssertFalse(setup.canCompare)
         XCTAssertEqual(
-            setup.compatibilityWarnings,
-            [.unrelatedRoots, .differentScanOptions]
+            setup.validationMessage,
+            "Choose scans made with the same scan settings."
         )
     }
 
-    func testComparisonSetupDoesNotWarnForRelatedRootsWithMatchingScanOptions() {
+    func testComparisonSetupBlocksDifferentRootsWithMatchingScanOptions() {
         var options = ScanOptions()
         options.exclusionPatterns = ["*.tmp"]
 
@@ -2500,7 +2552,43 @@ final class AppModelDependencyTests: XCTestCase {
             ))
         )
 
-        XCTAssertTrue(setup.compatibilityWarnings.isEmpty)
+        XCTAssertFalse(setup.canCompare)
+        XCTAssertEqual(setup.validationMessage, "Choose scans of the same location.")
+    }
+
+    func testComparisonSetupBlocksDifferentTargetKinds() {
+        let options = ScanOptions()
+        let setup = ScanComparisonSetup(
+            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
+                rootPath: "/Users/example",
+                fileSize: 10,
+                scanOptions: options,
+                targetKind: .folder
+            )),
+            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
+                rootPath: "/Users/example",
+                fileSize: 20,
+                scanOptions: options,
+                targetKind: .volume
+            ))
+        )
+
+        XCTAssertFalse(setup.canCompare)
+        XCTAssertEqual(setup.validationMessage, "Choose scans of the same location.")
+    }
+
+    func testComparisonSetupDoesNotOfferCurrentScanInBothSlots() {
+        let currentSnapshot = makeComparisonSnapshot(
+            rootPath: "/Users/example",
+            fileSize: 20,
+            scanOptions: ScanOptions()
+        )
+        let setup = ScanComparisonSetup(
+            after: ScanComparisonCandidate(snapshot: currentSnapshot)
+        )
+
+        XCTAssertFalse(setup.canAssignCurrentScan(to: .before))
+        XCTAssertTrue(setup.canAssignCurrentScan(to: .after))
     }
 }
 
@@ -2571,6 +2659,7 @@ private final class ControlledAppModelScanService: ScanEventStreaming, @unchecke
     private let lock = NSLock()
     private var continuations: [Continuation] = []
     private var storedRequests: [ScanTarget] = []
+    private var storedOptions: [ScanOptions] = []
 
     var requests: [ScanTarget] {
         lock.lock()
@@ -2578,11 +2667,18 @@ private final class ControlledAppModelScanService: ScanEventStreaming, @unchecke
         return storedRequests
     }
 
+    var options: [ScanOptions] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedOptions
+    }
+
     func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error> {
         AsyncThrowingStream { continuation in
             lock.lock()
             continuations.append(continuation)
             storedRequests.append(target)
+            storedOptions.append(options)
             lock.unlock()
         }
     }
@@ -2702,7 +2798,8 @@ private func makeComparisonSnapshot(
     startedAt: Date = Date(timeIntervalSince1970: 1),
     finishedAt: Date? = Date(timeIntervalSince1970: 2),
     sourceURL: URL? = nil,
-    scanOptions: ScanOptions? = nil
+    scanOptions: ScanOptions? = nil,
+    targetKind: ScanTargetKind = .folder
 ) -> ScanSnapshot {
     let file = makeTestFileNode(id: "\(rootPath)/shared.bin", name: "shared.bin", size: fileSize)
     let root = makeTestDirectoryNode(id: rootPath, name: URL(filePath: rootPath).lastPathComponent, children: [file])
@@ -2719,7 +2816,7 @@ private func makeComparisonSnapshot(
     }
 
     return ScanSnapshot(
-        target: ScanTarget(id: root.id, url: root.url, displayName: root.name, kind: .folder),
+        target: ScanTarget(id: root.id, url: root.url, displayName: root.name, kind: targetKind),
         treeStore: store,
         startedAt: startedAt,
         finishedAt: finishedAt,

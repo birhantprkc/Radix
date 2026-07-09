@@ -101,17 +101,22 @@ struct RadixCommands: Commands {
 
             Divider()
 
-            Button("Compare Snapshots…", systemImage: "rectangle.split.2x1") {
+            Button("Compare Scans…", systemImage: "rectangle.split.2x1") {
                 appModel.compareScanSnapshots()
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
             .disabled(!appModel.canCompareScanSnapshots)
 
-            Button("Compare Current Scan With Snapshot…", systemImage: "arrow.left.arrow.right") {
+            Button("Compare Current Scan With Saved Scan…", systemImage: "arrow.left.arrow.right") {
                 appModel.compareCurrentScanWithSnapshot()
             }
             .keyboardShortcut("d", modifiers: [.command, .option])
             .disabled(!appModel.canCompareCurrentScanWithSnapshot)
+
+            Button("Compare With Previous Scan", systemImage: "chart.bar.xaxis") {
+                appModel.compareCurrentScanWithPreviousScan()
+            }
+            .disabled(!appModel.canCompareCurrentScanWithPreviousScan)
 
             Divider()
 

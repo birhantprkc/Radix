@@ -21,10 +21,10 @@ struct ScanComparisonSetupSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Compare Snapshots")
+                Text("Compare Scans")
                     .font(.title3.weight(.semibold))
 
-                Text("Choose the earlier and later snapshots you want to compare.")
+                Text("Choose two scans of the same location with matching scan settings.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -38,7 +38,7 @@ struct ScanComparisonSetupSheet: View {
                     slot: .before,
                     candidate: setup.before,
                     isLoading: setup.loadingSlot == .before,
-                    canUseCurrentScan: canUseCurrentScan,
+                    canUseCurrentScan: canUseCurrentScan && setup.canAssignCurrentScan(to: .before),
                     actionsDisabled: isBusy,
                     onChooseSnapshot: onChooseSnapshot,
                     onUseCurrentScan: onUseCurrentScan,
@@ -48,18 +48,18 @@ struct ScanComparisonSetupSheet: View {
                 Button {
                     onSwap()
                 } label: {
-                    Label("Swap Before and After", systemImage: "arrow.left.arrow.right")
+                    Label("Swap Earlier and Later", systemImage: "arrow.left.arrow.right")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.bordered)
                 .disabled(isBusy || (setup.before == nil && setup.after == nil))
-                .help("Swap Before and After")
+                .help("Swap Earlier and Later")
 
                 ScanComparisonCandidateGroup(
                     slot: .after,
                     candidate: setup.after,
                     isLoading: setup.loadingSlot == .after,
-                    canUseCurrentScan: canUseCurrentScan,
+                    canUseCurrentScan: canUseCurrentScan && setup.canAssignCurrentScan(to: .after),
                     actionsDisabled: isBusy,
                     onChooseSnapshot: onChooseSnapshot,
                     onUseCurrentScan: onUseCurrentScan,
@@ -79,12 +79,6 @@ struct ScanComparisonSetupSheet: View {
                             .lineLimit(2)
                     }
 
-                    ForEach(setup.compatibilityWarnings, id: \.self) { warning in
-                        Label(warning.message, systemImage: warning.symbolName)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                            .lineLimit(2)
-                    }
                 }
                 .frame(maxWidth: 430, alignment: .leading)
 
@@ -232,13 +226,13 @@ private struct ScanComparisonCandidateGroup: View {
 
     private var emptyStateMessage: String {
         canUseCurrentScan
-            ? "Choose a saved snapshot or use the current scan."
-            : "Choose a saved snapshot."
+            ? "Choose a saved scan or use the current scan."
+            : "Choose a saved scan."
     }
 
     private var sourceActions: some View {
         HStack(spacing: 8) {
-            Button("Choose Snapshot…") {
+            Button("Choose Saved Scan…") {
                 onChooseSnapshot(slot)
             }
 

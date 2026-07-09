@@ -227,6 +227,323 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.allocatedDelta, 0)
     }
 
+    func testUnambiguousFileIdentityMoveIsReportedAtDestination() async throws {
+        let identity = FileIdentity(device: 1, inode: 900)
+        let beforeFile = makeTestFileNode(
+            id: "/scan/Documents/old-name.bin",
+            name: "old-name.bin",
+            size: 64,
+            fileIdentity: identity
+        )
+        let beforeDocuments = makeTestDirectoryNode(
+            id: "/scan/Documents",
+            name: "Documents",
+            children: [beforeFile]
+        )
+        let beforeRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [beforeDocuments]
+        )
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeDocuments],
+            beforeDocuments.id: [beforeFile],
+        ])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterFile = makeTestFileNode(
+            id: "/scan/Documents/new-name.bin",
+            name: "new-name.bin",
+            size: 64,
+            fileIdentity: identity
+        )
+        let afterDocuments = makeTestDirectoryNode(
+            id: "/scan/Documents",
+            name: "Documents",
+            children: [afterFile]
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [afterDocuments]
+        )
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterDocuments],
+            afterDocuments.id: [afterFile],
+        ])
+        let afterSnapshot = makeTestSnapshot(root: afterRoot, store: afterStore)
+
+        let comparison = try await ScanComparisonService().compare(before: beforeSnapshot, after: afterSnapshot)
+
+        XCTAssertEqual(comparison.rows.count, 1)
+        let row = try XCTUnwrap(comparison.rows.first)
+        XCTAssertEqual(row.kind, .moved)
+        XCTAssertEqual(row.relativePath, "Documents/new-name.bin")
+        XCTAssertEqual(row.movedFromRelativePath, "Documents/old-name.bin")
+        XCTAssertEqual(row.allocatedDelta, 0)
+        XCTAssertEqual(comparison.summary.addedCount, 0)
+        XCTAssertEqual(comparison.summary.removedCount, 0)
+        XCTAssertEqual(comparison.summary.movedCount, 1)
+
+        XCTAssertEqual(comparison.topLevelChanges.count, 1)
+        let location = try XCTUnwrap(comparison.topLevelChanges.first)
+        XCTAssertEqual(location.relativePath, "Documents")
+        XCTAssertEqual(location.movedCount, 1)
+        XCTAssertEqual(location.representativeRelativePath, "Documents/new-name.bin")
+        XCTAssertEqual(location.afterNode?.id, "/scan/Documents")
+    }
+
+    func testAmbiguousFileIdentityDoesNotInferMove() async throws {
+        let identity = FileIdentity(device: 1, inode: 901)
+        let beforeFirst = makeTestFileNode(
+            id: "/scan/Documents/first.bin",
+            name: "first.bin",
+            size: 10,
+            fileIdentity: identity
+        )
+        let beforeSecond = makeTestFileNode(
+            id: "/scan/Documents/second.bin",
+            name: "second.bin",
+            size: 10,
+            fileIdentity: identity
+        )
+        let beforeDocuments = makeTestDirectoryNode(
+            id: "/scan/Documents",
+            name: "Documents",
+            children: [beforeFirst, beforeSecond]
+        )
+        let beforeRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [beforeDocuments]
+        )
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeDocuments],
+            beforeDocuments.id: [beforeFirst, beforeSecond],
+        ])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterFile = makeTestFileNode(
+            id: "/scan/Documents/renamed.bin",
+            name: "renamed.bin",
+            size: 10,
+            fileIdentity: identity
+        )
+        let afterDocuments = makeTestDirectoryNode(
+            id: "/scan/Documents",
+            name: "Documents",
+            children: [afterFile]
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [afterDocuments]
+        )
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterDocuments],
+            afterDocuments.id: [afterFile],
+        ])
+        let afterSnapshot = makeTestSnapshot(root: afterRoot, store: afterStore)
+
+        let comparison = try await ScanComparisonService().compare(before: beforeSnapshot, after: afterSnapshot)
+
+        XCTAssertFalse(comparison.rows.contains { $0.kind == .moved })
+        XCTAssertEqual(comparison.summary.addedCount, 1)
+        XCTAssertEqual(comparison.summary.removedCount, 2)
+        XCTAssertEqual(comparison.summary.movedCount, 0)
+    }
+
+    func testTopLevelChangesPartitionFinalRowsAndReportGrossSpaceChanges() async throws {
+        let beforeLibraryFile = makeTestFileNode(
+            id: "/scan/Library/cache.bin",
+            name: "cache.bin",
+            size: 10
+        )
+        let beforeDownloadsFile = makeTestFileNode(
+            id: "/scan/Downloads/old.bin",
+            name: "old.bin",
+            size: 20
+        )
+        let beforeLibrary = makeTestDirectoryNode(
+            id: "/scan/Library",
+            name: "Library",
+            children: [beforeLibraryFile]
+        )
+        let beforeDownloads = makeTestDirectoryNode(
+            id: "/scan/Downloads",
+            name: "Downloads",
+            children: [beforeDownloadsFile]
+        )
+        let beforeWork = makeTestDirectoryNode(id: "/scan/Work", name: "Work", children: [])
+        let beforeRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [beforeLibrary, beforeDownloads, beforeWork]
+        )
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeLibrary, beforeDownloads, beforeWork],
+            beforeLibrary.id: [beforeLibraryFile],
+            beforeDownloads.id: [beforeDownloadsFile],
+            beforeWork.id: [],
+        ])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterLibraryFile = makeTestFileNode(
+            id: "/scan/Library/cache.bin",
+            name: "cache.bin",
+            size: 30
+        )
+        let afterWorkFile = makeTestFileNode(
+            id: "/scan/Work/new.bin",
+            name: "new.bin",
+            size: 40
+        )
+        let afterLibrary = makeTestDirectoryNode(
+            id: "/scan/Library",
+            name: "Library",
+            children: [afterLibraryFile]
+        )
+        let afterDownloads = makeTestDirectoryNode(id: "/scan/Downloads", name: "Downloads", children: [])
+        let afterWork = makeTestDirectoryNode(
+            id: "/scan/Work",
+            name: "Work",
+            children: [afterWorkFile]
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [afterLibrary, afterDownloads, afterWork]
+        )
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterLibrary, afterDownloads, afterWork],
+            afterLibrary.id: [afterLibraryFile],
+            afterDownloads.id: [],
+            afterWork.id: [afterWorkFile],
+        ])
+        let afterSnapshot = makeTestSnapshot(root: afterRoot, store: afterStore)
+
+        let comparison = try await ScanComparisonService().compare(before: beforeSnapshot, after: afterSnapshot)
+
+        XCTAssertEqual(comparison.topLevelChanges.map(\.relativePath), ["Work", "Downloads", "Library"])
+        XCTAssertEqual(comparison.topLevelChanges.map(\.allocatedDelta), [40, -20, 20])
+        XCTAssertEqual(comparison.topLevelChanges[0].addedCount, 1)
+        XCTAssertEqual(comparison.topLevelChanges[1].removedCount, 1)
+        XCTAssertEqual(comparison.topLevelChanges[2].grewCount, 1)
+        XCTAssertEqual(comparison.topLevelChanges.reduce(0) { $0 + $1.allocatedDelta }, 40)
+        XCTAssertEqual(comparison.topLevelChanges.reduce(0) { $0 + $1.changedCount }, comparison.summary.changedCount)
+        XCTAssertEqual(comparison.summary.grossIncreasedAllocatedSize, 60)
+        XCTAssertEqual(comparison.summary.grossReclaimedAllocatedSize, 20)
+        XCTAssertEqual(comparison.summary.attributedAllocatedDelta, 40)
+        XCTAssertEqual(comparison.summary.allocatedDelta, 40)
+    }
+
+    func testWarningsSuppressUncertainAddedAndRemovedRows() async throws {
+        let beforePrivateFile = makeTestFileNode(
+            id: "/scan/Private/old.bin",
+            name: "old.bin",
+            size: 100
+        )
+        let beforePrivate = makeTestDirectoryNode(
+            id: "/scan/Private",
+            name: "Private",
+            children: [beforePrivateFile]
+        )
+        let beforeRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [beforePrivate]
+        )
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforePrivate],
+            beforePrivate.id: [beforePrivateFile],
+        ])
+        let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
+
+        let afterEmptyRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [])
+        let afterEmptyStore = FileTreeStore(root: afterEmptyRoot, childrenByID: [afterEmptyRoot.id: []])
+        let afterWarning = ScanWarning(
+            path: "/scan/Private",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let afterWithWarning = makeTestSnapshot(
+            root: afterEmptyRoot,
+            store: afterEmptyStore,
+            warnings: [afterWarning]
+        )
+
+        let removalComparison = try await ScanComparisonService().compare(
+            before: beforeSnapshot,
+            after: afterWithWarning
+        )
+
+        XCTAssertTrue(removalComparison.rows.isEmpty)
+        XCTAssertEqual(removalComparison.summary.removedCount, 0)
+        XCTAssertEqual(removalComparison.summary.grossReclaimedAllocatedSize, 0)
+        XCTAssertEqual(removalComparison.summary.allocatedDelta, -100)
+        XCTAssertEqual(removalComparison.summary.attributedAllocatedDelta, 0)
+        XCTAssertTrue(removalComparison.coverage.issues.contains(.afterWarnings(1)))
+
+        let beforeWarning = ScanWarning(
+            path: "/scan/Private",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let beforeEmptyRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [])
+        let beforeEmptyStore = FileTreeStore(root: beforeEmptyRoot, childrenByID: [beforeEmptyRoot.id: []])
+        let beforeWithWarning = makeTestSnapshot(
+            root: beforeEmptyRoot,
+            store: beforeEmptyStore,
+            warnings: [beforeWarning]
+        )
+
+        let additionComparison = try await ScanComparisonService().compare(
+            before: beforeWithWarning,
+            after: beforeSnapshot
+        )
+
+        XCTAssertTrue(additionComparison.rows.isEmpty)
+        XCTAssertEqual(additionComparison.summary.addedCount, 0)
+        XCTAssertEqual(additionComparison.summary.grossIncreasedAllocatedSize, 0)
+        XCTAssertEqual(additionComparison.summary.allocatedDelta, 100)
+        XCTAssertEqual(additionComparison.summary.attributedAllocatedDelta, 0)
+        XCTAssertTrue(additionComparison.coverage.issues.contains(.beforeWarnings(1)))
+    }
+
+    func testCoverageIsHighForCompleteEquivalentSnapshotsWithKnownOptions() async throws {
+        let root = makeTestDirectoryNode(id: "/scan", name: "scan", children: [])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: []])
+        let target = makeTestTarget("/scan")
+        let options = ScanOptions()
+        let before = ScanSnapshot(
+            target: target,
+            treeStore: store,
+            startedAt: Date(),
+            finishedAt: Date(),
+            scanWarnings: [],
+            aggregateStats: store.aggregateStats,
+            isComplete: true,
+            scanOptions: options
+        )
+        let after = ScanSnapshot(
+            target: target,
+            treeStore: store,
+            startedAt: Date(),
+            finishedAt: Date(),
+            scanWarnings: [],
+            aggregateStats: store.aggregateStats,
+            isComplete: true,
+            scanOptions: options
+        )
+
+        let comparison = try await ScanComparisonService().compare(before: before, after: after)
+
+        XCTAssertEqual(comparison.coverage.confidence, .high)
+        XCTAssertTrue(comparison.coverage.issues.isEmpty)
+        XCTAssertTrue(comparison.coverage.targetsMatch)
+        XCTAssertEqual(comparison.coverage.scanOptionsMatch, true)
+    }
+
     func testRowQuerySortsDeltaByDisplayedSignedValue() {
         let grewBefore = makeTestFileNode(id: "/before/grew.bin", name: "grew.bin", size: 10)
         let grewAfter = makeTestFileNode(id: "/after/grew.bin", name: "grew.bin", size: 20)
@@ -287,6 +604,41 @@ final class ScanComparisonServiceTests: XCTestCase {
         let result = query.applying(to: rows)
 
         XCTAssertEqual(result.map(\.relativePath), ["Library/Application Support/cache.bin"])
+    }
+
+    func testRowQueryFiltersExactLocationPrefix() {
+        let libraryNode = makeTestFileNode(
+            id: "/after/Library/cache.bin",
+            name: "cache.bin",
+            size: 10
+        )
+        let librarySupportNode = makeTestFileNode(
+            id: "/after/Library Support/cache.bin",
+            name: "cache.bin",
+            size: 20
+        )
+        let rows = [
+            ScanComparisonRow(
+                relativePath: "Library/cache.bin",
+                kind: .added,
+                beforeNode: nil,
+                afterNode: libraryNode
+            ),
+            ScanComparisonRow(
+                relativePath: "Library Support/cache.bin",
+                kind: .added,
+                beforeNode: nil,
+                afterNode: librarySupportNode
+            ),
+        ]
+        let query = ScanComparisonRowQuery(
+            changeKind: nil,
+            searchText: "",
+            sortOrder: [],
+            pathPrefix: "Library"
+        )
+
+        XCTAssertEqual(query.applying(to: rows).map(\.relativePath), ["Library/cache.bin"])
     }
 
     func testUnchangedAndRootRowsAreExcluded() async throws {

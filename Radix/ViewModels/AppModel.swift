@@ -46,28 +46,10 @@ nonisolated enum ScanComparisonSlot: String, CaseIterable, Identifiable, Sendabl
     var title: String {
         switch self {
         case .before:
-            return "Before"
+            return "Earlier Scan"
         case .after:
-            return "After"
+            return "Later Scan"
         }
-    }
-}
-
-nonisolated enum ScanComparisonCompatibilityWarning: Hashable, Sendable {
-    case unrelatedRoots
-    case differentScanOptions
-
-    var message: String {
-        switch self {
-        case .unrelatedRoots:
-            return "These snapshots scan unrelated roots, so the reported changes may not be meaningful."
-        case .differentScanOptions:
-            return "These snapshots use different scan options, so totals and file changes may not be directly comparable."
-        }
-    }
-
-    var symbolName: String {
-        "exclamationmark.triangle.fill"
     }
 }
 
@@ -76,6 +58,7 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
     let source: ScanComparisonCandidateSource
     let displayName: String
     let path: String
+    let targetKind: ScanTargetKind
     let scanDate: Date
     let totalAllocatedSize: Int64
     let fileCount: Int
@@ -88,6 +71,7 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
         self.source = .archive(preview.archiveURL)
         self.displayName = preview.target.displayName
         self.path = preview.target.path
+        self.targetKind = preview.target.kind
         self.scanDate = preview.finishedAt ?? preview.startedAt
         self.totalAllocatedSize = preview.totalAllocatedSize
         self.fileCount = preview.fileCount
@@ -101,6 +85,7 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
         self.source = .currentSnapshot(snapshot.id)
         self.displayName = snapshot.target.displayName
         self.path = snapshot.target.url.path
+        self.targetKind = snapshot.target.kind
         self.scanDate = snapshot.finishedAt ?? snapshot.startedAt
         self.totalAllocatedSize = snapshot.aggregateStats.totalAllocatedSize
         self.fileCount = snapshot.aggregateStats.fileCount
@@ -143,7 +128,7 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
               let after else {
             return false
         }
-        return before.source != after.source
+        return before.source != after.source && validationMessage == nil
     }
 
     var validationMessage: String? {
@@ -152,28 +137,24 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
             return nil
         }
         if before.source == after.source {
-            return "Choose two different snapshots."
+            return "Choose two different scans."
         }
-        return nil
-    }
-
-    var compatibilityWarnings: [ScanComparisonCompatibilityWarning] {
-        guard let before,
-              let after,
-              before.source != after.source else {
-            return []
+        guard before.targetKind == after.targetKind,
+              Self.normalizedRootPath(before.path) == Self.normalizedRootPath(after.path) else {
+            return "Choose scans of the same location."
         }
-
-        var warnings: [ScanComparisonCompatibilityWarning] = []
-        if !Self.rootsAreRelated(before.path, after.path) {
-            warnings.append(.unrelatedRoots)
+        if before.scanDate > after.scanDate {
+            return "The earlier scan must precede the later scan."
         }
         if let beforeOptions = before.scanOptions,
            let afterOptions = after.scanOptions,
            beforeOptions != afterOptions {
-            warnings.append(.differentScanOptions)
+            return "Choose scans made with the same scan settings."
         }
-        return warnings
+        if (before.scanOptions == nil) != (after.scanOptions == nil) {
+            return "One scan is missing its settings, so these scans cannot be compared safely."
+        }
+        return nil
     }
 
     var resolvedCandidates: (before: ScanComparisonCandidate, after: ScanComparisonCandidate)? {
@@ -203,6 +184,16 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
         }
     }
 
+    func canAssignCurrentScan(to slot: ScanComparisonSlot) -> Bool {
+        let otherCandidate = switch slot {
+        case .before:
+            after
+        case .after:
+            before
+        }
+        return otherCandidate?.isCurrentScan != true
+    }
+
     mutating func setCandidate(_ candidate: ScanComparisonCandidate?, for slot: ScanComparisonSlot) {
         switch slot {
         case .before:
@@ -216,17 +207,10 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
         Swift.swap(&before, &after)
     }
 
-    private static func rootsAreRelated(_ firstPath: String, _ secondPath: String) -> Bool {
-        let first = URL(filePath: firstPath, directoryHint: .isDirectory)
+    private static func normalizedRootPath(_ path: String) -> String {
+        URL(filePath: path, directoryHint: .isDirectory)
             .standardizedFileURL
             .path
-        let second = URL(filePath: secondPath, directoryHint: .isDirectory)
-            .standardizedFileURL
-            .path
-
-        guard first != second else { return true }
-        guard first != "/", second != "/" else { return true }
-        return first.hasPrefix(second + "/") || second.hasPrefix(first + "/")
     }
 }
 
@@ -425,6 +409,10 @@ final class AppModel: ObservableObject {
     private var snapshotArchiveTask: Task<Void, Never>?
     private var snapshotArchiveProgressTask: Task<Void, Never>?
     private var exportConfirmationDismissTask: Task<Void, Never>?
+    /// The completed live scan immediately preceding the active scan. Keeping this in memory
+    /// makes a rescan comparison available without silently writing another full archive.
+    private var previousScanComparisonBaseline: ScanSnapshot?
+    private var pendingScanComparisonBaseline: ScanSnapshot?
     private var postTrashRemovalRequests: [PostTrashRemovalRequest] = []
     private var fullDiskAccessRefreshTask: Task<Void, Never>?
     private var targetCapacityDescriptionsRefreshTask: Task<Void, Never>?
@@ -722,6 +710,18 @@ final class AppModel: ObservableObject {
             scanCoordinator.snapshotSource.allowsFileMutation
     }
 
+    var canCompareCurrentScanWithPreviousScan: Bool {
+        guard canCompareScanSnapshots,
+              let currentSnapshot = scanCoordinator.snapshot,
+              let previousSnapshot = previousScanComparisonBaseline,
+              currentSnapshot.isComplete,
+              currentSnapshot.source.allowsFileMutation else {
+            return false
+        }
+
+        return Self.canUseAsComparisonBaseline(previousSnapshot, for: currentSnapshot)
+    }
+
     var canUseCurrentScanInComparisonSetup: Bool {
         scanCoordinator.snapshot?.isComplete == true &&
             scanCoordinator.snapshotSource.allowsFileMutation
@@ -924,6 +924,17 @@ final class AppModel: ObservableObject {
         beginComparisonSetup(after: ScanComparisonCandidate(snapshot: currentSnapshot))
     }
 
+    func compareCurrentScanWithPreviousScan() {
+        guard canCompareCurrentScanWithPreviousScan,
+              let beforeSnapshot = previousScanComparisonBaseline,
+              let afterSnapshot = scanCoordinator.snapshot else {
+            presentErrorMessage("Rescan this location with the same scan options before comparing it with the previous scan.")
+            return
+        }
+
+        startLiveScanComparison(before: beforeSnapshot, after: afterSnapshot)
+    }
+
     func compareCurrentScan(with sourceURL: URL) {
         guard canCompareCurrentScanWithSnapshot,
               let currentSnapshot = scanCoordinator.snapshot else {
@@ -946,20 +957,22 @@ final class AppModel: ObservableObject {
     }
 
     func canRevealComparisonRowInFinder(_ row: ScanComparisonRow) -> Bool {
-        guard let url = row.fileURL else { return false }
-        return dependencies.systemActions.fileExists(url)
+        guard let node = currentScanNode(for: row.beforeNode, afterNode: row.afterNode) else {
+            return false
+        }
+        return dependencies.systemActions.fileExists(node.url)
     }
 
     func revealComparisonRowInFinder(_ row: ScanComparisonRow) {
-        guard let url = row.fileURL else {
-            presentError(FileActionError.unsupported)
+        guard let node = currentScanNode(for: row.beforeNode, afterNode: row.afterNode) else {
+            presentError(FileActionError.currentComparisonSnapshotUnavailable)
             return
         }
-        guard dependencies.systemActions.fileExists(url) else {
-            presentError(FileActionError.unavailable(path: url.path))
+        guard dependencies.systemActions.fileExists(node.url) else {
+            presentError(FileActionError.unavailable(path: node.url.path))
             return
         }
-        dependencies.systemActions.reveal(url)
+        dependencies.systemActions.reveal(node.url)
     }
 
     func copyComparisonRowPath(_ row: ScanComparisonRow) {
@@ -975,12 +988,55 @@ final class AppModel: ObservableObject {
     }
 
     func canShowComparisonRowInBrowser(_ row: ScanComparisonRow) -> Bool {
-        guard let nodeID = currentScanNodeID(for: row) else { return false }
-        return isVisibleNavigationNode(nodeID)
+        canShowComparisonNodeInBrowser(beforeNode: row.beforeNode, afterNode: row.afterNode)
     }
 
     func showComparisonRowInBrowser(_ row: ScanComparisonRow) {
-        guard let nodeID = currentScanNodeID(for: row) else {
+        showComparisonNodeInBrowser(beforeNode: row.beforeNode, afterNode: row.afterNode)
+    }
+
+    func canRevealComparisonLocationInFinder(_ location: ScanComparisonLocationChange) -> Bool {
+        guard let node = currentScanNode(for: location.beforeNode, afterNode: location.afterNode) else {
+            return false
+        }
+        return dependencies.systemActions.fileExists(node.url)
+    }
+
+    func revealComparisonLocationInFinder(_ location: ScanComparisonLocationChange) {
+        guard let node = currentScanNode(for: location.beforeNode, afterNode: location.afterNode) else {
+            presentError(FileActionError.currentComparisonSnapshotUnavailable)
+            return
+        }
+        guard dependencies.systemActions.fileExists(node.url) else {
+            presentError(FileActionError.unavailable(path: node.url.path))
+            return
+        }
+        dependencies.systemActions.reveal(node.url)
+    }
+
+    func canShowComparisonLocationInBrowser(_ location: ScanComparisonLocationChange) -> Bool {
+        canShowComparisonNodeInBrowser(beforeNode: location.beforeNode, afterNode: location.afterNode)
+    }
+
+    func showComparisonLocationInBrowser(_ location: ScanComparisonLocationChange) {
+        showComparisonNodeInBrowser(beforeNode: location.beforeNode, afterNode: location.afterNode)
+    }
+
+    private func canShowComparisonNodeInBrowser(
+        beforeNode: FileNodeRecord?,
+        afterNode: FileNodeRecord?
+    ) -> Bool {
+        guard let nodeID = currentScanNodeID(beforeNode: beforeNode, afterNode: afterNode) else {
+            return false
+        }
+        return isVisibleNavigationNode(nodeID)
+    }
+
+    private func showComparisonNodeInBrowser(
+        beforeNode: FileNodeRecord?,
+        afterNode: FileNodeRecord?
+    ) {
+        guard let nodeID = currentScanNodeID(beforeNode: beforeNode, afterNode: afterNode) else {
             presentError(FileActionError.currentComparisonSnapshotUnavailable)
             return
         }
@@ -994,18 +1050,28 @@ final class AppModel: ObservableObject {
 
     /// The node ID for a comparison row within the current live scan, or nil when the row's
     /// side is not the current scan (e.g. comparing two imported archives) or the node is gone.
-    private func currentScanNodeID(for row: ScanComparisonRow) -> String? {
+    private func currentScanNode(
+        for beforeNode: FileNodeRecord?,
+        afterNode: FileNodeRecord?
+    ) -> FileNodeRecord? {
         guard let comparison = scanComparison,
               let currentSnapshotID = scanCoordinator.snapshot?.id else {
             return nil
         }
-        if comparison.after.id == currentSnapshotID, let node = row.afterNode {
-            return node.id
+        if comparison.after.id == currentSnapshotID, let afterNode {
+            return afterNode
         }
-        if comparison.before.id == currentSnapshotID, let node = row.beforeNode {
-            return node.id
+        if comparison.before.id == currentSnapshotID, let beforeNode {
+            return beforeNode
         }
         return nil
+    }
+
+    private func currentScanNodeID(
+        beforeNode: FileNodeRecord?,
+        afterNode: FileNodeRecord?
+    ) -> String? {
+        currentScanNode(for: beforeNode, afterNode: afterNode)?.id
     }
 
     func swapPendingComparisonSetup() {
@@ -1023,7 +1089,7 @@ final class AppModel: ObservableObject {
         guard setup.canCompare,
               setup.resolvedCandidates != nil else {
             var updatedSetup = setup
-            updatedSetup.errorMessage = setup.validationMessage ?? "Choose two snapshots to compare."
+            updatedSetup.errorMessage = setup.validationMessage ?? "Choose two scans to compare."
             pendingComparisonSetup = updatedSetup
             return
         }
@@ -1265,6 +1331,43 @@ final class AppModel: ObservableObject {
                       self.isCurrentArchiveOperation(id: operationID) else { return }
                 if let currentSnapshotID = setup.currentSnapshotID,
                    self.scanCoordinator.snapshot?.id != currentSnapshotID {
+                    return
+                }
+                self.quickLookController.closePreview()
+                self.scanComparison = comparison
+                self.lastErrorMessage = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                self.presentError(error, title: "Comparison Failed")
+            }
+        }
+    }
+
+    private func startLiveScanComparison(before: ScanSnapshot, after: ScanSnapshot) {
+        cancelArchiveOperation()
+        scanComparison = nil
+        let currentSnapshotID = after.id
+        let operationID = beginArchiveOperation(
+            kind: .compare,
+            title: "Comparing Scans",
+            message: "Finding storage changes",
+            progressReporter: nil
+        )
+        snapshotArchiveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.finishArchiveOperation(id: operationID)
+            }
+
+            do {
+                let comparisonTask = Task.detached(priority: .utility) {
+                    try await ScanComparisonService().compare(before: before, after: after)
+                }
+                let comparison = try await Self.value(cancelling: comparisonTask)
+                guard !Task.isCancelled,
+                      self.isCurrentArchiveOperation(id: operationID),
+                      self.scanCoordinator.snapshot?.id == currentSnapshotID else {
                     return
                 }
                 self.quickLookController.closePreview()
@@ -1581,10 +1684,78 @@ final class AppModel: ObservableObject {
     private func startScanNow(_ target: ScanTarget) {
         cancelArchiveOperation()
         let options = scanOptions(for: target)
+        previousScanComparisonBaseline = nil
+        pendingScanComparisonBaseline = comparisonBaseline(
+            for: target,
+            options: options,
+            currentSnapshot: scanCoordinator.snapshot
+        )
         sidebarScanCacheController.prepareForScanStart(target: target, options: options)
         scanCoordinator.startScan(target, options: options) {
             prepareForScan(target)
         }
+    }
+
+    private func comparisonBaseline(
+        for target: ScanTarget,
+        options: ScanOptions,
+        currentSnapshot: ScanSnapshot?
+    ) -> ScanSnapshot? {
+        guard let currentSnapshot,
+              currentSnapshot.isComplete,
+              currentSnapshot.source.allowsFileMutation,
+              currentSnapshot.target.kind == target.kind,
+              Self.normalizedTargetPath(currentSnapshot.target) == Self.normalizedTargetPath(target),
+              currentSnapshot.scanOptions == options else {
+            return nil
+        }
+        return currentSnapshot
+    }
+
+    private func retainComparisonBaseline(for completedSnapshot: ScanSnapshot) {
+        defer { pendingScanComparisonBaseline = nil }
+        guard let pendingScanComparisonBaseline,
+              Self.canUseAsComparisonBaseline(pendingScanComparisonBaseline, for: completedSnapshot) else {
+            previousScanComparisonBaseline = nil
+            return
+        }
+
+        previousScanComparisonBaseline = pendingScanComparisonBaseline
+    }
+
+    nonisolated private static func canUseAsComparisonBaseline(
+        _ previousSnapshot: ScanSnapshot,
+        for currentSnapshot: ScanSnapshot
+    ) -> Bool {
+        guard previousSnapshot.id != currentSnapshot.id,
+              previousSnapshot.isComplete,
+              currentSnapshot.isComplete,
+              previousSnapshot.source.allowsFileMutation,
+              currentSnapshot.source.allowsFileMutation,
+              previousSnapshot.target.kind == currentSnapshot.target.kind,
+              normalizedTargetPath(previousSnapshot.target) == normalizedTargetPath(currentSnapshot.target),
+              let previousOptions = previousSnapshot.scanOptions,
+              let currentOptions = currentSnapshot.scanOptions,
+              previousOptions == currentOptions else {
+            return false
+        }
+
+        let previousDate = previousSnapshot.finishedAt ?? previousSnapshot.startedAt
+        let currentDate = currentSnapshot.finishedAt ?? currentSnapshot.startedAt
+        guard previousDate <= currentDate else { return false }
+
+        if let previousRootIdentity = previousSnapshot.root.fileIdentity,
+           let currentRootIdentity = currentSnapshot.root.fileIdentity,
+           previousRootIdentity != currentRootIdentity {
+            return false
+        }
+        return true
+    }
+
+    nonisolated private static func normalizedTargetPath(_ target: ScanTarget) -> String {
+        URL(filePath: target.url.path, directoryHint: .isDirectory)
+            .standardizedFileURL
+            .path
     }
 
     func rescan() {
@@ -1610,6 +1781,7 @@ final class AppModel: ObservableObject {
         cancelDeferredNavigationContextUpdate()
         cancelPostTrashSnapshotRemoval()
         clearOptimisticTrashVisibility()
+        pendingScanComparisonBaseline = nil
         sidebarScanCacheController.cancelPendingSidebarTargetRestore()
         sidebarScanCacheController.clearActiveScanTracking()
         if resetState, scanCoordinator.snapshot == nil {
@@ -2822,6 +2994,8 @@ final class AppModel: ObservableObject {
         sidebarScanCacheController.cancelPendingSidebarTargetRestore()
         sidebarScanCacheController.clearActiveScanTracking()
         sidebarScanCacheController.clearDisplayedSnapshot()
+        previousScanComparisonBaseline = nil
+        pendingScanComparisonBaseline = nil
 
         deferredNavigationContextSnapshotID = snapshot.id
         scanCoordinator.restoreCompletedSnapshot(snapshot) {
@@ -2841,6 +3015,8 @@ final class AppModel: ObservableObject {
         pendingTrashSelection = nil
         discardPile = DiscardPileState()
         clearOptimisticTrashVisibility()
+        previousScanComparisonBaseline = nil
+        pendingScanComparisonBaseline = nil
         sidebarModel.setActiveTargetID(nil)
         quickLookController.closePreview()
     }
@@ -2922,6 +3098,7 @@ final class AppModel: ObservableObject {
     private func observeScanCoordinator() {
         scanCoordinator.onScanFinished = { [weak self] snapshot in
             self?.recordCompletedScan(snapshot)
+            self?.retainComparisonBaseline(for: snapshot)
         }
 
         scanCoordinator.$snapshot

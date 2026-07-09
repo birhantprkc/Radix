@@ -36,6 +36,7 @@ nonisolated enum ScanComparisonChangeKind: String, CaseIterable, Sendable {
     case removed
     case grew
     case shrank
+    case moved
 
     var title: String {
         switch self {
@@ -47,6 +48,8 @@ nonisolated enum ScanComparisonChangeKind: String, CaseIterable, Sendable {
             return "Grew"
         case .shrank:
             return "Shrank"
+        case .moved:
+            return "Moved"
         }
     }
 
@@ -60,6 +63,8 @@ nonisolated enum ScanComparisonChangeKind: String, CaseIterable, Sendable {
             return 2
         case .shrank:
             return 3
+        case .moved:
+            return 4
         }
     }
 }
@@ -79,6 +84,11 @@ nonisolated struct ScanComparisonSummary: Equatable, Sendable {
     let removedCount: Int
     let grewCount: Int
     let shrankCount: Int
+    let movedCount: Int
+    /// Sum of positive allocated deltas represented by the final, non-overlapping rows.
+    let grossIncreasedAllocatedSize: Int64
+    /// Sum of reclaimed allocated bytes represented by the final, non-overlapping rows.
+    let grossReclaimedAllocatedSize: Int64
 
     init(before: ScanSnapshot, after: ScanSnapshot, rows: [ScanComparisonRow]) {
         self.beforeAllocatedSize = before.aggregateStats.totalAllocatedSize
@@ -93,13 +103,23 @@ nonisolated struct ScanComparisonSummary: Equatable, Sendable {
         self.afterWarningCount = after.scanWarnings.count
 
         var counts: [ScanComparisonChangeKind: Int] = [:]
+        var grossIncreasedAllocatedSize: Int64 = 0
+        var grossReclaimedAllocatedSize: Int64 = 0
         for row in rows {
             counts[row.kind, default: 0] += 1
+            if row.allocatedDelta > 0 {
+                grossIncreasedAllocatedSize += row.allocatedDelta
+            } else if row.allocatedDelta < 0 {
+                grossReclaimedAllocatedSize += -row.allocatedDelta
+            }
         }
         self.addedCount = counts[.added, default: 0]
         self.removedCount = counts[.removed, default: 0]
         self.grewCount = counts[.grew, default: 0]
         self.shrankCount = counts[.shrank, default: 0]
+        self.movedCount = counts[.moved, default: 0]
+        self.grossIncreasedAllocatedSize = grossIncreasedAllocatedSize
+        self.grossReclaimedAllocatedSize = grossReclaimedAllocatedSize
     }
 
     var allocatedDelta: Int64 {
@@ -123,7 +143,15 @@ nonisolated struct ScanComparisonSummary: Equatable, Sendable {
     }
 
     var changedCount: Int {
-        addedCount + removedCount + grewCount + shrankCount
+        addedCount + removedCount + grewCount + shrankCount + movedCount
+    }
+
+    /// Net allocated change that can be attributed to final comparison rows.
+    ///
+    /// This can differ from `allocatedDelta` when incomplete scan coverage suppresses uncertain
+    /// additions or removals.
+    var attributedAllocatedDelta: Int64 {
+        grossIncreasedAllocatedSize - grossReclaimedAllocatedSize
     }
 }
 
@@ -143,6 +171,11 @@ nonisolated struct ScanComparisonRow: Identifiable, Equatable, Sendable {
     let beforeDescendantFileCount: Int?
     let afterDescendantFileCount: Int?
     let lastModified: Date?
+    /// The former relative path for an unambiguous file move or rename.
+    ///
+    /// A non-`nil` value is only produced when the same `FileIdentity` appears exactly once
+    /// among the visible removed paths and exactly once among the visible added paths.
+    let movedFromRelativePath: String?
 
     init(
         relativePath: String,
@@ -150,10 +183,15 @@ nonisolated struct ScanComparisonRow: Identifiable, Equatable, Sendable {
         beforeNode: FileNodeRecord?,
         afterNode: FileNodeRecord?,
         beforeAllocatedSize: Int64? = nil,
-        afterAllocatedSize: Int64? = nil
+        afterAllocatedSize: Int64? = nil,
+        movedFromRelativePath: String? = nil
     ) {
         let displayNode = afterNode ?? beforeNode
-        self.id = "\(kind.rawValue):\(relativePath)"
+        self.id = if let movedFromRelativePath {
+            "\(kind.rawValue):\(movedFromRelativePath)->\(relativePath)"
+        } else {
+            "\(kind.rawValue):\(relativePath)"
+        }
         self.relativePath = relativePath
         self.name = displayNode?.name ?? URL(filePath: relativePath).lastPathComponent
         self.kind = kind
@@ -168,6 +206,7 @@ nonisolated struct ScanComparisonRow: Identifiable, Equatable, Sendable {
         self.beforeDescendantFileCount = beforeNode?.descendantFileCount
         self.afterDescendantFileCount = afterNode?.descendantFileCount
         self.lastModified = afterNode?.lastModified ?? beforeNode?.lastModified
+        self.movedFromRelativePath = movedFromRelativePath
     }
 
     var allocatedDelta: Int64 {
@@ -189,19 +228,146 @@ nonisolated struct ScanComparisonRow: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A non-overlapping, top-level attribution of the comparison rows.
+///
+/// Each final comparison row belongs to exactly one location: its first relative-path
+/// component. This lets the UI rank locations without summing a directory and its changed
+/// descendants twice. A move belongs to its destination location.
+nonisolated struct ScanComparisonLocationChange: Identifiable, Equatable, Sendable {
+    let id: String
+    let relativePath: String
+    let name: String
+    let allocatedDelta: Int64
+    let addedCount: Int
+    let removedCount: Int
+    let grewCount: Int
+    let shrankCount: Int
+    let movedCount: Int
+    /// A changed row within this location, chosen by the largest absolute allocated delta.
+    let representativeRelativePath: String
+    /// The node at `relativePath` in the before snapshot, when it was indexed.
+    let beforeNode: FileNodeRecord?
+    /// The node at `relativePath` in the after snapshot, when it was indexed.
+    let afterNode: FileNodeRecord?
+
+    var changedCount: Int {
+        addedCount + removedCount + grewCount + shrankCount + movedCount
+    }
+
+    var absoluteAllocatedDelta: Int64 {
+        abs(allocatedDelta)
+    }
+
+    /// Prefer the current node so an overview can navigate to the location in the active scan.
+    var fileURL: URL? {
+        (afterNode ?? beforeNode)?.url
+    }
+}
+
+nonisolated enum ScanComparisonConfidence: String, Equatable, Sendable {
+    /// Both scans are complete, target the same root, use matching known options, and report
+    /// no scan warnings.
+    case high
+    /// The comparison is usable, but warning coverage or unknown scan options limit certainty.
+    case limited
+    /// A fundamental mismatch means the result should be treated as forensic, not a baseline.
+    case low
+}
+
+nonisolated enum ScanComparisonCoverageIssue: Hashable, Sendable {
+    case differentTargets
+    case differentScanOptions
+    case unknownScanOptions
+    case beforeIncomplete
+    case afterIncomplete
+    case beforeWarnings(Int)
+    case afterWarnings(Int)
+}
+
+/// Facts about whether two snapshots cover comparable filesystem state.
+///
+/// This is deliberately descriptive rather than blocking: callers can reserve low-confidence
+/// comparisons for an advanced workflow while still explaining why the result is uncertain.
+nonisolated struct ScanComparisonCoverage: Equatable, Sendable {
+    let confidence: ScanComparisonConfidence
+    let issues: [ScanComparisonCoverageIssue]
+    let beforeWarningCount: Int
+    let afterWarningCount: Int
+    let targetsMatch: Bool
+    let scanOptionsMatch: Bool?
+    let beforeIsComplete: Bool
+    let afterIsComplete: Bool
+
+    init(before: ScanSnapshot, after: ScanSnapshot) {
+        self.beforeWarningCount = before.scanWarnings.count
+        self.afterWarningCount = after.scanWarnings.count
+        self.targetsMatch = before.target.id == after.target.id
+        self.beforeIsComplete = before.isComplete
+        self.afterIsComplete = after.isComplete
+
+        switch (before.scanOptions, after.scanOptions) {
+        case let (beforeOptions?, afterOptions?):
+            self.scanOptionsMatch = beforeOptions == afterOptions
+        default:
+            self.scanOptionsMatch = nil
+        }
+
+        var issues: [ScanComparisonCoverageIssue] = []
+        if !targetsMatch {
+            issues.append(.differentTargets)
+        }
+        if scanOptionsMatch == false {
+            issues.append(.differentScanOptions)
+        } else if scanOptionsMatch == nil {
+            issues.append(.unknownScanOptions)
+        }
+        if !beforeIsComplete {
+            issues.append(.beforeIncomplete)
+        }
+        if !afterIsComplete {
+            issues.append(.afterIncomplete)
+        }
+        if beforeWarningCount > 0 {
+            issues.append(.beforeWarnings(beforeWarningCount))
+        }
+        if afterWarningCount > 0 {
+            issues.append(.afterWarnings(afterWarningCount))
+        }
+        self.issues = issues
+
+        if !targetsMatch || scanOptionsMatch == false || !beforeIsComplete || !afterIsComplete {
+            self.confidence = .low
+        } else if !issues.isEmpty {
+            self.confidence = .limited
+        } else {
+            self.confidence = .high
+        }
+    }
+}
+
 nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
     let id: UUID
     let before: ComparedSnapshotSummary
     let after: ComparedSnapshotSummary
     let summary: ScanComparisonSummary
+    let coverage: ScanComparisonCoverage
     let rows: [ScanComparisonRow]
+    /// Non-overlapping first-level locations derived from `rows`, ordered by impact.
+    let topLevelChanges: [ScanComparisonLocationChange]
 
-    init(beforeSnapshot: ScanSnapshot, afterSnapshot: ScanSnapshot, rows: [ScanComparisonRow]) {
+    init(
+        beforeSnapshot: ScanSnapshot,
+        afterSnapshot: ScanSnapshot,
+        rows: [ScanComparisonRow],
+        topLevelChanges: [ScanComparisonLocationChange]
+    ) {
         self.id = UUID()
         self.before = ComparedSnapshotSummary(snapshot: beforeSnapshot)
         self.after = ComparedSnapshotSummary(snapshot: afterSnapshot)
         self.rows = rows
         self.summary = ScanComparisonSummary(before: beforeSnapshot, after: afterSnapshot, rows: rows)
+        self.coverage = ScanComparisonCoverage(before: beforeSnapshot, after: afterSnapshot)
+        self.topLevelChanges = topLevelChanges
     }
 }
 
@@ -229,12 +395,49 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeNodes: beforeNodes,
             afterNodes: afterNodes
         )
+        let visibleAddedPaths = Set(addedPaths.filter { relativePath in
+            !Self.hasAncestor(of: relativePath, in: addedPaths)
+                && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths)
+        })
+        let visibleRemovedPaths = Set(removedPaths.filter { relativePath in
+            !Self.hasAncestor(of: relativePath, in: removedPaths)
+                && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths)
+        })
+        let warningBoundaries = Self.warningBoundaryPaths(in: before)
+            .union(Self.warningBoundaryPaths(in: after))
+        // A warning represents unknown coverage, never proof that a path was created or
+        // deleted. Suppress a collapsed ancestor row too when it contains a warning boundary.
+        let coveredAddedPaths = Set(visibleAddedPaths.filter { relativePath in
+            !Self.overlapsWarningBoundary(relativePath: relativePath, boundaries: warningBoundaries)
+        })
+        let coveredRemovedPaths = Set(visibleRemovedPaths.filter { relativePath in
+            !Self.overlapsWarningBoundary(relativePath: relativePath, boundaries: warningBoundaries)
+        })
+        let movedPathPairs = Self.movedPathPairs(
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes,
+            removedPaths: coveredRemovedPaths,
+            addedPaths: coveredAddedPaths
+        )
+        let movedRemovedPaths = Set(movedPathPairs.map(\.beforeRelativePath))
+        let movedAddedPaths = Set(movedPathPairs.map(\.afterRelativePath))
 
         rows.reserveCapacity(addedPaths.count + removedPaths.count + sharedPaths.count)
 
-        for relativePath in addedPaths
-        where !Self.hasAncestor(of: relativePath, in: addedPaths)
-            && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths) {
+        for movedPathPair in movedPathPairs {
+            try Task.checkCancellation()
+            rows.append(ScanComparisonRow(
+                relativePath: movedPathPair.afterRelativePath,
+                kind: .moved,
+                beforeNode: beforeNodes[movedPathPair.beforeRelativePath],
+                afterNode: afterNodes[movedPathPair.afterRelativePath],
+                beforeAllocatedSize: allocatedSizes.before[movedPathPair.beforeRelativePath],
+                afterAllocatedSize: allocatedSizes.after[movedPathPair.afterRelativePath],
+                movedFromRelativePath: movedPathPair.beforeRelativePath
+            ))
+        }
+
+        for relativePath in coveredAddedPaths.subtracting(movedAddedPaths) {
             try Task.checkCancellation()
             rows.append(ScanComparisonRow(
                 relativePath: relativePath,
@@ -245,9 +448,7 @@ nonisolated struct ScanComparisonService: Sendable {
             ))
         }
 
-        for relativePath in removedPaths
-        where !Self.hasAncestor(of: relativePath, in: removedPaths)
-            && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths) {
+        for relativePath in coveredRemovedPaths.subtracting(movedRemovedPaths) {
             try Task.checkCancellation()
             rows.append(ScanComparisonRow(
                 relativePath: relativePath,
@@ -264,15 +465,25 @@ nonisolated struct ScanComparisonService: Sendable {
                   let afterNode = afterNodes[relativePath] else {
                 continue
             }
-            // A directory whose allocated size is the aggregate of indexed descendants has
-            // its grew/shrank delta already accounted for by the leaf rows beneath it, so
-            // emitting the directory too would spam a redundant row for every ancestor of
-            // every changed file. But a leaf-like directory — an auto-summarized subtree or
-            // a package collapsed to a single node — has no indexed children and therefore
-            // no descendant rows, so its change must be reported here or it becomes invisible.
+            // A normal materialized directory's aggregate is already represented by descendant
+            // additions, removals, and size changes. This includes a directory that was empty
+            // in one snapshot and gained or lost indexed children in the other; emitting its
+            // aggregate too would double-count those child rows. Opaque leaf directories remain
+            // direct evidence because their descendants were not indexed.
+            let beforeHasIndexedChildren = before.treeStore.containsChildren(id: beforeNode.id)
+            let afterHasIndexedChildren = after.treeStore.containsChildren(id: afterNode.id)
+            let beforeIsOpaque = Self.isOpaqueDirectory(
+                beforeNode,
+                hasIndexedChildren: beforeHasIndexedChildren
+            )
+            let afterIsOpaque = Self.isOpaqueDirectory(
+                afterNode,
+                hasIndexedChildren: afterHasIndexedChildren
+            )
             let isRedundantDirectory = beforeNode.isDirectory && afterNode.isDirectory
-                && before.treeStore.containsChildren(id: beforeNode.id)
-                && after.treeStore.containsChildren(id: afterNode.id)
+                && !beforeIsOpaque
+                && !afterIsOpaque
+                && (beforeHasIndexedChildren || afterHasIndexedChildren)
             guard !isRedundantDirectory else { continue }
             let beforeAllocatedSize = allocatedSizes.before[relativePath] ?? beforeNode.allocatedSize
             let afterAllocatedSize = allocatedSizes.after[relativePath] ?? afterNode.allocatedSize
@@ -292,7 +503,17 @@ nonisolated struct ScanComparisonService: Sendable {
         let sortedRows = rows.sorted { lhs, rhs in
             ScanComparisonRowComparator.defaultOrder.compare(lhs, rhs) == .orderedAscending
         }
-        return ScanComparison(beforeSnapshot: before, afterSnapshot: after, rows: sortedRows)
+        let topLevelChanges = Self.topLevelChanges(
+            from: sortedRows,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
+        return ScanComparison(
+            beforeSnapshot: before,
+            afterSnapshot: after,
+            rows: sortedRows,
+            topLevelChanges: topLevelChanges
+        )
     }
 
     private static func indexedNodes(in snapshot: ScanSnapshot) throws -> [String: FileNodeRecord] {
@@ -334,6 +555,149 @@ nonisolated struct ScanComparisonService: Sendable {
             }
         }
         return false
+    }
+
+    private struct MovedPathPair: Sendable {
+        let beforeRelativePath: String
+        let afterRelativePath: String
+    }
+
+    /// Matches only a one-to-one regular-file identity that is visible as both a removal and an
+    /// addition. Hard links, directories, aliases, and synthetic nodes are intentionally
+    /// excluded because a path-level move inference would be ambiguous for them.
+    private static func movedPathPairs(
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord],
+        removedPaths: Set<String>,
+        addedPaths: Set<String>
+    ) -> [MovedPathPair] {
+        let removedCandidates = moveCandidates(in: beforeNodes, paths: removedPaths)
+        let addedCandidates = moveCandidates(in: afterNodes, paths: addedPaths)
+        let removedByIdentity = Dictionary(grouping: removedCandidates, by: \.identity)
+        let addedByIdentity = Dictionary(grouping: addedCandidates, by: \.identity)
+
+        return removedByIdentity.compactMap { identity, removedEntries in
+            guard removedEntries.count == 1,
+                  let addedEntries = addedByIdentity[identity],
+                  addedEntries.count == 1,
+                  let beforeRelativePath = removedEntries.first?.relativePath,
+                  let afterRelativePath = addedEntries.first?.relativePath else {
+                return nil
+            }
+            return MovedPathPair(
+                beforeRelativePath: beforeRelativePath,
+                afterRelativePath: afterRelativePath
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.afterRelativePath.localizedStandardCompare(rhs.afterRelativePath) == .orderedAscending
+        }
+    }
+
+    private static func moveCandidates(
+        in nodes: [String: FileNodeRecord],
+        paths: Set<String>
+    ) -> [(identity: FileIdentity, relativePath: String)] {
+        paths.compactMap { relativePath in
+            guard let node = nodes[relativePath],
+                  let identity = moveIdentity(for: node) else {
+                return nil
+            }
+            return (identity, relativePath)
+        }
+    }
+
+    private static func moveIdentity(for node: FileNodeRecord) -> FileIdentity? {
+        guard !node.isDirectory,
+              !node.isSymbolicLink,
+              !node.isSynthetic,
+              node.linkCount == 1 else {
+            return nil
+        }
+        return node.fileIdentity
+    }
+
+    private static func topLevelChanges(
+        from rows: [ScanComparisonRow],
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord]
+    ) -> [ScanComparisonLocationChange] {
+        let rowsByLocation = Dictionary(grouping: rows) { row in
+            topLevelPath(for: row.relativePath)
+        }
+
+        return rowsByLocation.compactMap { relativePath, locationRows in
+            guard let representativeRow = locationRows.sorted(by: {
+                ScanComparisonRowComparator.defaultOrder.compare($0, $1) == .orderedAscending
+            }).first else {
+                return nil
+            }
+
+            var counts: [ScanComparisonChangeKind: Int] = [:]
+            var allocatedDelta: Int64 = 0
+            for row in locationRows {
+                counts[row.kind, default: 0] += 1
+                allocatedDelta += row.allocatedDelta
+            }
+
+            let beforeNode = beforeNodes[relativePath]
+            let afterNode = afterNodes[relativePath]
+            let displayNode = afterNode ?? beforeNode
+            return ScanComparisonLocationChange(
+                id: relativePath,
+                relativePath: relativePath,
+                name: displayNode?.name ?? URL(filePath: relativePath).lastPathComponent,
+                allocatedDelta: allocatedDelta,
+                addedCount: counts[.added, default: 0],
+                removedCount: counts[.removed, default: 0],
+                grewCount: counts[.grew, default: 0],
+                shrankCount: counts[.shrank, default: 0],
+                movedCount: counts[.moved, default: 0],
+                representativeRelativePath: representativeRow.relativePath,
+                beforeNode: beforeNode,
+                afterNode: afterNode
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.absoluteAllocatedDelta != rhs.absoluteAllocatedDelta {
+                return lhs.absoluteAllocatedDelta > rhs.absoluteAllocatedDelta
+            }
+            return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+        }
+    }
+
+    private static func topLevelPath(for relativePath: String) -> String {
+        guard let slashIndex = relativePath.firstIndex(of: "/") else {
+            return relativePath
+        }
+        return String(relativePath[..<slashIndex])
+    }
+
+    private static func warningBoundaryPaths(in snapshot: ScanSnapshot) -> Set<String> {
+        Set(snapshot.scanWarnings.compactMap { warning in
+            relativeWarningPath(warning.path, rootID: snapshot.treeStore.rootID)
+        })
+    }
+
+    private static func relativeWarningPath(_ warningPath: String, rootID: String) -> String? {
+        guard warningPath == rootID else {
+            return relativePath(for: warningPath, rootID: rootID)
+        }
+        // An empty relative path represents a warning at the scan root and therefore affects
+        // every addition/removal in the snapshot.
+        return ""
+    }
+
+    private static func overlapsWarningBoundary(
+        relativePath: String,
+        boundaries: Set<String>
+    ) -> Bool {
+        boundaries.contains { boundary in
+            guard !boundary.isEmpty else { return true }
+            return relativePath == boundary
+                || relativePath.hasPrefix(boundary + "/")
+                || boundary.hasPrefix(relativePath + "/")
+        }
     }
 
     private static func materializationBoundaryPaths(
@@ -539,6 +903,20 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
     let changeKind: ScanComparisonChangeKind?
     let searchText: String
     let sortOrder: [ScanComparisonRowComparator]
+    /// Limits evidence to one top-level contributor while retaining its full descendant rows.
+    let pathPrefix: String?
+
+    init(
+        changeKind: ScanComparisonChangeKind?,
+        searchText: String,
+        sortOrder: [ScanComparisonRowComparator],
+        pathPrefix: String? = nil
+    ) {
+        self.changeKind = changeKind
+        self.searchText = searchText
+        self.sortOrder = sortOrder
+        self.pathPrefix = pathPrefix
+    }
 
     func applying(to rows: [ScanComparisonRow]) -> [ScanComparisonRow] {
         let query = SearchNormalizer.normalize(
@@ -546,6 +924,11 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
         )
         let filteredRows = rows.filter { row in
             guard changeKind == nil || row.kind == changeKind else { return false }
+            if let pathPrefix, !pathPrefix.isEmpty {
+                guard row.relativePath == pathPrefix || row.relativePath.hasPrefix(pathPrefix + "/") else {
+                    return false
+                }
+            }
             guard !query.isEmpty else { return true }
             return SearchNormalizer.normalize(row.name).contains(query)
                 || SearchNormalizer.normalize(row.relativePath).contains(query)
