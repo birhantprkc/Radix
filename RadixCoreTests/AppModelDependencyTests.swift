@@ -2456,6 +2456,52 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertFalse(model.canCompareCurrentScanWithSnapshot)
     }
+
+    func testComparisonSetupWarnsAboutUnrelatedRootsAndDifferentScanOptions() {
+        var beforeOptions = ScanOptions()
+        beforeOptions.includeHiddenFiles = true
+        var afterOptions = beforeOptions
+        afterOptions.treatPackagesAsDirectories = true
+
+        let setup = ScanComparisonSetup(
+            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
+                rootPath: "/Users/example/Documents",
+                fileSize: 10,
+                scanOptions: beforeOptions
+            )),
+            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
+                rootPath: "/Volumes/Backup/Documents",
+                fileSize: 20,
+                scanOptions: afterOptions
+            ))
+        )
+
+        XCTAssertTrue(setup.canCompare)
+        XCTAssertEqual(
+            setup.compatibilityWarnings,
+            [.unrelatedRoots, .differentScanOptions]
+        )
+    }
+
+    func testComparisonSetupDoesNotWarnForRelatedRootsWithMatchingScanOptions() {
+        var options = ScanOptions()
+        options.exclusionPatterns = ["*.tmp"]
+
+        let setup = ScanComparisonSetup(
+            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
+                rootPath: "/Users/example",
+                fileSize: 10,
+                scanOptions: options
+            )),
+            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
+                rootPath: "/Users/example/Documents",
+                fileSize: 20,
+                scanOptions: options
+            ))
+        )
+
+        XCTAssertTrue(setup.compatibilityWarnings.isEmpty)
+    }
 }
 
 @MainActor
@@ -2655,7 +2701,8 @@ private func makeComparisonSnapshot(
     fileSize: Int64,
     startedAt: Date = Date(timeIntervalSince1970: 1),
     finishedAt: Date? = Date(timeIntervalSince1970: 2),
-    sourceURL: URL? = nil
+    sourceURL: URL? = nil,
+    scanOptions: ScanOptions? = nil
 ) -> ScanSnapshot {
     let file = makeTestFileNode(id: "\(rootPath)/shared.bin", name: "shared.bin", size: fileSize)
     let root = makeTestDirectoryNode(id: rootPath, name: URL(filePath: rootPath).lastPathComponent, children: [file])
@@ -2679,6 +2726,7 @@ private func makeComparisonSnapshot(
         scanWarnings: [],
         aggregateStats: store.aggregateStats,
         isComplete: true,
+        scanOptions: scanOptions,
         source: source
     )
 }

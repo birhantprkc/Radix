@@ -71,12 +71,22 @@ struct ScanComparisonSetupSheet: View {
             Divider()
 
             HStack(spacing: 12) {
-                if let statusMessage {
-                    Label(statusMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    if let statusMessage {
+                        Label(statusMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                    }
+
+                    ForEach(setup.compatibilityWarnings, id: \.self) { warning in
+                        Label(warning.message, systemImage: warning.symbolName)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .lineLimit(2)
+                    }
                 }
+                .frame(maxWidth: 430, alignment: .leading)
 
                 Spacer()
 

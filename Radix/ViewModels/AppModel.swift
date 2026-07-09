@@ -53,6 +53,24 @@ nonisolated enum ScanComparisonSlot: String, CaseIterable, Identifiable, Sendabl
     }
 }
 
+nonisolated enum ScanComparisonCompatibilityWarning: Hashable, Sendable {
+    case unrelatedRoots
+    case differentScanOptions
+
+    var message: String {
+        switch self {
+        case .unrelatedRoots:
+            return "These snapshots scan unrelated roots, so the reported changes may not be meaningful."
+        case .differentScanOptions:
+            return "These snapshots use different scan options, so totals and file changes may not be directly comparable."
+        }
+    }
+
+    var symbolName: String {
+        "exclamationmark.triangle.fill"
+    }
+}
+
 nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
     let id: UUID
     let source: ScanComparisonCandidateSource
@@ -63,6 +81,7 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
     let fileCount: Int
     let directoryCount: Int
     let warningCount: Int
+    let scanOptions: ScanOptions?
 
     init(preview: ScanArchivePreview) {
         self.id = UUID()
@@ -74,6 +93,7 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
         self.fileCount = preview.fileCount
         self.directoryCount = preview.directoryCount
         self.warningCount = preview.warningCount
+        self.scanOptions = preview.scanOptions
     }
 
     init(snapshot: ScanSnapshot) {
@@ -86,6 +106,7 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
         self.fileCount = snapshot.aggregateStats.fileCount
         self.directoryCount = snapshot.aggregateStats.directoryCount
         self.warningCount = snapshot.scanWarnings.count
+        self.scanOptions = snapshot.scanOptions
     }
 
     var isCurrentScan: Bool {
@@ -136,6 +157,25 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
         return nil
     }
 
+    var compatibilityWarnings: [ScanComparisonCompatibilityWarning] {
+        guard let before,
+              let after,
+              before.source != after.source else {
+            return []
+        }
+
+        var warnings: [ScanComparisonCompatibilityWarning] = []
+        if !Self.rootsAreRelated(before.path, after.path) {
+            warnings.append(.unrelatedRoots)
+        }
+        if let beforeOptions = before.scanOptions,
+           let afterOptions = after.scanOptions,
+           beforeOptions != afterOptions {
+            warnings.append(.differentScanOptions)
+        }
+        return warnings
+    }
+
     var resolvedCandidates: (before: ScanComparisonCandidate, after: ScanComparisonCandidate)? {
         guard let before,
               let after else {
@@ -174,6 +214,19 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
 
     mutating func swap() {
         Swift.swap(&before, &after)
+    }
+
+    private static func rootsAreRelated(_ firstPath: String, _ secondPath: String) -> Bool {
+        let first = URL(filePath: firstPath, directoryHint: .isDirectory)
+            .standardizedFileURL
+            .path
+        let second = URL(filePath: secondPath, directoryHint: .isDirectory)
+            .standardizedFileURL
+            .path
+
+        guard first != second else { return true }
+        guard first != "/", second != "/" else { return true }
+        return first.hasPrefix(second + "/") || second.hasPrefix(first + "/")
     }
 }
 

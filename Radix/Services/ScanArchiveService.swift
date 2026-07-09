@@ -133,6 +133,7 @@ nonisolated struct ScanArchivePreview: Identifiable, Sendable {
     let directoryCount: Int
     let accessibleItemCount: Int
     let inaccessibleItemCount: Int
+    let scanOptions: ScanOptions?
 
     var id: URL {
         archiveURL
@@ -160,6 +161,7 @@ nonisolated struct ScanArchivePreview: Identifiable, Sendable {
         self.directoryCount = stats.directoryCount
         self.accessibleItemCount = stats.accessibleItemCount
         self.inaccessibleItemCount = stats.inaccessibleItemCount
+        self.scanOptions = manifest.snapshot.scanOptions
     }
 }
 
