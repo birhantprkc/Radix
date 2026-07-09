@@ -16,6 +16,7 @@ struct ContentView: View {
 
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
     @State private var showsInspector = true
+    @State private var inspectorPresentationBeforeComparison: Bool?
     @State private var showsDiscardPileReview = false
     @State private var discardPileDragIsActive = false
     @State private var discardPileDragMonitorTask: Task<Void, Never>?
@@ -48,8 +49,9 @@ struct ContentView: View {
                     appModel.sunburstFreeSpaceAvailableCapacity(for: snapshot, focusNode: focusNode)
                 },
                 closeScanComparison: {
-                    appModel.closeScanComparison()
+                    closeScanComparison()
                 },
+                workspaceDidAppear: workspaceDidAppear,
                 comparisonRowActions: comparisonRowActions,
                 comparisonLocationActions: comparisonLocationActions,
                 actions: workspaceActions
@@ -66,21 +68,22 @@ struct ContentView: View {
             appModel.setWorkspaceWindowNumber(window?.windowNumber)
         })
         .inspector(isPresented: $showsInspector) {
-            Group {
-                if appModel.scanComparison == nil {
-                    SelectionInspectorView(
-                        scanState: appModel.scanState,
-                        navigation: appModel.navigation,
-                        fullDiskAccessStatus: appModel.fullDiskAccessStatus,
-                        actions: selectionInspectorActions
-                    )
-                } else {
-                    ComparisonInspectorPlaceholder()
-                }
-            }
-            .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
+            SelectionInspectorView(
+                scanState: appModel.scanState,
+                navigation: appModel.navigation,
+                fullDiskAccessStatus: appModel.fullDiskAccessStatus,
+                actions: selectionInspectorActions
+            )
+                .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
         }
         .focusedSceneValue(\.inspectorVisibility, $showsInspector)
+        .onChange(of: appModel.archiveOperation) { previousOperation, currentOperation in
+            guard previousOperation?.kind == .compare,
+                  currentOperation == nil else {
+                return
+            }
+            restoreInspectorIfComparisonInactive()
+        }
         .overlay(alignment: .top) {
             if let archiveOperation = appModel.archiveOperation {
                 ArchiveOperationBanner(
@@ -144,7 +147,7 @@ struct ContentView: View {
             get: { appModel.pendingComparisonSetup != nil },
             set: { isPresented in
                 if !isPresented {
-                    appModel.cancelComparisonSetup()
+                    cancelComparisonSetup()
                 }
             }
         )) {
@@ -168,12 +171,13 @@ struct ContentView: View {
                         appModel.swapPendingComparisonSetup()
                     },
                     onCancel: {
-                        appModel.cancelComparisonSetup()
+                        cancelComparisonSetup()
                     },
                     onCompare: {
-                        appModel.confirmComparisonSetup()
+                        confirmComparisonSetup()
                     }
                 )
+                .onAppear(perform: comparisonSetupDidAppear)
                 .interactiveDismissDisabled()
             }
         }
@@ -564,17 +568,6 @@ private extension ContentView {
     }
 }
 
-private struct ComparisonInspectorPlaceholder: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Storage Changes",
-            systemImage: "chart.bar.xaxis",
-            description: Text("Close the comparison to inspect files in the current scan.")
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 private struct WorkspaceWindowObserver: NSViewRepresentable {
     let onWindowChange: (NSWindow?) -> Void
 
@@ -633,6 +626,7 @@ private struct WorkspaceDetailView: View {
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
     let closeScanComparison: () -> Void
+    let workspaceDidAppear: () -> Void
     let comparisonRowActions: ScanComparisonRowActions
     let comparisonLocationActions: ScanComparisonLocationActions
     let actions: WorkspaceActions
@@ -659,6 +653,7 @@ private struct WorkspaceDetailView: View {
                 freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
                 actions: actions
             )
+                .onAppear(perform: workspaceDidAppear)
                 .toolbar {
                     ToolbarItemGroup(placement: .navigation) {
                         Button {
@@ -683,6 +678,56 @@ private struct WorkspaceDetailView: View {
 }
 
 private extension ContentView {
+    func comparisonSetupDidAppear() {
+        guard inspectorPresentationBeforeComparison == nil else { return }
+
+        inspectorPresentationBeforeComparison = showsInspector
+        setInspectorPresented(false)
+    }
+
+    func cancelComparisonSetup() {
+        appModel.cancelComparisonSetup()
+        restoreInspectorIfComparisonInactive()
+    }
+
+    func confirmComparisonSetup() {
+        appModel.confirmComparisonSetup()
+        restoreInspectorIfComparisonInactive()
+    }
+
+    func closeScanComparison() {
+        appModel.closeScanComparison()
+    }
+
+    func workspaceDidAppear() {
+        guard inspectorPresentationBeforeComparison != nil else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            restoreInspectorIfComparisonInactive()
+        }
+    }
+
+    func restoreInspectorIfComparisonInactive() {
+        guard appModel.pendingComparisonSetup == nil,
+              appModel.archiveOperation?.kind != .compare,
+              appModel.scanComparison == nil,
+              let previousPresentation = inspectorPresentationBeforeComparison else {
+            return
+        }
+
+        inspectorPresentationBeforeComparison = nil
+        setInspectorPresented(previousPresentation)
+    }
+
+    func setInspectorPresented(_ isPresented: Bool) {
+        guard showsInspector != isPresented else { return }
+
+        withTransaction(Transaction(animation: nil)) {
+            showsInspector = isPresented
+        }
+    }
+
     var workspaceActions: WorkspaceActions {
         WorkspaceActions(
             chooseFolder: { appModel.presentOpenPanelAndScan() },

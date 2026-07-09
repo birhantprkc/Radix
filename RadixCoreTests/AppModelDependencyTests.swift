@@ -288,6 +288,12 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertTrue(model.canCompareCurrentScanWithPreviousScan)
         model.compareCurrentScanWithPreviousScan()
 
+        XCTAssertEqual(model.pendingComparisonSetup?.before?.id, firstSnapshot.id)
+        XCTAssertEqual(model.pendingComparisonSetup?.after?.id, secondSnapshot.id)
+        XCTAssertTrue(model.pendingComparisonSetup?.canCompare == true)
+
+        model.confirmComparisonSetup()
+
         try await waitForAppModelCondition("previous scan comparison built") {
             model.scanComparison?.after.id == secondSnapshot.id
         }

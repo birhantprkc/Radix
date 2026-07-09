@@ -35,6 +35,23 @@ struct ExportConfirmationState: Identifiable, Equatable, Sendable {
 nonisolated enum ScanComparisonCandidateSource: Equatable, Sendable {
     case archive(URL)
     case currentSnapshot(UUID)
+    case retainedSnapshot(ScanSnapshot)
+
+    static func == (
+        lhs: ScanComparisonCandidateSource,
+        rhs: ScanComparisonCandidateSource
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case (.archive(let lhsURL), .archive(let rhsURL)):
+            return lhsURL == rhsURL
+        case (.currentSnapshot(let lhsID), .currentSnapshot(let rhsID)):
+            return lhsID == rhsID
+        case (.retainedSnapshot(let lhsSnapshot), .retainedSnapshot(let rhsSnapshot)):
+            return lhsSnapshot.id == rhsSnapshot.id
+        default:
+            return false
+        }
+    }
 }
 
 nonisolated enum ScanComparisonSlot: String, CaseIterable, Identifiable, Sendable {
@@ -83,6 +100,20 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
     init(snapshot: ScanSnapshot) {
         self.id = snapshot.id
         self.source = .currentSnapshot(snapshot.id)
+        self.displayName = snapshot.target.displayName
+        self.path = snapshot.target.url.path
+        self.targetKind = snapshot.target.kind
+        self.scanDate = snapshot.finishedAt ?? snapshot.startedAt
+        self.totalAllocatedSize = snapshot.aggregateStats.totalAllocatedSize
+        self.fileCount = snapshot.aggregateStats.fileCount
+        self.directoryCount = snapshot.aggregateStats.directoryCount
+        self.warningCount = snapshot.scanWarnings.count
+        self.scanOptions = snapshot.scanOptions
+    }
+
+    init(retainedSnapshot snapshot: ScanSnapshot) {
+        self.id = snapshot.id
+        self.source = .retainedSnapshot(snapshot)
         self.displayName = snapshot.target.displayName
         self.path = snapshot.target.url.path
         self.targetKind = snapshot.target.kind
@@ -932,7 +963,10 @@ final class AppModel: ObservableObject {
             return
         }
 
-        startLiveScanComparison(before: beforeSnapshot, after: afterSnapshot)
+        beginComparisonSetup(
+            before: ScanComparisonCandidate(retainedSnapshot: beforeSnapshot),
+            after: ScanComparisonCandidate(snapshot: afterSnapshot)
+        )
     }
 
     func compareCurrentScan(with sourceURL: URL) {
@@ -1356,43 +1390,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startLiveScanComparison(before: ScanSnapshot, after: ScanSnapshot) {
-        cancelArchiveOperation()
-        scanComparison = nil
-        let currentSnapshotID = after.id
-        let operationID = beginArchiveOperation(
-            kind: .compare,
-            title: "Comparing Scans",
-            message: "Finding storage changes",
-            progressReporter: nil
-        )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let comparisonTask = Task.detached(priority: .utility) {
-                    try await ScanComparisonService().compare(before: before, after: after)
-                }
-                let comparison = try await Self.value(cancelling: comparisonTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID),
-                      self.scanCoordinator.snapshot?.id == currentSnapshotID else {
-                    return
-                }
-                self.quickLookController.closePreview()
-                self.scanComparison = comparison
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error, title: "Comparison Failed")
-            }
-        }
-    }
-
     func confirmImportPreview() {
         guard canConfirmImportPreview,
               let preview = pendingImportPreview else {
@@ -1590,6 +1587,8 @@ final class AppModel: ObservableObject {
                 throw FileActionError.currentComparisonSnapshotUnavailable
             }
             return currentSnapshot
+        case .retainedSnapshot(let snapshot):
+            return snapshot
         }
     }
 

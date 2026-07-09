@@ -54,18 +54,19 @@ struct ScanComparisonView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
+        GeometryReader { _ in
+            VStack(spacing: 0) {
+                header
 
-            Divider()
+                Divider()
 
-            if displayedRows.isEmpty {
-                emptyState
-            } else {
-                comparisonTable
+                comparisonContent
+                    .frame(minHeight: 0, maxHeight: .infinity)
+                    .clipped()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -82,6 +83,15 @@ struct ScanComparisonView: View {
         }
         .onChange(of: comparison.id) { _, _ in
             refreshDisplayedRows(using: rowQuery)
+        }
+    }
+
+    @ViewBuilder
+    private var comparisonContent: some View {
+        if displayedRows.isEmpty {
+            emptyState
+        } else {
+            comparisonTable
         }
     }
 
