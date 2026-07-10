@@ -23,6 +23,7 @@ struct ScanComparisonView: View {
     @State private var sortOrder: [ScanComparisonRowComparator]
     @State private var selection = Set<ScanComparisonRow.ID>()
     @State private var displayedRows: [ScanComparisonRow]
+    @State private var isLocationOverviewExpanded = true
 
     init(
         comparison: ScanComparison,
@@ -278,11 +279,29 @@ struct ScanComparisonView: View {
 
     private var locationOverview: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(locationOverviewTitle)
-                .font(.subheadline.weight(.semibold))
+            Button {
+                isLocationOverviewExpanded.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Text(locationOverviewTitle)
+                        .font(.subheadline.weight(.semibold))
 
-            ForEach(highlightedLocations) { location in
-                locationRow(location)
+                    Spacer()
+
+                    Image(systemName: isLocationOverviewExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isLocationOverviewExpanded ? "Expanded" : "Collapsed")
+            .help(isLocationOverviewExpanded ? "Collapse \(locationOverviewTitle)" : "Expand \(locationOverviewTitle)")
+
+            if isLocationOverviewExpanded {
+                ForEach(highlightedLocations) { location in
+                    locationRow(location)
+                }
             }
         }
         .padding(10)
