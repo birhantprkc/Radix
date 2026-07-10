@@ -22,6 +22,37 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         self.summaryPool = summaryPool
     }
 
+    /// Cheap, synchronous pre-check mirroring `summaryIfNeeded`'s gating: whether the
+    /// directory is worth probing or summarizing at all. Runs no descendant I/O, so it
+    /// is safe to call on the scan scheduling loop before dispatching the (potentially
+    /// slow) `summaryIfNeeded` call off it.
+    func isAtomicSummaryCandidate(
+        url: URL,
+        childEntries: [DirectoryEntry],
+        isNodeDependencyLayout: Bool,
+        minFileCount: Int,
+        maxAverageFileSize: Int64,
+        cancellationCheck: CancellationCheck
+    ) throws -> Bool {
+        guard !childEntries.isEmpty else { return false }
+        if childEntries.count >= minFileCount,
+           try immediateChildrenSuggestAtomicDirectory(
+               childEntries,
+               maxAverageFileSize: maxAverageFileSize,
+               cancellationCheck: cancellationCheck
+           ) {
+            return true
+        }
+        if Self.isKnownGeneratedDirectory(at: url) {
+            return true
+        }
+        return shouldRunDescendantAtomicProbe(
+            childEntries: childEntries,
+            minFileCount: minFileCount,
+            isNodeDependencyLayout: isNodeDependencyLayout
+        )
+    }
+
     /// Determines if a directory should be treated as atomic (summarized without expansion).
     /// Returns a summary if the directory has many small files (like node_modules, caches).
     /// Returns nil if the directory should be expanded normally.
