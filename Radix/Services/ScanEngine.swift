@@ -220,31 +220,36 @@ actor ScanEngine {
     private let usesBulkDirectoryEnumeration: Bool
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
+    private let atomicSummaryProgressEmissionInterval: TimeInterval
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let diagnostics: ScanDiagnosticsContext?
 
     init(
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
-        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil,
+        atomicSummaryProgressEmissionInterval: TimeInterval = 0.15
     ) {
         self.init(
             enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
             volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
             usesBulkDirectoryEnumeration: true,
-            atomicSummaryWorkerObserver: atomicSummaryWorkerObserver
+            atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
+            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval
         )
     }
 
     init(
         enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
-        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil,
+        atomicSummaryProgressEmissionInterval: TimeInterval = 0.15
     ) {
         self.init(
             enumeratedDirectoryContents: enumeratedDirectoryContents,
             volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
             usesBulkDirectoryEnumeration: false,
-            atomicSummaryWorkerObserver: atomicSummaryWorkerObserver
+            atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
+            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval
         )
     }
 
@@ -252,7 +257,8 @@ actor ScanEngine {
         enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider,
         usesBulkDirectoryEnumeration: Bool,
-        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?,
+        atomicSummaryProgressEmissionInterval: TimeInterval
     ) {
         #if DEBUG
         let diagnostics = ScanDiagnostics.makeIfEnabled()
@@ -263,6 +269,7 @@ actor ScanEngine {
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         self.linkCountCapabilityCache = LinkCountCapabilityCache()
         self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
+        self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.diagnostics = diagnostics
     }
@@ -270,13 +277,15 @@ actor ScanEngine {
     init(
         directoryContents: @escaping URLDirectoryContentsProvider,
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
-        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil,
+        atomicSummaryProgressEmissionInterval: TimeInterval = 0.15
     ) {
         self.init(enumeratedDirectoryContents: { url, keys, options, cancellationCheck in
             let urls = try directoryContents(url, keys, options, cancellationCheck)
             return DirectoryEnumerationResult(urls: urls)
         }, volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
-           atomicSummaryWorkerObserver: atomicSummaryWorkerObserver)
+           atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
+           atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval)
     }
 
     private nonisolated static func defaultDirectoryContents(
@@ -620,7 +629,8 @@ actor ScanEngine {
         let atomicSummaryWorkerLimit = ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options)
         let atomicSummaryPool = AtomicDirectorySummaryPool(
             workerLimit: atomicSummaryWorkerLimit,
-            workerObserver: atomicSummaryWorkerObserver
+            workerObserver: atomicSummaryWorkerObserver,
+            progressEmissionInterval: atomicSummaryProgressEmissionInterval
         )
         atomicSummaryPool.start()
         let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
@@ -647,6 +657,7 @@ actor ScanEngine {
                 options: options,
                 exclusionMatcher: exclusionMatcher,
                 atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
+                progressWeight: 1,
                 cancellationCheck: cancellationCheck,
                 metrics: &metrics,
                 continuation: continuation,
@@ -664,7 +675,11 @@ actor ScanEngine {
                 }
             }
             metrics.recalculateProgress()
-            continuation.yield(.progress(metrics))
+            atomicSummaryPool.updateProgress(
+                &metrics,
+                continuation: continuation,
+                force: true
+            )
             let rawStore = FileTreeStore(root: leafResult.node)
             let store = HardLinkDeduplicator.deduplicatedStore(
                 rootID: leafResult.node.id,
@@ -719,7 +734,8 @@ actor ScanEngine {
                             metrics: &metrics,
                             warnings: &warnings,
                             continuation: continuation,
-                            emissionState: &emissionState
+                            emissionState: &emissionState,
+                            summaryPool: atomicSummaryPool
                         )
                         continue
                     }
@@ -748,6 +764,7 @@ actor ScanEngine {
                             warnings: &warnings,
                             continuation: continuation,
                             emissionState: &emissionState,
+                            summaryPool: atomicSummaryPool,
                             completedByKey: &completedByKey
                         )
                         continue
@@ -766,6 +783,7 @@ actor ScanEngine {
                                 warnings: &warnings,
                                 continuation: continuation,
                                 emissionState: &emissionState,
+                                summaryPool: atomicSummaryPool,
                                 completedByKey: &completedByKey
                             )
                             continue
@@ -775,7 +793,7 @@ actor ScanEngine {
 
                     if shouldTraverseDirectory(metadata: meta, options: options) {
                         metrics.directoriesVisited += 1
-                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
                         let taskItem = item
                         let taskItemKey = itemKey
@@ -849,6 +867,7 @@ actor ScanEngine {
                                     options: options,
                                     exclusionMatcher: exclusionMatcher,
                                     atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
+                                    progressWeight: taskItem.weight,
                                     cancellationCheck: cancellationCheck,
                                     metrics: &localMetrics,
                                     continuation: continuation,
@@ -869,6 +888,7 @@ actor ScanEngine {
                             options: options,
                             exclusionMatcher: exclusionMatcher,
                             atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
+                            progressWeight: item.weight,
                             cancellationCheck: cancellationCheck,
                             metrics: &metrics,
                             continuation: continuation,
@@ -885,7 +905,7 @@ actor ScanEngine {
                                 continuation.yield(.warning(warning))
                             }
                         }
-                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
                         completedByKey[itemKey] = CompletedDirScan(
                             node: leafResult.node,
@@ -939,7 +959,7 @@ actor ScanEngine {
                     }
                     metrics.discoveredDirectoryCount += childDirectoryCount
                     metrics.pendingDirectoryCount += childDirectoryCount
-                    maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+                    maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
                     // Check if this directory should be summarized as atomic (many small files)
                     let minFileCount = options.autoSummarizeMinFileCount ?? AtomicDirectoryThresholds.minFileCount
@@ -964,6 +984,7 @@ actor ScanEngine {
                            minFileCount: minFileCount,
                            maxAverageFileSize: maxAvgSize,
                            workerLimit: atomicSummaryWorkerLimit,
+                           progressWeight: item.weight,
                            exclusionMatcher: exclusionMatcher,
                            cancellationCheck: cancellationCheck,
                            metrics: &metrics,
@@ -1006,7 +1027,7 @@ actor ScanEngine {
                                 continuation.yield(.warning(warning))
                             }
                         }
-                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
                         completedByKey[itemKey] = CompletedDirScan(
                             node: atomicNode,
@@ -1046,7 +1067,8 @@ actor ScanEngine {
                                     metrics: &metrics,
                                     warnings: &warnings,
                                     continuation: continuation,
-                                    emissionState: &emissionState
+                                    emissionState: &emissionState,
+                                    summaryPool: atomicSummaryPool
                                 )
                                 continue
                             }
@@ -1077,7 +1099,8 @@ actor ScanEngine {
                             maybeEmitProgress(
                                 metrics: &metrics,
                                 continuation: continuation,
-                                emissionState: &emissionState
+                                emissionState: &emissionState,
+                                summaryPool: atomicSummaryPool
                             )
                             completedByKey[childKey] = CompletedDirScan(
                                 node: childNode,
@@ -1128,7 +1151,7 @@ actor ScanEngine {
                     metrics.completedTraversalWeight += item.weight
                     metrics.enumeratedDirectoryCount += 1
                     releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
-                    maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+                    maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
                     let inaccessibleNode = FileNodeRecord(
                         id: item.url.path,
@@ -1172,7 +1195,8 @@ actor ScanEngine {
                     maybeEmitProgress(
                         metrics: &metrics,
                         continuation: continuation,
-                        emissionState: &emissionState
+                        emissionState: &emissionState,
+                        summaryPool: atomicSummaryPool
                     )
                     completedByKey[packageResult.itemKey] = CompletedDirScan(
                         node: leafResult.node,
@@ -1190,7 +1214,11 @@ actor ScanEngine {
         metrics.isFinalizing = true
         metrics.finalizationFraction = 0
         metrics.recalculateProgress()
-        continuation.yield(.progress(metrics))
+        atomicSummaryPool.updateProgress(
+            &metrics,
+            continuation: continuation,
+            force: true
+        )
 
         let finalizationTotal = max(completedByKey.count, 1)
         // Cap stream traffic to roughly 200 assembly updates on very large scans.
@@ -1298,7 +1326,11 @@ actor ScanEngine {
                 try Task.checkCancellation()
                 metrics.finalizationFraction = Double(finalizedItems) / Double(finalizationTotal)
                 metrics.recalculateProgress()
-                continuation.yield(.progress(metrics))
+                atomicSummaryPool.updateProgress(
+                    &metrics,
+                    continuation: continuation,
+                    force: true
+                )
             }
         }
         #if DEBUG
@@ -1317,7 +1349,7 @@ actor ScanEngine {
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
         metrics.finalizationFraction = 1
         metrics.recalculateProgress()
-        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
         let store = HardLinkDeduplicator.deduplicatedStore(
             rootID: rootNode.id,
@@ -1426,14 +1458,20 @@ actor ScanEngine {
         metrics: inout ScanMetrics,
         warnings: inout [ScanWarning],
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
+        emissionState: inout ScanEmissionState,
+        summaryPool: AtomicDirectorySummaryPool? = nil
     ) {
         let warning = ScanWarningFactory.makeDuplicateNodeWarning(for: url)
         warnings.append(warning)
         continuation.yield(.warning(warning))
         metrics.completedItems += 1
         metrics.completedTraversalWeight += weight
-        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+        maybeEmitProgress(
+            metrics: &metrics,
+            continuation: continuation,
+            emissionState: &emissionState,
+            summaryPool: summaryPool
+        )
     }
 
     private nonisolated func recordUnavailableItem(
@@ -1444,6 +1482,7 @@ actor ScanEngine {
         warnings: inout [ScanWarning],
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState,
+        summaryPool: AtomicDirectorySummaryPool? = nil,
         completedByKey: inout [CompletedDirScan?]
     ) {
         let isDirectory = Self.isLikelyTraversableDirectory(
@@ -1456,7 +1495,12 @@ actor ScanEngine {
         continuation.yield(.warning(warning))
         metrics.completedItems += 1
         metrics.completedTraversalWeight += item.weight
-        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
+        maybeEmitProgress(
+            metrics: &metrics,
+            continuation: continuation,
+            emissionState: &emissionState,
+            summaryPool: summaryPool
+        )
 
         completedByKey[itemKey] = CompletedDirScan(
             node: makeUnavailableNode(for: item.url, isDirectory: isDirectory),
@@ -1847,6 +1891,7 @@ actor ScanEngine {
         options: ScanOptions,
         exclusionMatcher: ScanExclusionMatcher,
         atomicDirectorySummarizer: AtomicDirectorySummarizer,
+        progressWeight: Double,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
@@ -1874,6 +1919,7 @@ actor ScanEngine {
             includeHiddenFiles: options.includeHiddenFiles,
             treatPackagesAsDirectories: true,
             workerLimit: ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options),
+            progressWeight: progressWeight,
             ownerNodeID: url.path,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
@@ -2020,7 +2066,8 @@ actor ScanEngine {
     private nonisolated func maybeEmitProgress(
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
+        emissionState: inout ScanEmissionState,
+        summaryPool: AtomicDirectorySummaryPool? = nil
     ) {
         let visitedItems = metrics.filesVisited + metrics.directoriesVisited
         let isFixedEmissionPoint = visitedItems <= 2 || visitedItems.isMultiple(of: 1_000)
@@ -2033,7 +2080,11 @@ actor ScanEngine {
 
         emissionState.lastProgressEmission = now
         metrics.recalculateProgress()
-        continuation.yield(.progress(metrics))
+        if let summaryPool {
+            summaryPool.updateProgress(&metrics, continuation: continuation)
+        } else {
+            continuation.yield(.progress(metrics))
+        }
     }
 
     private nonisolated func shouldTraverseDirectory(metadata: NodeMetadata, options: ScanOptions) -> Bool {

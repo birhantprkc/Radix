@@ -20,6 +20,15 @@ struct ScanMetrics: Sendable {
     /// weight among its children when the directory is enumerated, so the sum of completed
     /// weights converges to 1 exactly as the traversal finishes.
     var completedTraversalWeight = 0.0
+    /// Fractional traversal weight completed inside package/atomic summaries that
+    /// are still in flight. This is folded into progress without marking their
+    /// tree nodes complete before the summary result is committed.
+    var atomicSummaryCompletedTraversalWeight = 0.0
+    /// Fractional equivalents of in-flight package nodes for the item-count cap.
+    var atomicSummaryCompletedItems = 0.0
+    var atomicSummaryVisitedItems = 0
+    var atomicSummaryEstimatedRemainingItems = 0
+    var activeAtomicSummaryCount = 0
     /// Progress through the bottom-up assembly phase (0...1). Only meaningful while
     /// `isFinalizing` is true.
     var finalizationFraction = 0.0
@@ -58,7 +67,10 @@ struct ScanMetrics: Sendable {
             return
         }
 
-        var traversalFraction = min(max(completedTraversalWeight, 0), 1)
+        var traversalFraction = min(
+            max(completedTraversalWeight + atomicSummaryCompletedTraversalWeight, 0),
+            1
+        )
 
         // The weight model overshoots in skewed trees (a directory's weight is split when
         // it is enumerated, before its true size is known). Cap it with an item-count
@@ -79,7 +91,8 @@ struct ScanMetrics: Sendable {
                 : Self.maxFrontierExpansion
             let expectedFrontierYield = Double(pendingDirectoryCount) * childrenPerDirectory * expansion
             let countFraction = min(
-                (Double(completedItems) + enumerated) / (Double(discoveredItems) + expectedFrontierYield),
+                (Double(completedItems) + atomicSummaryCompletedItems + enumerated) /
+                    (Double(discoveredItems) + expectedFrontierYield),
                 1
             )
             traversalFraction = min(traversalFraction, countFraction)

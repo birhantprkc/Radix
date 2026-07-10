@@ -1158,13 +1158,15 @@ final class ScanEngineTests: XCTestCase {
         options.exclusionPatterns = ["*.log"]
 
         let engine = ScanEngine()
-        var progressPaths: [String] = []
+        var summaryProgress: [ScanMetrics] = []
         var finalSnapshot: ScanSnapshot?
 
         for try await event in engine.scan(target: ScanTarget(url: rootURL), options: options) {
             switch event {
             case .progress(let metrics):
-                progressPaths.append(metrics.currentPath)
+                if metrics.atomicSummaryVisitedItems > 0 {
+                    summaryProgress.append(metrics)
+                }
             case .finished(let snapshot):
                 finalSnapshot = snapshot
             case .warning:
@@ -1177,10 +1179,39 @@ final class ScanEngineTests: XCTestCase {
 
         XCTAssertEqual(packageNode.descendantFileCount, 0)
         XCTAssertFalse(containsChildren(packageNode, in: snapshot))
-        XCTAssertTrue(
-            progressPaths.contains(where: { $0.hasSuffix("/Sample.app/debug.log") }),
-            "Expected package summary progress to include excluded file path"
-        )
+        XCTAssertTrue(summaryProgress.contains { $0.currentPath.contains("/Sample.app") })
+        XCTAssertTrue(summaryProgress.contains { $0.atomicSummaryVisitedItems >= 1 })
+    }
+
+    func testPackageSummaryProgressTracksVisitedAndEstimatedRemainingWork() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let packageURL = rootURL.appending(path: "Progress.app", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+        for index in 0..<300 {
+            try Data([UInt8(index % 256)]).write(
+                to: packageURL.appending(path: String(format: "payload-%04d.dat", index))
+            )
+        }
+
+        let engine = ScanEngine(atomicSummaryProgressEmissionInterval: 0)
+        var progressMetrics: [ScanMetrics] = []
+        for try await event in engine.scan(target: ScanTarget(url: rootURL), options: ScanOptions()) {
+            if case .progress(let metrics) = event {
+                progressMetrics.append(metrics)
+            }
+        }
+
+        let summaryMetrics = progressMetrics.filter { $0.atomicSummaryVisitedItems > 0 }
+        XCTAssertGreaterThanOrEqual(summaryMetrics.count, 2)
+        XCTAssertEqual(summaryMetrics.map(\.atomicSummaryVisitedItems).max(), 300)
+        XCTAssertTrue(summaryMetrics.contains { $0.atomicSummaryEstimatedRemainingItems > 0 })
+        XCTAssertTrue(summaryMetrics.contains { $0.activeAtomicSummaryCount == 1 })
+        for pair in zip(progressMetrics, progressMetrics.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(pair.1.progressFraction, pair.0.progressFraction)
+        }
+        XCTAssertEqual(try XCTUnwrap(progressMetrics.last).progressFraction, 1, accuracy: 0.0001)
     }
 
     func testExcludedFilesDoNotContributeThroughAutoSummaries() async throws {
@@ -1931,6 +1962,31 @@ final class ScanEngineTests: XCTestCase {
         for pair in zip(progressFractions, progressFractions.dropFirst()) {
             XCTAssertGreaterThanOrEqual(pair.1, pair.0)
         }
+    }
+
+    func testInFlightAtomicSummaryWorkFoldsIntoTraversalProgress() {
+        var metrics = ScanMetrics()
+        metrics.discoveredItems = 1
+        metrics.completedTraversalWeight = 0.2
+        metrics.atomicSummaryCompletedTraversalWeight = 0.3
+        metrics.atomicSummaryCompletedItems = 0.5
+
+        metrics.recalculateProgress()
+
+        XCTAssertEqual(metrics.progressFraction, 0.5 * 0.95, accuracy: 0.0001)
+    }
+
+    func testInFlightAtomicSummaryItemsParticipateInCountCap() {
+        var metrics = ScanMetrics()
+        metrics.discoveredItems = 10
+        metrics.completedItems = 2
+        metrics.enumeratedDirectoryCount = 1
+        metrics.completedTraversalWeight = 0.9
+        metrics.atomicSummaryCompletedItems = 0.5
+
+        metrics.recalculateProgress()
+
+        XCTAssertEqual(metrics.progressFraction, 0.35 * 0.95, accuracy: 0.0001)
     }
 
     func testFinalizationProgressIsEmittedDuringAssembly() async throws {

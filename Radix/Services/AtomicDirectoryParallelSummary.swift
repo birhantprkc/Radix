@@ -148,22 +148,41 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
 }
 
 nonisolated final class AtomicSummaryProgressReporter: @unchecked Sendable {
+    typealias VisitHandler = @Sendable (_ delta: Int, _ currentURL: URL) -> Void
+
     private let lock = NSLock()
     private var metrics: ScanMetrics
     private let continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+    private let visitHandler: VisitHandler?
     private var lastEmission = Date.distantPast
     private var hasEmitted = false
+    private var lastReportedVisitedItemCount = 0
 
     init(
         metrics: ScanMetrics,
-        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
+        visitHandler: VisitHandler? = nil
     ) {
         self.metrics = metrics
         self.continuation = continuation
+        self.visitHandler = visitHandler
     }
 
-    func emit(currentURL: URL) {
+    func emit(currentURL: URL, visitedItemCount: Int? = nil) {
         lock.lock()
+        if let visitedItemCount, let visitHandler {
+            let delta = visitedItemCount >= lastReportedVisitedItemCount
+                ? visitedItemCount - lastReportedVisitedItemCount
+                : visitedItemCount
+            lastReportedVisitedItemCount = visitedItemCount
+            if delta > 0 {
+                visitHandler(delta, currentURL)
+            }
+        }
+        guard visitHandler == nil else {
+            lock.unlock()
+            return
+        }
         let now = Date()
         guard !hasEmitted || now.timeIntervalSince(lastEmission) >= 0.15 else {
             lock.unlock()
@@ -174,6 +193,16 @@ nonisolated final class AtomicSummaryProgressReporter: @unchecked Sendable {
         lastEmission = now
         hasEmitted = true
         continuation.yield(.progress(metrics))
+        lock.unlock()
+    }
+
+    func finish(currentURL: URL, visitedItemCount: Int) {
+        emit(currentURL: currentURL, visitedItemCount: visitedItemCount)
+    }
+
+    func beginPhase() {
+        lock.lock()
+        lastReportedVisitedItemCount = 0
         lock.unlock()
     }
 }
@@ -232,6 +261,10 @@ extension AtomicDirectorySummarizer {
             } catch {
                 try cancellationCheck()
                 partial.recordWarning(for: item.url, error: error)
+                progressReporter.finish(
+                    currentURL: item.url,
+                    visitedItemCount: visitedItemCount
+                )
                 return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
             }
         }
@@ -250,9 +283,14 @@ extension AtomicDirectorySummarizer {
                 )
             }
         } catch BulkDirectoryEnumerator.StreamError.unavailable {
+            progressReporter.finish(
+                currentURL: item.url,
+                visitedItemCount: visitedItemCount
+            )
             if item.requiresRootRestartOnFallback {
                 throw AtomicSummaryRootFallbackRequired()
             }
+            progressReporter.beginPhase()
             return try processPooledWorkItemUsingFoundation(
                 item,
                 includeHiddenFiles: includeHiddenFiles,
@@ -263,11 +301,16 @@ extension AtomicDirectorySummarizer {
             )
         } catch {
             try cancellationCheck()
+            progressReporter.finish(
+                currentURL: item.url,
+                visitedItemCount: visitedItemCount
+            )
             var warningOnly = AtomicDirectorySummaryPartial()
             warningOnly.recordWarning(for: item.url, error: error)
             return AtomicSummaryWorkResult(partial: warningOnly, pendingItems: [])
         }
 
+        progressReporter.finish(currentURL: item.url, visitedItemCount: visitedItemCount)
         return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
     }
 
@@ -305,6 +348,7 @@ extension AtomicDirectorySummarizer {
                     userInfo: [NSURLErrorKey: item.url]
                 )
             )
+            progressReporter.finish(currentURL: item.url, visitedItemCount: 0)
             return AtomicSummaryWorkResult(partial: partial, pendingItems: [])
         }
 
@@ -316,7 +360,10 @@ extension AtomicDirectorySummarizer {
             guard let childURL = nextObject as? URL else { continue }
             visitedItemCount += 1
             if visitedItemCount == 1 || visitedItemCount.isMultiple(of: 64) {
-                progressReporter.emit(currentURL: childURL)
+                progressReporter.emit(
+                    currentURL: childURL,
+                    visitedItemCount: visitedItemCount
+                )
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
@@ -383,6 +430,7 @@ extension AtomicDirectorySummarizer {
             partial.isAccessible = false
             partial.warnings.append(contentsOf: localizedWarnings)
         }
+        progressReporter.finish(currentURL: item.url, visitedItemCount: visitedItemCount)
         return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
     }
 
@@ -627,7 +675,10 @@ extension AtomicDirectorySummarizer {
             let childURL = childEntry.url
             workerVisitedItemCount += 1
             if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
-                progressReporter.emit(currentURL: childURL)
+                progressReporter.emit(
+                    currentURL: childURL,
+                    visitedItemCount: workerVisitedItemCount
+                )
             }
 
             let hintedIsDirectory = childEntry.isDirectoryHint ?? childURL.hasDirectoryPath
@@ -729,7 +780,10 @@ extension AtomicDirectorySummarizer {
             guard let childURL = nextObject as? URL else { continue }
             workerVisitedItemCount += 1
             if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
-                progressReporter.emit(currentURL: childURL)
+                progressReporter.emit(
+                    currentURL: childURL,
+                    visitedItemCount: workerVisitedItemCount
+                )
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath

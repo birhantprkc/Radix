@@ -248,6 +248,14 @@ extension AtomicDirectorySummarizer {
         guard now.timeIntervalSince(emissionState.lastProgressEmission) >= 0.15 else { return }
 
         emissionState.lastProgressEmission = now
-        continuation.yield(.progress(metrics))
+        if let summaryPool {
+            summaryPool.updateProgress(
+                &metrics,
+                continuation: continuation,
+                currentPath: currentURL.path
+            )
+        } else {
+            continuation.yield(.progress(metrics))
+        }
     }
 }
