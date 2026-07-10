@@ -241,9 +241,13 @@ nonisolated enum BulkDirectoryEnumerator {
     private static var requestedAttributes: attrlist {
         var attributes = attrlist()
         attributes.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT)
-        attributes.commonattr = requiredCommonAttributes
+        attributes.commonattr = requestedCommonAttributes
         attributes.fileattr = requiredFileAttributes
         return attributes
+    }
+
+    private static var requestedCommonAttributes: attrgroup_t {
+        requiredCommonAttributes | attrgroup_t(ATTR_CMN_FNDRINFO)
     }
 
     private static var requiredCommonAttributes: attrgroup_t {
@@ -361,6 +365,7 @@ nonisolated enum BulkDirectoryEnumerator {
               let deviceID: dev_t = cursor.read(),
               let objectType: fsobj_type_t = cursor.read(),
               let modificationTime: timespec = cursor.read(),
+              let finderPackageBit = cursor.readFinderInfoPackageBit(),
               let flags: UInt32 = cursor.read(),
               let userAccess: UInt32 = cursor.read(),
               let fileID: UInt64 = cursor.read() else {
@@ -389,6 +394,12 @@ nonisolated enum BulkDirectoryEnumerator {
         let directoryHint: URL.DirectoryHint = isDirectory ? .isDirectory : .notDirectory
         let url = directoryURL.appending(path: name, directoryHint: directoryHint)
         let isHidden = name.first == "." || (flags & UInt32(UF_HIDDEN)) != 0
+        let hasFinderPackageFlag: Bool?
+        if returned.commonattr & attrgroup_t(ATTR_CMN_FNDRINFO) != 0 {
+            hasFinderPackageFlag = finderPackageBit
+        } else {
+            hasFinderPackageFlag = nil
+        }
 
         if entryError != 0 {
             guard entryError <= UInt32(Int32.max) else { return nil }
@@ -416,7 +427,10 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let metadata = NodeMetadata(
             isDirectory: isDirectory,
-            isPackage: isDirectory && loadsPackageMetadata && metadataLoader.isPackageDirectory(at: url),
+            isPackage: isDirectory && loadsPackageMetadata && metadataLoader.isPackageDirectory(
+                at: url,
+                hasFinderPackageFlag: hasFinderPackageFlag
+            ),
             isSymbolicLink: isSymbolicLink,
             logicalSize: max(Int64(logicalSize), 0),
             allocatedSize: max(Int64(allocatedSize), 0),
@@ -478,5 +492,15 @@ private nonisolated struct AttributeCursor {
         let value = current.loadUnaligned(as: T.self)
         current = current.advanced(by: alignedSize)
         return value
+    }
+
+    mutating func readFinderInfoPackageBit() -> Bool? {
+        let byteCount = 32
+        guard byteCount <= current.distance(to: end) else {
+            return nil
+        }
+        let hasPackageBit = current.load(fromByteOffset: 8, as: UInt8.self) & 0x20 != 0
+        current = current.advanced(by: byteCount)
+        return hasPackageBit
     }
 }

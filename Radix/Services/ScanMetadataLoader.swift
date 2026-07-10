@@ -216,15 +216,18 @@ nonisolated struct ScanMetadataLoader: Sendable {
     let diagnostics: ScanDiagnosticsContext?
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let fileSystemInfoProvider: FileSystemInfoProvider
+    private let packageClassifier: PackageClassifier
 
     init(
         diagnostics: ScanDiagnosticsContext? = nil,
         linkCountCapabilityCache: LinkCountCapabilityCache = LinkCountCapabilityCache(),
-        fileSystemInfoProvider: @escaping FileSystemInfoProvider = ScanMetadataLoader.defaultFileSystemInfo
+        fileSystemInfoProvider: @escaping FileSystemInfoProvider = ScanMetadataLoader.defaultFileSystemInfo,
+        packageClassifier: PackageClassifier = PackageClassifier()
     ) {
         self.diagnostics = diagnostics
         self.linkCountCapabilityCache = linkCountCapabilityCache
         self.fileSystemInfoProvider = fileSystemInfoProvider
+        self.packageClassifier = packageClassifier
     }
 
     func metadata(for url: URL, includeVolumeDetails: Bool = false) throws -> NodeMetadata {
@@ -276,17 +279,30 @@ nonisolated struct ScanMetadataLoader: Sendable {
         return atomicSummaryMetadata(for: url, prefetchedResourceValues: values)
     }
 
-    func isPackageDirectory(at url: URL) -> Bool {
+    func isPackageDirectory(
+        at url: URL,
+        hasFinderPackageFlag: Bool? = nil
+    ) -> Bool {
         #if DEBUG
         let start = diagnostics?.start()
-        defer {
+        #endif
+        let classification = packageClassifier.classification(
+            for: url,
+            hasFinderPackageFlag: hasFinderPackageFlag
+        )
+        #if DEBUG
+        switch classification.source {
+        case .foundation:
             diagnostics?.record(operation: "metadata.package", url: url, startedAt: start)
+        case .fastNegative:
+            diagnostics?.record(operation: "metadata.package.fast_negative", url: url, startedAt: start)
+        case .finderInfo:
+            diagnostics?.record(operation: "metadata.package.finder_info", url: url, startedAt: start)
+        case .extensionCache:
+            diagnostics?.record(operation: "metadata.package.extension_cache", url: url, startedAt: start)
         }
         #endif
-        guard let values = try? url.resourceValues(forKeys: [.isPackageKey]) else {
-            return false
-        }
-        return values.isPackage ?? false
+        return classification.isPackage
     }
 
     nonisolated func metadata(

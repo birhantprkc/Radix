@@ -334,6 +334,78 @@ final class ScanBenchmarkTests: XCTestCase {
         }
     }
 
+    func testPackageClassifierBenchmark() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_PACKAGE_CLASSIFIER"] == "1" else {
+            throw XCTSkip("Set RADIX_BENCH_PACKAGE_CLASSIFIER=1 to run the package-classifier benchmark.")
+        }
+
+        let directoryCount = environment["RADIX_BENCH_PACKAGE_CLASSIFIER_DIRS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 10_000
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "radix-package-classifier-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var directoryURLs: [URL] = []
+        directoryURLs.reserveCapacity(directoryCount)
+        for index in 0..<directoryCount {
+            let name: String
+            if index.isMultiple(of: 1_000) {
+                name = "Candidate-\(index).app"
+            } else if index.isMultiple(of: 997) {
+                name = "Ambiguous-\(index).radixunknown"
+            } else if index.isMultiple(of: 2) {
+                name = "Ordinary-\(index).txt"
+            } else {
+                name = "Extensionless-\(index)"
+            }
+            let url = rootURL.appending(path: name, directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            directoryURLs.append(url)
+        }
+
+        let legacyStart = ContinuousClock.now
+        let legacyValues = directoryURLs.map { url in
+            (try? url.resourceValues(forKeys: [.isPackageKey]).isPackage) ?? false
+        }
+        let legacyElapsed = Self.elapsedSeconds(since: legacyStart)
+
+        let counter = PackageClassifierBenchmarkCounter()
+        let classifier = PackageClassifier(foundationPackageProvider: { url in
+            counter.recordLookup()
+            return try? url.resourceValues(forKeys: [.isPackageKey]).isPackage
+        })
+        let coldStart = ContinuousClock.now
+        let coldValues = directoryURLs.map {
+            classifier.classification(for: $0, hasFinderPackageFlag: false).isPackage
+        }
+        let coldElapsed = Self.elapsedSeconds(since: coldStart)
+        let coldLookups = counter.lookupCount
+
+        let warmStart = ContinuousClock.now
+        let warmValues = directoryURLs.map {
+            classifier.classification(for: $0, hasFinderPackageFlag: false).isPackage
+        }
+        let warmElapsed = Self.elapsedSeconds(since: warmStart)
+        let warmLookups = counter.lookupCount - coldLookups
+
+        XCTAssertEqual(coldValues, legacyValues)
+        XCTAssertEqual(warmValues, legacyValues)
+        let extensionlessCount = directoryURLs.count { $0.pathExtension.isEmpty }
+        let foundationExtensionCount = Set(
+            directoryURLs.lazy.map(\.pathExtension).filter { !$0.isEmpty && $0 != "txt" }
+        ).count
+        XCTAssertEqual(coldLookups, extensionlessCount + foundationExtensionCount)
+        XCTAssertEqual(warmLookups, extensionlessCount)
+        XCTAssertLessThan(coldLookups, directoryCount)
+        let reduction = 100 * (1 - Double(coldLookups) / Double(directoryCount))
+        print(
+            "RADIX_BENCH_PACKAGE_CLASSIFIER dirs=\(directoryCount) legacy_elapsed=\(String(format: "%.3f", legacyElapsed))s cold_elapsed=\(String(format: "%.3f", coldElapsed))s warm_elapsed=\(String(format: "%.3f", warmElapsed))s cold_foundation_lookups=\(coldLookups) warm_foundation_lookups=\(warmLookups) lookup_reduction=\(String(format: "%.1f", reduction))%"
+        )
+    }
+
     func testPackageSummaryBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_PACKAGE_SUMMARY"] == "1" else {
@@ -458,6 +530,12 @@ final class ScanBenchmarkTests: XCTestCase {
             .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
             .filter { $0 > 0 }
         return parsed.isEmpty ? defaultValues : parsed
+    }
+
+    private static func elapsedSeconds(since start: ContinuousClock.Instant) -> Double {
+        let elapsed = start.duration(to: .now)
+        return Double(elapsed.components.seconds) +
+            Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
     }
 
     private func makeAtomicProbeBenchmarkDirectory(
@@ -726,5 +804,22 @@ final class ScanBenchmarkTests: XCTestCase {
         )
 
         return elapsedSeconds
+    }
+}
+
+private final class PackageClassifierBenchmarkCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lookups = 0
+
+    var lookupCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return lookups
+    }
+
+    func recordLookup() {
+        lock.lock()
+        lookups += 1
+        lock.unlock()
     }
 }

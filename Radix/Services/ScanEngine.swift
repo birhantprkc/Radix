@@ -199,8 +199,7 @@ actor ScanEngine {
 
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
-    private let metadataLoader: ScanMetadataLoader
-    private let atomicDirectorySummarizer: AtomicDirectorySummarizer
+    private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let diagnostics: ScanDiagnosticsContext?
 
@@ -235,14 +234,9 @@ actor ScanEngine {
         #else
         let diagnostics: ScanDiagnosticsContext? = nil
         #endif
-        let metadataLoader = ScanMetadataLoader(diagnostics: diagnostics)
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
-        self.metadataLoader = metadataLoader
-        self.atomicDirectorySummarizer = AtomicDirectorySummarizer(
-            metadataLoader: metadataLoader,
-            diagnostics: diagnostics
-        )
+        self.linkCountCapabilityCache = LinkCountCapabilityCache()
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.diagnostics = diagnostics
     }
@@ -584,8 +578,16 @@ actor ScanEngine {
     ) async throws -> FileTreeStore {
         try Task.checkCancellation()
         let cancellationCheck: CancellationCheck = { try Task.checkCancellation() }
+        let scanMetadataLoader = ScanMetadataLoader(
+            diagnostics: diagnostics,
+            linkCountCapabilityCache: linkCountCapabilityCache
+        )
+        let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
+            metadataLoader: scanMetadataLoader,
+            diagnostics: diagnostics
+        )
 
-        let rootMetadata = try metadataLoader.metadata(for: target.url, includeVolumeDetails: includeVolumeDetails)
+        let rootMetadata = try scanMetadataLoader.metadata(for: target.url, includeVolumeDetails: includeVolumeDetails)
         metrics.discoveredItems = 1
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
         metrics.currentPath = target.url.path
@@ -599,7 +601,6 @@ actor ScanEngine {
             traversalWorkerLimit: directoryTraversalWorkerLimit,
             classificationWorkerLimit: directoryClassificationWorkerLimit
         )
-        let scanMetadataLoader = metadataLoader
         let directoryContentsProvider = directoryContents
         let usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         let directoryResourceKeys = ScanMetadataLoader.scanResourceKeys
@@ -611,6 +612,7 @@ actor ScanEngine {
                 metadata: rootMetadata,
                 options: options,
                 exclusionMatcher: exclusionMatcher,
+                atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                 cancellationCheck: cancellationCheck,
                 metrics: &metrics,
                 continuation: continuation,
@@ -715,7 +717,7 @@ actor ScanEngine {
                         meta = itemMetadata
                     } else {
                         do {
-                            meta = try metadataLoader.metadata(for: item.url)
+                            meta = try scanMetadataLoader.metadata(for: item.url)
                         } catch {
                             releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
                             recordUnavailableItem(
@@ -795,6 +797,7 @@ actor ScanEngine {
                             metadata: meta,
                             options: options,
                             exclusionMatcher: exclusionMatcher,
+                            atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                             cancellationCheck: cancellationCheck,
                             metrics: &metrics,
                             continuation: continuation,
@@ -880,7 +883,7 @@ actor ScanEngine {
                     var completedAsAtomicDirectory = false
                     if options.autoSummarizeDirectories,
                        canProbeForAutoSummary,
-                       let summary = try await atomicDirectorySummarizer.summaryIfNeeded(
+                       let summary = try await scanAtomicDirectorySummarizer.summaryIfNeeded(
                            url: item.url,
                            childEntries: childEntries,
                            metadata: meta,
@@ -1739,6 +1742,7 @@ actor ScanEngine {
         metadata: NodeMetadata,
         options: ScanOptions,
         exclusionMatcher: ScanExclusionMatcher,
+        atomicDirectorySummarizer: AtomicDirectorySummarizer,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
