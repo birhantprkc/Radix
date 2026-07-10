@@ -162,10 +162,41 @@ struct FileTreeStore: Sendable {
         self.orderedNodeIDs = topology.orderedNodeIDs
     }
 
-    nonisolated static func sortedChildren(_ children: [FileNodeRecord]) -> [FileNodeRecord] {
-        guard children.count > 1 else { return children }
+    /// Fast construction for scanner output whose topology has already been
+    /// validated while it was assembled. This avoids copying every node and
+    /// edge through the general-purpose topology sanitizer a second time.
+    nonisolated init(
+        verifiedRootID rootID: String,
+        nodesByID: [String: FileNodeRecord],
+        childIDsByID: [String: [String]],
+        parentIDByID: [String: String],
+        aggregateStats: ScanAggregateStats
+    ) {
+        precondition(nodesByID[rootID] != nil, "Verified FileTreeStore root is missing.")
+        self.contentID = UUID()
+        self.rootID = rootID
+        self.nodesByID = nodesByID
+        self.childIDsByID = childIDsByID
+        self.parentIDByID = parentIDByID
+        self.precomputedAggregateStats = aggregateStats
+        self.orderedNodeIDs = Self.orderedNodeIDsAssumingValidTopology(
+            rootID: rootID,
+            childIDsByID: childIDsByID,
+            nodeCount: nodesByID.count
+        )
+        assert(self.orderedNodeIDs.count == nodesByID.count)
+    }
 
-        return children.sorted { lhs, rhs in
+    nonisolated static func sortedChildren(_ children: [FileNodeRecord]) -> [FileNodeRecord] {
+        var sortedChildren = children
+        sortChildren(&sortedChildren)
+        return sortedChildren
+    }
+
+    nonisolated static func sortChildren(_ children: inout [FileNodeRecord]) {
+        guard children.count > 1 else { return }
+
+        children.sort { lhs, rhs in
             if lhs.allocatedSize == rhs.allocatedSize {
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
@@ -754,6 +785,24 @@ struct FileTreeStore: Sendable {
             materializedDirectoryIDs: materializedDirectoryIDs,
             didDropReferences: didDropReferences
         )
+    }
+
+    private nonisolated static func orderedNodeIDsAssumingValidTopology(
+        rootID: String,
+        childIDsByID: [String: [String]],
+        nodeCount: Int
+    ) -> [String] {
+        var orderedNodeIDs: [String] = []
+        orderedNodeIDs.reserveCapacity(nodeCount)
+        var stack = [rootID]
+
+        while let nodeID = stack.popLast() {
+            orderedNodeIDs.append(nodeID)
+            if let childIDs = childIDsByID[nodeID] {
+                stack.append(contentsOf: childIDs.reversed())
+            }
+        }
+        return orderedNodeIDs
     }
 
     private nonisolated static func repairMaterializedDirectoryTotals(

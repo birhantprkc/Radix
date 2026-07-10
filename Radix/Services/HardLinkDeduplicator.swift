@@ -40,7 +40,7 @@ nonisolated struct HardLinkDeduplicator {
         let duplicateAllocatedSizeByOwner = duplicateHardLinkAllocatedSizeByOwner(from: hardLinkClaims)
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
             return FileTreeStore(
-                rootID: rootID,
+                verifiedRootID: rootID,
                 nodesByID: inputNodesByID,
                 childIDsByID: inputChildIDsByID,
                 parentIDByID: parentIDByID,
@@ -79,7 +79,7 @@ nonisolated struct HardLinkDeduplicator {
         )
 
         return FileTreeStore(
-            rootID: rootID,
+            verifiedRootID: rootID,
             nodesByID: nodesByID,
             childIDsByID: childIDsByID,
             parentIDByID: parentIDByID,

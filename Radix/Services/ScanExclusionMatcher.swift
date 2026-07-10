@@ -78,6 +78,14 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         return excludes(normalizedPath: normalizedPath, isDirectory: isDirectory)
     }
 
+    /// Scan enumeration constructs child URLs from an already-normalized parent
+    /// and a single filesystem entry name, so standardizing those paths again is
+    /// redundant work in the hottest per-item filtering loop.
+    func excludesKnownNormalizedPath(_ path: String, isDirectory: Bool) -> Bool {
+        guard hasActiveRule else { return false }
+        return excludes(normalizedPath: path, isDirectory: isDirectory)
+    }
+
     private func excludes(normalizedPath: String, isDirectory: Bool) -> Bool {
         if excludesCloudStorage(path: normalizedPath) {
             return true
@@ -306,6 +314,7 @@ nonisolated private struct CloudLocation: Sendable {
         }
 
         return excludesAnyUser
+            && path.hasPrefix("/Users/")
             && ScanExclusionMatcher.isUsersCloudPath(path, userRelativeComponents: userRelativeComponents)
     }
 }

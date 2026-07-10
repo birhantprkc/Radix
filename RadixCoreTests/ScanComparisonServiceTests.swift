@@ -301,6 +301,54 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(allActivityProjection.roots.map(\.relativePath), ["Documents"])
     }
 
+    func testLegacyResourceIdentityMatchesBulkIdentityForMoveOnSameVolume() async throws {
+        let volumeToken: UInt64 = 0xA11CE
+        let fileID: UInt64 = 900
+        let rootIdentity = resourceIdentity(fileID: 1, volumeToken: volumeToken)
+        let beforeFile = makeTestFileNode(
+            id: "/scan/old-name.bin",
+            name: "old-name.bin",
+            size: 64,
+            fileIdentity: resourceIdentity(fileID: fileID, volumeToken: volumeToken)
+        )
+        let beforeRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [beforeFile],
+            fileIdentity: rootIdentity
+        )
+        let beforeSnapshot = makeTestSnapshot(
+            root: beforeRoot,
+            store: FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [beforeFile]])
+        )
+
+        let afterFile = makeTestFileNode(
+            id: "/scan/new-name.bin",
+            name: "new-name.bin",
+            size: 64,
+            fileIdentity: FileIdentity(device: 99, inode: fileID)
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [afterFile],
+            fileIdentity: rootIdentity
+        )
+        let afterSnapshot = makeTestSnapshot(
+            root: afterRoot,
+            store: FileTreeStore(root: afterRoot, childrenByID: [afterRoot.id: [afterFile]])
+        )
+
+        let comparison = try await ScanComparisonService().compare(
+            before: beforeSnapshot,
+            after: afterSnapshot
+        )
+
+        XCTAssertEqual(comparison.rows.map(\.kind), [.moved])
+        XCTAssertEqual(comparison.rows.first?.movedFromRelativePath, "old-name.bin")
+        XCTAssertEqual(comparison.rows.first?.relativePath, "new-name.bin")
+    }
+
     func testAmbiguousFileIdentityDoesNotInferMove() async throws {
         let identity = FileIdentity(device: 1, inode: 901)
         let beforeFirst = makeTestFileNode(
@@ -899,5 +947,14 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(movedAndRemoved.map(\.relativePath), ["new.bin", "removed.bin"])
         XCTAssertEqual(removedOnly.map(\.relativePath), ["removed.bin"])
         XCTAssertEqual(movedOnly.map(\.relativePath), ["new.bin"])
+    }
+
+    private func resourceIdentity(fileID: UInt64, volumeToken: UInt64) -> FileIdentity {
+        var data = Data()
+        var littleEndianFileID = fileID.littleEndian
+        var littleEndianVolumeToken = volumeToken.littleEndian
+        withUnsafeBytes(of: &littleEndianFileID) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: &littleEndianVolumeToken) { data.append(contentsOf: $0) }
+        return FileIdentity(resourceIdentifier: data)
     }
 }

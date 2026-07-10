@@ -276,6 +276,19 @@ nonisolated struct ScanMetadataLoader: Sendable {
         return atomicSummaryMetadata(for: url, prefetchedResourceValues: values)
     }
 
+    func isPackageDirectory(at url: URL) -> Bool {
+        #if DEBUG
+        let start = diagnostics?.start()
+        defer {
+            diagnostics?.record(operation: "metadata.package", url: url, startedAt: start)
+        }
+        #endif
+        guard let values = try? url.resourceValues(forKeys: [.isPackageKey]) else {
+            return false
+        }
+        return values.isPackage ?? false
+    }
+
     nonisolated func metadata(
         for url: URL,
         prefetchedResourceValues values: URLResourceValues,

@@ -1,7 +1,88 @@
+import Darwin
 import XCTest
 @testable import RadixCore
 
 final class ScanEngineTests: XCTestCase {
+    func testBulkDirectoryEnumerationRejectsIncompleteMetadataAttributeSets() {
+        var returned = attribute_set_t()
+        returned.commonattr = .max
+        returned.fileattr = .max
+
+        XCTAssertTrue(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VREG.rawValue))
+
+        returned.fileattr &= ~attrgroup_t(ATTR_FILE_LINKCOUNT)
+        XCTAssertFalse(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VREG.rawValue))
+        XCTAssertTrue(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VDIR.rawValue))
+
+        returned.commonattr &= ~attrgroup_t(ATTR_CMN_OBJTYPE)
+        XCTAssertFalse(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VDIR.rawValue))
+    }
+
+    func testBulkDirectoryEnumerationMatchesScannerMetadataAndHiddenFiltering() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let directoryURL = rootURL.appending(path: "Folder", directoryHint: .isDirectory)
+        let packageURL = rootURL.appending(path: "Sample.app", directoryHint: .isDirectory)
+        let fileURL = rootURL.appending(path: "payload.bin")
+        let hardLinkURL = rootURL.appending(path: "payload-link.bin")
+        let symbolicLinkURL = rootURL.appending(path: "payload-alias")
+        let hiddenURL = rootURL.appending(path: ".hidden")
+        var flaggedHiddenURL = rootURL.appending(path: "flagged-hidden")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+        try Data(repeating: 0xA5, count: 4_097).write(to: fileURL)
+        try FileManager.default.linkItem(at: fileURL, to: hardLinkURL)
+        try FileManager.default.createSymbolicLink(at: symbolicLinkURL, withDestinationURL: fileURL)
+        try Data([0x1]).write(to: hiddenURL)
+        try Data([0x2]).write(to: flaggedHiddenURL)
+        var hiddenValues = URLResourceValues()
+        hiddenValues.isHidden = true
+        try flaggedHiddenURL.setResourceValues(hiddenValues)
+
+        let metadataLoader = ScanMetadataLoader()
+        let visibleResult = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: false,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {}
+        ))
+        let completeResult = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {}
+        ))
+
+        XCTAssertEqual(visibleResult.enumeratedItemCount, 7)
+        XCTAssertEqual(completeResult.enumeratedItemCount, 7)
+        XCTAssertFalse(visibleResult.entries.contains { $0.url.lastPathComponent == ".hidden" })
+        XCTAssertFalse(visibleResult.entries.contains { $0.url.lastPathComponent == "flagged-hidden" })
+        XCTAssertTrue(completeResult.entries.contains { $0.url.lastPathComponent == ".hidden" })
+        XCTAssertTrue(completeResult.entries.contains { $0.url.lastPathComponent == "flagged-hidden" })
+
+        let entriesByName = Dictionary(uniqueKeysWithValues: completeResult.entries.map {
+            ($0.url.lastPathComponent, $0)
+        })
+        let fileMetadata = try XCTUnwrap(entriesByName["payload.bin"]?.metadata)
+        let linkMetadata = try XCTUnwrap(entriesByName["payload-link.bin"]?.metadata)
+        let symlinkMetadata = try XCTUnwrap(entriesByName["payload-alias"]?.metadata)
+        let directoryMetadata = try XCTUnwrap(entriesByName["Folder"]?.metadata)
+        let packageMetadata = try XCTUnwrap(entriesByName["Sample.app"]?.metadata)
+        let foundationFileMetadata = try metadataLoader.metadata(for: fileURL)
+
+        XCTAssertEqual(fileMetadata.logicalSize, foundationFileMetadata.logicalSize)
+        XCTAssertEqual(fileMetadata.allocatedSize, foundationFileMetadata.allocatedSize)
+        XCTAssertEqual(fileMetadata.linkCount, foundationFileMetadata.linkCount)
+        XCTAssertEqual(fileMetadata.fileIdentity, linkMetadata.fileIdentity)
+        XCTAssertGreaterThan(fileMetadata.linkCount, 1)
+        XCTAssertTrue(symlinkMetadata.isSymbolicLink)
+        XCTAssertTrue(directoryMetadata.isDirectory)
+        XCTAssertFalse(directoryMetadata.isPackage)
+        XCTAssertTrue(packageMetadata.isDirectory)
+        XCTAssertTrue(packageMetadata.isPackage)
+    }
+
     func testPackagesAreLeafNodesByDefault() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

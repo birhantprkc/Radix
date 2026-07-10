@@ -198,14 +198,37 @@ actor ScanEngine {
     typealias VolumeFileSystemTypeProvider = @Sendable (URL) -> String?
 
     private let directoryContents: DirectoryContentsProvider
+    private let usesBulkDirectoryEnumeration: Bool
     private let metadataLoader: ScanMetadataLoader
     private let atomicDirectorySummarizer: AtomicDirectorySummarizer
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let diagnostics: ScanDiagnosticsContext?
 
     init(
-        enumeratedDirectoryContents: @escaping DirectoryContentsProvider = ScanEngine.defaultDirectoryContents,
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType
+    ) {
+        self.init(
+            enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
+            volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
+            usesBulkDirectoryEnumeration: true
+        )
+    }
+
+    init(
+        enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
+        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType
+    ) {
+        self.init(
+            enumeratedDirectoryContents: enumeratedDirectoryContents,
+            volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
+            usesBulkDirectoryEnumeration: false
+        )
+    }
+
+    private init(
+        enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
+        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider,
+        usesBulkDirectoryEnumeration: Bool
     ) {
         #if DEBUG
         let diagnostics = ScanDiagnostics.makeIfEnabled()
@@ -214,6 +237,7 @@ actor ScanEngine {
         #endif
         let metadataLoader = ScanMetadataLoader(diagnostics: diagnostics)
         self.directoryContents = enumeratedDirectoryContents
+        self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         self.metadataLoader = metadataLoader
         self.atomicDirectorySummarizer = AtomicDirectorySummarizer(
             metadataLoader: metadataLoader,
@@ -577,6 +601,7 @@ actor ScanEngine {
         )
         let scanMetadataLoader = metadataLoader
         let directoryContentsProvider = directoryContents
+        let usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         let directoryResourceKeys = ScanMetadataLoader.scanResourceKeys
 
         // If the root itself shouldn't be traversed, return a leaf node.
@@ -602,6 +627,7 @@ actor ScanEngine {
                     continuation.yield(.warning(warning))
                 }
             }
+            metrics.recalculateProgress()
             continuation.yield(.progress(metrics))
             let rawStore = FileTreeStore(root: leafResult.node)
             return HardLinkDeduplicator.deduplicatedStore(
@@ -633,7 +659,7 @@ actor ScanEngine {
         // Maps a key to its completed result (leaf or assembled directory).
         var completedByKey: [CompletedDirScan?] = []
         // Maps parent key → child keys, built during phase 1.
-        var childrenKeysByKey: [Int: [Int]] = [:]
+        var childrenKeysByKey: [[Int]?] = []
         var seenScannedNodeIDs = Set<String>()
         var nextKey = 0
 
@@ -661,10 +687,14 @@ actor ScanEngine {
                     let itemKey = nextKey
                     nextKey += 1
                     completedByKey.append(nil)
+                    childrenKeysByKey.append(nil)
 
                     // Register this child with its parent (skip root which has parentKey -1).
                     if item.parentKey >= 0 {
-                        childrenKeysByKey[item.parentKey, default: []].append(itemKey)
+                        if childrenKeysByKey[item.parentKey] == nil {
+                            childrenKeysByKey[item.parentKey] = []
+                        }
+                        childrenKeysByKey[item.parentKey]!.append(itemKey)
                     }
 
                     let meta: NodeMetadata
@@ -705,8 +735,7 @@ actor ScanEngine {
 
                     if shouldTraverseDirectory(metadata: meta, options: options) {
                         metrics.directoriesVisited += 1
-                        metrics.recalculateProgress()
-                        maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
                         let taskItem = item
                         let taskItemKey = itemKey
@@ -725,6 +754,7 @@ actor ScanEngine {
                                     resourceKeys: directoryResourceKeys,
                                     metadataLoader: scanMetadataLoader,
                                     directoryContents: directoryContentsProvider,
+                                    usesBulkDirectoryEnumeration: usesBulkDirectoryEnumeration,
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
                                     cancellationCheck: cancellationCheck
                                 )
@@ -781,7 +811,7 @@ actor ScanEngine {
                                 continuation.yield(.warning(warning))
                             }
                         }
-                        maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
                         completedByKey[itemKey] = CompletedDirScan(
                             node: leafResult.node,
@@ -835,8 +865,7 @@ actor ScanEngine {
                     }
                     metrics.discoveredDirectoryCount += childDirectoryCount
                     metrics.pendingDirectoryCount += childDirectoryCount
-                    metrics.recalculateProgress()
-                    maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+                    maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
                     // Check if this directory should be summarized as atomic (many small files)
                     let minFileCount = options.autoSummarizeMinFileCount ?? AtomicDirectoryThresholds.minFileCount
@@ -903,7 +932,7 @@ actor ScanEngine {
                                 continuation.yield(.warning(warning))
                             }
                         }
-                        maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+                        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
                         completedByKey[itemKey] = CompletedDirScan(
                             node: atomicNode,
@@ -919,7 +948,6 @@ actor ScanEngine {
                     if childEntries.isEmpty {
                         // Nothing below this directory: its whole weight is done.
                         metrics.completedTraversalWeight += item.weight
-                        metrics.recalculateProgress()
                     }
 
                     // Enqueue children onto the stack. Each child records its parent key.
@@ -927,6 +955,65 @@ actor ScanEngine {
                         if offset.isMultiple(of: 256) {
                             try Task.checkCancellation()
                         }
+                        let childWeight = item.weight * Self.traversalWeightUnits(for: childEntry) / totalWeightUnits
+
+                        // Bulk discovery has already fully classified ordinary files
+                        // and symlinks. Complete them here instead of allocating a work
+                        // item only to pop, reclassify, and pass it through an async leaf
+                        // function on the next loop iteration. Packages remain queued
+                        // because they may require recursive summary work.
+                        if let childMetadata = childEntry.metadata,
+                           !childMetadata.isDirectory || childMetadata.isSymbolicLink {
+                            let childPath = childEntry.url.path
+                            guard seenScannedNodeIDs.insert(childPath).inserted else {
+                                recordDuplicateNode(
+                                    at: childEntry.url,
+                                    weight: childWeight,
+                                    metrics: &metrics,
+                                    warnings: &warnings,
+                                    continuation: continuation,
+                                    emissionState: &emissionState
+                                )
+                                continue
+                            }
+
+                            let childKey = nextKey
+                            nextKey += 1
+                            completedByKey.append(nil)
+                            childrenKeysByKey.append(nil)
+                            if childrenKeysByKey[itemKey] == nil {
+                                childrenKeysByKey[itemKey] = []
+                            }
+                            childrenKeysByKey[itemKey]!.append(childKey)
+
+                            let childNode = makeFileNode(
+                                url: childEntry.url,
+                                metadata: childMetadata
+                            )
+                            if childMetadata.linkCount > 1,
+                               let hardLinkClaim = HardLinkDeduplicator.claim(
+                                   for: childMetadata,
+                                   ownerNodeID: childNode.id,
+                                   path: childPath
+                               ) {
+                                hardLinkClaims.append(hardLinkClaim)
+                            }
+                            metrics.currentPath = childPath
+                            applyLeafMetrics(childNode, weight: childWeight, metrics: &metrics)
+                            maybeEmitProgress(
+                                metrics: &metrics,
+                                continuation: continuation,
+                                emissionState: &emissionState
+                            )
+                            completedByKey[childKey] = CompletedDirScan(
+                                node: childNode,
+                                metadata: childMetadata,
+                                url: childEntry.url,
+                                isTraversable: false
+                            )
+                            continue
+                        }
+
                         workStack.append(
                             ScanWorkItem(
                                 url: childEntry.url,
@@ -935,7 +1022,7 @@ actor ScanEngine {
                                 isDirectoryHint: childEntry.isDirectoryHint,
                                 parentKey: itemKey,
                                 depth: item.depth + 1,
-                                weight: item.weight * Self.traversalWeightUnits(for: childEntry) / totalWeightUnits
+                                weight: childWeight
                             )
                         )
                     }
@@ -966,8 +1053,7 @@ actor ScanEngine {
                     metrics.completedTraversalWeight += item.weight
                     metrics.enumeratedDirectoryCount += 1
                     releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
-                    metrics.recalculateProgress()
-                    maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+                    maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
                     let inaccessibleNode = FileNodeRecord(
                         id: item.url.path,
@@ -1006,7 +1092,8 @@ actor ScanEngine {
         continuation.yield(.progress(metrics))
 
         let finalizationTotal = max(completedByKey.count, 1)
-        let finalizationProgressInterval = 512
+        // Cap stream traffic to roughly 200 assembly updates on very large scans.
+        let finalizationProgressInterval = max(512, finalizationTotal / 200)
         var finalizedItems = 0
         var resolvedNodeByKey = Array<FileNodeRecord?>(repeating: nil, count: nextKey)
         var childIDsByID: [String: [String]] = [:]
@@ -1029,7 +1116,8 @@ actor ScanEngine {
 
             if completed.isTraversable {
                 // Traversable directories must still be materialized when empty.
-                let childKeys = childrenKeysByKey.removeValue(forKey: key) ?? []
+                let childKeys = childrenKeysByKey[key] ?? []
+                childrenKeysByKey[key] = nil
                 var childNodes: [FileNodeRecord] = []
                 childNodes.reserveCapacity(childKeys.count)
                 for (offset, childKey) in childKeys.enumerated() {
@@ -1041,7 +1129,10 @@ actor ScanEngine {
                         resolvedNodeByKey[childKey] = nil
                     }
                 }
-                let sortedChildren = FileTreeStore.sortedChildren(Self.uniqueNodesForAssembly(childNodes))
+                // Duplicate paths are rejected before keys are assigned in phase 1,
+                // so children are already unique here.
+                FileTreeStore.sortChildren(&childNodes)
+                let sortedChildren = childNodes
                 try Task.checkCancellation()
                 let directoryID = completed.url.path
                 var allocatedSize: Int64 = 0
@@ -1084,30 +1175,22 @@ actor ScanEngine {
                     isSynthetic: false,
                     isAutoSummarized: false
                 )
-                if insertNode(
-                    assembled,
-                    into: &nodesByID,
-                    warnings: &warnings,
-                    continuation: continuation
-                ) {
-                    resolvedNodeByKey[key] = assembled
-                    aggregateStats.include(assembled, hasChildren: !sortedChildren.isEmpty)
-                }
+                let replacedNode = nodesByID.updateValue(assembled, forKey: assembled.id)
+                assert(replacedNode == nil)
+                resolvedNodeByKey[key] = assembled
+                aggregateStats.include(assembled, hasChildren: !sortedChildren.isEmpty)
 
-                childIDsByID[assembled.id] = sortedChildIDs
+                if !sortedChildIDs.isEmpty {
+                    childIDsByID[assembled.id] = sortedChildIDs
+                }
 
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
             } else if let onlyChild = completed.node {
                 // Leaf node or inaccessible directory: use the child directly.
-                if insertNode(
-                    onlyChild,
-                    into: &nodesByID,
-                    warnings: &warnings,
-                    continuation: continuation
-                ) {
-                    resolvedNodeByKey[key] = onlyChild
-                    aggregateStats.include(onlyChild, hasChildren: false)
-                }
+                let replacedNode = nodesByID.updateValue(onlyChild, forKey: onlyChild.id)
+                assert(replacedNode == nil)
+                resolvedNodeByKey[key] = onlyChild
+                aggregateStats.include(onlyChild, hasChildren: false)
             }
 
             if finalizedItems.isMultiple(of: finalizationProgressInterval) || finalizedItems == finalizationTotal {
@@ -1133,7 +1216,7 @@ actor ScanEngine {
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
         metrics.finalizationFraction = 1
         metrics.recalculateProgress()
-        maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
         return HardLinkDeduplicator.deduplicatedStore(
             rootID: rootNode.id,
@@ -1160,7 +1243,6 @@ actor ScanEngine {
         metrics.bytesDiscovered += node.allocatedSize
         metrics.completedItems += 1
         metrics.completedTraversalWeight += weight
-        metrics.recalculateProgress()
     }
 
     /// Relative progress weight of a traversable directory child versus a single file.
@@ -1231,23 +1313,6 @@ actor ScanEngine {
         return uniqueNodes
     }
 
-    private nonisolated func insertNode(
-        _ node: FileNodeRecord,
-        into nodesByID: inout [String: FileNodeRecord],
-        warnings: inout [ScanWarning],
-        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
-    ) -> Bool {
-        guard nodesByID[node.id] == nil else {
-            let warning = ScanWarningFactory.makeDuplicateNodeWarning(for: node.url)
-            warnings.append(warning)
-            continuation.yield(.warning(warning))
-            return false
-        }
-
-        nodesByID[node.id] = node
-        return true
-    }
-
     private nonisolated func recordDuplicateNode(
         at url: URL,
         weight: Double,
@@ -1261,8 +1326,7 @@ actor ScanEngine {
         continuation.yield(.warning(warning))
         metrics.completedItems += 1
         metrics.completedTraversalWeight += weight
-        metrics.recalculateProgress()
-        maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
     }
 
     private nonisolated func recordUnavailableItem(
@@ -1285,8 +1349,7 @@ actor ScanEngine {
         continuation.yield(.warning(warning))
         metrics.completedItems += 1
         metrics.completedTraversalWeight += item.weight
-        metrics.recalculateProgress()
-        maybeEmitProgress(metrics: metrics, continuation: continuation, emissionState: &emissionState)
+        maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
         completedByKey[itemKey] = CompletedDirScan(
             node: makeUnavailableNode(for: item.url, isDirectory: isDirectory),
@@ -1334,10 +1397,50 @@ actor ScanEngine {
         resourceKeys: Set<URLResourceKey>,
         metadataLoader: ScanMetadataLoader,
         directoryContents: DirectoryContentsProvider,
+        usesBulkDirectoryEnumeration: Bool,
         classificationWorkerLimit: Int,
         cancellationCheck: @escaping CancellationCheck
     ) async throws -> DirectoryContentsScanResult {
         try cancellationCheck()
+
+        if usesBulkDirectoryEnumeration {
+            #if DEBUG
+            let bulkEnumerationStart = DispatchTime.now().uptimeNanoseconds
+            #endif
+            if let bulkResult = try BulkDirectoryEnumerator.directoryEntries(
+                at: url,
+                includeHiddenFiles: includeHiddenFiles,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck
+            ) {
+                #if DEBUG
+                let enumerationNanoseconds = DispatchTime.now().uptimeNanoseconds - bulkEnumerationStart
+                let classificationStart = DispatchTime.now().uptimeNanoseconds
+                #endif
+                let entries = try filteredDirectoryEntries(
+                    bulkResult.entries,
+                    under: url,
+                    behavior: behavior,
+                    exclusionMatcher: exclusionMatcher,
+                    cancellationCheck: cancellationCheck
+                )
+                #if DEBUG
+                let classificationNanoseconds = DispatchTime.now().uptimeNanoseconds - classificationStart
+                return DirectoryContentsScanResult(
+                    entries: entries,
+                    enumeratedItemCount: bulkResult.enumeratedItemCount,
+                    enumerationNanoseconds: enumerationNanoseconds,
+                    classificationNanoseconds: classificationNanoseconds
+                )
+                #else
+                return DirectoryContentsScanResult(
+                    entries: entries,
+                    enumeratedItemCount: bulkResult.enumeratedItemCount
+                )
+                #endif
+            }
+        }
+
         var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants, .skipsSubdirectoryDescendants]
         if !includeHiddenFiles {
             options.insert(.skipsHiddenFiles)
@@ -1394,6 +1497,34 @@ actor ScanEngine {
             enumeratedItemCount: enumerationResult.urls.count + enumerationResult.localizedFailures.count
         )
         #endif
+    }
+
+    private nonisolated static func filteredDirectoryEntries(
+        _ entries: [DirectoryEntry],
+        under parentURL: URL,
+        behavior: ScanBehavior,
+        exclusionMatcher: ScanExclusionMatcher,
+        cancellationCheck: CancellationCheck
+    ) throws -> [DirectoryEntry] {
+        var filteredEntries: [DirectoryEntry] = []
+        filteredEntries.reserveCapacity(entries.count)
+        let parentPath = parentURL.path
+
+        for (index, entry) in entries.enumerated() {
+            if index.isMultiple(of: 64) {
+                try cancellationCheck()
+            }
+            let isDirectory = entry.metadata?.isDirectory ?? entry.isDirectoryHint ?? entry.url.hasDirectoryPath
+            let childPath = entry.url.path
+            guard includedChildName(entry.url.lastPathComponent, parentPath: parentPath, behavior: behavior),
+                  !exclusionMatcher.excludesKnownNormalizedPath(childPath, isDirectory: isDirectory) else {
+                continue
+            }
+            filteredEntries.append(entry)
+        }
+
+        try cancellationCheck()
+        return filteredEntries
     }
 
     private nonisolated static func contentsOfLocalizedEnumerationFailures(
@@ -1532,9 +1663,14 @@ actor ScanEngine {
     }
 
     nonisolated static func includedChildURL(_ childURL: URL, under parentURL: URL, behavior: ScanBehavior) -> Bool {
-        let parentPath = parentURL.path
-        let childName = childURL.lastPathComponent
+        includedChildName(childURL.lastPathComponent, parentPath: parentURL.path, behavior: behavior)
+    }
 
+    private nonisolated static func includedChildName(
+        _ childName: String,
+        parentPath: String,
+        behavior: ScanBehavior
+    ) -> Bool {
         if parentPath == "/" && [".nofollow", ".resolve"].contains(childName) {
             return false
         }
@@ -1759,17 +1895,21 @@ actor ScanEngine {
     }
 
     private nonisolated func maybeEmitProgress(
-        metrics: ScanMetrics,
+        metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState
     ) {
         let visitedItems = metrics.filesVisited + metrics.directoriesVisited
+        let isFixedEmissionPoint = visitedItems <= 2 || visitedItems.isMultiple(of: 1_000)
+        guard isFixedEmissionPoint || visitedItems.isMultiple(of: 64) else { return }
+
         let now = Date()
         let elapsed = now.timeIntervalSince(emissionState.lastProgressEmission)
-        let shouldEmit = visitedItems <= 2 || visitedItems.isMultiple(of: 1_000) || elapsed >= 0.15
+        let shouldEmit = isFixedEmissionPoint || elapsed >= 0.15
         guard shouldEmit else { return }
 
         emissionState.lastProgressEmission = now
+        metrics.recalculateProgress()
         continuation.yield(.progress(metrics))
     }
 

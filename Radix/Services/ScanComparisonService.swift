@@ -838,7 +838,9 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeNodes: beforeNodes,
             afterNodes: afterNodes,
             removedPaths: coveredRemovedPaths,
-            addedPaths: coveredAddedPaths
+            addedPaths: coveredAddedPaths,
+            beforeVolumeToken: Self.darwinResourceIdentityComponents(before.root.fileIdentity)?.volumeToken,
+            afterVolumeToken: Self.darwinResourceIdentityComponents(after.root.fileIdentity)?.volumeToken
         )
         let movedRemovedPaths = Set(movedPathPairs.map(\.beforeRelativePath))
         let movedAddedPaths = Set(movedPathPairs.map(\.afterRelativePath))
@@ -989,6 +991,16 @@ nonisolated struct ScanComparisonService: Sendable {
         let afterRelativePath: String
     }
 
+    private enum ComparableMoveIdentity: Hashable {
+        case exact(FileIdentity)
+        case darwin(volumeToken: UInt64, fileID: UInt64)
+    }
+
+    private struct DarwinResourceIdentityComponents {
+        let fileID: UInt64
+        let volumeToken: UInt64
+    }
+
     /// Matches only a one-to-one regular-file identity that is visible as both a removal and an
     /// addition. Hard links, directories, aliases, and synthetic nodes are intentionally
     /// excluded because a path-level move inference would be ambiguous for them.
@@ -996,10 +1008,20 @@ nonisolated struct ScanComparisonService: Sendable {
         beforeNodes: [String: FileNodeRecord],
         afterNodes: [String: FileNodeRecord],
         removedPaths: Set<String>,
-        addedPaths: Set<String>
+        addedPaths: Set<String>,
+        beforeVolumeToken: UInt64?,
+        afterVolumeToken: UInt64?
     ) -> [MovedPathPair] {
-        let removedCandidates = moveCandidates(in: beforeNodes, paths: removedPaths)
-        let addedCandidates = moveCandidates(in: afterNodes, paths: addedPaths)
+        let removedCandidates = moveCandidates(
+            in: beforeNodes,
+            paths: removedPaths,
+            volumeToken: beforeVolumeToken
+        )
+        let addedCandidates = moveCandidates(
+            in: afterNodes,
+            paths: addedPaths,
+            volumeToken: afterVolumeToken
+        )
         let removedByIdentity = Dictionary(grouping: removedCandidates, by: \.identity)
         let addedByIdentity = Dictionary(grouping: addedCandidates, by: \.identity)
 
@@ -1023,25 +1045,68 @@ nonisolated struct ScanComparisonService: Sendable {
 
     private static func moveCandidates(
         in nodes: [String: FileNodeRecord],
-        paths: Set<String>
-    ) -> [(identity: FileIdentity, relativePath: String)] {
+        paths: Set<String>,
+        volumeToken: UInt64?
+    ) -> [(identity: ComparableMoveIdentity, relativePath: String)] {
         paths.compactMap { relativePath in
             guard let node = nodes[relativePath],
-                  let identity = moveIdentity(for: node) else {
+                  let identity = moveIdentity(for: node, volumeToken: volumeToken) else {
                 return nil
             }
             return (identity, relativePath)
         }
     }
 
-    private static func moveIdentity(for node: FileNodeRecord) -> FileIdentity? {
+    private static func moveIdentity(
+        for node: FileNodeRecord,
+        volumeToken: UInt64?
+    ) -> ComparableMoveIdentity? {
         guard !node.isDirectory,
               !node.isSymbolicLink,
               !node.isSynthetic,
-              node.linkCount == 1 else {
+              node.linkCount == 1,
+              let identity = node.fileIdentity else {
             return nil
         }
-        return node.fileIdentity
+
+        switch identity {
+        case .resourceIdentifier:
+            guard let components = darwinResourceIdentityComponents(identity) else {
+                return .exact(identity)
+            }
+            return .darwin(
+                volumeToken: components.volumeToken,
+                fileID: components.fileID
+            )
+        case .fileSystem(_, let inode):
+            guard let volumeToken else { return .exact(identity) }
+            return .darwin(volumeToken: volumeToken, fileID: inode)
+        }
+    }
+
+    /// Darwin's persisted file resource identifier is a 16-byte pair containing
+    /// the filesystem file ID followed by a stable volume token. Older Radix
+    /// archives store this form, while bulk scans obtain the equivalent file ID
+    /// directly from ATTR_CMN_FILEID. Reject unfamiliar encodings rather than
+    /// making a speculative cross-version match.
+    private static func darwinResourceIdentityComponents(
+        _ identity: FileIdentity?
+    ) -> DarwinResourceIdentityComponents? {
+        guard case .resourceIdentifier(let data) = identity,
+              data.count == MemoryLayout<UInt64>.size * 2 else {
+            return nil
+        }
+        return data.withUnsafeBytes { bytes in
+            let fileID = UInt64(littleEndian: bytes.loadUnaligned(as: UInt64.self))
+            let volumeToken = UInt64(littleEndian: bytes.loadUnaligned(
+                fromByteOffset: MemoryLayout<UInt64>.size,
+                as: UInt64.self
+            ))
+            return DarwinResourceIdentityComponents(
+                fileID: fileID,
+                volumeToken: volumeToken
+            )
+        }
     }
 
     private struct AggregateAccumulator {

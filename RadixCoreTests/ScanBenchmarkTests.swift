@@ -15,12 +15,14 @@ final class ScanBenchmarkTests: XCTestCase {
         }
 
         let engine = ScanEngine()
+        var options = ScanOptions()
+        options.includeHiddenFiles = environment["RADIX_BENCH_INCLUDE_HIDDEN"] == "1"
         let startedAt = ContinuousClock.now
         var progressEvents = 0
         var warningEvents = 0
         var finalSnapshot: ScanSnapshot?
 
-        for try await event in engine.scan(target: ScanTarget(url: targetURL), options: ScanOptions()) {
+        for try await event in engine.scan(target: ScanTarget(url: targetURL), options: options) {
             switch event {
             case .progress:
                 progressEvents += 1
@@ -39,6 +41,7 @@ final class ScanBenchmarkTests: XCTestCase {
             """
             RADIX_BENCH_RESULT path=\(targetURL.path)
             elapsed=\(String(format: "%.3f", elapsedSeconds))s
+            include_hidden=\(options.includeHiddenFiles)
             files=\(snapshot.aggregateStats.fileCount)
             folders=\(snapshot.aggregateStats.directoryCount)
             warnings=\(snapshot.scanWarnings.count)
