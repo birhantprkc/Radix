@@ -15,6 +15,51 @@ import Foundation
 /// the directory entry and the metadata Radix needs in the same kernel operation.
 /// Unsupported filesystems return `nil` so callers can transparently fall back.
 nonisolated enum BulkDirectoryEnumerator {
+    /// Owns one native directory descriptor and closes it exactly once.
+    ///
+    /// The handle is lock-protected so future descriptor-relative work can pass
+    /// leases between tasks without racing a cancellation or cursor teardown.
+    final class NativeDirectoryHandle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var descriptor: Int32
+
+        init(owning descriptor: Int32) {
+            precondition(descriptor >= 0, "NativeDirectoryHandle requires an open descriptor")
+            self.descriptor = descriptor
+        }
+
+        deinit {
+            close()
+        }
+
+        var isOpen: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return descriptor >= 0
+        }
+
+        func close() {
+            lock.lock()
+            guard descriptor >= 0 else {
+                lock.unlock()
+                return
+            }
+            let descriptorToClose = descriptor
+            descriptor = -1
+            lock.unlock()
+            Darwin.close(descriptorToClose)
+        }
+
+        fileprivate func withDescriptor<Result>(
+            _ body: (Int32) throws -> Result
+        ) rethrows -> Result? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard descriptor >= 0 else { return nil }
+            return try body(descriptor)
+        }
+    }
+
     struct Batch: Sendable {
         let entries: [DirectoryEntry]
         let enumeratedItemCount: Int
@@ -38,7 +83,7 @@ nonisolated enum BulkDirectoryEnumerator {
         private let loadsPackageMetadata: Bool
         private let metadataLoader: ScanMetadataLoader
         private let lock = NSLock()
-        private var descriptor: Int32
+        private let directoryHandle: NativeDirectoryHandle
         private var attributes = requestedAttributes
         private var isFinished = false
         private var buffer: UnsafeMutableRawBufferPointer?
@@ -50,14 +95,14 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: Bool,
             loadsPackageMetadata: Bool,
             metadataLoader: ScanMetadataLoader,
-            descriptor: Int32,
+            directoryHandle: NativeDirectoryHandle,
             forcedUnavailableAfterBatchCount: Int?
         ) {
             self.directoryURL = directoryURL
             self.includeHiddenFiles = includeHiddenFiles
             self.loadsPackageMetadata = loadsPackageMetadata
             self.metadataLoader = metadataLoader
-            self.descriptor = descriptor
+            self.directoryHandle = directoryHandle
             self.forcedUnavailableAfterBatchCount = forcedUnavailableAfterBatchCount
             buffer = UnsafeMutableRawBufferPointer.allocate(
                 byteCount: bufferCapacity,
@@ -98,15 +143,23 @@ nonisolated enum BulkDirectoryEnumerator {
                 releaseBuffer()
                 throw StreamError.unavailable
             }
-            let count = getattrlistbulk(
-                descriptor,
-                &attributes,
-                bufferAddress,
-                buffer.count,
-                UInt64(FSOPT_PACK_INVAL_ATTRS)
-            )
+            guard let syscallResult = directoryHandle.withDescriptor({ descriptor in
+                let count = getattrlistbulk(
+                    descriptor,
+                    &attributes,
+                    bufferAddress,
+                    buffer.count,
+                    UInt64(FSOPT_PACK_INVAL_ATTRS)
+                )
+                return (count: count, errorCode: count < 0 ? errno : 0)
+            }) else {
+                isFinished = true
+                releaseBuffer()
+                throw StreamError.unavailable
+            }
+            let count = syscallResult.count
             if count < 0 {
-                let errorCode = errno
+                let errorCode = syscallResult.errorCode
                 isFinished = true
                 closeDescriptor()
                 releaseBuffer()
@@ -156,9 +209,7 @@ nonisolated enum BulkDirectoryEnumerator {
         }
 
         private func closeDescriptor() {
-            guard descriptor >= 0 else { return }
-            close(descriptor)
-            descriptor = -1
+            directoryHandle.close()
         }
 
         private func releaseBuffer() {
@@ -233,7 +284,37 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: includeHiddenFiles,
             loadsPackageMetadata: loadsPackageMetadata,
             metadataLoader: metadataLoader,
-            descriptor: descriptor,
+            directoryHandle: NativeDirectoryHandle(owning: descriptor),
+            forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
+        )
+    }
+
+    /// Creates a cursor that takes ownership of an already-open directory handle.
+    /// The handle is closed on exhaustion, invalidation, error, or cursor deinit.
+    static func makeCursor(
+        at directoryURL: URL,
+        owning directoryHandle: NativeDirectoryHandle,
+        includeHiddenFiles: Bool,
+        loadsPackageMetadata: Bool = true,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
+        forcedUnavailableAfterBatchCount: Int? = nil
+    ) throws -> Cursor {
+        do {
+            try cancellationCheck()
+        } catch {
+            directoryHandle.close()
+            throw error
+        }
+        guard directoryHandle.isOpen else {
+            throw StreamError.unavailable
+        }
+        return Cursor(
+            directoryURL: directoryURL,
+            includeHiddenFiles: includeHiddenFiles,
+            loadsPackageMetadata: loadsPackageMetadata,
+            metadataLoader: metadataLoader,
+            directoryHandle: directoryHandle,
             forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
         )
     }
