@@ -782,7 +782,12 @@ private extension ContentView {
             canReveal: { appModel.canRevealComparisonRowInFinder($0) },
             showInBrowser: { appModel.showComparisonRowInBrowser($0) },
             canShowInBrowser: { appModel.canShowComparisonRowInBrowser($0) },
-            copyPath: { appModel.copyComparisonRowPath($0) }
+            copyPath: { appModel.copyComparisonRowPath($0) },
+            revealNode: { appModel.revealComparisonChangeNodeInFinder($0) },
+            canRevealNode: { appModel.canRevealComparisonChangeNodeInFinder($0) },
+            showNodeInBrowser: { appModel.showComparisonChangeNodeInBrowser($0) },
+            canShowNodeInBrowser: { appModel.canShowComparisonChangeNodeInBrowser($0) },
+            copyNodePath: { appModel.copyComparisonChangeNodePath($0) }
         )
     }
 

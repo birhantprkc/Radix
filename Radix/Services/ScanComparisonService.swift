@@ -239,6 +239,8 @@ nonisolated struct ScanComparisonLocationChange: Identifiable, Equatable, Sendab
     let relativePath: String
     let name: String
     let allocatedDelta: Int64
+    let increasedAllocatedSize: Int64
+    let reclaimedAllocatedSize: Int64
     let addedCount: Int
     let removedCount: Int
     let grewCount: Int
@@ -260,9 +262,431 @@ nonisolated struct ScanComparisonLocationChange: Identifiable, Equatable, Sendab
         abs(allocatedDelta)
     }
 
+    var grossChangedAllocatedSize: Int64 {
+        increasedAllocatedSize + reclaimedAllocatedSize
+    }
+
     /// Prefer the current node so an overview can navigate to the location in the active scan.
     var fileURL: URL? {
         (afterNode ?? beforeNode)?.url
+    }
+}
+
+/// A storage-effect facet for comparison evidence.
+///
+/// This is intentionally independent of `ScanComparisonChangeKind`: a moved file can also
+/// consume or reclaim space, so movement and byte impact aren't mutually exclusive concepts.
+nonisolated enum ScanComparisonImpactFilter: String, CaseIterable, Identifiable, Sendable {
+    case takingSpace
+    case freeingSpace
+    case moved
+    case allActivity
+
+    var id: String { rawValue }
+
+    func includes(_ row: ScanComparisonRow) -> Bool {
+        switch self {
+        case .takingSpace:
+            return row.allocatedDelta > 0
+        case .freeingSpace:
+            return row.allocatedDelta < 0
+        case .moved:
+            return row.movedFromRelativePath != nil
+        case .allActivity:
+            return true
+        }
+    }
+}
+
+/// Inclusive change totals for one path in the comparison hierarchy.
+///
+/// Every final, non-overlapping evidence row contributes to each of its path ancestors. Growth
+/// and reclamation remain separate so a high-churn, zero-net folder cannot disappear.
+nonisolated struct ScanComparisonAggregateChange: Identifiable, Equatable, Sendable {
+    let id: String
+    let relativePath: String
+    let name: String
+    let parentPath: String?
+    let childPaths: [String]
+    let directRowID: ScanComparisonRow.ID?
+    let representativeRowID: ScanComparisonRow.ID
+    let beforeNode: FileNodeRecord?
+    let afterNode: FileNodeRecord?
+    let increasedAllocatedSize: Int64
+    let reclaimedAllocatedSize: Int64
+    let addedCount: Int
+    let removedCount: Int
+    let grewCount: Int
+    let shrankCount: Int
+    let movedCount: Int
+    let takingSpaceCount: Int
+    let freeingSpaceCount: Int
+
+    var allocatedDelta: Int64 {
+        increasedAllocatedSize - reclaimedAllocatedSize
+    }
+
+    var grossChangedAllocatedSize: Int64 {
+        increasedAllocatedSize + reclaimedAllocatedSize
+    }
+
+    var affectedCount: Int {
+        addedCount + removedCount + grewCount + shrankCount + movedCount
+    }
+
+    var isDirectory: Bool {
+        (afterNode ?? beforeNode)?.isDirectory ?? !childPaths.isEmpty
+    }
+
+    var itemKind: String {
+        (afterNode ?? beforeNode)?.itemKind ?? (isDirectory ? "Folder" : "Item")
+    }
+
+    var fileURL: URL? {
+        (afterNode ?? beforeNode)?.url
+    }
+
+    func impact(for filter: ScanComparisonImpactFilter) -> Int64 {
+        switch filter {
+        case .takingSpace:
+            return increasedAllocatedSize
+        case .freeingSpace:
+            return reclaimedAllocatedSize
+        case .moved:
+            return Int64(movedCount)
+        case .allActivity:
+            return grossChangedAllocatedSize
+        }
+    }
+}
+
+/// A compact graph of aggregate comparison paths. The service stores the graph rather than a
+/// recursive value tree so huge comparisons don't duplicate nested arrays for every UI facet.
+nonisolated struct ScanComparisonChangeTree: Equatable, Sendable {
+    let rootPaths: [String]
+    let nodesByPath: [String: ScanComparisonAggregateChange]
+
+    static let empty = ScanComparisonChangeTree(rootPaths: [], nodesByPath: [:])
+
+    func node(at relativePath: String) -> ScanComparisonAggregateChange? {
+        nodesByPath[relativePath]
+    }
+
+    func significantProjection(
+        impactFilter: ScanComparisonImpactFilter,
+        coverageTarget: Double = 0.95,
+        maximumNamedChildren: Int = 12
+    ) -> ScanComparisonChangeTreeProjection {
+        let target = min(max(coverageTarget, 0), 1)
+        let maximum = max(1, maximumNamedChildren)
+        let rootSelection = significantSelection(
+            from: rootPaths,
+            impactFilter: impactFilter,
+            coverageTarget: target,
+            maximumNamedChildren: maximum
+        )
+        let roots = projectedNodes(
+            selectedPaths: rootSelection.selected,
+            hiddenPaths: rootSelection.hidden,
+            parentPath: nil,
+            impactFilter: impactFilter,
+            coverageTarget: target,
+            maximumNamedChildren: maximum
+        )
+
+        return ScanComparisonChangeTreeProjection(
+            roots: roots,
+            impactFilter: impactFilter,
+            namedRootCount: rootSelection.selected.count,
+            hiddenRootCount: rootSelection.hidden.count,
+            representedImpact: rootSelection.representedImpact,
+            totalImpact: rootSelection.totalImpact,
+            groupedAffectedCount: roots.reduce(0) { partialResult, node in
+                partialResult + node.groupedAffectedCount
+            }
+        )
+    }
+
+    private func projectedNodes(
+        selectedPaths: [String],
+        hiddenPaths: [String],
+        parentPath: String?,
+        impactFilter: ScanComparisonImpactFilter,
+        coverageTarget: Double,
+        maximumNamedChildren: Int
+    ) -> [ScanComparisonChangeTreeNode] {
+        var projected = selectedPaths.compactMap { path -> ScanComparisonChangeTreeNode? in
+            guard let aggregate = nodesByPath[path] else { return nil }
+            let eligibleChildren = aggregate.childPaths.filter { childPath in
+                guard let child = nodesByPath[childPath] else { return false }
+                return isEligible(child, for: impactFilter)
+            }
+            let selection = significantSelection(
+                from: eligibleChildren,
+                impactFilter: impactFilter,
+                coverageTarget: coverageTarget,
+                maximumNamedChildren: maximumNamedChildren
+            )
+            let children = projectedNodes(
+                selectedPaths: selection.selected,
+                hiddenPaths: selection.hidden,
+                parentPath: path,
+                impactFilter: impactFilter,
+                coverageTarget: coverageTarget,
+                maximumNamedChildren: maximumNamedChildren
+            )
+            return ScanComparisonChangeTreeNode(aggregate: aggregate, children: children)
+        }
+
+        if !hiddenPaths.isEmpty {
+            let hiddenNodes = hiddenPaths.compactMap { nodesByPath[$0] }
+            projected.append(ScanComparisonChangeTreeNode.remainder(
+                parentPath: parentPath,
+                impactFilter: impactFilter,
+                hiddenNodes: hiddenNodes
+            ))
+        }
+        return projected
+    }
+
+    private func significantSelection(
+        from paths: [String],
+        impactFilter: ScanComparisonImpactFilter,
+        coverageTarget: Double,
+        maximumNamedChildren: Int
+    ) -> SignificantSelection {
+        let eligible = paths.compactMap { path -> ScanComparisonAggregateChange? in
+            guard let node = nodesByPath[path], isEligible(node, for: impactFilter) else { return nil }
+            return node
+        }
+        guard !eligible.isEmpty else {
+            return SignificantSelection(selected: [], hidden: [], representedImpact: 0, totalImpact: 0)
+        }
+
+        let selectedIDs: Set<String>
+        switch impactFilter {
+        case .takingSpace:
+            selectedIDs = selectForCoverage(
+                eligible,
+                metric: \.increasedAllocatedSize,
+                coverageTarget: coverageTarget,
+                maximumCount: maximumNamedChildren
+            )
+        case .freeingSpace:
+            selectedIDs = selectForCoverage(
+                eligible,
+                metric: \.reclaimedAllocatedSize,
+                coverageTarget: coverageTarget,
+                maximumCount: maximumNamedChildren
+            )
+        case .moved:
+            selectedIDs = selectForCoverage(
+                eligible,
+                metric: \.movedCount,
+                coverageTarget: coverageTarget,
+                maximumCount: maximumNamedChildren
+            )
+        case .allActivity:
+            let taking = selectForCoverage(
+                eligible,
+                metric: \.increasedAllocatedSize,
+                coverageTarget: coverageTarget,
+                maximumCount: maximumNamedChildren
+            )
+            let freeing = selectForCoverage(
+                eligible,
+                metric: \.reclaimedAllocatedSize,
+                coverageTarget: coverageTarget,
+                maximumCount: maximumNamedChildren
+            )
+            if taking.isEmpty && freeing.isEmpty {
+                selectedIDs = selectForCoverage(
+                    eligible,
+                    metric: \.affectedCount,
+                    coverageTarget: coverageTarget,
+                    maximumCount: maximumNamedChildren
+                )
+            } else {
+                selectedIDs = taking.union(freeing)
+            }
+        }
+
+        let sorted = eligible.sorted { lhs, rhs in
+            let lhsImpact = lhs.impact(for: impactFilter)
+            let rhsImpact = rhs.impact(for: impactFilter)
+            if lhsImpact != rhsImpact { return lhsImpact > rhsImpact }
+            if lhs.grossChangedAllocatedSize != rhs.grossChangedAllocatedSize {
+                return lhs.grossChangedAllocatedSize > rhs.grossChangedAllocatedSize
+            }
+            return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+        }
+        let selected = sorted.filter { selectedIDs.contains($0.id) }
+        let hidden = sorted.filter { !selectedIDs.contains($0.id) }
+        let totalImpact = sorted.reduce(Int64(0)) { $0 + $1.impact(for: impactFilter) }
+        let representedImpact = selected.reduce(Int64(0)) { $0 + $1.impact(for: impactFilter) }
+        return SignificantSelection(
+            selected: selected.map(\.relativePath),
+            hidden: hidden.map(\.relativePath),
+            representedImpact: representedImpact,
+            totalImpact: totalImpact
+        )
+    }
+
+    private func selectForCoverage<Value: BinaryInteger>(
+        _ nodes: [ScanComparisonAggregateChange],
+        metric: KeyPath<ScanComparisonAggregateChange, Value>,
+        coverageTarget: Double,
+        maximumCount: Int
+    ) -> Set<String> {
+        let sorted = nodes.filter { $0[keyPath: metric] > 0 }.sorted { lhs, rhs in
+            let lhsValue = lhs[keyPath: metric]
+            let rhsValue = rhs[keyPath: metric]
+            if lhsValue != rhsValue { return lhsValue > rhsValue }
+            return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+        }
+        let total = sorted.reduce(Double(0)) { $0 + Double($1[keyPath: metric]) }
+        guard total > 0 else { return [] }
+        let target = total * coverageTarget
+        var represented = Double(0)
+        var selected = Set<String>()
+        for node in sorted {
+            guard selected.count < maximumCount, represented < target else { break }
+            selected.insert(node.id)
+            represented += Double(node[keyPath: metric])
+        }
+        return selected
+    }
+
+    private func isEligible(
+        _ node: ScanComparisonAggregateChange,
+        for impactFilter: ScanComparisonImpactFilter
+    ) -> Bool {
+        if node.impact(for: impactFilter) > 0 { return true }
+        return impactFilter == .allActivity && node.movedCount > 0
+    }
+
+    private struct SignificantSelection {
+        let selected: [String]
+        let hidden: [String]
+        let representedImpact: Int64
+        let totalImpact: Int64
+    }
+}
+
+/// A small recursive projection intended for the Significant UI. Hidden siblings are represented
+/// by one synthetic remainder instead of retaining thousands of invisible descendants.
+nonisolated struct ScanComparisonChangeTreeNode: Identifiable, Equatable, Sendable {
+    let id: String
+    let relativePath: String
+    let name: String
+    let increasedAllocatedSize: Int64
+    let reclaimedAllocatedSize: Int64
+    let allocatedDelta: Int64
+    let affectedCount: Int
+    let movedCount: Int
+    let beforeNode: FileNodeRecord?
+    let afterNode: FileNodeRecord?
+    let directRowID: ScanComparisonRow.ID?
+    let isDirectory: Bool
+    let isRemainder: Bool
+    let groupedAffectedCount: Int
+    let children: [ScanComparisonChangeTreeNode]?
+
+    init(aggregate: ScanComparisonAggregateChange, children: [ScanComparisonChangeTreeNode]) {
+        self.id = aggregate.id
+        self.relativePath = aggregate.relativePath
+        self.name = aggregate.name
+        self.increasedAllocatedSize = aggregate.increasedAllocatedSize
+        self.reclaimedAllocatedSize = aggregate.reclaimedAllocatedSize
+        self.allocatedDelta = aggregate.allocatedDelta
+        self.affectedCount = aggregate.affectedCount
+        self.movedCount = aggregate.movedCount
+        self.beforeNode = aggregate.beforeNode
+        self.afterNode = aggregate.afterNode
+        self.directRowID = aggregate.directRowID
+        self.isDirectory = aggregate.isDirectory
+        self.isRemainder = false
+        self.groupedAffectedCount = children.reduce(0) { $0 + $1.groupedAffectedCount }
+        self.children = children.isEmpty ? nil : children
+    }
+
+    private init(
+        id: String,
+        relativePath: String,
+        name: String,
+        increasedAllocatedSize: Int64,
+        reclaimedAllocatedSize: Int64,
+        affectedCount: Int,
+        movedCount: Int,
+        groupedAffectedCount: Int
+    ) {
+        self.id = id
+        self.relativePath = relativePath
+        self.name = name
+        self.increasedAllocatedSize = increasedAllocatedSize
+        self.reclaimedAllocatedSize = reclaimedAllocatedSize
+        self.allocatedDelta = increasedAllocatedSize - reclaimedAllocatedSize
+        self.affectedCount = affectedCount
+        self.movedCount = movedCount
+        self.beforeNode = nil
+        self.afterNode = nil
+        self.directRowID = nil
+        self.isDirectory = false
+        self.isRemainder = true
+        self.groupedAffectedCount = groupedAffectedCount
+        self.children = nil
+    }
+
+    static func remainder(
+        parentPath: String?,
+        impactFilter: ScanComparisonImpactFilter,
+        hiddenNodes: [ScanComparisonAggregateChange]
+    ) -> ScanComparisonChangeTreeNode {
+        let affectedCount = hiddenNodes.reduce(0) { $0 + $1.affectedCount }
+        return ScanComparisonChangeTreeNode(
+            id: "other:\(parentPath ?? "root"):\(impactFilter.rawValue)",
+            relativePath: parentPath ?? "",
+            name: "Other smaller changes",
+            increasedAllocatedSize: hiddenNodes.reduce(0) { $0 + $1.increasedAllocatedSize },
+            reclaimedAllocatedSize: hiddenNodes.reduce(0) { $0 + $1.reclaimedAllocatedSize },
+            affectedCount: affectedCount,
+            movedCount: hiddenNodes.reduce(0) { $0 + $1.movedCount },
+            groupedAffectedCount: affectedCount
+        )
+    }
+
+    var fileURL: URL? {
+        (afterNode ?? beforeNode)?.url
+    }
+
+    func node(withID id: String) -> ScanComparisonChangeTreeNode? {
+        if self.id == id { return self }
+        for child in children ?? [] {
+            if let match = child.node(withID: id) { return match }
+        }
+        return nil
+    }
+}
+
+nonisolated struct ScanComparisonChangeTreeProjection: Equatable, Sendable {
+    let roots: [ScanComparisonChangeTreeNode]
+    let impactFilter: ScanComparisonImpactFilter
+    let namedRootCount: Int
+    let hiddenRootCount: Int
+    let representedImpact: Int64
+    let totalImpact: Int64
+    let groupedAffectedCount: Int
+
+    var representedFraction: Double {
+        guard totalImpact > 0 else { return 1 }
+        return Double(representedImpact) / Double(totalImpact)
+    }
+
+    func node(withID id: String) -> ScanComparisonChangeTreeNode? {
+        for root in roots {
+            if let match = root.node(withID: id) { return match }
+        }
+        return nil
     }
 }
 
@@ -354,6 +778,8 @@ nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
     let summary: ScanComparisonSummary
     let coverage: ScanComparisonCoverage
     let rows: [ScanComparisonRow]
+    /// Inclusive path rollups built from the final, non-overlapping evidence rows.
+    let changeTree: ScanComparisonChangeTree
     /// Non-overlapping first-level locations derived from `rows`, ordered by impact.
     let topLevelChanges: [ScanComparisonLocationChange]
 
@@ -361,6 +787,7 @@ nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
         beforeSnapshot: ScanSnapshot,
         afterSnapshot: ScanSnapshot,
         rows: [ScanComparisonRow],
+        changeTree: ScanComparisonChangeTree,
         topLevelChanges: [ScanComparisonLocationChange]
     ) {
         self.id = UUID()
@@ -369,6 +796,7 @@ nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
         self.rows = rows
         self.summary = ScanComparisonSummary(before: beforeSnapshot, after: afterSnapshot, rows: rows)
         self.coverage = ScanComparisonCoverage(before: beforeSnapshot, after: afterSnapshot)
+        self.changeTree = changeTree
         self.topLevelChanges = topLevelChanges
     }
 }
@@ -505,6 +933,11 @@ nonisolated struct ScanComparisonService: Sendable {
         let sortedRows = rows.sorted { lhs, rhs in
             ScanComparisonRowComparator.defaultOrder.compare(lhs, rhs) == .orderedAscending
         }
+        let changeTree = try Self.changeTree(
+            from: sortedRows,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
         let topLevelChanges = Self.topLevelChanges(
             from: sortedRows,
             beforeNodes: beforeNodes,
@@ -514,6 +947,7 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeSnapshot: before,
             afterSnapshot: after,
             rows: sortedRows,
+            changeTree: changeTree,
             topLevelChanges: topLevelChanges
         )
     }
@@ -619,6 +1053,139 @@ nonisolated struct ScanComparisonService: Sendable {
         return node.fileIdentity
     }
 
+    private struct AggregateAccumulator {
+        let relativePath: String
+        let parentPath: String?
+        var childPaths = Set<String>()
+        var directRowID: ScanComparisonRow.ID?
+        var representativeRowID: ScanComparisonRow.ID?
+        var increasedAllocatedSize: Int64 = 0
+        var reclaimedAllocatedSize: Int64 = 0
+        var addedCount = 0
+        var removedCount = 0
+        var grewCount = 0
+        var shrankCount = 0
+        var movedCount = 0
+        var takingSpaceCount = 0
+        var freeingSpaceCount = 0
+
+        mutating func include(_ row: ScanComparisonRow, isDirect: Bool) {
+            if representativeRowID == nil {
+                representativeRowID = row.id
+            }
+            if isDirect {
+                directRowID = row.id
+            }
+            if row.allocatedDelta > 0 {
+                increasedAllocatedSize += row.allocatedDelta
+                takingSpaceCount += 1
+            } else if row.allocatedDelta < 0 {
+                reclaimedAllocatedSize += -row.allocatedDelta
+                freeingSpaceCount += 1
+            }
+            switch row.kind {
+            case .added:
+                addedCount += 1
+            case .removed:
+                removedCount += 1
+            case .grew:
+                grewCount += 1
+            case .shrank:
+                shrankCount += 1
+            case .moved:
+                movedCount += 1
+            }
+        }
+    }
+
+    /// Builds inclusive path rollups from the final evidence partition. Using the finalized rows
+    /// is essential: raw directory sizes would double-count materialized descendants and bypass
+    /// warning-boundary and hard-link normalization.
+    private static func changeTree(
+        from rows: [ScanComparisonRow],
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord]
+    ) throws -> ScanComparisonChangeTree {
+        guard !rows.isEmpty else { return .empty }
+        var accumulators: [String: AggregateAccumulator] = [:]
+        accumulators.reserveCapacity(rows.count)
+
+        for row in rows {
+            try Task.checkCancellation()
+            let components = row.relativePath.split(separator: "/", omittingEmptySubsequences: true)
+            var parentPath: String?
+            var path = ""
+            for (index, component) in components.enumerated() {
+                path = path.isEmpty ? String(component) : path + "/" + component
+                var accumulator = accumulators[path] ?? AggregateAccumulator(
+                    relativePath: path,
+                    parentPath: parentPath
+                )
+                accumulator.include(row, isDirect: index == components.count - 1)
+                accumulators[path] = accumulator
+
+                if let parentPath {
+                    var parent = accumulators[parentPath] ?? AggregateAccumulator(
+                        relativePath: parentPath,
+                        parentPath: Self.parentPath(of: parentPath)
+                    )
+                    parent.childPaths.insert(path)
+                    accumulators[parentPath] = parent
+                }
+                parentPath = path
+            }
+        }
+
+        func nodeSort(_ lhsPath: String, _ rhsPath: String) -> Bool {
+            guard let lhs = accumulators[lhsPath], let rhs = accumulators[rhsPath] else {
+                return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
+            }
+            let lhsGross = lhs.increasedAllocatedSize + lhs.reclaimedAllocatedSize
+            let rhsGross = rhs.increasedAllocatedSize + rhs.reclaimedAllocatedSize
+            if lhsGross != rhsGross { return lhsGross > rhsGross }
+            return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
+        }
+
+        var nodesByPath: [String: ScanComparisonAggregateChange] = [:]
+        nodesByPath.reserveCapacity(accumulators.count)
+        for (path, accumulator) in accumulators {
+            try Task.checkCancellation()
+            guard let representativeRowID = accumulator.representativeRowID else { continue }
+            let displayNode = afterNodes[path] ?? beforeNodes[path]
+            nodesByPath[path] = ScanComparisonAggregateChange(
+                id: path,
+                relativePath: path,
+                name: displayNode?.name ?? URL(filePath: path).lastPathComponent,
+                parentPath: accumulator.parentPath,
+                childPaths: accumulator.childPaths.sorted(by: nodeSort),
+                directRowID: accumulator.directRowID,
+                representativeRowID: representativeRowID,
+                beforeNode: beforeNodes[path],
+                afterNode: afterNodes[path],
+                increasedAllocatedSize: accumulator.increasedAllocatedSize,
+                reclaimedAllocatedSize: accumulator.reclaimedAllocatedSize,
+                addedCount: accumulator.addedCount,
+                removedCount: accumulator.removedCount,
+                grewCount: accumulator.grewCount,
+                shrankCount: accumulator.shrankCount,
+                movedCount: accumulator.movedCount,
+                takingSpaceCount: accumulator.takingSpaceCount,
+                freeingSpaceCount: accumulator.freeingSpaceCount
+            )
+        }
+
+        let rootPaths = accumulators.values
+            .filter { $0.parentPath == nil }
+            .map(\.relativePath)
+            .sorted(by: nodeSort)
+        return ScanComparisonChangeTree(rootPaths: rootPaths, nodesByPath: nodesByPath)
+    }
+
+    private static func parentPath(of relativePath: String) -> String? {
+        guard let slashIndex = relativePath.lastIndex(of: "/") else { return nil }
+        return String(relativePath[..<slashIndex])
+    }
+
     private static func topLevelChanges(
         from rows: [ScanComparisonRow],
         beforeNodes: [String: FileNodeRecord],
@@ -637,9 +1204,16 @@ nonisolated struct ScanComparisonService: Sendable {
 
             var counts: [ScanComparisonChangeKind: Int] = [:]
             var allocatedDelta: Int64 = 0
+            var increasedAllocatedSize: Int64 = 0
+            var reclaimedAllocatedSize: Int64 = 0
             for row in locationRows {
                 counts[row.kind, default: 0] += 1
                 allocatedDelta += row.allocatedDelta
+                if row.allocatedDelta > 0 {
+                    increasedAllocatedSize += row.allocatedDelta
+                } else if row.allocatedDelta < 0 {
+                    reclaimedAllocatedSize += -row.allocatedDelta
+                }
             }
 
             let beforeNode = beforeNodes[relativePath]
@@ -650,6 +1224,8 @@ nonisolated struct ScanComparisonService: Sendable {
                 relativePath: relativePath,
                 name: displayNode?.name ?? URL(filePath: relativePath).lastPathComponent,
                 allocatedDelta: allocatedDelta,
+                increasedAllocatedSize: increasedAllocatedSize,
+                reclaimedAllocatedSize: reclaimedAllocatedSize,
                 addedCount: counts[.added, default: 0],
                 removedCount: counts[.removed, default: 0],
                 grewCount: counts[.grew, default: 0],
@@ -661,6 +1237,9 @@ nonisolated struct ScanComparisonService: Sendable {
             )
         }
         .sorted { lhs, rhs in
+            if lhs.grossChangedAllocatedSize != rhs.grossChangedAllocatedSize {
+                return lhs.grossChangedAllocatedSize > rhs.grossChangedAllocatedSize
+            }
             if lhs.absoluteAllocatedDelta != rhs.absoluteAllocatedDelta {
                 return lhs.absoluteAllocatedDelta > rhs.absoluteAllocatedDelta
             }
@@ -903,6 +1482,7 @@ nonisolated struct ScanComparisonRowComparator: Equatable, SortComparator, Senda
 
 nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
     let changeKind: ScanComparisonChangeKind?
+    let impactFilter: ScanComparisonImpactFilter
     let searchText: String
     let sortOrder: [ScanComparisonRowComparator]
     /// Limits evidence to one top-level contributor while retaining its full descendant rows.
@@ -910,11 +1490,13 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
 
     init(
         changeKind: ScanComparisonChangeKind?,
+        impactFilter: ScanComparisonImpactFilter = .allActivity,
         searchText: String,
         sortOrder: [ScanComparisonRowComparator],
         pathPrefix: String? = nil
     ) {
         self.changeKind = changeKind
+        self.impactFilter = impactFilter
         self.searchText = searchText
         self.sortOrder = sortOrder
         self.pathPrefix = pathPrefix
@@ -926,6 +1508,7 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
         )
         let filteredRows = rows.filter { row in
             guard changeKind == nil || row.kind == changeKind else { return false }
+            guard impactFilter.includes(row) else { return false }
             if let pathPrefix, !pathPrefix.isEmpty {
                 guard row.relativePath == pathPrefix || row.relativePath.hasPrefix(pathPrefix + "/") else {
                     return false

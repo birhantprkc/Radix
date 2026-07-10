@@ -1032,6 +1032,45 @@ final class AppModel: ObservableObject {
         showComparisonNodeInBrowser(beforeNode: row.beforeNode, afterNode: row.afterNode)
     }
 
+    func canRevealComparisonChangeNodeInFinder(_ node: ScanComparisonChangeTreeNode) -> Bool {
+        guard let currentNode = currentScanNode(for: node.beforeNode, afterNode: node.afterNode) else {
+            return false
+        }
+        return dependencies.systemActions.fileExists(currentNode.url)
+    }
+
+    func revealComparisonChangeNodeInFinder(_ node: ScanComparisonChangeTreeNode) {
+        guard let currentNode = currentScanNode(for: node.beforeNode, afterNode: node.afterNode) else {
+            presentError(FileActionError.currentComparisonSnapshotUnavailable)
+            return
+        }
+        guard dependencies.systemActions.fileExists(currentNode.url) else {
+            presentError(FileActionError.unavailable(path: currentNode.url.path))
+            return
+        }
+        dependencies.systemActions.reveal(currentNode.url)
+    }
+
+    func copyComparisonChangeNodePath(_ node: ScanComparisonChangeTreeNode) {
+        guard let url = node.fileURL else {
+            presentError(FileActionError.unsupported)
+            return
+        }
+        do {
+            try dependencies.systemActions.copyPath(url)
+        } catch {
+            presentError(error)
+        }
+    }
+
+    func canShowComparisonChangeNodeInBrowser(_ node: ScanComparisonChangeTreeNode) -> Bool {
+        canShowComparisonNodeInBrowser(beforeNode: node.beforeNode, afterNode: node.afterNode)
+    }
+
+    func showComparisonChangeNodeInBrowser(_ node: ScanComparisonChangeTreeNode) {
+        showComparisonNodeInBrowser(beforeNode: node.beforeNode, afterNode: node.afterNode)
+    }
+
     func canRevealComparisonLocationInFinder(_ location: ScanComparisonLocationChange) -> Bool {
         guard let node = currentScanNode(for: location.beforeNode, afterNode: location.afterNode) else {
             return false

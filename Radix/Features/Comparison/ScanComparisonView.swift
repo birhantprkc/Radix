@@ -6,6 +6,11 @@ struct ScanComparisonRowActions {
     let showInBrowser: (ScanComparisonRow) -> Void
     let canShowInBrowser: (ScanComparisonRow) -> Bool
     let copyPath: (ScanComparisonRow) -> Void
+    let revealNode: (ScanComparisonChangeTreeNode) -> Void
+    let canRevealNode: (ScanComparisonChangeTreeNode) -> Bool
+    let showNodeInBrowser: (ScanComparisonChangeTreeNode) -> Void
+    let canShowNodeInBrowser: (ScanComparisonChangeTreeNode) -> Bool
+    let copyNodePath: (ScanComparisonChangeTreeNode) -> Void
 }
 
 struct ScanComparisonView: View {
@@ -17,13 +22,15 @@ struct ScanComparisonView: View {
     let actions: ScanComparisonRowActions
     let onClose: () -> Void
 
-    @State private var filter: ScanComparisonRowFilter = .all
+    @State private var displayMode: ScanComparisonDisplayMode = .significant
+    @State private var impactFilter: ScanComparisonImpactFilter
     @State private var searchText = ""
     @State private var focusedLocationPath: String?
     @State private var sortOrder: [ScanComparisonRowComparator]
     @State private var selection = Set<ScanComparisonRow.ID>()
+    @State private var aggregateSelection = Set<ScanComparisonChangeTreeNode.ID>()
     @State private var displayedRows: [ScanComparisonRow]
-    @State private var isLocationOverviewExpanded = true
+    @State private var projection: ScanComparisonChangeTreeProjection
 
     init(
         comparison: ScanComparison,
@@ -35,13 +42,25 @@ struct ScanComparisonView: View {
         self.onClose = onClose
 
         let sortOrder = Self.initialSortOrder
+        let impactFilter: ScanComparisonImpactFilter = if comparison.summary.allocatedDelta > 0 {
+            .takingSpace
+        } else if comparison.summary.allocatedDelta < 0 {
+            .freeingSpace
+        } else {
+            .allActivity
+        }
+        self._impactFilter = State(initialValue: impactFilter)
         self._sortOrder = State(initialValue: sortOrder)
         self._displayedRows = State(initialValue: ScanComparisonRowQuery(
             changeKind: nil,
+            impactFilter: impactFilter,
             searchText: "",
             sortOrder: sortOrder,
             pathPrefix: nil
         ).applying(to: comparison.rows))
+        self._projection = State(initialValue: comparison.changeTree.significantProjection(
+            impactFilter: impactFilter
+        ))
     }
 
     var body: some View {
@@ -72,14 +91,29 @@ struct ScanComparisonView: View {
         .onChange(of: rowQuery) { _, query in
             refreshDisplayedRows(using: query)
         }
+        .onChange(of: impactFilter) { _, filter in
+            projection = comparison.changeTree.significantProjection(impactFilter: filter)
+            aggregateSelection.removeAll()
+        }
+        .onChange(of: displayMode) { _, mode in
+            if mode == .significant {
+                focusedLocationPath = nil
+                selection.removeAll()
+            } else {
+                aggregateSelection.removeAll()
+            }
+        }
         .onChange(of: comparison.id) { _, _ in
             refreshDisplayedRows(using: rowQuery)
+            projection = comparison.changeTree.significantProjection(impactFilter: impactFilter)
         }
     }
 
     @ViewBuilder
     private var comparisonContent: some View {
-        if displayedRows.isEmpty {
+        if effectiveDisplayMode == .significant, !projection.roots.isEmpty {
+            significantTable
+        } else if displayedRows.isEmpty {
             emptyState
         } else {
             comparisonTable
@@ -109,34 +143,30 @@ struct ScanComparisonView: View {
                 coverageBanner
             }
 
-            if !highlightedLocations.isEmpty {
-                locationOverview
-            }
-
-            HStack(spacing: 12) {
-                Picker("Filter", selection: $filter) {
-                    ForEach(ScanComparisonRowFilter.allCases) { filter in
-                        Text(filterTitle(filter))
-                            .tag(filter)
-                            .disabled(filter != .all && filterCount(filter) == 0)
+            HStack(spacing: 16) {
+                Picker("Detail", selection: $displayMode) {
+                    ForEach(ScanComparisonDisplayMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(maxWidth: 520)
+                .frame(width: 240)
+                .accessibilityLabel("Comparison detail")
 
-                if let focusedLocationPath {
-                    Button {
-                        self.focusedLocationPath = nil
-                    } label: {
-                        Label("Showing \(focusedLocationPath)", systemImage: "xmark.circle.fill")
+                Divider()
+                    .frame(height: 22)
+
+                Picker("Show", selection: $impactFilter) {
+                    ForEach(ScanComparisonImpactFilter.allCases) { filter in
+                        Label(filter.title, systemImage: filter.systemImageName).tag(filter)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .lineLimit(1)
                 }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityLabel("Show changes")
 
-                Spacer()
+                Spacer(minLength: 16)
 
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
@@ -157,11 +187,17 @@ struct ScanComparisonView: View {
                     }
                 }
                 .padding(.horizontal, 8)
-                .frame(width: 250, height: 28)
+                .frame(width: 280, height: 28)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
 
-            if let selectedRow {
+            if !comparison.rows.isEmpty {
+                comparisonStatus
+            }
+
+            if effectiveDisplayMode == .significant, let selectedAggregateNode {
+                aggregateSelectionActions(for: selectedAggregateNode)
+            } else if let selectedRow {
                 selectionActions(for: selectedRow)
             }
         }
@@ -257,93 +293,6 @@ struct ScanComparisonView: View {
         }
     }
 
-    private var highlightedLocations: [ScanComparisonLocationChange] {
-        let increases = comparison.topLevelChanges
-            .filter { $0.allocatedDelta > 0 }
-            .sorted { lhs, rhs in
-                lhs.allocatedDelta == rhs.allocatedDelta
-                    ? lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
-                    : lhs.allocatedDelta > rhs.allocatedDelta
-            }
-        if !increases.isEmpty {
-            return Array(increases.prefix(3))
-        }
-        return Array(comparison.topLevelChanges.prefix(3))
-    }
-
-    private var locationOverviewTitle: String {
-        comparison.topLevelChanges.contains { $0.allocatedDelta > 0 }
-            ? "Largest Increases"
-            : "Largest Changes"
-    }
-
-    private var locationOverview: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                isLocationOverviewExpanded.toggle()
-            } label: {
-                HStack(spacing: 8) {
-                    Text(locationOverviewTitle)
-                        .font(.subheadline.weight(.semibold))
-
-                    Spacer()
-
-                    Image(systemName: isLocationOverviewExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityValue(isLocationOverviewExpanded ? "Expanded" : "Collapsed")
-            .help(isLocationOverviewExpanded ? "Collapse \(locationOverviewTitle)" : "Expand \(locationOverviewTitle)")
-
-            if isLocationOverviewExpanded {
-                ForEach(highlightedLocations) { location in
-                    locationRow(location)
-                }
-            }
-        }
-        .padding(10)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func locationRow(_ location: ScanComparisonLocationChange) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) {
-                focusedLocationPath = location.relativePath
-            }
-        } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(location.relativePath)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Text("\(location.affectedCount.formatted()) affected item\(location.affectedCount == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                Text(signedSize(location.allocatedDelta))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(deltaColor(location.allocatedDelta))
-                    .monospacedDigit()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 2)
-        .help("Show changes in \(location.relativePath)")
-    }
-
     private func sourceSummary(title: String, snapshot: ComparedSnapshotSummary) -> some View {
         HStack(spacing: 5) {
             Text(title)
@@ -386,6 +335,127 @@ struct ScanComparisonView: View {
                 .monospacedDigit()
         }
         .frame(minWidth: 66, alignment: .leading)
+    }
+
+    private var effectiveDisplayMode: ScanComparisonDisplayMode {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? displayMode
+            : .allChanges
+    }
+
+    private var comparisonStatus: some View {
+        HStack(spacing: 6) {
+            if let focusedLocationPath {
+                Button {
+                    self.focusedLocationPath = nil
+                } label: {
+                    Label(focusedLocationPath, systemImage: "xmark.circle.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .lineLimit(1)
+                .help("Clear location filter")
+            }
+
+            Image(systemName: effectiveDisplayMode == .significant ? "scope" : "list.bullet")
+                .foregroundStyle(.secondary)
+
+            if effectiveDisplayMode == .significant {
+                Text(significantStatusText)
+            } else {
+                Text("Showing \(displayedRows.count.formatted()) of \(comparison.rows.count.formatted()) filesystem changes.")
+                if !searchText.isEmpty, displayMode == .significant {
+                    Text("Search uses All Changes.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var significantStatusText: String {
+        let percentage = projection.representedFraction.formatted(.percent.precision(.fractionLength(0)))
+        let effect = impactFilter.statusNoun
+        if projection.hiddenRootCount == 0 {
+            return "Showing all meaningful \(effect) contributors; expand folders to trace their source."
+        }
+        return "Named contributors represent \(percentage) of \(effect); \(projection.groupedAffectedCount.formatted()) smaller changes are grouped under Other."
+    }
+
+    private var significantTable: some View {
+        Table(
+            projection.roots,
+            children: \.children,
+            selection: $aggregateSelection
+        ) {
+            TableColumn("Contributor") { node in
+                HStack(spacing: 8) {
+                    Image(systemName: itemSymbol(for: node))
+                        .foregroundStyle(node.isRemainder ? Color.secondary : Color.accentColor)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(node.name)
+                            .fontWeight(node.isRemainder ? .regular : .medium)
+                            .lineLimit(1)
+
+                        if node.isRemainder {
+                            Text("Switch to All Changes to inspect every item")
+                        } else if node.relativePath != node.name {
+                            Text(node.relativePath)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(node.isRemainder ? .secondary : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                }
+            }
+            .width(min: 280, ideal: 520)
+
+            TableColumn("Taking Space") { node in
+                Text(node.increasedAllocatedSize == 0 ? "–" : "+" + RadixFormatters.size(node.increasedAllocatedSize))
+                    .foregroundStyle(node.increasedAllocatedSize == 0 ? Color.secondary : Color.red)
+                    .monospacedDigit()
+                    .accessibilityLabel("Taking \(RadixFormatters.size(node.increasedAllocatedSize))")
+            }
+            .width(min: 110, ideal: 130)
+
+            TableColumn("Freeing Space") { node in
+                Text(node.reclaimedAllocatedSize == 0 ? "–" : "−" + RadixFormatters.size(node.reclaimedAllocatedSize))
+                    .foregroundStyle(node.reclaimedAllocatedSize == 0 ? Color.secondary : Color.green)
+                    .monospacedDigit()
+                    .accessibilityLabel("Freeing \(RadixFormatters.size(node.reclaimedAllocatedSize))")
+            }
+            .width(min: 110, ideal: 130)
+
+            TableColumn("Net") { node in
+                Text(signedSize(node.allocatedDelta))
+                    .foregroundStyle(deltaColor(node.allocatedDelta))
+                    .monospacedDigit()
+            }
+            .width(min: 100, ideal: 120)
+
+            TableColumn("Changes") { node in
+                Text(node.affectedCount.formatted())
+                    .monospacedDigit()
+                    .accessibilityLabel("\(node.affectedCount.formatted()) affected items")
+            }
+            .width(min: 75, ideal: 90)
+        }
+        .contextMenu(forSelectionType: ScanComparisonChangeTreeNode.ID.self) { ids in
+            aggregateContextMenu(for: ids)
+        } primaryAction: { ids in
+            guard let node = singleAggregateNode(in: ids) else { return }
+            if node.isRemainder {
+                showAllChanges(for: node)
+            } else if actions.canShowNodeInBrowser(node) {
+                actions.showNodeInBrowser(node)
+            }
+        }
     }
 
     private var comparisonTable: some View {
@@ -453,6 +523,56 @@ struct ScanComparisonView: View {
         singleRow(in: selection)
     }
 
+    private var selectedAggregateNode: ScanComparisonChangeTreeNode? {
+        singleAggregateNode(in: aggregateSelection)
+    }
+
+    private func aggregateSelectionActions(for node: ScanComparisonChangeTreeNode) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: itemSymbol(for: node))
+                .foregroundStyle(.secondary)
+
+            Text(node.name)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+
+            Spacer()
+
+            if node.isRemainder {
+                Button {
+                    showAllChanges(for: node)
+                } label: {
+                    Label("Show All Changes", systemImage: "list.bullet")
+                }
+            } else {
+                Button {
+                    actions.showNodeInBrowser(node)
+                } label: {
+                    Label("Show in Browser", systemImage: "sidebar.squares.left")
+                }
+                .disabled(!actions.canShowNodeInBrowser(node))
+
+                Button {
+                    actions.revealNode(node)
+                } label: {
+                    Label("Reveal in Finder", systemImage: "folder")
+                }
+                .disabled(!actions.canRevealNode(node))
+
+                Button {
+                    actions.copyNodePath(node)
+                } label: {
+                    Label("Copy Path", systemImage: "doc.on.doc")
+                }
+                .disabled(node.fileURL == nil)
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private func selectionActions(for row: ScanComparisonRow) -> some View {
         HStack(spacing: 8) {
             Image(systemName: itemSymbol(for: row))
@@ -517,6 +637,55 @@ struct ScanComparisonView: View {
         }
     }
 
+    @ViewBuilder
+    private func aggregateContextMenu(for ids: Set<ScanComparisonChangeTreeNode.ID>) -> some View {
+        if let node = singleAggregateNode(in: ids) {
+            if node.isRemainder {
+                Button {
+                    showAllChanges(for: node)
+                } label: {
+                    Label("Show All Changes", systemImage: "list.bullet")
+                }
+            } else {
+                Button {
+                    actions.revealNode(node)
+                } label: {
+                    Label("Reveal in Finder", systemImage: "folder")
+                }
+                .disabled(!actions.canRevealNode(node))
+
+                Button {
+                    actions.showNodeInBrowser(node)
+                } label: {
+                    Label("Show in Browser", systemImage: "sidebar.squares.left")
+                }
+                .disabled(!actions.canShowNodeInBrowser(node))
+
+                Divider()
+
+                Button {
+                    actions.copyNodePath(node)
+                } label: {
+                    Label("Copy Path", systemImage: "doc.on.doc")
+                }
+                .disabled(node.fileURL == nil)
+            }
+        }
+    }
+
+    private func singleAggregateNode(
+        in ids: Set<ScanComparisonChangeTreeNode.ID>
+    ) -> ScanComparisonChangeTreeNode? {
+        guard ids.count == 1, let id = ids.first else { return nil }
+        return projection.node(withID: id)
+    }
+
+    private func showAllChanges(for node: ScanComparisonChangeTreeNode) {
+        displayMode = .allChanges
+        focusedLocationPath = node.relativePath.isEmpty ? nil : node.relativePath
+        aggregateSelection.removeAll()
+    }
+
     private func singleRow(in ids: Set<ScanComparisonRow.ID>) -> ScanComparisonRow? {
         guard ids.count == 1, let id = ids.first else { return nil }
         return comparison.rows.first { $0.id == id }
@@ -542,12 +711,13 @@ struct ScanComparisonView: View {
     private var emptyStateDescription: String {
         comparison.rows.isEmpty
             ? "No tracked size changes were found."
-            : "Adjust filter or search."
+            : "Choose a different view or adjust your search."
     }
 
     private var rowQuery: ScanComparisonRowQuery {
         ScanComparisonRowQuery(
-            changeKind: filter.changeKind,
+            changeKind: nil,
+            impactFilter: impactFilter,
             searchText: searchText,
             sortOrder: sortOrder,
             pathPrefix: focusedLocationPath
@@ -582,29 +752,15 @@ struct ScanComparisonView: View {
         return row.isDirectory ? "folder.fill" : "doc.fill"
     }
 
+    private func itemSymbol(for node: ScanComparisonChangeTreeNode) -> String {
+        if node.isRemainder {
+            return "ellipsis.circle"
+        }
+        return node.isDirectory ? "folder.fill" : "doc.fill"
+    }
+
     private func comparisonDate(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .standard)
-    }
-
-    private func filterTitle(_ filter: ScanComparisonRowFilter) -> String {
-        "\(filter.title) \(filterCount(filter).formatted())"
-    }
-
-    private func filterCount(_ filter: ScanComparisonRowFilter) -> Int {
-        switch filter {
-        case .all:
-            return comparison.rows.count
-        case .added:
-            return comparison.summary.addedCount
-        case .removed:
-            return comparison.summary.removedCount
-        case .grew:
-            return comparison.summary.grewCount
-        case .shrank:
-            return comparison.summary.shrankCount
-        case .moved:
-            return comparison.summary.movedCount
-        }
     }
 
     private func signedSize(_ size: Int64) -> String {
@@ -629,49 +785,59 @@ struct ScanComparisonView: View {
     }
 }
 
-private enum ScanComparisonRowFilter: String, CaseIterable, Identifiable {
-    case all
-    case added
-    case removed
-    case grew
-    case shrank
-    case moved
+private enum ScanComparisonDisplayMode: String, CaseIterable, Identifiable {
+    case significant
+    case allChanges
 
-    var id: String {
-        rawValue
-    }
+    var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .all:
-            return "All"
-        case .added:
-            return ScanComparisonChangeKind.added.title
-        case .removed:
-            return ScanComparisonChangeKind.removed.title
-        case .grew:
-            return ScanComparisonChangeKind.grew.title
-        case .shrank:
-            return ScanComparisonChangeKind.shrank.title
+        case .significant:
+            return "Significant"
+        case .allChanges:
+            return "All Changes"
+        }
+    }
+}
+
+private extension ScanComparisonImpactFilter {
+    var title: String {
+        switch self {
+        case .takingSpace:
+            return "Taking Space"
+        case .freeingSpace:
+            return "Freeing Space"
         case .moved:
-            return ScanComparisonChangeKind.moved.title
+            return "Moves"
+        case .allActivity:
+            return "Everything"
         }
     }
 
-    var changeKind: ScanComparisonChangeKind? {
+    var systemImageName: String {
         switch self {
-        case .all:
-            return nil
-        case .added:
-            return .added
-        case .removed:
-            return .removed
-        case .grew:
-            return .grew
-        case .shrank:
-            return .shrank
+        case .takingSpace:
+            return "arrow.up.right"
+        case .freeingSpace:
+            return "arrow.down.right"
         case .moved:
-            return .moved
+            return "arrow.left.arrow.right"
+        case .allActivity:
+            return "waveform.path.ecg"
+        }
+    }
+
+    var statusNoun: String {
+        switch self {
+        case .takingSpace:
+            return "storage growth"
+        case .freeingSpace:
+            return "reclaimed storage"
+        case .moved:
+            return "moves"
+        case .allActivity:
+            return "storage activity"
         }
     }
 }
