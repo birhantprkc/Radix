@@ -3,6 +3,144 @@ import XCTest
 @testable import RadixCore
 
 final class ScanEngineTests: XCTestCase {
+    func testLowDescriptorBudgetMatchesNormalScanAndStaysWithinPeak() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        for branch in 0..<8 {
+            let nestedURL = rootURL.appending(
+                path: "Branch-\(branch)/Nested/Deep",
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
+            try Data(repeating: UInt8(branch), count: branch + 1).write(
+                to: nestedURL.appending(path: "payload.bin")
+            )
+        }
+        var options = ScanOptions()
+        options.autoSummarizeDirectories = false
+        options.directoryTraversalWorkerLimit = 4
+        let reference = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options
+        )
+        let descriptorPool = ScanDirectoryDescriptorPool(maxOpenDescriptorCount: 2)
+        let constrained = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(directoryDescriptorPoolFactory: { descriptorPool })
+        )
+
+        let referenceIDs = reference.treeStore.indexedNodeIDs()
+        XCTAssertEqual(constrained.treeStore.indexedNodeIDs(), referenceIDs)
+        for nodeID in referenceIDs {
+            XCTAssertEqual(constrained.treeStore.node(id: nodeID), reference.treeStore.node(id: nodeID), nodeID)
+            XCTAssertEqual(
+                constrained.treeStore.children(of: nodeID).map(\.id),
+                reference.treeStore.children(of: nodeID).map(\.id),
+                nodeID
+            )
+        }
+        XCTAssertEqual(constrained.aggregateStats.totalAllocatedSize, reference.aggregateStats.totalAllocatedSize)
+        XCTAssertEqual(constrained.aggregateStats.totalLogicalSize, reference.aggregateStats.totalLogicalSize)
+        XCTAssertEqual(constrained.aggregateStats.fileCount, reference.aggregateStats.fileCount)
+        XCTAssertEqual(constrained.aggregateStats.directoryCount, reference.aggregateStats.directoryCount)
+        XCTAssertEqual(constrained.aggregateStats.accessibleItemCount, reference.aggregateStats.accessibleItemCount)
+        XCTAssertEqual(constrained.aggregateStats.inaccessibleItemCount, reference.aggregateStats.inaccessibleItemCount)
+        let counters = descriptorPool.debugCounters
+        XCTAssertLessThanOrEqual(counters.peakOpenDescriptorCount, 2)
+        XCTAssertGreaterThan(counters.openatCallCount, 0)
+        XCTAssertGreaterThan(counters.fallbackCount, 0)
+        XCTAssertEqual(counters.currentOpenDescriptorCount, 0)
+    }
+
+    func testDirectorySymlinkSwapAfterDiscoveryIsRefused() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        let outsideURL = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+            try? FileManager.default.removeItem(at: outsideURL)
+        }
+        let childURL = rootURL.appending(path: "Child", directoryHint: .isDirectory)
+        let outsideFileURL = outsideURL.appending(path: "outside.bin")
+        try FileManager.default.createDirectory(at: childURL, withIntermediateDirectories: true)
+        try Data([0x5A]).write(to: outsideFileURL)
+
+        let blocker = BlockingLiveChildOpen()
+        let descriptorPool = ScanDirectoryDescriptorPool(
+            maxOpenDescriptorCount: 8,
+            systemCalls: blocker.systemCalls
+        )
+        let scanTask = Task {
+            try await finishedSnapshot(
+                target: ScanTarget(url: rootURL),
+                options: ScanOptions(),
+                engine: ScanEngine(directoryDescriptorPoolFactory: { descriptorPool })
+            )
+        }
+        defer {
+            blocker.release()
+            scanTask.cancel()
+        }
+        XCTAssertEqual(blocker.didReachChildOpen.wait(timeout: .now() + 2), .success)
+        try FileManager.default.removeItem(at: childURL)
+        try FileManager.default.createSymbolicLink(at: childURL, withDestinationURL: outsideURL)
+        blocker.release()
+
+        let snapshot = try await withTimeout(.seconds(2)) {
+            try await scanTask.value
+        }
+        let childNode = try XCTUnwrap(snapshot.treeStore.node(id: childURL.path))
+        XCTAssertFalse(childNode.isAccessible)
+        XCTAssertNil(snapshot.treeStore.node(id: childURL.appending(path: "outside.bin").path))
+        XCTAssertNil(snapshot.treeStore.node(id: outsideFileURL.path))
+        XCTAssertFalse(snapshot.scanWarnings.isEmpty)
+        XCTAssertEqual(descriptorPool.debugCounters.currentOpenDescriptorCount, 0)
+    }
+
+    func testCancellingDescriptorRelativeScanClosesInFlightAndRetainedLeases() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let childURL = rootURL.appending(path: "Child", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: childURL, withIntermediateDirectories: true)
+        try Data([0x4A]).write(to: childURL.appending(path: "payload.bin"))
+
+        let blocker = BlockingLiveChildOpen()
+        let descriptorPool = ScanDirectoryDescriptorPool(
+            maxOpenDescriptorCount: 8,
+            systemCalls: blocker.systemCalls
+        )
+        let engine = ScanEngine(directoryDescriptorPoolFactory: { descriptorPool })
+        let scanTask = Task {
+            do {
+                for try await event in engine.scan(target: ScanTarget(url: rootURL), options: ScanOptions()) {
+                    if case .finished = event { return true }
+                }
+            } catch is CancellationError {
+                return false
+            } catch {
+                return false
+            }
+            return false
+        }
+        defer {
+            blocker.release()
+            scanTask.cancel()
+        }
+        XCTAssertEqual(blocker.didReachChildOpen.wait(timeout: .now() + 2), .success)
+
+        scanTask.cancel()
+        blocker.release()
+        let didFinish = try await withTimeout(.seconds(2)) {
+            await scanTask.value
+        }
+
+        XCTAssertFalse(didFinish)
+        for _ in 0..<100 where descriptorPool.debugCounters.currentOpenDescriptorCount != 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(descriptorPool.debugCounters.currentOpenDescriptorCount, 0)
+    }
+
     func testBulkDirectoryEnumerationRejectsIncompleteMetadataAttributeSets() {
         var returned = attribute_set_t()
         returned.commonattr = .max
@@ -151,6 +289,47 @@ final class ScanEngineTests: XCTestCase {
             XCTAssertTrue(error is CancellationError)
         }
         XCTAssertNil(try parsingCursor.nextBatch(cancellationCheck: {}))
+    }
+
+    func testDescriptorRelativeTraversalMatchesBudgetFallback() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        for branch in 0..<6 {
+            let leafURL = rootURL
+                .appending(path: "branch-\(branch)", directoryHint: .isDirectory)
+                .appending(path: "nested", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: leafURL, withIntermediateDirectories: true)
+            try Data(repeating: UInt8(branch), count: 257 + branch).write(
+                to: leafURL.appending(path: "payload-\(branch).bin")
+            )
+        }
+
+        let descriptorPool = ScanDirectoryDescriptorPool(maxOpenDescriptorCount: 32)
+        let descriptorEngine = ScanEngine(directoryDescriptorPoolFactory: { descriptorPool })
+        let descriptorSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions(),
+            engine: descriptorEngine
+        )
+
+        let fallbackPool = ScanDirectoryDescriptorPool(maxOpenDescriptorCount: 1)
+        let fallbackEngine = ScanEngine(directoryDescriptorPoolFactory: { fallbackPool })
+        let fallbackSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions(),
+            engine: fallbackEngine
+        )
+
+        XCTAssertEqual(descriptorSnapshot.treeStore.indexedNodeIDs(), fallbackSnapshot.treeStore.indexedNodeIDs())
+        XCTAssertEqual(descriptorSnapshot.treeStore.childIDsByID, fallbackSnapshot.treeStore.childIDsByID)
+        XCTAssertEqual(descriptorSnapshot.root.allocatedSize, fallbackSnapshot.root.allocatedSize)
+        XCTAssertGreaterThan(descriptorPool.debugCounters.openatCallCount, 0)
+        XCTAssertEqual(descriptorPool.debugCounters.currentOpenDescriptorCount, 0)
+        XCTAssertLessThanOrEqual(descriptorPool.debugCounters.peakOpenDescriptorCount, 32)
+        XCTAssertGreaterThan(fallbackPool.debugCounters.fallbackCount, 0)
+        XCTAssertEqual(fallbackPool.debugCounters.currentOpenDescriptorCount, 0)
+        XCTAssertLessThanOrEqual(fallbackPool.debugCounters.peakOpenDescriptorCount, 1)
     }
 
     func testPackagesAreLeafNodesByDefault() async throws {
@@ -2903,6 +3082,38 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(cacheNode.isAutoSummarized)
         XCTAssertEqual(cacheNode.descendantFileCount, 12)
         XCTAssertEqual(cacheNode.logicalSize, 12 * 32)
+    }
+}
+
+private final class BlockingLiveChildOpen: @unchecked Sendable {
+    let didReachChildOpen = DispatchSemaphore(value: 0)
+    private let allowChildOpen = DispatchSemaphore(value: 0)
+    private let releaseLock = NSLock()
+    private var isReleased = false
+
+    var systemCalls: ScanDirectoryDescriptorPool.SystemCalls {
+        let live = ScanDirectoryDescriptorPool.SystemCalls.live
+        return ScanDirectoryDescriptorPool.SystemCalls(
+            openRoot: live.openRoot,
+            openChild: { [didReachChildOpen, allowChildOpen] parentDescriptor, name in
+                didReachChildOpen.signal()
+                allowChildOpen.wait()
+                return live.openChild(parentDescriptor, name)
+            },
+            fileIdentity: live.fileIdentity,
+            close: live.close
+        )
+    }
+
+    func release() {
+        releaseLock.lock()
+        guard !isReleased else {
+            releaseLock.unlock()
+            return
+        }
+        isReleased = true
+        releaseLock.unlock()
+        allowChildOpen.signal()
     }
 }
 

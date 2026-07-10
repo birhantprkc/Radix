@@ -68,6 +68,7 @@ let package = Package(
                 "Services/ScanArchiveTopologyValidator.swift",
                 "Services/ScanComparisonService.swift",
                 "Services/ScanDiagnostics.swift",
+                "Services/ScanDirectoryDescriptorPool.swift",
                 "Services/ScanCoordinator.swift",
                 "Services/ScanEngine.swift",
                 "Services/ScanExclusionMatcher.swift",

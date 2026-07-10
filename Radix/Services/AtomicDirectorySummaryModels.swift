@@ -17,17 +17,22 @@ nonisolated struct DirectoryEntry: Sendable {
     let metadata: NodeMetadata?
     let localizedEnumerationError: Error?
     let isDirectoryHint: Bool?
+    /// Exact validated child-name bytes from native bulk enumeration.
+    /// Foundation/fallback enumeration leaves this unavailable.
+    let nativeName: BulkDirectoryEnumerator.NativeName?
 
     init(
         url: URL,
         metadata: NodeMetadata?,
         localizedEnumerationError: Error? = nil,
-        isDirectoryHint: Bool? = nil
+        isDirectoryHint: Bool? = nil,
+        nativeName: BulkDirectoryEnumerator.NativeName? = nil
     ) {
         self.url = url
         self.metadata = metadata
         self.localizedEnumerationError = localizedEnumerationError
         self.isDirectoryHint = isDirectoryHint
+        self.nativeName = nativeName
     }
 }
 

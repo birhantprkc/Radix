@@ -15,6 +15,36 @@ import Foundation
 /// the directory entry and the metadata Radix needs in the same kernel operation.
 /// Unsupported filesystems return `nil` so callers can transparently fall back.
 nonisolated enum BulkDirectoryEnumerator {
+    /// A single validated child component, stored exactly as NUL-terminated
+    /// filesystem bytes for descriptor-relative syscalls such as `openat(2)`.
+    struct NativeName: Hashable, Sendable {
+        private let nullTerminatedBytes: [UInt8]
+
+        init?<Bytes: Collection>(fileSystemBytes bytes: Bytes) where Bytes.Element == UInt8 {
+            guard !bytes.isEmpty,
+                  !bytes.contains(0),
+                  !bytes.contains(UInt8(ascii: "/")),
+                  !bytes.elementsEqual([UInt8(ascii: ".")]),
+                  !bytes.elementsEqual([UInt8(ascii: "."), UInt8(ascii: ".")]),
+                  let decodedName = String(bytes: bytes, encoding: .utf8),
+                  decodedName.utf8.elementsEqual(bytes) else {
+                return nil
+            }
+
+            nullTerminatedBytes = Array(bytes) + [0]
+        }
+
+        /// The body must not retain the pointer after returning.
+        func withUnsafeFileSystemRepresentation<Result>(
+            _ body: (UnsafePointer<CChar>) throws -> Result
+        ) rethrows -> Result {
+            try nullTerminatedBytes.withUnsafeBytes { rawBuffer in
+                let pointer = rawBuffer.baseAddress!.assumingMemoryBound(to: CChar.self)
+                return try body(pointer)
+            }
+        }
+    }
+
     /// Owns one native directory descriptor and closes it exactly once.
     ///
     /// The handle is lock-protected so future descriptor-relative work can pass
@@ -83,19 +113,24 @@ nonisolated enum BulkDirectoryEnumerator {
         private let loadsPackageMetadata: Bool
         private let metadataLoader: ScanMetadataLoader
         private let lock = NSLock()
-        private let directoryHandle: NativeDirectoryHandle
+        private let directoryHandle: NativeDirectoryHandle?
+        private let descriptorLease: ScanDirectoryDescriptorPool.Lease?
         private var attributes = requestedAttributes
         private var isFinished = false
         private var buffer: UnsafeMutableRawBufferPointer?
         private let forcedUnavailableAfterBatchCount: Int?
         private var successfulBatchCount = 0
+        // ASCII decoding is injective and cannot have canonical-equivalence
+        // collisions. Retain collision state only for the uncommon Unicode names.
+        private var nonASCIINativeNameByDecodedName: [String: NativeName] = [:]
 
         fileprivate init(
             directoryURL: URL,
             includeHiddenFiles: Bool,
             loadsPackageMetadata: Bool,
             metadataLoader: ScanMetadataLoader,
-            directoryHandle: NativeDirectoryHandle,
+            directoryHandle: NativeDirectoryHandle? = nil,
+            descriptorLease: ScanDirectoryDescriptorPool.Lease? = nil,
             forcedUnavailableAfterBatchCount: Int?
         ) {
             self.directoryURL = directoryURL
@@ -103,6 +138,7 @@ nonisolated enum BulkDirectoryEnumerator {
             self.loadsPackageMetadata = loadsPackageMetadata
             self.metadataLoader = metadataLoader
             self.directoryHandle = directoryHandle
+            self.descriptorLease = descriptorLease
             self.forcedUnavailableAfterBatchCount = forcedUnavailableAfterBatchCount
             buffer = UnsafeMutableRawBufferPointer.allocate(
                 byteCount: bufferCapacity,
@@ -143,7 +179,7 @@ nonisolated enum BulkDirectoryEnumerator {
                 releaseBuffer()
                 throw StreamError.unavailable
             }
-            guard let syscallResult = directoryHandle.withDescriptor({ descriptor in
+            guard let syscallResult = withDescriptor({ descriptor in
                 let count = getattrlistbulk(
                     descriptor,
                     &attributes,
@@ -189,6 +225,7 @@ nonisolated enum BulkDirectoryEnumerator {
                     metadataLoader: metadataLoader,
                     entries: &entries,
                     enumeratedItemCount: &enumeratedItemCount,
+                    nonASCIINativeNameByDecodedName: &nonASCIINativeNameByDecodedName,
                     cancellationCheck: cancellationCheck
                 ) else {
                     isFinished = true
@@ -209,7 +246,16 @@ nonisolated enum BulkDirectoryEnumerator {
         }
 
         private func closeDescriptor() {
-            directoryHandle.close()
+            directoryHandle?.close()
+        }
+
+        private func withDescriptor<Result>(
+            _ body: (Int32) throws -> Result
+        ) rethrows -> Result? {
+            if let directoryHandle {
+                return try directoryHandle.withDescriptor(body)
+            }
+            return try descriptorLease?.withDescriptor(body)
         }
 
         private func releaseBuffer() {
@@ -267,7 +313,7 @@ nonisolated enum BulkDirectoryEnumerator {
         #endif
         let descriptor = directoryURL.withUnsafeFileSystemRepresentation { path in
             guard let path else { return Int32(-1) }
-            return open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            return open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
         }
         guard descriptor >= 0 else {
             throw posixError(errno, url: directoryURL)
@@ -285,6 +331,35 @@ nonisolated enum BulkDirectoryEnumerator {
             loadsPackageMetadata: loadsPackageMetadata,
             metadataLoader: metadataLoader,
             directoryHandle: NativeDirectoryHandle(owning: descriptor),
+            forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
+        )
+    }
+
+    /// Creates a cursor that borrows a pool lease. The caller retains ownership
+    /// so the same opened directory can resolve child names after enumeration.
+    static func makeCursor(
+        at directoryURL: URL,
+        borrowing descriptorLease: ScanDirectoryDescriptorPool.Lease,
+        includeHiddenFiles: Bool,
+        loadsPackageMetadata: Bool = true,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
+        forcedUnavailableAfterBatchCount: Int? = nil
+    ) throws -> Cursor {
+        do {
+            try cancellationCheck()
+        } catch {
+            throw error
+        }
+        guard descriptorLease.isOpen else {
+            throw StreamError.unavailable
+        }
+        return Cursor(
+            directoryURL: directoryURL,
+            includeHiddenFiles: includeHiddenFiles,
+            loadsPackageMetadata: loadsPackageMetadata,
+            metadataLoader: metadataLoader,
+            descriptorLease: descriptorLease,
             forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
         )
     }
@@ -376,6 +451,7 @@ nonisolated enum BulkDirectoryEnumerator {
         metadataLoader: ScanMetadataLoader,
         entries: inout [DirectoryEntry],
         enumeratedItemCount: inout Int,
+        nonASCIINativeNameByDecodedName: inout [String: NativeName],
         cancellationCheck: CancellationCheck
     ) throws -> Bool {
         let bufferEnd = bufferAddress.advanced(by: bufferByteCount)
@@ -404,6 +480,16 @@ nonisolated enum BulkDirectoryEnumerator {
             ) else {
                 return false
             }
+            if parsed.decodedName.utf8.contains(where: { $0 >= 0x80 }) {
+                if let previousName = nonASCIINativeNameByDecodedName[parsed.decodedName],
+                   previousName != parsed.nativeName {
+                    // Canonically equivalent Unicode names compare equal as Swift
+                    // strings. Distinct native bytes would collide in path-keyed
+                    // scan state, so abandon bulk parsing for this directory.
+                    return false
+                }
+                nonASCIINativeNameByDecodedName[parsed.decodedName] = parsed.nativeName
+            }
             enumeratedItemCount += 1
 
             if includeHiddenFiles || !parsed.isHidden {
@@ -420,7 +506,7 @@ nonisolated enum BulkDirectoryEnumerator {
         directoryURL: URL,
         loadsPackageMetadata: Bool,
         metadataLoader: ScanMetadataLoader
-    ) -> (entry: DirectoryEntry, isHidden: Bool)? {
+    ) -> (entry: DirectoryEntry, isHidden: Bool, decodedName: String, nativeName: NativeName)? {
         var cursor = AttributeCursor(
             current: entryAddress.advanced(by: MemoryLayout<UInt32>.size),
             end: entryEnd
@@ -437,7 +523,7 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let nameReferenceAddress = cursor.current
         guard let nameReference: attrreference_t = cursor.read(),
-              let name = string(
+              let parsedName = parsedName(
                   reference: nameReference,
                   referenceAddress: nameReferenceAddress,
                   entryAddress: entryAddress,
@@ -452,6 +538,7 @@ nonisolated enum BulkDirectoryEnumerator {
               let fileID: UInt64 = cursor.read() else {
             return nil
         }
+        let name = parsedName.compatibilityName
 
         var fileLinkCount: UInt32 = 1
         var fileLogicalSize: off_t = 0
@@ -489,9 +576,12 @@ nonisolated enum BulkDirectoryEnumerator {
                     url: url,
                     metadata: nil,
                     localizedEnumerationError: posixError(Int32(entryError), url: url),
-                    isDirectoryHint: isDirectory
+                    isDirectoryHint: isDirectory,
+                    nativeName: parsedName.nativeName
                 ),
-                isHidden
+                isHidden,
+                name,
+                parsedName.nativeName
             )
         }
 
@@ -524,15 +614,20 @@ nonisolated enum BulkDirectoryEnumerator {
             ),
             linkCount: isDirectory ? 1 : max(UInt64(fileLinkCount), 1)
         )
-        return (DirectoryEntry(url: url, metadata: metadata), isHidden)
+        return (
+            DirectoryEntry(url: url, metadata: metadata, nativeName: parsedName.nativeName),
+            isHidden,
+            name,
+            parsedName.nativeName
+        )
     }
 
-    private static func string(
+    private static func parsedName(
         reference: attrreference_t,
         referenceAddress: UnsafeRawPointer,
         entryAddress: UnsafeRawPointer,
         entryEnd: UnsafeRawPointer
-    ) -> String? {
+    ) -> (compatibilityName: String, nativeName: NativeName)? {
         guard reference.attr_dataoffset >= 0 else { return nil }
         let dataOffset = Int(reference.attr_dataoffset)
         guard dataOffset <= referenceAddress.distance(to: entryEnd) else { return nil }
@@ -547,7 +642,18 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let bytes = UnsafeRawBufferPointer(start: start, count: byteCount)
         let stringByteCount = bytes.last == 0 ? byteCount - 1 : byteCount
-        return String(decoding: bytes.prefix(stringByteCount), as: UTF8.self)
+        let nameBytes = bytes.prefix(stringByteCount)
+        guard let nativeName = NativeName(fileSystemBytes: nameBytes),
+              let compatibilityName = String(bytes: nameBytes, encoding: .utf8) else {
+            // A lossy compatibility URL could collide with another child ID.
+            // Abandon native parsing for this directory and let Foundation
+            // apply its filesystem-specific path representation instead.
+            return nil
+        }
+        return (
+            compatibilityName: compatibilityName,
+            nativeName: nativeName
+        )
     }
 
     private static func posixError(_ code: Int32, url: URL) -> Error {

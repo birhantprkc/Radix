@@ -82,6 +82,30 @@ actor ScanEngine {
         let parentKey: Int
         let depth: Int
         let weight: Double
+        let parentDirectoryLease: ScanDirectoryDescriptorPool.Lease?
+        let nativeName: BulkDirectoryEnumerator.NativeName?
+
+        init(
+            url: URL,
+            metadata: NodeMetadata?,
+            localizedEnumerationError: Error?,
+            isDirectoryHint: Bool?,
+            parentKey: Int,
+            depth: Int,
+            weight: Double,
+            parentDirectoryLease: ScanDirectoryDescriptorPool.Lease? = nil,
+            nativeName: BulkDirectoryEnumerator.NativeName? = nil
+        ) {
+            self.url = url
+            self.metadata = metadata
+            self.localizedEnumerationError = localizedEnumerationError
+            self.isDirectoryHint = isDirectoryHint
+            self.parentKey = parentKey
+            self.depth = depth
+            self.weight = weight
+            self.parentDirectoryLease = parentDirectoryLease
+            self.nativeName = nativeName
+        }
     }
 
     struct DirectoryEnumerationFailure: Sendable {
@@ -109,6 +133,7 @@ actor ScanEngine {
     private struct DirectoryContentsScanResult: Sendable {
         let entries: [DirectoryEntry]
         let enumeratedItemCount: Int
+        let directoryLease: ScanDirectoryDescriptorPool.Lease?
         #if DEBUG
         let enumerationNanoseconds: UInt64
         let classificationNanoseconds: UInt64
@@ -215,6 +240,7 @@ actor ScanEngine {
     ) throws -> [URL]
 
     typealias VolumeFileSystemTypeProvider = @Sendable (URL) -> String?
+    typealias DirectoryDescriptorPoolFactory = @Sendable () -> ScanDirectoryDescriptorPool
 
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
@@ -222,19 +248,24 @@ actor ScanEngine {
     private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
     private let atomicSummaryProgressEmissionInterval: TimeInterval
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
+    private let directoryDescriptorPoolFactory: DirectoryDescriptorPoolFactory
     private let diagnostics: ScanDiagnosticsContext?
 
     init(
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
         atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil,
-        atomicSummaryProgressEmissionInterval: TimeInterval = 0.15
+        atomicSummaryProgressEmissionInterval: TimeInterval = 0.15,
+        directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory = {
+            ScanDirectoryDescriptorPool()
+        }
     ) {
         self.init(
             enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
             volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
             usesBulkDirectoryEnumeration: true,
             atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
-            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval
+            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval,
+            directoryDescriptorPoolFactory: directoryDescriptorPoolFactory
         )
     }
 
@@ -249,7 +280,8 @@ actor ScanEngine {
             volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
             usesBulkDirectoryEnumeration: false,
             atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
-            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval
+            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval,
+            directoryDescriptorPoolFactory: { ScanDirectoryDescriptorPool() }
         )
     }
 
@@ -258,7 +290,8 @@ actor ScanEngine {
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider,
         usesBulkDirectoryEnumeration: Bool,
         atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?,
-        atomicSummaryProgressEmissionInterval: TimeInterval
+        atomicSummaryProgressEmissionInterval: TimeInterval,
+        directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory
     ) {
         #if DEBUG
         let diagnostics = ScanDiagnostics.makeIfEnabled()
@@ -271,6 +304,7 @@ actor ScanEngine {
         self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
         self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
+        self.directoryDescriptorPoolFactory = directoryDescriptorPoolFactory
         self.diagnostics = diagnostics
     }
 
@@ -646,6 +680,9 @@ actor ScanEngine {
         )
         let directoryContentsProvider = directoryContents
         let usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
+        let directoryDescriptorPool = usesBulkDirectoryEnumeration
+            ? directoryDescriptorPoolFactory()
+            : nil
         let directoryResourceKeys = ScanMetadataLoader.scanResourceKeys
 
         do {
@@ -813,6 +850,10 @@ actor ScanEngine {
                                     metadataLoader: scanMetadataLoader,
                                     directoryContents: directoryContentsProvider,
                                     usesBulkDirectoryEnumeration: usesBulkDirectoryEnumeration,
+                                    directoryDescriptorPool: directoryDescriptorPool,
+                                    parentDirectoryLease: taskItem.parentDirectoryLease,
+                                    nativeName: taskItem.nativeName,
+                                    expectedIdentity: taskMetadata.fileIdentity,
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
                                     cancellationCheck: cancellationCheck
                                 )
@@ -1119,7 +1160,9 @@ actor ScanEngine {
                                 isDirectoryHint: childEntry.isDirectoryHint,
                                 parentKey: itemKey,
                                 depth: item.depth + 1,
-                                weight: childWeight
+                                weight: childWeight,
+                                parentDirectoryLease: contents.directoryLease,
+                                nativeName: childEntry.nativeName
                             )
                         )
                     }
@@ -1386,8 +1429,10 @@ actor ScanEngine {
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
         )
         await atomicSummaryPool.finish()
+        directoryDescriptorPool?.invalidate()
         return store
         } catch {
+            directoryDescriptorPool?.cancel()
             await atomicSummaryPool.cancelAndFinish(with: error)
             throw error
         }
@@ -1574,6 +1619,10 @@ actor ScanEngine {
         metadataLoader: ScanMetadataLoader,
         directoryContents: DirectoryContentsProvider,
         usesBulkDirectoryEnumeration: Bool,
+        directoryDescriptorPool: ScanDirectoryDescriptorPool?,
+        parentDirectoryLease: ScanDirectoryDescriptorPool.Lease?,
+        nativeName: BulkDirectoryEnumerator.NativeName?,
+        expectedIdentity: FileIdentity?,
         classificationWorkerLimit: Int,
         cancellationCheck: @escaping CancellationCheck
     ) async throws -> DirectoryContentsScanResult {
@@ -1584,12 +1633,51 @@ actor ScanEngine {
             var enumerationNanoseconds: UInt64 = 0
             var classificationNanoseconds: UInt64 = 0
             #endif
-            let cursor = try BulkDirectoryEnumerator.makeCursor(
-                at: url,
-                includeHiddenFiles: includeHiddenFiles,
-                metadataLoader: metadataLoader,
-                cancellationCheck: cancellationCheck
-            )
+            let directoryLease: ScanDirectoryDescriptorPool.Lease?
+            if let directoryDescriptorPool,
+               let parentDirectoryLease,
+               let nativeName {
+                switch try directoryDescriptorPool.openChild(
+                    named: nativeName,
+                    at: url,
+                    relativeTo: parentDirectoryLease,
+                    expectedIdentity: expectedIdentity,
+                    cancellationCheck: cancellationCheck
+                ) {
+                case .lease(let lease):
+                    directoryLease = lease
+                case .fallback:
+                    directoryLease = nil
+                }
+            } else if let directoryDescriptorPool {
+                switch try directoryDescriptorPool.openRoot(
+                    at: url,
+                    expectedIdentity: expectedIdentity,
+                    cancellationCheck: cancellationCheck
+                ) {
+                case .lease(let lease): directoryLease = lease
+                case .fallback: directoryLease = nil
+                }
+            } else {
+                directoryLease = nil
+            }
+            let cursor: BulkDirectoryEnumerator.Cursor
+            if let directoryLease {
+                cursor = try BulkDirectoryEnumerator.makeCursor(
+                    at: url,
+                    borrowing: directoryLease,
+                    includeHiddenFiles: includeHiddenFiles,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: cancellationCheck
+                )
+            } else {
+                cursor = try BulkDirectoryEnumerator.makeCursor(
+                    at: url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: cancellationCheck
+                )
+            }
             var entries: [DirectoryEntry] = []
             var enumeratedItemCount = 0
             do {
@@ -1607,13 +1695,14 @@ actor ScanEngine {
                     enumerationNanoseconds += DispatchTime.now().uptimeNanoseconds - batchStart
                     let classificationStart = DispatchTime.now().uptimeNanoseconds
                     #endif
-                    entries.append(contentsOf: try filteredDirectoryEntries(
+                    let filteredEntries = try filteredDirectoryEntries(
                         batch.entries,
                         under: url,
                         behavior: behavior,
                         exclusionMatcher: exclusionMatcher,
                         cancellationCheck: cancellationCheck
-                    ))
+                    )
+                    entries.append(contentsOf: filteredEntries)
                     enumeratedItemCount += batch.enumeratedItemCount
                     #if DEBUG
                     classificationNanoseconds += DispatchTime.now().uptimeNanoseconds - classificationStart
@@ -1623,17 +1712,23 @@ actor ScanEngine {
                 return DirectoryContentsScanResult(
                     entries: entries,
                     enumeratedItemCount: enumeratedItemCount,
+                    directoryLease: directoryLease,
                     enumerationNanoseconds: enumerationNanoseconds,
                     classificationNanoseconds: classificationNanoseconds
                 )
                 #else
                 return DirectoryContentsScanResult(
                     entries: entries,
-                    enumeratedItemCount: enumeratedItemCount
+                    enumeratedItemCount: enumeratedItemCount,
+                    directoryLease: directoryLease
                 )
                 #endif
             } catch BulkDirectoryEnumerator.StreamError.unavailable {
+                directoryLease?.close()
                 // Discard the uncommitted native batches and use the Foundation path.
+            } catch {
+                directoryLease?.close()
+                throw error
             }
         }
 
@@ -1684,13 +1779,15 @@ actor ScanEngine {
         return DirectoryContentsScanResult(
             entries: entries,
             enumeratedItemCount: enumerationResult.urls.count + enumerationResult.localizedFailures.count,
+            directoryLease: nil,
             enumerationNanoseconds: enumerationNanoseconds,
             classificationNanoseconds: classificationNanoseconds
         )
         #else
         return DirectoryContentsScanResult(
             entries: entries,
-            enumeratedItemCount: enumerationResult.urls.count + enumerationResult.localizedFailures.count
+            enumeratedItemCount: enumerationResult.urls.count + enumerationResult.localizedFailures.count,
+            directoryLease: nil
         )
         #endif
     }
