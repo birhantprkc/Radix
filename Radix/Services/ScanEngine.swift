@@ -1225,13 +1225,9 @@ actor ScanEngine {
         let finalizationProgressInterval = max(512, finalizationTotal / 200)
         var finalizedItems = 0
         var resolvedNodeByKey = Array<FileNodeRecord?>(repeating: nil, count: nextKey)
-        var childIDsByID: [String: [String]] = [:]
-        var parentIDByID: [String: String] = [:]
-        var nodesByID: [String: FileNodeRecord] = [:]
+        var childIndicesByIndex = Array<[FileTreeNodeIndex]>(repeating: [], count: nextKey)
+        var parentIndices = Array<FileTreeNodeIndex?>(repeating: nil, count: nextKey)
         var aggregateStats = AggregateStatsAccumulator()
-        childIDsByID.reserveCapacity(completedByKey.count)
-        parentIDByID.reserveCapacity(completedByKey.count)
-        nodesByID.reserveCapacity(completedByKey.count)
         #if DEBUG
         let finalizationStart = diagnostics?.start()
         #endif
@@ -1247,33 +1243,41 @@ actor ScanEngine {
                 // Traversable directories must still be materialized when empty.
                 let childKeys = childrenKeysByKey[key] ?? []
                 childrenKeysByKey[key] = nil
-                var childNodes: [FileNodeRecord] = []
-                childNodes.reserveCapacity(childKeys.count)
+                var sortedChildKeys: [Int] = []
+                sortedChildKeys.reserveCapacity(childKeys.count)
                 for (offset, childKey) in childKeys.enumerated() {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
-                    if let childNode = resolvedNodeByKey[childKey] {
-                        childNodes.append(childNode)
-                        resolvedNodeByKey[childKey] = nil
+                    if resolvedNodeByKey[childKey] != nil {
+                        sortedChildKeys.append(childKey)
                     }
                 }
                 // Duplicate paths are rejected before keys are assigned in phase 1,
                 // so children are already unique here.
-                FileTreeStore.sortChildren(&childNodes)
-                let sortedChildren = childNodes
+                sortedChildKeys.sort { lhsKey, rhsKey in
+                    guard let lhs = resolvedNodeByKey[lhsKey],
+                          let rhs = resolvedNodeByKey[rhsKey] else {
+                        return lhsKey < rhsKey
+                    }
+                    if lhs.allocatedSize == rhs.allocatedSize {
+                        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                    }
+                    return lhs.allocatedSize > rhs.allocatedSize
+                }
                 try Task.checkCancellation()
                 let directoryID = completed.url.path
                 var allocatedSize: Int64 = 0
                 var logicalSize: Int64 = 0
                 var descendantFileCount = 0
                 var childrenAreAccessible = true
-                var sortedChildIDs: [String] = []
-                sortedChildIDs.reserveCapacity(sortedChildren.count)
-                for (offset, child) in sortedChildren.enumerated() {
+                var sortedChildIndices: [FileTreeNodeIndex] = []
+                sortedChildIndices.reserveCapacity(sortedChildKeys.count)
+                for (offset, childKey) in sortedChildKeys.enumerated() {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
+                    guard let child = resolvedNodeByKey[childKey] else { continue }
                     allocatedSize += child.allocatedSize
                     logicalSize += child.logicalSize
                     childrenAreAccessible = childrenAreAccessible && child.isAccessible
@@ -1282,8 +1286,9 @@ actor ScanEngine {
                     } else if !child.isSymbolicLink && !child.isSynthetic {
                         descendantFileCount += 1
                     }
-                    sortedChildIDs.append(child.id)
-                    parentIDByID[child.id] = directoryID
+                    let childIndex = FileTreeNodeIndex(rawValue: UInt32(childKey))
+                    sortedChildIndices.append(childIndex)
+                    parentIndices[childKey] = FileTreeNodeIndex(rawValue: UInt32(key))
                 }
 
                 let assembled = FileNodeRecord(
@@ -1304,20 +1309,14 @@ actor ScanEngine {
                     isSynthetic: false,
                     isAutoSummarized: false
                 )
-                let replacedNode = nodesByID.updateValue(assembled, forKey: assembled.id)
-                assert(replacedNode == nil)
                 resolvedNodeByKey[key] = assembled
-                aggregateStats.include(assembled, hasChildren: !sortedChildren.isEmpty)
+                aggregateStats.include(assembled, hasChildren: !sortedChildIndices.isEmpty)
 
-                if !sortedChildIDs.isEmpty {
-                    childIDsByID[assembled.id] = sortedChildIDs
-                }
+                childIndicesByIndex[key] = sortedChildIndices
 
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
             } else if let onlyChild = completed.node {
                 // Leaf node or inaccessible directory: use the child directly.
-                let replacedNode = nodesByID.updateValue(onlyChild, forKey: onlyChild.id)
-                assert(replacedNode == nil)
                 resolvedNodeByKey[key] = onlyChild
                 aggregateStats.include(onlyChild, hasChildren: false)
             }
@@ -1346,16 +1345,42 @@ actor ScanEngine {
             throw ScanEngineError.missingRootNode
         }
 
+        var nodes: [FileNodeRecord] = []
+        nodes.reserveCapacity(resolvedNodeByKey.count)
+        for key in resolvedNodeByKey.indices {
+            guard let node = resolvedNodeByKey[key] else {
+                assertionFailure("Missing finalized node for scan key \(key).")
+                throw ScanEngineError.missingRootNode
+            }
+            resolvedNodeByKey[key] = nil
+            nodes.append(node)
+        }
+
+        let rootIndex = FileTreeNodeIndex(rawValue: 0)
+        var orderedNodeIndices: [FileTreeNodeIndex] = []
+        orderedNodeIndices.reserveCapacity(nodes.count)
+        var orderedTraversalStack = [rootIndex]
+        while let nodeIndex = orderedTraversalStack.popLast() {
+            if orderedNodeIndices.count.isMultiple(of: 256) {
+                try Task.checkCancellation()
+            }
+            orderedNodeIndices.append(nodeIndex)
+            let children = childIndicesByIndex[Int(nodeIndex.rawValue)]
+            orderedTraversalStack.append(contentsOf: children.reversed())
+        }
+        assert(orderedNodeIndices.count == nodes.count)
+
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
         metrics.finalizationFraction = 1
         metrics.recalculateProgress()
         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
         let store = HardLinkDeduplicator.deduplicatedStore(
-            rootID: rootNode.id,
-            nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID,
+            rootIndex: rootIndex,
+            nodes: nodes,
+            childIndicesByIndex: childIndicesByIndex,
+            parentIndices: parentIndices,
+            orderedNodeIndices: orderedNodeIndices,
             aggregateStats: aggregateStats.makeStats(root: rootNode),
             hardLinkClaims: hardLinkClaims,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID

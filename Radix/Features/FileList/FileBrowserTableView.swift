@@ -285,8 +285,8 @@ struct FileBrowserTableView: View {
             return node.url.deletingLastPathComponent().path
         }
 
-        return fileTreeStore.parentIDByID[node.id]
-            .flatMap { fileTreeStore.nodesByID[$0]?.url.path } ?? node.url.deletingLastPathComponent().path
+        return fileTreeStore.parent(of: node.id)?.url.path
+            ?? node.url.deletingLastPathComponent().path
     }
 
     private func canZoomInto(node: FileNodeRecord) -> Bool {

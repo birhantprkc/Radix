@@ -2,6 +2,57 @@ import XCTest
 @testable import RadixCore
 
 final class HardLinkDeduplicatorTests: XCTestCase {
+    func testIndexBasedHardLinkDedupRebuildsAncestorsWithoutStringTopologyInput() {
+        let rootID = "/root"
+        let parentID = "/root/Parent"
+        let firstLinkID = "/root/Parent/a.bin"
+        let duplicateLinkID = "/root/Parent/z.bin"
+        let siblingID = "/root/sibling.bin"
+        let identity = FileIdentity(device: 1, inode: 46)
+        let nodes = [
+            makeDirectory(id: rootID, allocatedSize: 250, descendantFileCount: 3),
+            makeDirectory(id: parentID, allocatedSize: 200, descendantFileCount: 2),
+            makeFile(id: firstLinkID, allocatedSize: 100),
+            makeFile(id: duplicateLinkID, allocatedSize: 100),
+            makeFile(id: siblingID, allocatedSize: 50, linkCount: 1)
+        ]
+        let indices = nodes.indices.map { FileTreeNodeIndex(rawValue: UInt32($0)) }
+
+        let store = HardLinkDeduplicator.deduplicatedStore(
+            rootIndex: indices[0],
+            nodes: nodes,
+            childIndicesByIndex: [
+                [indices[1], indices[4]],
+                [indices[2], indices[3]],
+                [],
+                [],
+                []
+            ],
+            parentIndices: [nil, indices[0], indices[1], indices[1], indices[0]],
+            orderedNodeIndices: indices,
+            aggregateStats: ScanAggregateStats(
+                totalAllocatedSize: 250,
+                totalLogicalSize: 250,
+                fileCount: 3,
+                directoryCount: 2,
+                accessibleItemCount: 5,
+                inaccessibleItemCount: 0
+            ),
+            hardLinkClaims: [
+                HardLinkClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
+                HardLinkClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
+            ],
+            minimumAllocatedSizeByNodeID: [:]
+        )
+
+        XCTAssertEqual(store.node(id: duplicateLinkID)?.allocatedSize, 0)
+        XCTAssertEqual(store.node(id: parentID)?.allocatedSize, 100)
+        XCTAssertEqual(store.root.allocatedSize, 150)
+        XCTAssertEqual(store.aggregateStats.totalAllocatedSize, 150)
+        XCTAssertEqual(store.children(of: rootID).map(\.id), [rootID + "/Parent", siblingID])
+        XCTAssertEqual(store.parent(of: duplicateLinkID)?.id, parentID)
+    }
+
     func testHardLinkDedupRebuildsOnlyAffectedAncestorChains() {
         let rootID = "/root"
         let affectedID = "/root/Affected"

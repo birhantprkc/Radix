@@ -91,6 +91,64 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(iteratedIDs, ["/root/a.txt", "/root/folder", "/root/folder/b.txt"])
     }
 
+    func testCompactIndexInitializerPreservesTopologyAndCompatibilityViews() throws {
+        let nested = makeFileNode(id: "/root/folder/nested.txt", name: "nested.txt", size: 4)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [nested])
+        let sibling = makeFileNode(id: "/root/sibling.txt", name: "sibling.txt", size: 8)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [sibling, folder])
+        let nodes = [root, folder, nested, sibling]
+        let rootIndex = FileTreeNodeIndex(rawValue: 0)
+        let folderIndex = FileTreeNodeIndex(rawValue: 1)
+        let nestedIndex = FileTreeNodeIndex(rawValue: 2)
+        let siblingIndex = FileTreeNodeIndex(rawValue: 3)
+        let stats = ScanAggregateStats(
+            totalAllocatedSize: 12,
+            totalLogicalSize: 12,
+            fileCount: 2,
+            directoryCount: 2,
+            accessibleItemCount: 4,
+            inaccessibleItemCount: 0
+        )
+
+        let store = FileTreeStore(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            childIndicesByIndex: [
+                [siblingIndex, folderIndex],
+                [nestedIndex],
+                [],
+                [],
+            ],
+            parentIndices: [nil, rootIndex, folderIndex, rootIndex],
+            orderedNodeIndices: [rootIndex, siblingIndex, folderIndex, nestedIndex],
+            aggregateStats: stats
+        )
+
+        XCTAssertEqual(store.nodeIndex(id: folder.id), folderIndex)
+        XCTAssertEqual(store.node(at: nestedIndex)?.id, nested.id)
+        XCTAssertEqual(store.parentIndex(of: nestedIndex), folderIndex)
+        XCTAssertEqual(store.childIndices(of: rootIndex), [siblingIndex, folderIndex])
+        XCTAssertEqual(store.parentID(of: nested.id), folder.id)
+        XCTAssertEqual(store.childIDs(of: root.id), [sibling.id, folder.id])
+        XCTAssertEqual(store.indexedNodeIDs(), [root.id, sibling.id, folder.id, nested.id])
+        XCTAssertEqual(store.path(to: nested.id).map(\.id), [root.id, folder.id, nested.id])
+
+        XCTAssertEqual(store.nodesByID, Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) }))
+        XCTAssertEqual(store.childIDsByID, [
+            root.id: [sibling.id, folder.id],
+            folder.id: [nested.id],
+        ])
+        XCTAssertEqual(store.parentIDByID, [
+            folder.id: root.id,
+            nested.id: folder.id,
+            sibling.id: root.id,
+        ])
+        XCTAssertEqual(store.aggregateStats.totalAllocatedSize, stats.totalAllocatedSize)
+        XCTAssertEqual(store.aggregateStats.totalLogicalSize, stats.totalLogicalSize)
+        XCTAssertEqual(store.aggregateStats.fileCount, stats.fileCount)
+        XCTAssertEqual(store.aggregateStats.directoryCount, stats.directoryCount)
+    }
+
     func testEmptyStoreFallsBackToRootPath() {
         let root = makeDirectoryNode(id: "/root", name: "root", children: [])
         let store = FileTreeStore(root: root)

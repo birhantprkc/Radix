@@ -32,7 +32,7 @@ nonisolated struct ScanArchiveDocument: Codable, Sendable {
         sections: ScanArchiveSections,
         nodeChecksum: String,
         formatVersion: Int = ScanArchiveService.currentFormatVersion,
-        swiftSchema: String = "ScanArchiveV3"
+        swiftSchema: String = "ScanArchiveV4"
     ) throws {
         self.format = ScanArchiveService.formatIdentifier
         self.formatVersion = formatVersion
@@ -49,7 +49,7 @@ nonisolated struct ScanArchiveCreatedBy: Codable, Sendable {
     let appVersion: String
     let swiftSchema: String
 
-    init(appVersion: String, swiftSchema: String = "ScanArchiveV3") {
+    init(appVersion: String, swiftSchema: String = "ScanArchiveV4") {
         self.app = "Radix"
         self.appVersion = appVersion
         self.swiftSchema = swiftSchema
@@ -161,10 +161,16 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
     let isSynthetic: Bool
     let isAutoSummarized: Bool
 
-    init(_ node: FileNodeRecord) {
-        self.id = node.id
-        self.path = node.isSynthetic || node.url.path != node.id ? node.url.path : nil
-        self.name = node.name
+    init(
+        _ node: FileNodeRecord,
+        includesLocation: Bool = true,
+        includesName: Bool = true
+    ) {
+        self.id = includesLocation ? node.id : ""
+        self.path = includesLocation && (node.isSynthetic || node.url.path != node.id)
+            ? node.url.path
+            : nil
+        self.name = includesName ? node.name : ""
         self.isDirectory = node.isDirectory
         self.isSymbolicLink = node.isSymbolicLink
         self.allocatedSize = node.allocatedSize
@@ -183,9 +189,9 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decode(String.self, forKey: .id)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
         self.path = try container.decodeIfPresent(String.self, forKey: .path)
-        self.name = try container.decode(String.self, forKey: .name)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         self.isDirectory = try container.decodeIfPresent(Bool.self, forKey: .isDirectory) ?? false
         self.isSymbolicLink = try container.decodeIfPresent(Bool.self, forKey: .isSymbolicLink) ?? false
         self.allocatedSize = try container.decode(Int64.self, forKey: .allocatedSize)
@@ -212,8 +218,12 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(name, forKey: .name)
+        if !id.isEmpty {
+            try container.encode(id, forKey: .id)
+        }
+        if !name.isEmpty {
+            try container.encode(name, forKey: .name)
+        }
         if let path {
             try container.encode(path, forKey: .path)
         }
@@ -260,30 +270,35 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         }
     }
 
-    func modelNode() throws -> FileNodeRecord {
-        guard !id.isEmpty else {
+    func modelNode(
+        resolvedID: String? = nil,
+        resolvedPath: String? = nil,
+        resolvedName: String? = nil
+    ) throws -> FileNodeRecord {
+        let modelID = resolvedID ?? id
+        guard !modelID.isEmpty else {
             throw ScanArchiveError.nodes("node has empty ID")
         }
-        let resolvedPath = path ?? id
-        guard !resolvedPath.isEmpty else {
-            throw ScanArchiveError.nodes("node \(id) has empty path")
+        let modelPath = resolvedPath ?? path ?? modelID
+        guard !modelPath.isEmpty else {
+            throw ScanArchiveError.nodes("node \(modelID) has empty path")
         }
         guard allocatedSize >= 0, unduplicatedAllocatedSize >= 0, logicalSize >= 0 else {
-            throw ScanArchiveError.nodes("node \(id) has negative size")
+            throw ScanArchiveError.nodes("node \(modelID) has negative size")
         }
         guard descendantFileCount >= 0 else {
-            throw ScanArchiveError.nodes("node \(id) has negative descendant count")
+            throw ScanArchiveError.nodes("node \(modelID) has negative descendant count")
         }
 
-        let nodeURL = URL(filePath: resolvedPath, directoryHint: isDirectory ? .isDirectory : .notDirectory)
-        guard isSynthetic || id == nodeURL.path else {
-            throw ScanArchiveError.nodes("node \(id) path does not match ID")
+        let nodeURL = URL(filePath: modelPath, directoryHint: isDirectory ? .isDirectory : .notDirectory)
+        guard isSynthetic || modelID == nodeURL.path else {
+            throw ScanArchiveError.nodes("node \(modelID) path does not match ID")
         }
 
         return FileNodeRecord(
-            id: id,
+            id: modelID,
             url: nodeURL,
-            name: name,
+            name: resolvedName ?? name,
             isDirectory: isDirectory,
             isSymbolicLink: isSymbolicLink,
             allocatedSize: allocatedSize,
@@ -299,6 +314,57 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
             isSynthetic: isSynthetic,
             isAutoSummarized: isAutoSummarized
         )
+    }
+}
+
+/// Version-4 node envelope. Ordinary nodes store one path component and their
+/// parent's ordinal instead of repeating their absolute ID on every JSONL line.
+/// Explicit locations are reserved for synthetic and otherwise nonstandard nodes.
+nonisolated struct ScanArchiveCompactNode: Codable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case relativePath = "x"
+        case explicitID = "i"
+        case explicitPath = "p"
+        case payload = "v"
+    }
+
+    let relativePath: String?
+    let explicitID: String?
+    let explicitPath: String?
+    let payload: ScanArchiveNode
+
+    init(
+        _ node: FileNodeRecord,
+        parent: FileNodeRecord?
+    ) {
+        guard let parent else {
+            self.relativePath = nil
+            self.explicitID = nil
+            self.explicitPath = nil
+            self.payload = ScanArchiveNode(node, includesLocation: false)
+            return
+        }
+
+        let component = node.url.lastPathComponent
+        let derivedPath = parent.url.appending(
+            path: component,
+            directoryHint: node.isDirectory ? .isDirectory : .notDirectory
+        ).path
+        if !node.isSynthetic, node.id == node.url.path, derivedPath == node.id {
+            self.relativePath = component
+            self.explicitID = nil
+            self.explicitPath = nil
+            self.payload = ScanArchiveNode(
+                node,
+                includesLocation: false,
+                includesName: node.name != component
+            )
+        } else {
+            self.relativePath = nil
+            self.explicitID = node.id
+            self.explicitPath = node.url.path
+            self.payload = ScanArchiveNode(node, includesLocation: false)
+        }
     }
 }
 
@@ -380,11 +446,11 @@ nonisolated struct ScanArchiveTopology: Codable, Sendable {
         }
 
         var childOrdinalsByOrdinal: [String: [Int]] = [:]
-        childOrdinalsByOrdinal.reserveCapacity(treeStore.childIDsByID.count)
+        childOrdinalsByOrdinal.reserveCapacity(orderedNodeIDs.count)
 
         for parentID in orderedNodeIDs {
-            guard let childIDs = treeStore.childIDsByID[parentID],
-                  !childIDs.isEmpty else {
+            let childIDs = treeStore.childIDs(of: parentID)
+            guard !childIDs.isEmpty else {
                 continue
             }
             guard let parentOrdinal = ordinalByID[parentID] else {

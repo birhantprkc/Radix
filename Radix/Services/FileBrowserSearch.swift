@@ -71,7 +71,7 @@ actor FileSearchService: FileSearching {
             }
 
             if entry.normalizedNameKindHaystack.contains(normalizedQuery) {
-                if let node = treeStore.nodesByID[entry.id] {
+                if let node = treeStore.node(id: entry.id) {
                     matchedNodes.append(node)
                 }
                 continue
@@ -83,12 +83,12 @@ actor FileSearchService: FileSearching {
             if let cachedPath = index.normalizedPathsByID[entry.id] {
                 normalizedPath = cachedPath
             } else {
-                normalizedPath = SearchNormalizer.normalize(treeStore.nodesByID[entry.id]?.url.path ?? "")
+                normalizedPath = SearchNormalizer.normalize(treeStore.node(id: entry.id)?.url.path ?? "")
                 index.normalizedPathsByID[entry.id] = normalizedPath
             }
 
             if normalizedPath.contains(normalizedQuery) {
-                if let node = treeStore.nodesByID[entry.id] {
+                if let node = treeStore.node(id: entry.id) {
                     matchedNodes.append(node)
                 }
             }
@@ -131,7 +131,7 @@ actor FileSearchService: FileSearching {
             }
             offset += 1
 
-            guard let node = treeStore.nodesByID[id] else { return }
+            guard let node = treeStore.node(id: id) else { return }
             entries.append(FileSearchEntry(
                 id: id,
                 normalizedNameKindHaystack: SearchNormalizer.normalizedNameKindHaystack(for: node)

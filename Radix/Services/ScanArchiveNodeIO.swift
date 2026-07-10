@@ -17,6 +17,16 @@ nonisolated struct ScanArchiveNodePayload: Sendable {
     let orderedNodeIDs: [String]
 }
 
+nonisolated enum ScanArchiveEncodedNodePayload: Sendable {
+    case legacy(ScanArchiveNodePayload)
+    case compact([ScanArchiveCompactNode])
+}
+
+nonisolated private struct ScanArchiveNodeLocation {
+    let id: String
+    let path: String
+}
+
 extension ScanArchiveService {
     func writeNodes(
         _ treeStore: FileTreeStore,
@@ -34,13 +44,19 @@ extension ScanArchiveService {
         let encoder = Self.makeJSONLineEncoder()
         let totalNodeCount = treeStore.nodeCount
         var processedNodeCount = 0
+        let orderedNodeIDs = treeStore.indexedNodeIDs()
 
-        for nodeID in treeStore.indexedNodeIDs() {
+        for nodeID in orderedNodeIDs {
             try Task.checkCancellation()
             guard let node = treeStore.node(id: nodeID) else {
                 throw ScanArchiveError.nodes("node \(nodeID) disappeared while exporting")
             }
-            var lineData = try encoder.encode(ScanArchiveNode(node))
+            var lineData = try encoder.encode(
+                ScanArchiveCompactNode(
+                    node,
+                    parent: treeStore.parent(of: nodeID)
+                )
+            )
             lineData.append(ScanArchiveNodeIOConstants.newlineData)
             hasher.update(data: lineData)
             try fileHandle.write(contentsOf: lineData)
@@ -64,8 +80,187 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        formatVersion: Int,
         progressReporter: ScanArchiveProgressReporter?
-    ) async throws -> ScanArchiveNodePayload {
+    ) async throws -> ScanArchiveEncodedNodePayload {
+        if formatVersion == 3 {
+            let records: [ScanArchiveNode] = try await readNodeRecords(
+                from: url,
+                expectedChecksum: expectedChecksum,
+                expectedNodeCount: expectedNodeCount,
+                progressReporter: progressReporter
+            )
+            var nodesByID: [String: FileNodeRecord] = [:]
+            var orderedNodeIDs: [String] = []
+            orderedNodeIDs.reserveCapacity(records.count)
+            for record in records {
+                let node = try record.modelNode()
+                guard nodesByID[node.id] == nil else {
+                    throw ScanArchiveError.nodes("duplicate node ID \(node.id)")
+                }
+                nodesByID[node.id] = node
+                orderedNodeIDs.append(node.id)
+            }
+            return .legacy(ScanArchiveNodePayload(
+                nodesByID: nodesByID,
+                orderedNodeIDs: orderedNodeIDs
+            ))
+        }
+
+        let records: [ScanArchiveCompactNode] = try await readNodeRecords(
+            from: url,
+            expectedChecksum: expectedChecksum,
+            expectedNodeCount: expectedNodeCount,
+            progressReporter: progressReporter
+        )
+        return .compact(records)
+    }
+
+    func materializeCompactNodes(
+        _ records: [ScanArchiveCompactNode],
+        topology: ScanArchiveTopology,
+        expectedRootID: String
+    ) throws -> ScanArchiveNodePayload {
+        guard records.indices.contains(topology.rootOrdinal) else {
+            throw ScanArchiveError.topology("root ordinal \(topology.rootOrdinal) is out of range")
+        }
+
+        var topologyParentByOrdinal: [Int: Int] = [:]
+        topologyParentByOrdinal.reserveCapacity(max(records.count - 1, 0))
+        for (parentKey, childOrdinals) in topology.childOrdinalsByOrdinal {
+            guard let parentOrdinal = Int(parentKey), String(parentOrdinal) == parentKey,
+                  records.indices.contains(parentOrdinal) else {
+                throw ScanArchiveError.topology("parent ordinal \(parentKey) is invalid")
+            }
+            for childOrdinal in childOrdinals {
+                guard records.indices.contains(childOrdinal) else {
+                    throw ScanArchiveError.topology("child ordinal \(childOrdinal) is out of range")
+                }
+                if let existingParent = topologyParentByOrdinal.updateValue(parentOrdinal, forKey: childOrdinal) {
+                    let detail = existingParent == parentOrdinal ? "is duplicated" : "has multiple parents"
+                    throw ScanArchiveError.topology("child ordinal \(childOrdinal) \(detail)")
+                }
+            }
+        }
+
+        if let rootParent = topologyParentByOrdinal[topology.rootOrdinal] {
+            if rootParent == topology.rootOrdinal {
+                throw ScanArchiveError.topology("root node references itself as a child")
+            }
+            throw ScanArchiveError.topology("root node is referenced as a child")
+        }
+        for ordinal in records.indices where ordinal != topology.rootOrdinal {
+            guard topologyParentByOrdinal[ordinal] != nil else {
+                throw ScanArchiveError.topology("node ordinal \(ordinal) is not reachable")
+            }
+        }
+
+        var locations = Array<ScanArchiveNodeLocation?>(repeating: nil, count: records.count)
+
+        func resolveLocation(at ordinal: Int) throws -> ScanArchiveNodeLocation {
+            if let location = locations[ordinal] {
+                return location
+            }
+            var chain: [Int] = []
+            var chainOrdinals = Set<Int>()
+            var cursor = ordinal
+            while locations[cursor] == nil {
+                guard chainOrdinals.insert(cursor).inserted else {
+                    throw ScanArchiveError.topology("cycle detected at node ordinal \(cursor)")
+                }
+                chain.append(cursor)
+                guard cursor != topology.rootOrdinal else { break }
+                guard let parentOrdinal = topologyParentByOrdinal[cursor] else {
+                    throw ScanArchiveError.topology("node ordinal \(cursor) has an invalid parent")
+                }
+                cursor = parentOrdinal
+            }
+
+            while let pendingOrdinal = chain.popLast() {
+                let record = records[pendingOrdinal]
+                let location: ScanArchiveNodeLocation
+                if pendingOrdinal == topology.rootOrdinal {
+                    let id = record.explicitID ?? expectedRootID
+                    guard id == expectedRootID else {
+                        throw ScanArchiveError.topology("root ID does not match manifest")
+                    }
+                    location = ScanArchiveNodeLocation(
+                        id: id,
+                        path: record.explicitPath ?? id
+                    )
+                } else {
+                    guard let parentOrdinal = topologyParentByOrdinal[pendingOrdinal],
+                          let parent = locations[parentOrdinal] else {
+                        throw ScanArchiveError.topology("node ordinal \(pendingOrdinal) has an unresolved parent")
+                    }
+                    if let explicitID = record.explicitID {
+                        location = ScanArchiveNodeLocation(
+                            id: explicitID,
+                            path: record.explicitPath ?? explicitID
+                        )
+                    } else {
+                        guard let component = record.relativePath,
+                              !component.isEmpty,
+                              component != ".",
+                              component != "..",
+                              !component.contains("/") else {
+                            throw ScanArchiveError.nodes(
+                                "node ordinal \(pendingOrdinal) has an invalid relative path"
+                            )
+                        }
+                        let path = URL(filePath: parent.path, directoryHint: .isDirectory)
+                            .appending(
+                                path: component,
+                                directoryHint: record.payload.isDirectory ? .isDirectory : .notDirectory
+                            )
+                            .path
+                        location = ScanArchiveNodeLocation(
+                            id: path,
+                            path: record.explicitPath ?? path
+                        )
+                    }
+                }
+                locations[pendingOrdinal] = location
+            }
+
+            guard let location = locations[ordinal] else {
+                throw ScanArchiveError.topology("node ordinal \(ordinal) could not be resolved")
+            }
+            return location
+        }
+
+        var nodesByID: [String: FileNodeRecord] = [:]
+        nodesByID.reserveCapacity(records.count)
+        var orderedNodeIDs: [String] = []
+        orderedNodeIDs.reserveCapacity(records.count)
+        for ordinal in records.indices {
+            let location = try resolveLocation(at: ordinal)
+            let node = try records[ordinal].payload.modelNode(
+                resolvedID: location.id,
+                resolvedPath: location.path,
+                resolvedName: records[ordinal].payload.name.isEmpty
+                    ? records[ordinal].relativePath
+                    : nil
+            )
+            guard nodesByID[node.id] == nil else {
+                throw ScanArchiveError.nodes("duplicate node ID \(node.id)")
+            }
+            nodesByID[node.id] = node
+            orderedNodeIDs.append(node.id)
+        }
+
+        return ScanArchiveNodePayload(
+            nodesByID: nodesByID,
+            orderedNodeIDs: orderedNodeIDs
+        )
+    }
+
+    private func readNodeRecords<Record: Decodable & Sendable>(
+        from url: URL,
+        expectedChecksum: String,
+        expectedNodeCount: Int,
+        progressReporter: ScanArchiveProgressReporter?
+    ) async throws -> [Record] {
         let fileHandle: FileHandle
         do {
             fileHandle = try FileHandle(forReadingFrom: url)
@@ -75,9 +270,8 @@ extension ScanArchiveService {
         defer { try? fileHandle.close() }
 
         let decoder = Self.makeJSONDecoder()
-        var nodesByID: [String: FileNodeRecord] = [:]
-        var orderedNodeIDs: [String] = []
-        orderedNodeIDs.reserveCapacity(expectedNodeCount)
+        var records: [Record] = []
+        records.reserveCapacity(expectedNodeCount)
         var buffer = Data()
         var hasher = SHA256()
         var decodedNodeCount = 0
@@ -100,12 +294,8 @@ extension ScanArchiveService {
                 let lineData = Data(buffer[..<newlineRange.lowerBound])
                 buffer.removeSubrange(..<newlineRange.upperBound)
                 try validateNodeLineSize(lineData)
-                if try decodeNodeLine(
-                    lineData,
-                    decoder: decoder,
-                    nodesByID: &nodesByID,
-                    orderedNodeIDs: &orderedNodeIDs
-                ) {
+                if let record: Record = try decodeNodeLine(lineData, decoder: decoder) {
+                    records.append(record)
                     decodedNodeCount += 1
                     try validateDecodedNodeCount(decodedNodeCount, expectedNodeCount: expectedNodeCount)
                     if ScanArchiveProgressReporting.shouldReportProgress(decodedNodeCount) ||
@@ -125,12 +315,8 @@ extension ScanArchiveService {
 
         if !buffer.isEmpty {
             try validateNodeLineSize(buffer)
-            if try decodeNodeLine(
-                buffer,
-                decoder: decoder,
-                nodesByID: &nodesByID,
-                orderedNodeIDs: &orderedNodeIDs
-            ) {
+            if let record: Record = try decodeNodeLine(buffer, decoder: decoder) {
+                records.append(record)
                 decodedNodeCount += 1
                 try validateDecodedNodeCount(decodedNodeCount, expectedNodeCount: expectedNodeCount)
             }
@@ -148,7 +334,7 @@ extension ScanArchiveService {
             throw ScanArchiveError.integrity("nodes checksum mismatch")
         }
 
-        return ScanArchiveNodePayload(nodesByID: nodesByID, orderedNodeIDs: orderedNodeIDs)
+        return records
     }
 
     private func validateNodeLineSize(_ lineData: Data) throws {
@@ -163,26 +349,17 @@ extension ScanArchiveService {
         }
     }
 
-    private func decodeNodeLine(
+    private func decodeNodeLine<Record: Decodable>(
         _ lineData: Data,
-        decoder: JSONDecoder,
-        nodesByID: inout [String: FileNodeRecord],
-        orderedNodeIDs: inout [String]
-    ) throws -> Bool {
-        guard !lineData.isEmpty else { return false }
-        let node: FileNodeRecord
+        decoder: JSONDecoder
+    ) throws -> Record? {
+        guard !lineData.isEmpty else { return nil }
         do {
-            node = try decoder.decode(ScanArchiveNode.self, from: lineData).modelNode()
+            return try decoder.decode(Record.self, from: lineData)
         } catch let error as ScanArchiveError {
             throw error
         } catch {
             throw ScanArchiveError.nodes("invalid JSONL node: \(error.localizedDescription)")
         }
-        guard nodesByID[node.id] == nil else {
-            throw ScanArchiveError.nodes("duplicate node ID \(node.id)")
-        }
-        nodesByID[node.id] = node
-        orderedNodeIDs.append(node.id)
-        return true
     }
 }

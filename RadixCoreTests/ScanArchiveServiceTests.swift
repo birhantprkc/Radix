@@ -25,7 +25,8 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(importedSnapshot.aggregateStats.totalAllocatedSize, snapshot.aggregateStats.totalAllocatedSize)
         XCTAssertEqual(importedSnapshot.scanWarnings.map(\.path), snapshot.scanWarnings.map(\.path))
         XCTAssertEqual(importedSnapshot.scanOptions, snapshot.scanOptions)
-        XCTAssertEqual(importResult.manifest.createdBy.swiftSchema, "ScanArchiveV3")
+        XCTAssertEqual(importResult.manifest.formatVersion, 4)
+        XCTAssertEqual(importResult.manifest.createdBy.swiftSchema, "ScanArchiveV4")
         XCTAssertEqual(importResult.manifest.snapshot.scanOptions, snapshot.scanOptions)
         XCTAssertNotNil(importResult.manifest.snapshot.scanOptionsFingerprint)
 
@@ -58,6 +59,53 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertTrue(availability.canOpen)
         XCTAssertTrue(availability.canCopyPath)
         XCTAssertFalse(availability.canMoveToTrash)
+    }
+
+    func testVersionFourNodePayloadIsSmallerThanLegacyFullPathRecords() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeLargeArchiveSnapshot(childCount: 1_000)
+        let archiveURL = try makeTemporaryArchiveURL()
+
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+
+        let compactData = try Data(contentsOf: archiveURL.appending(path: "nodes.jsonl"))
+        let legacyData = try legacyNodeData(for: snapshot)
+
+        XCTAssertLessThan(compactData.count, legacyData.count)
+        XCTAssertLessThan(Double(compactData.count), Double(legacyData.count) * 0.8)
+        XCTAssertFalse(String(decoding: compactData, as: UTF8.self).contains("/large/"))
+    }
+
+    func testImportSupportsLegacyVersionThreeFullPathNodes() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeArchiveSnapshot()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(snapshot: snapshot, to: archiveURL, options: ScanArchiveExportOptions())
+        try rewriteArchiveAsLegacyVersionThree(snapshot: snapshot, archiveURL: archiveURL)
+
+        let result = try await service.importSnapshot(from: archiveURL)
+
+        XCTAssertEqual(result.manifest.formatVersion, 3)
+        XCTAssertEqual(result.manifest.createdBy.swiftSchema, "ScanArchiveV3")
+        XCTAssertEqual(
+            Set(result.snapshot.treeStore.indexedNodeIDs()),
+            Set(snapshot.treeStore.indexedNodeIDs())
+        )
+        for nodeID in snapshot.treeStore.indexedNodeIDs() {
+            let imported = try XCTUnwrap(result.snapshot.treeStore.node(id: nodeID))
+            let expected = try XCTUnwrap(snapshot.treeStore.node(id: nodeID))
+            XCTAssertEqual(imported.id, expected.id)
+            XCTAssertEqual(imported.url.path, expected.url.path)
+            XCTAssertEqual(imported.name, expected.name)
+            XCTAssertEqual(imported.allocatedSize, expected.allocatedSize)
+            XCTAssertEqual(imported.logicalSize, expected.logicalSize)
+            XCTAssertEqual(imported.fileIdentity, expected.fileIdentity)
+        }
+        XCTAssertEqual(result.snapshot.treeStore.childIDsByID, snapshot.treeStore.childIDsByID)
     }
 
     func testImportSupportsArchiveWithoutScanOptionsPayload() async throws {
@@ -335,9 +383,8 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
 
         let checksum = try appendArchiveNode([
-            "i": "/archive/extra.txt",
-            "n": "extra.txt",
-            "a": 1,
+            "x": "extra.txt",
+            "v": ["a": 1],
         ], in: archiveURL)
         try rewriteManifestNodeChecksum(checksum, in: archiveURL)
 
@@ -439,7 +486,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
 
         let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
-            if archiveNodeID(node) == "/archive/folder/hard-link-a.bin" {
+            if archiveNodeName(node) == "hard-link-a.bin" {
                 setArchiveNodePath("/tmp/other.txt", in: &node)
             }
         }
@@ -480,10 +527,9 @@ final class ScanArchiveServiceTests: XCTestCase {
         let archiveURL = try makeTemporaryArchiveURL()
         _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
 
-        let oldID = "/archive/folder/hard-link-a.bin"
         let newID = "/tmp/other.txt"
         let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
-            if archiveNodeID(node) == oldID {
+            if archiveNodeName(node) == "hard-link-a.bin" {
                 setArchiveNodeID(newID, in: &node)
                 setArchiveNodePath(newID, in: &node)
                 setArchiveNodeName("other.txt", in: &node)
@@ -868,8 +914,11 @@ final class ScanArchiveServiceTests: XCTestCase {
         "/deep/node-\(String(format: "%05d", index))"
     }
 
-    private func archiveNodeID(_ node: [String: Any]) -> String? {
-        node["id"] as? String ?? node["i"] as? String
+    private func archiveNodeName(_ node: [String: Any]) -> String? {
+        if let payload = node["v"] as? [String: Any] {
+            return payload["n"] as? String ?? node["x"] as? String
+        }
+        return node["name"] as? String ?? node["n"] as? String
     }
 
     private func setArchiveNodeID(_ id: String, in node: inout [String: Any]) {
@@ -889,10 +938,49 @@ final class ScanArchiveServiceTests: XCTestCase {
     }
 
     private func setArchiveNodeName(_ name: String, in node: inout [String: Any]) {
+        if var payload = node["v"] as? [String: Any] {
+            payload["n"] = name
+            node["v"] = payload
+            return
+        }
         if node["name"] != nil {
             node["name"] = name
         } else {
             node["n"] = name
+        }
+    }
+
+    private func legacyNodeData(for snapshot: ScanSnapshot) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var data = Data()
+        for nodeID in snapshot.treeStore.indexedNodeIDs() {
+            let node = try XCTUnwrap(snapshot.treeStore.node(id: nodeID))
+            data.append(try encoder.encode(ScanArchiveNode(node)))
+            data.append(Data("\n".utf8))
+        }
+        return data
+    }
+
+    private func rewriteArchiveAsLegacyVersionThree(
+        snapshot: ScanSnapshot,
+        archiveURL: URL
+    ) throws {
+        let nodeData = try legacyNodeData(for: snapshot)
+        try nodeData.write(
+            to: archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory),
+            options: [.atomic]
+        )
+        let checksum = Data(SHA256.hash(data: nodeData)).base64EncodedString()
+        let manifestURL = archiveURL.appending(path: "manifest.json", directoryHint: .notDirectory)
+        try rewriteJSONObject(at: manifestURL) { object in
+            object["formatVersion"] = 3
+            var createdBy = object["createdBy"] as? [String: Any] ?? [:]
+            createdBy["swiftSchema"] = "ScanArchiveV3"
+            object["createdBy"] = createdBy
+            var integrity = object["integrity"] as? [String: Any] ?? [:]
+            integrity["nodes"] = checksum
+            object["integrity"] = integrity
         }
     }
 

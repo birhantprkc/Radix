@@ -301,7 +301,7 @@ enum SunburstLayout {
         guard nodeID != treeStore.rootID else { return nodeID }
 
         var currentID = nodeID
-        while let parentID = treeStore.parentIDByID[currentID] {
+        while let parentID = treeStore.parentID(of: currentID) {
             if parentID == treeStore.rootID {
                 return currentID
             }

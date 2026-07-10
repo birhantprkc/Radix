@@ -203,7 +203,8 @@ nonisolated enum ScanArchiveError: LocalizedError, Equatable {
 nonisolated struct ScanArchiveService: ScanArchiveServicing {
     nonisolated static let fileExtension = "radixscan"
     nonisolated static let formatIdentifier = "dev.colinkim.radix.scan"
-    nonisolated static let currentFormatVersion = 3
+    nonisolated static let currentFormatVersion = 4
+    private nonisolated static let oldestSupportedFormatVersion = 3
 
     private nonisolated static let manifestFileName = "manifest.json"
     private nonisolated static let nodesFileName = "nodes.jsonl"
@@ -343,10 +344,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             sectionDescription: "stats"
         )
 
-        let nodePayload = try await readNodes(
+        let encodedNodePayload = try await readNodes(
             from: nodesURL,
             expectedChecksum: manifest.integrity.nodes,
             expectedNodeCount: manifest.snapshot.nodeCount,
+            formatVersion: manifest.formatVersion,
             progressReporter: progressReporter
         )
 
@@ -356,6 +358,17 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         ))
         let archivedTopology: ScanArchiveTopology = try readJSON(ScanArchiveTopology.self, from: topologyURL) { detail in
             ScanArchiveError.topology(detail)
+        }
+        let nodePayload: ScanArchiveNodePayload
+        switch encodedNodePayload {
+        case .legacy(let payload):
+            nodePayload = payload
+        case .compact(let records):
+            nodePayload = try materializeCompactNodes(
+                records,
+                topology: archivedTopology,
+                expectedRootID: manifest.snapshot.rootID
+            )
         }
         let topology = try archivedTopology.resolvedTopology(orderedNodeIDs: nodePayload.orderedNodeIDs)
 
@@ -511,7 +524,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard format == Self.formatIdentifier else {
             throw ScanArchiveError.unsupportedFormat(format)
         }
-        guard formatVersion == Self.currentFormatVersion else {
+        guard (Self.oldestSupportedFormatVersion...Self.currentFormatVersion).contains(formatVersion) else {
             throw ScanArchiveError.unsupportedVersion(formatVersion)
         }
     }
