@@ -13,6 +13,23 @@ nonisolated private struct AtomicSummaryCancellation: Error {
 
 nonisolated struct AtomicSummaryRootFallbackRequired: Error {}
 
+nonisolated private final class AtomicSummaryWarningCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var warnings: [ScanWarning] = []
+
+    func record(for url: URL, error: Error) {
+        lock.lock()
+        warnings.append(ScanWarningFactory.makeWarning(for: url, error: error))
+        lock.unlock()
+    }
+
+    func collectedWarnings() -> [ScanWarning] {
+        lock.lock()
+        defer { lock.unlock() }
+        return warnings
+    }
+}
+
 nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
     private let condition = NSCondition()
     private var pendingItems: [AtomicSummaryWorkItem]
@@ -73,7 +90,7 @@ nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
     }
 }
 
-nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
+nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var allocatedSize: Int64 = 0
     private var logicalSize: Int64 = 0
@@ -130,7 +147,7 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
     }
 }
 
-nonisolated private final class AtomicSummaryProgressReporter: @unchecked Sendable {
+nonisolated final class AtomicSummaryProgressReporter: @unchecked Sendable {
     private let lock = NSLock()
     private var metrics: ScanMetrics
     private let continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
@@ -162,6 +179,213 @@ nonisolated private final class AtomicSummaryProgressReporter: @unchecked Sendab
 }
 
 extension AtomicDirectorySummarizer {
+    nonisolated static func processPooledWorkItem(
+        _ initialItem: AtomicSummaryWorkItem,
+        includeHiddenFiles: Bool,
+        exclusionMatcher: ScanExclusionMatcher,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
+        progressReporter: AtomicSummaryProgressReporter,
+        forcesFoundationTraversal: Bool
+    ) throws -> AtomicSummaryWorkResult {
+        try cancellationCheck()
+        var item = initialItem
+
+        if forcesFoundationTraversal {
+            return try processPooledWorkItemUsingFoundation(
+                item,
+                includeHiddenFiles: includeHiddenFiles,
+                exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
+                progressReporter: progressReporter
+            )
+        }
+
+        var partial = AtomicDirectorySummaryPartial()
+        var pendingItems: [AtomicSummaryWorkItem] = []
+        var visitedItemCount = 0
+        if item.nextEntryIndex < item.bufferedEntries.count {
+            try stageEntries(
+                item.bufferedEntries[item.nextEntryIndex...],
+                from: item,
+                exclusionMatcher: exclusionMatcher,
+                partial: &partial,
+                pendingItems: &pendingItems,
+                cancellationCheck: cancellationCheck,
+                progressReporter: progressReporter,
+                workerVisitedItemCount: &visitedItemCount
+            )
+            item.nextEntryIndex = item.bufferedEntries.count
+        }
+
+        var cursor = item.cursor
+        if cursor == nil, item.needsCursor {
+            do {
+                cursor = try BulkDirectoryEnumerator.makeCursor(
+                    at: item.url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    loadsPackageMetadata: !item.treatPackagesAsDirectories,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: cancellationCheck
+                )
+            } catch {
+                try cancellationCheck()
+                partial.recordWarning(for: item.url, error: error)
+                return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
+            }
+        }
+
+        do {
+            while let batch = try cursor?.nextBatch(cancellationCheck: cancellationCheck) {
+                try stageEntries(
+                    batch.entries[...],
+                    from: item,
+                    exclusionMatcher: exclusionMatcher,
+                    partial: &partial,
+                    pendingItems: &pendingItems,
+                    cancellationCheck: cancellationCheck,
+                    progressReporter: progressReporter,
+                    workerVisitedItemCount: &visitedItemCount
+                )
+            }
+        } catch BulkDirectoryEnumerator.StreamError.unavailable {
+            if item.requiresRootRestartOnFallback {
+                throw AtomicSummaryRootFallbackRequired()
+            }
+            return try processPooledWorkItemUsingFoundation(
+                item,
+                includeHiddenFiles: includeHiddenFiles,
+                exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
+                progressReporter: progressReporter
+            )
+        } catch {
+            try cancellationCheck()
+            var warningOnly = AtomicDirectorySummaryPartial()
+            warningOnly.recordWarning(for: item.url, error: error)
+            return AtomicSummaryWorkResult(partial: warningOnly, pendingItems: [])
+        }
+
+        return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
+    }
+
+    private nonisolated static func processPooledWorkItemUsingFoundation(
+        _ item: AtomicSummaryWorkItem,
+        includeHiddenFiles: Bool,
+        exclusionMatcher: ScanExclusionMatcher,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
+        progressReporter: AtomicSummaryProgressReporter
+    ) throws -> AtomicSummaryWorkResult {
+        try cancellationCheck()
+
+        var options: FileManager.DirectoryEnumerationOptions = [.skipsSubdirectoryDescendants]
+        if !includeHiddenFiles {
+            options.insert(.skipsHiddenFiles)
+        }
+
+        let warningCollector = AtomicSummaryWarningCollector()
+        guard let enumerator = FileManager.default.enumerator(
+            at: item.url,
+            includingPropertiesForKeys: ScanMetadataLoader.atomicSummaryResourceKeys,
+            options: options,
+            errorHandler: { childURL, error in
+                warningCollector.record(for: childURL, error: error)
+                return true
+            }
+        ) else {
+            var partial = AtomicDirectorySummaryPartial()
+            partial.recordWarning(
+                for: item.url,
+                error: NSError(
+                    domain: NSCocoaErrorDomain,
+                    code: NSFileReadUnknownError,
+                    userInfo: [NSURLErrorKey: item.url]
+                )
+            )
+            return AtomicSummaryWorkResult(partial: partial, pendingItems: [])
+        }
+
+        var partial = AtomicDirectorySummaryPartial()
+        var pendingItems: [AtomicSummaryWorkItem] = []
+        var visitedItemCount = 0
+        while let nextObject = enumerator.nextObject() {
+            try cancellationCheck()
+            guard let childURL = nextObject as? URL else { continue }
+            visitedItemCount += 1
+            if visitedItemCount == 1 || visitedItemCount.isMultiple(of: 64) {
+                progressReporter.emit(currentURL: childURL)
+            }
+
+            let hintedIsDirectory = childURL.hasDirectoryPath
+            let childPath = childURL.path
+            guard !exclusionMatcher.excludesKnownNormalizedPath(
+                childPath,
+                isDirectory: hintedIsDirectory
+            ) else {
+                continue
+            }
+
+            let childMetadata: NodeMetadata
+            do {
+                let values = try childURL.resourceValues(
+                    forKeys: ScanMetadataLoader.atomicSummaryResourceKeySet
+                )
+                childMetadata = metadataLoader.atomicSummaryMetadata(
+                    for: childURL,
+                    prefetchedResourceValues: values
+                )
+            } catch {
+                partial.recordWarning(for: childURL, error: error)
+                continue
+            }
+
+            guard childMetadata.isDirectory == hintedIsDirectory ||
+                    !exclusionMatcher.excludesKnownNormalizedPath(
+                        childPath,
+                        isDirectory: childMetadata.isDirectory
+                    ) else {
+                continue
+            }
+
+            partial.updateAccessibility(childMetadata.isReadable)
+            guard childMetadata.isDirectory else {
+                partial.accumulateFile(
+                    childMetadata,
+                    url: childURL,
+                    ownerNodeID: item.ownerNodeID
+                )
+                continue
+            }
+
+            let isTraversablePackageSymlink = childMetadata.isSymbolicLink
+                && childMetadata.isPackage
+                && !item.treatPackagesAsDirectories
+            guard !childMetadata.isSymbolicLink || isTraversablePackageSymlink else {
+                continue
+            }
+
+            pendingItems.append(
+                AtomicSummaryWorkItem(
+                    url: childURL,
+                    treatPackagesAsDirectories: childMetadata.isPackage
+                        ? true
+                        : item.treatPackagesAsDirectories,
+                    ownerNodeID: item.ownerNodeID
+                )
+            )
+        }
+
+        let localizedWarnings = warningCollector.collectedWarnings()
+        if !localizedWarnings.isEmpty {
+            partial.isAccessible = false
+            partial.warnings.append(contentsOf: localizedWarnings)
+        }
+        return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
+    }
+
     nonisolated static func summarizeInParallel(
         at url: URL,
         includeHiddenFiles: Bool,

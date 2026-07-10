@@ -173,6 +173,25 @@ actor ScanEngine {
         case failure(DirectoryTraversalFailure)
     }
 
+    private struct LeafNodeResult: Sendable {
+        let node: FileNodeRecord
+        let warnings: [ScanWarning]
+        let hardLinkClaims: [HardLinkClaim]
+        let minimumAllocatedSize: Int64?
+    }
+
+    private struct PackageSummaryResult: Sendable {
+        let item: ScanWorkItem
+        let itemKey: Int
+        let metadata: NodeMetadata
+        let leaf: LeafNodeResult
+    }
+
+    private enum ScanTaskResult: Sendable {
+        case directory(DirectoryTraversalResult)
+        case package(PackageSummaryResult)
+    }
+
     /// A completed directory scan awaiting parent assembly.
     private struct CompletedDirScan {
         let node: FileNodeRecord?     // Leaves carry a node; traversable dirs are resolved in phase 2.
@@ -200,34 +219,40 @@ actor ScanEngine {
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
     private let linkCountCapabilityCache: LinkCountCapabilityCache
+    private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let diagnostics: ScanDiagnosticsContext?
 
     init(
-        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType
+        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil
     ) {
         self.init(
             enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
             volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
-            usesBulkDirectoryEnumeration: true
+            usesBulkDirectoryEnumeration: true,
+            atomicSummaryWorkerObserver: atomicSummaryWorkerObserver
         )
     }
 
     init(
         enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
-        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType
+        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil
     ) {
         self.init(
             enumeratedDirectoryContents: enumeratedDirectoryContents,
             volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
-            usesBulkDirectoryEnumeration: false
+            usesBulkDirectoryEnumeration: false,
+            atomicSummaryWorkerObserver: atomicSummaryWorkerObserver
         )
     }
 
     private init(
         enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider,
-        usesBulkDirectoryEnumeration: Bool
+        usesBulkDirectoryEnumeration: Bool,
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
     ) {
         #if DEBUG
         let diagnostics = ScanDiagnostics.makeIfEnabled()
@@ -237,18 +262,21 @@ actor ScanEngine {
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         self.linkCountCapabilityCache = LinkCountCapabilityCache()
+        self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.diagnostics = diagnostics
     }
 
     init(
         directoryContents: @escaping URLDirectoryContentsProvider,
-        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType
+        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil
     ) {
         self.init(enumeratedDirectoryContents: { url, keys, options, cancellationCheck in
             let urls = try directoryContents(url, keys, options, cancellationCheck)
             return DirectoryEnumerationResult(urls: urls)
-        }, volumeFileSystemTypeProvider: volumeFileSystemTypeProvider)
+        }, volumeFileSystemTypeProvider: volumeFileSystemTypeProvider,
+           atomicSummaryWorkerObserver: atomicSummaryWorkerObserver)
     }
 
     private nonisolated static func defaultDirectoryContents(
@@ -582,11 +610,6 @@ actor ScanEngine {
             diagnostics: diagnostics,
             linkCountCapabilityCache: linkCountCapabilityCache
         )
-        let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
-            metadataLoader: scanMetadataLoader,
-            diagnostics: diagnostics
-        )
-
         let rootMetadata = try scanMetadataLoader.metadata(for: target.url, includeVolumeDetails: includeVolumeDetails)
         metrics.discoveredItems = 1
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
@@ -595,6 +618,16 @@ actor ScanEngine {
         var hardLinkClaims: [HardLinkClaim] = []
         var minimumAllocatedSizeByNodeID: [String: Int64] = [:]
         let atomicSummaryWorkerLimit = ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options)
+        let atomicSummaryPool = AtomicDirectorySummaryPool(
+            workerLimit: atomicSummaryWorkerLimit,
+            workerObserver: atomicSummaryWorkerObserver
+        )
+        atomicSummaryPool.start()
+        let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
+            metadataLoader: scanMetadataLoader,
+            diagnostics: diagnostics,
+            summaryPool: atomicSummaryPool
+        )
         let directoryTraversalWorkerLimit = ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
         let directoryClassificationWorkerLimit = ScanConcurrencyPolicy.directoryClassificationWorkerLimit(for: options)
         let effectiveDirectoryClassificationWorkerLimit = ScanConcurrencyPolicy.effectiveDirectoryClassificationWorkerLimit(
@@ -605,6 +638,7 @@ actor ScanEngine {
         let usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         let directoryResourceKeys = ScanMetadataLoader.scanResourceKeys
 
+        do {
         // If the root itself shouldn't be traversed, return a leaf node.
         guard shouldTraverseDirectory(metadata: rootMetadata, options: options) else {
             let leafResult = try await makeLeafNode(
@@ -632,7 +666,7 @@ actor ScanEngine {
             metrics.recalculateProgress()
             continuation.yield(.progress(metrics))
             let rawStore = FileTreeStore(root: leafResult.node)
-            return HardLinkDeduplicator.deduplicatedStore(
+            let store = HardLinkDeduplicator.deduplicatedStore(
                 rootID: leafResult.node.id,
                 nodesByID: [leafResult.node.id: leafResult.node],
                 childIDsByID: [:],
@@ -641,6 +675,8 @@ actor ScanEngine {
                 hardLinkClaims: hardLinkClaims,
                 minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
             )
+            await atomicSummaryPool.finish()
+            return store
         }
 
         // Phase 1: Walk the tree iteratively, collecting completed nodes by key.
@@ -665,8 +701,10 @@ actor ScanEngine {
         var seenScannedNodeIDs = Set<String>()
         var nextKey = 0
 
-        try await withThrowingTaskGroup(of: DirectoryTraversalResult.self) { group in
+        try await withThrowingTaskGroup(of: ScanTaskResult.self) { group in
             var activeDirectoryTasks = 0
+            var activePackageTasks = 0
+            let packageSummaryRequestLimit = max(1, atomicSummaryWorkerLimit * 2)
 
             while true {
                 while activeDirectoryTasks < directoryTraversalWorkerLimit,
@@ -760,31 +798,31 @@ actor ScanEngine {
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
                                     cancellationCheck: cancellationCheck
                                 )
-                                return .success(DirectoryTraversalSuccess(
+                                return .directory(.success(DirectoryTraversalSuccess(
                                     item: taskItem,
                                     itemKey: taskItemKey,
                                     metadata: taskMetadata,
                                     contents: contents
-                                ))
+                                )))
                             } catch is CancellationError {
                                 throw CancellationError()
                             } catch {
                                 #if DEBUG
-                                return .failure(DirectoryTraversalFailure(
+                                return .directory(.failure(DirectoryTraversalFailure(
                                     item: taskItem,
                                     itemKey: taskItemKey,
                                     metadata: taskMetadata,
                                     warning: ScanWarningFactory.makeWarning(for: taskItem.url, error: error),
                                     elapsedNanoseconds: DispatchTime.now().uptimeNanoseconds - traversalStart,
                                     diagnosticDetail: "error=\(ScanWarningFactory.diagnosticErrorDescription(error))"
-                                ))
+                                )))
                                 #else
-                                return .failure(DirectoryTraversalFailure(
+                                return .directory(.failure(DirectoryTraversalFailure(
                                     item: taskItem,
                                     itemKey: taskItemKey,
                                     metadata: taskMetadata,
                                     warning: ScanWarningFactory.makeWarning(for: taskItem.url, error: error)
-                                ))
+                                )))
                                 #endif
                             }
                         }
@@ -792,6 +830,39 @@ actor ScanEngine {
                         // Leaf node (file, symlink, or package-as-directory). Discovery may
                         // have classified it as a pending directory; release that claim.
                         releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
+                        if meta.isPackage,
+                           meta.isDirectory,
+                           !options.treatPackagesAsDirectories,
+                           activePackageTasks < packageSummaryRequestLimit {
+                            let taskItem = item
+                            let taskItemKey = itemKey
+                            let taskMetadata = meta
+                            let taskMetrics = metrics
+                            let taskEmissionState = emissionState
+                            activePackageTasks += 1
+                            group.addTask {
+                                var localMetrics = taskMetrics
+                                var localEmissionState = taskEmissionState
+                                let leaf = try await self.makeLeafNode(
+                                    url: taskItem.url,
+                                    metadata: taskMetadata,
+                                    options: options,
+                                    exclusionMatcher: exclusionMatcher,
+                                    atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
+                                    cancellationCheck: cancellationCheck,
+                                    metrics: &localMetrics,
+                                    continuation: continuation,
+                                    emissionState: &localEmissionState
+                                )
+                                return .package(PackageSummaryResult(
+                                    item: taskItem,
+                                    itemKey: taskItemKey,
+                                    metadata: taskMetadata,
+                                    leaf: leaf
+                                ))
+                            }
+                            continue
+                        }
                         let leafResult = try await makeLeafNode(
                             url: item.url,
                             metadata: meta,
@@ -825,12 +896,12 @@ actor ScanEngine {
                     }
                 }
 
-                guard activeDirectoryTasks > 0 else { break }
+                guard activeDirectoryTasks + activePackageTasks > 0 else { break }
                 guard let traversalResult = try await group.next() else { break }
-                activeDirectoryTasks -= 1
 
                 switch traversalResult {
-                case .success(let success):
+                case .directory(.success(let success)):
+                    activeDirectoryTasks -= 1
                     let item = success.item
                     let itemKey = success.itemKey
                     let meta = success.metadata
@@ -1037,7 +1108,8 @@ actor ScanEngine {
                         isTraversable: true
                     )
 
-                case .failure(let failure):
+                case .directory(.failure(let failure)):
+                    activeDirectoryTasks -= 1
                     #if DEBUG
                     diagnostics?.recordElapsed(
                         operation: "directory.enumerate.error",
@@ -1079,6 +1151,32 @@ actor ScanEngine {
                     completedByKey[itemKey] = CompletedDirScan(
                         node: inaccessibleNode,
                         metadata: meta,
+                        url: item.url,
+                        isTraversable: false
+                    )
+                case .package(let packageResult):
+                    activePackageTasks -= 1
+                    let item = packageResult.item
+                    let leafResult = packageResult.leaf
+                    hardLinkClaims.append(contentsOf: leafResult.hardLinkClaims)
+                    if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
+                        minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
+                    }
+                    applyLeafMetrics(leafResult.node, weight: item.weight, metrics: &metrics)
+                    if !leafResult.warnings.isEmpty {
+                        warnings.append(contentsOf: leafResult.warnings)
+                        for warning in leafResult.warnings {
+                            continuation.yield(.warning(warning))
+                        }
+                    }
+                    maybeEmitProgress(
+                        metrics: &metrics,
+                        continuation: continuation,
+                        emissionState: &emissionState
+                    )
+                    completedByKey[packageResult.itemKey] = CompletedDirScan(
+                        node: leafResult.node,
+                        metadata: packageResult.metadata,
                         url: item.url,
                         isTraversable: false
                     )
@@ -1221,7 +1319,7 @@ actor ScanEngine {
         metrics.recalculateProgress()
         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState)
 
-        return HardLinkDeduplicator.deduplicatedStore(
+        let store = HardLinkDeduplicator.deduplicatedStore(
             rootID: rootNode.id,
             nodesByID: nodesByID,
             childIDsByID: childIDsByID,
@@ -1230,6 +1328,12 @@ actor ScanEngine {
             hardLinkClaims: hardLinkClaims,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
         )
+        await atomicSummaryPool.finish()
+        return store
+        } catch {
+            await atomicSummaryPool.cancelAndFinish(with: error)
+            throw error
+        }
     }
 
     // MARK: - Helpers
@@ -1747,12 +1851,7 @@ actor ScanEngine {
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState
-    ) async throws -> (
-        node: FileNodeRecord,
-        warnings: [ScanWarning],
-        hardLinkClaims: [HardLinkClaim],
-        minimumAllocatedSize: Int64?
-    ) {
+    ) async throws -> LeafNodeResult {
         try cancellationCheck()
         guard metadata.isPackage, metadata.isDirectory, !options.treatPackagesAsDirectories else {
             let node = makeFileNode(
@@ -1762,11 +1861,11 @@ actor ScanEngine {
             let hardLinkClaim = metadata.linkCount > 1
                 ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
                 : nil
-            return (
-                node,
-                [],
-                hardLinkClaim.map { [$0] } ?? [],
-                nil
+            return LeafNodeResult(
+                node: node,
+                warnings: [],
+                hardLinkClaims: hardLinkClaim.map { [$0] } ?? [],
+                minimumAllocatedSize: nil
             )
         }
 
@@ -1789,16 +1888,16 @@ actor ScanEngine {
             let hardLinkClaim = metadata.linkCount > 1
                 ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
                 : nil
-            return (
-                node,
-                [],
-                hardLinkClaim.map { [$0] } ?? [],
-                nil
+            return LeafNodeResult(
+                node: node,
+                warnings: [],
+                hardLinkClaims: hardLinkClaim.map { [$0] } ?? [],
+                minimumAllocatedSize: nil
             )
         }
 
-        return (
-            FileNodeRecord(
+        return LeafNodeResult(
+            node: FileNodeRecord(
                 id: url.path,
                 url: url,
                 name: ScanTarget.displayName(for: url),
@@ -1816,9 +1915,9 @@ actor ScanEngine {
                 isSynthetic: false,
                 isAutoSummarized: false
             ),
-            summary.warnings,
-            summary.hardLinkClaims,
-            metadata.allocatedSize
+            warnings: summary.warnings,
+            hardLinkClaims: summary.hardLinkClaims,
+            minimumAllocatedSize: metadata.allocatedSize
         )
     }
 

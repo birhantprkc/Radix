@@ -284,6 +284,151 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(parallelSnapshot.aggregateStats.totalAllocatedSize, serialSnapshot.aggregateStats.totalAllocatedSize)
     }
 
+    func testScanWidePackageSummaryPoolMatchesSerialAcrossSiblingPackages() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var firstPayloadURL: URL?
+        for packageIndex in 0..<24 {
+            let resourcesURL = rootURL
+                .appending(
+                    path: String(format: "Sibling-%02d.app", packageIndex),
+                    directoryHint: .isDirectory
+                )
+                .appending(path: "Contents/Resources", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+            for fileIndex in 0..<4 {
+                let payloadURL = resourcesURL.appending(
+                    path: String(format: "payload-%02d.dat", fileIndex)
+                )
+                try Data(repeating: UInt8(packageIndex), count: packageIndex + fileIndex + 1)
+                    .write(to: payloadURL)
+                if packageIndex == 0, fileIndex == 0 {
+                    firstPayloadURL = payloadURL
+                }
+            }
+            try Data(repeating: 0xFF, count: 128).write(
+                to: resourcesURL.appending(path: ".hidden-payload")
+            )
+        }
+
+        let sharedSourceURL = try XCTUnwrap(firstPayloadURL)
+        let sharedLinkURL = rootURL
+            .appending(path: "Sibling-01.app/Contents/Resources/shared-link.dat")
+        try FileManager.default.linkItem(at: sharedSourceURL, to: sharedLinkURL)
+
+        var serialOptions = ScanOptions()
+        serialOptions.atomicSummaryWorkerLimit = 1
+        var pooledOptions = ScanOptions()
+        pooledOptions.atomicSummaryWorkerLimit = 4
+
+        let serialSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: serialOptions
+        )
+        let pooledSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: pooledOptions
+        )
+        let serialNodes = Dictionary(uniqueKeysWithValues: rootChildren(in: serialSnapshot).map {
+            ($0.name, $0)
+        })
+        let pooledNodes = Dictionary(uniqueKeysWithValues: rootChildren(in: pooledSnapshot).map {
+            ($0.name, $0)
+        })
+
+        XCTAssertEqual(pooledNodes.count, 24)
+        XCTAssertEqual(Set(pooledNodes.keys), Set(serialNodes.keys))
+        for name in serialNodes.keys {
+            let serialNode = try XCTUnwrap(serialNodes[name])
+            let pooledNode = try XCTUnwrap(pooledNodes[name])
+            XCTAssertEqual(pooledNode.descendantFileCount, serialNode.descendantFileCount, name)
+            XCTAssertEqual(pooledNode.logicalSize, serialNode.logicalSize, name)
+            XCTAssertEqual(pooledNode.allocatedSize, serialNode.allocatedSize, name)
+            XCTAssertEqual(pooledNode.isAccessible, serialNode.isAccessible, name)
+        }
+        XCTAssertEqual(
+            pooledSnapshot.aggregateStats.totalAllocatedSize,
+            serialSnapshot.aggregateStats.totalAllocatedSize
+        )
+        XCTAssertEqual(
+            pooledSnapshot.aggregateStats.totalLogicalSize,
+            serialSnapshot.aggregateStats.totalLogicalSize
+        )
+        XCTAssertEqual(pooledSnapshot.aggregateStats.fileCount, serialSnapshot.aggregateStats.fileCount)
+        XCTAssertEqual(
+            pooledSnapshot.aggregateStats.directoryCount,
+            serialSnapshot.aggregateStats.directoryCount
+        )
+        XCTAssertEqual(
+            pooledSnapshot.aggregateStats.accessibleItemCount,
+            serialSnapshot.aggregateStats.accessibleItemCount
+        )
+        XCTAssertEqual(
+            pooledSnapshot.aggregateStats.inaccessibleItemCount,
+            serialSnapshot.aggregateStats.inaccessibleItemCount
+        )
+        XCTAssertEqual(pooledSnapshot.scanWarnings, serialSnapshot.scanWarnings)
+    }
+
+    func testPackageSummariesShareScanWideBoundedWorkers() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        for packageIndex in 0..<4 {
+            let packageURL = rootURL.appending(
+                path: String(format: "Package-%02d.app", packageIndex),
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+            for fileIndex in 0..<3 {
+                try Data(repeating: UInt8(packageIndex), count: fileIndex + 1).write(
+                    to: packageURL.appending(path: "payload-\(fileIndex).dat")
+                )
+            }
+        }
+
+        let probe = BlockingAtomicSummaryWorkerProbe()
+        let observer = AtomicSummaryWorkerObserver(
+            didStart: probe.didStart,
+            didFinish: probe.didFinish
+        )
+        let engine = ScanEngine(atomicSummaryWorkerObserver: observer)
+        var options = ScanOptions()
+        options.atomicSummaryWorkerLimit = 2
+        options.directoryTraversalWorkerLimit = 1
+        let scanTask = Task {
+            try await finishedSnapshot(
+                target: ScanTarget(url: rootURL),
+                options: options,
+                engine: engine
+            )
+        }
+        defer {
+            probe.releaseAll()
+            scanTask.cancel()
+        }
+
+        XCTAssertTrue(probe.waitForDistinctActiveOwners(2, timeout: 2))
+        XCTAssertEqual(probe.activeWorkerCount, 2)
+        XCTAssertEqual(probe.peakActiveWorkerCount, 2)
+        XCTAssertEqual(probe.activeOwnerCount, 2)
+        probe.releaseAll()
+
+        let snapshot = try await withTimeout(.seconds(2)) {
+            try await scanTask.value
+        }
+        let packageNodes = rootChildren(in: snapshot)
+        XCTAssertEqual(packageNodes.count, 4)
+        XCTAssertTrue(packageNodes.allSatisfy { $0.descendantFileCount == 3 })
+        XCTAssertTrue(packageNodes.allSatisfy { !containsChildren($0, in: snapshot) })
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, 12)
+        XCTAssertEqual(probe.seenOwnerCount, 4)
+        XCTAssertGreaterThanOrEqual(probe.maximumDistinctActiveOwnerCount, 2)
+        XCTAssertLessThanOrEqual(probe.peakActiveWorkerCount, 2)
+        XCTAssertEqual(probe.activeWorkerCount, 0)
+    }
+
     func testRecursiveBulkPackageSummaryMatchesSerialAcrossMultipleBatches() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -2736,6 +2881,87 @@ private final class DirectoryEnumerationCancellation: @unchecked Sendable {
         if isCancelled {
             throw CancellationError()
         }
+    }
+}
+
+private final class BlockingAtomicSummaryWorkerProbe: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var activeOwners: Set<String> = []
+    private var seenOwners: Set<String> = []
+    private var activeWorkers = 0
+    private var peakWorkers = 0
+    private var maximumDistinctOwners = 0
+    private var isReleased = false
+
+    var activeWorkerCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return activeWorkers
+    }
+
+    var peakActiveWorkerCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return peakWorkers
+    }
+
+    var activeOwnerCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return activeOwners.count
+    }
+
+    var seenOwnerCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return seenOwners.count
+    }
+
+    var maximumDistinctActiveOwnerCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return maximumDistinctOwners
+    }
+
+    func didStart(ownerNodeID: String, itemURL: URL) {
+        _ = itemURL
+        condition.lock()
+        activeWorkers += 1
+        peakWorkers = max(peakWorkers, activeWorkers)
+        activeOwners.insert(ownerNodeID)
+        seenOwners.insert(ownerNodeID)
+        maximumDistinctOwners = max(maximumDistinctOwners, activeOwners.count)
+        condition.broadcast()
+        while !isReleased {
+            condition.wait()
+        }
+        condition.unlock()
+    }
+
+    func didFinish(ownerNodeID: String, itemURL: URL) {
+        _ = itemURL
+        condition.lock()
+        activeWorkers = max(activeWorkers - 1, 0)
+        activeOwners.remove(ownerNodeID)
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func waitForDistinctActiveOwners(_ count: Int, timeout: TimeInterval) -> Bool {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        condition.lock()
+        defer { condition.unlock() }
+        while activeOwners.count < count, Date() < deadline {
+            _ = condition.wait(until: deadline)
+        }
+        return activeOwners.count >= count
+    }
+
+    func releaseAll() {
+        condition.lock()
+        isReleased = true
+        condition.broadcast()
+        condition.unlock()
     }
 }
 

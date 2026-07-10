@@ -70,6 +70,11 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
     }
 }
 
+nonisolated struct AtomicSummaryWorkResult: Sendable {
+    var partial: AtomicDirectorySummaryPartial
+    var pendingItems: [AtomicSummaryWorkItem]
+}
+
 nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
     let url: URL
     let treatPackagesAsDirectories: Bool

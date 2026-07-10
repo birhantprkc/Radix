@@ -10,10 +10,16 @@ import Foundation
 nonisolated struct AtomicDirectorySummarizer: Sendable {
     let metadataLoader: ScanMetadataLoader
     let diagnostics: ScanDiagnosticsContext?
+    let summaryPool: AtomicDirectorySummaryPool?
 
-    init(metadataLoader: ScanMetadataLoader, diagnostics: ScanDiagnosticsContext? = nil) {
+    init(
+        metadataLoader: ScanMetadataLoader,
+        diagnostics: ScanDiagnosticsContext? = nil,
+        summaryPool: AtomicDirectorySummaryPool? = nil
+    ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
+        self.summaryPool = summaryPool
     }
 
     /// Determines if a directory should be treated as atomic (summarized without expansion).
@@ -149,6 +155,34 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         resumeState: AtomicDirectoryProbeResumeState? = nil
     ) async throws -> AtomicDirectorySummary? {
         try cancellationCheck()
+        if let summaryPool {
+            #if DEBUG
+            let summaryStart = diagnostics?.start()
+            #endif
+            let summary = try await summaryPool.summarize(
+                AtomicSummaryPoolRequest(
+                    url: url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    treatPackagesAsDirectories: treatPackagesAsDirectories,
+                    ownerNodeID: ownerNodeID,
+                    exclusionMatcher: exclusionMatcher,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: cancellationCheck,
+                    metrics: metrics,
+                    continuation: continuation,
+                    resumeState: resumeState
+                )
+            )
+            #if DEBUG
+            diagnostics?.record(
+                operation: "atomic.summary.pool",
+                url: url,
+                startedAt: summaryStart,
+                itemCount: summary?.descendantFileCount
+            )
+            #endif
+            return summary
+        }
         if workerLimit > 1 {
             #if DEBUG
             let summaryStart = diagnostics?.start()

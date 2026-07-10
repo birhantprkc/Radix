@@ -37,6 +37,7 @@ let package = Package(
                 "Models/ScanTarget.swift",
                 "Models/TrashSafetyPolicy.swift",
                 "Services/AtomicDirectoryParallelSummary.swift",
+                "Services/AtomicDirectorySummaryPool.swift",
                 "Services/AtomicDirectorySummaryProbe.swift",
                 "Services/AtomicDirectorySummaryWalker.swift",
                 "Services/AtomicDirectorySummarizer.swift",

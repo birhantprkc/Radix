@@ -454,6 +454,7 @@ final class ScanBenchmarkTests: XCTestCase {
                             rootURL: rootURL,
                             fileCount: fileCount,
                             symlinkCount: symlinkCount,
+                            packageCount: 1,
                             configuration: configuration,
                             iteration: 0,
                             isWarmup: true
@@ -467,6 +468,7 @@ final class ScanBenchmarkTests: XCTestCase {
                                 rootURL: rootURL,
                                 fileCount: fileCount,
                                 symlinkCount: symlinkCount,
+                                packageCount: 1,
                                 configuration: configuration,
                                 iteration: iteration,
                                 isWarmup: false
@@ -496,6 +498,41 @@ final class ScanBenchmarkTests: XCTestCase {
                         )
                     }
                 }
+            }
+        }
+
+        let siblingPackageCount = environment["RADIX_BENCH_PACKAGE_SIBLING_COUNT"]
+            .flatMap(Int.init)
+            .map { max(2, $0) } ?? 32
+        let siblingFilesPerPackage = environment["RADIX_BENCH_PACKAGE_SIBLING_FILES"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 64
+        let siblingRootURL = try makeSiblingPackageSummaryBenchmarkDirectory(
+            packageCount: siblingPackageCount,
+            filesPerPackage: siblingFilesPerPackage
+        )
+        defer { try? FileManager.default.removeItem(at: siblingRootURL) }
+        let siblingFileCount = siblingPackageCount * siblingFilesPerPackage
+        for configuration in configurations {
+            _ = try await runPackageSummaryBenchmark(
+                rootURL: siblingRootURL,
+                fileCount: siblingFileCount,
+                symlinkCount: 0,
+                packageCount: siblingPackageCount,
+                configuration: configuration,
+                iteration: 0,
+                isWarmup: true
+            )
+            for iteration in 1...iterations {
+                _ = try await runPackageSummaryBenchmark(
+                    rootURL: siblingRootURL,
+                    fileCount: siblingFileCount,
+                    symlinkCount: 0,
+                    packageCount: siblingPackageCount,
+                    configuration: configuration,
+                    iteration: iteration,
+                    isWarmup: false
+                )
             }
         }
     }
@@ -716,6 +753,29 @@ final class ScanBenchmarkTests: XCTestCase {
         return rootURL
     }
 
+    private func makeSiblingPackageSummaryBenchmarkDirectory(
+        packageCount: Int,
+        filesPerPackage: Int
+    ) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "radix-sibling-package-summary-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let payload = Data([0x41])
+        for packageIndex in 0..<packageCount {
+            let packageURL = rootURL.appending(
+                path: String(format: "Payload-%04d.app", packageIndex),
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+            for fileIndex in 0..<filesPerPackage {
+                try payload.write(
+                    to: packageURL.appending(path: String(format: "asset-%06d.dat", fileIndex)),
+                    options: .atomic
+                )
+            }
+        }
+        return rootURL
+    }
+
     private func runWideDirectoryBenchmark(
         rootURL: URL,
         fileCount: Int,
@@ -764,6 +824,7 @@ final class ScanBenchmarkTests: XCTestCase {
         rootURL: URL,
         fileCount: Int,
         symlinkCount: Int,
+        packageCount: Int,
         configuration: PackageSummaryBenchmarkConfiguration,
         iteration: Int,
         isWarmup: Bool
@@ -771,7 +832,11 @@ final class ScanBenchmarkTests: XCTestCase {
         var options = ScanOptions()
         options.atomicSummaryWorkerLimit = configuration.atomicSummaryWorkerLimit
 
-        let engine = ScanEngine()
+        let workerProbe = PackageSummaryBenchmarkWorkerProbe()
+        let engine = ScanEngine(atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver(
+            didStart: workerProbe.didStart,
+            didFinish: workerProbe.didFinish
+        ))
         let startedAt = ContinuousClock.now
         var finalSnapshot: ScanSnapshot?
 
@@ -785,20 +850,27 @@ final class ScanBenchmarkTests: XCTestCase {
         let elapsedSeconds = Double(elapsed.components.seconds) +
             (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
         let snapshot = try XCTUnwrap(finalSnapshot)
-        let packageNode = try XCTUnwrap(snapshot.treeStore.children(of: snapshot.root.id).first { $0.name == "Payload.app" })
+        let packageNodes = snapshot.treeStore.children(of: snapshot.root.id).filter(\.isPackage)
         XCTAssertEqual(snapshot.aggregateStats.fileCount, fileCount)
-        XCTAssertEqual(packageNode.descendantFileCount, fileCount)
-        XCTAssertFalse(snapshot.treeStore.childIDsByID.keys.contains(packageNode.id))
+        XCTAssertEqual(packageNodes.count, packageCount)
+        XCTAssertEqual(packageNodes.reduce(0) { $0 + $1.descendantFileCount }, fileCount)
+        XCTAssertTrue(packageNodes.allSatisfy { !snapshot.treeStore.childIDsByID.keys.contains($0.id) })
+        if let configuredLimit = configuration.atomicSummaryWorkerLimit {
+            XCTAssertLessThanOrEqual(workerProbe.peakWorkerCount, configuredLimit)
+        }
 
         let phase = isWarmup ? "warmup" : "measure"
         print(
             """
             RADIX_BENCH_PACKAGE_RESULT phase=\(phase)
+            packages=\(packageCount)
             files=\(fileCount)
             symlinks=\(symlinkCount)
             config=\(configuration.name)
             iteration=\(iteration)
             summary_workers=\(configuration.workerDescription)
+            peak_workers=\(workerProbe.peakWorkerCount)
+            peak_concurrent_packages=\(workerProbe.peakOwnerCount)
             elapsed=\(String(format: "%.3f", elapsedSeconds))s
             """
         )
@@ -820,6 +892,49 @@ private final class PackageClassifierBenchmarkCounter: @unchecked Sendable {
     func recordLookup() {
         lock.lock()
         lookups += 1
+        lock.unlock()
+    }
+}
+
+private final class PackageSummaryBenchmarkWorkerProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activeWorkers = 0
+    private var peakWorkers = 0
+    private var activeCountsByOwner: [String: Int] = [:]
+    private var peakOwners = 0
+
+    var peakWorkerCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return peakWorkers
+    }
+
+    var peakOwnerCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return peakOwners
+    }
+
+    func didStart(ownerNodeID: String, itemURL: URL) {
+        _ = itemURL
+        lock.lock()
+        activeWorkers += 1
+        peakWorkers = max(peakWorkers, activeWorkers)
+        activeCountsByOwner[ownerNodeID, default: 0] += 1
+        peakOwners = max(peakOwners, activeCountsByOwner.count)
+        lock.unlock()
+    }
+
+    func didFinish(ownerNodeID: String, itemURL: URL) {
+        _ = itemURL
+        lock.lock()
+        activeWorkers = max(activeWorkers - 1, 0)
+        let remaining = max(activeCountsByOwner[ownerNodeID, default: 0] - 1, 0)
+        if remaining == 0 {
+            activeCountsByOwner.removeValue(forKey: ownerNodeID)
+        } else {
+            activeCountsByOwner[ownerNodeID] = remaining
+        }
         lock.unlock()
     }
 }
