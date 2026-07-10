@@ -1452,6 +1452,9 @@ actor ScanEngine {
         metrics.bytesDiscovered += node.allocatedSize
         metrics.completedItems += 1
         metrics.completedTraversalWeight += weight
+        if node.isDirectory, node.isAutoSummarized || node.isPackage {
+            metrics.completedSummaryTraversalWeight += weight
+        }
     }
 
     /// Relative progress weight of a traversable directory child versus a single file.

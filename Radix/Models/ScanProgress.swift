@@ -20,6 +20,10 @@ struct ScanMetrics: Sendable {
     /// weight among its children when the directory is enumerated, so the sum of completed
     /// weights converges to 1 exactly as the traversal finishes.
     var completedTraversalWeight = 0.0
+    /// Portion of `completedTraversalWeight` carried by committed package and
+    /// auto-summarized directory leaves. Their contents never enter the item
+    /// counts, so this share is exempt from the item-count cap below.
+    var completedSummaryTraversalWeight = 0.0
     /// Fractional traversal weight completed inside package/atomic summaries that
     /// are still in flight. This is folded into progress without marking their
     /// tree nodes complete before the summary result is committed.
@@ -82,6 +86,10 @@ struct ScanMetrics: Sendable {
         // frontier to zero (no child subdirectories) while leaving thousands of discovered
         // files uncompleted; without this the weight estimate alone can leap near the
         // traversal ceiling before those files are scanned.
+        //
+        // Weight completed by package/atomic summaries sits outside the cap: a summarized
+        // subtree counts as a single item, so a package-heavy scan (e.g. /Applications)
+        // would otherwise pin near zero while nearly all of its real work finishes.
         if enumeratedDirectoryCount > 0, completedItems < discoveredItems || pendingDirectoryCount > 0 {
             let enumerated = Double(enumeratedDirectoryCount)
             let childrenPerDirectory = Double(discoveredItems) / enumerated
@@ -95,7 +103,11 @@ struct ScanMetrics: Sendable {
                     (Double(discoveredItems) + expectedFrontierYield),
                 1
             )
-            traversalFraction = min(traversalFraction, countFraction)
+            let summaryWeight = min(
+                max(completedSummaryTraversalWeight + atomicSummaryCompletedTraversalWeight, 0),
+                1
+            )
+            traversalFraction = min(traversalFraction, min(countFraction + summaryWeight, 1))
         }
 
         if estimatedTotalBytes > 0 {

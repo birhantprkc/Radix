@@ -2188,6 +2188,48 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(metrics.progressFraction, 0.5 * 0.95, accuracy: 0.0001)
     }
 
+    func testCommittedSummaryWeightIsExemptFromCountCap() {
+        var metrics = ScanMetrics()
+        // A package-heavy root (like /Applications): the packages' contents never
+        // enter the item counts, so the frontier extrapolation sees almost no item
+        // completions. Weight committed by summarized leaves must bypass the cap or
+        // progress pins near zero while nearly all of the real work finishes.
+        metrics.filesVisited = 200_000
+        metrics.discoveredItems = 46
+        metrics.completedItems = 20
+        metrics.enumeratedDirectoryCount = 1
+        metrics.pendingDirectoryCount = 4
+        metrics.discoveredDirectoryCount = 45
+        metrics.completedTraversalWeight = 0.45
+        metrics.completedSummaryTraversalWeight = 0.44
+        metrics.atomicSummaryCompletedTraversalWeight = 0.1
+
+        metrics.recalculateProgress()
+
+        // Weight fraction 0.55 wins because the count cap is lifted by the 0.54 of
+        // summary-carried weight; without the exemption the cap would pin this at ~2%.
+        XCTAssertEqual(metrics.progressFraction, 0.55 * 0.95, accuracy: 0.0001)
+    }
+
+    func testCountCapStillBindsPlainTraversalWeight() {
+        var metrics = ScanMetrics()
+        // Same skewed tree as below, plus a sliver of committed summary weight: the
+        // cap must still bind the plain traversal weight, shifted only by the
+        // summary-carried share.
+        metrics.filesVisited = 2_000
+        metrics.discoveredItems = 2_001
+        metrics.completedItems = 2_000
+        metrics.enumeratedDirectoryCount = 1
+        metrics.pendingDirectoryCount = 1
+        metrics.discoveredDirectoryCount = 2
+        metrics.completedTraversalWeight = 2_000.0 / 2_008.0
+        metrics.completedSummaryTraversalWeight = 0.05
+
+        metrics.recalculateProgress()
+
+        XCTAssertLessThan(metrics.progressFraction, 0.40)
+    }
+
     func testInFlightAtomicSummaryItemsParticipateInCountCap() {
         var metrics = ScanMetrics()
         metrics.discoveredItems = 10
