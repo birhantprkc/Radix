@@ -2553,6 +2553,12 @@ final class AppModelDependencyTests: XCTestCase {
             model.pendingComparisonSetup?.validationMessage,
             "The earlier scan must precede the later scan."
         )
+
+        model.swapPendingComparisonSetup()
+        XCTAssertEqual(model.pendingComparisonSetup?.before?.displayName, oldSnapshot.target.displayName)
+        XCTAssertTrue(model.pendingComparisonSetup?.canCompare ?? false)
+        XCTAssertNil(model.pendingComparisonSetup?.validationMessage)
+        XCTAssertNil(model.pendingComparisonSetup?.errorMessage)
     }
 
     @MainActor

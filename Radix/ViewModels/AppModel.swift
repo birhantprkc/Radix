@@ -1109,7 +1109,10 @@ final class AppModel: ObservableObject {
     }
 
     func swapPendingComparisonSetup() {
-        pendingComparisonSetup?.swap()
+        guard var setup = pendingComparisonSetup else { return }
+        setup.swap()
+        setup.errorMessage = setup.validationMessage
+        pendingComparisonSetup = setup
     }
 
     func cancelComparisonSetup() {
