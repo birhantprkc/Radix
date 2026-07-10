@@ -303,7 +303,11 @@ extension AtomicDirectorySummarizer {
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
-            guard !exclusionMatcher.excludes(childURL, isDirectory: hintedIsDirectory) else {
+            let childPath = childURL.path
+            guard !exclusionMatcher.excludesKnownNormalizedPath(
+                childPath,
+                isDirectory: hintedIsDirectory
+            ) else {
                 continue
             }
 
@@ -316,7 +320,11 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
-            guard !exclusionMatcher.excludes(childURL, isDirectory: childMetadata.isDirectory) else {
+            guard childMetadata.isDirectory == hintedIsDirectory ||
+                    !exclusionMatcher.excludesKnownNormalizedPath(
+                        childPath,
+                        isDirectory: childMetadata.isDirectory
+                    ) else {
                 continue
             }
 

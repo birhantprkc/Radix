@@ -15,7 +15,8 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     ]
 
     private let rootPath: String
-    private let patterns: [CompiledPattern]
+    private let basenamePatterns: [CompiledPattern]
+    private let pathPatterns: [CompiledPattern]
     private let cloudLocations: [CloudLocation]
     private let hasActiveRule: Bool
 
@@ -44,7 +45,7 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     ) {
         let normalizedRootPath = Self.normalizedRootPath(rootPath)
         let compiledPatterns = Self.normalizedPatterns(patterns).compactMap(CompiledPattern.init(rawPattern:))
-        let cloudLocations = [
+        let activeCloudLocations = [
             Self.cloudLocation(
                 configuredRootPath: cloudStorageRootPath,
                 userRelativeComponents: ["Library", "CloudStorage"],
@@ -57,11 +58,12 @@ nonisolated struct ScanExclusionMatcher: Sendable {
                 scanRootPath: normalizedRootPath,
                 includeCloudStorage: includeCloudStorage
             )
-        ]
+        ].filter(\.isActive)
         self.rootPath = normalizedRootPath
-        self.patterns = compiledPatterns
-        self.cloudLocations = cloudLocations
-        self.hasActiveRule = !compiledPatterns.isEmpty || cloudLocations.contains { $0.isActive }
+        self.basenamePatterns = compiledPatterns.filter(\.matchesBasename)
+        self.pathPatterns = compiledPatterns.filter { !$0.matchesBasename }
+        self.cloudLocations = activeCloudLocations
+        self.hasActiveRule = !compiledPatterns.isEmpty || !activeCloudLocations.isEmpty
     }
 
     var isEmpty: Bool {
@@ -69,7 +71,7 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     }
 
     var hasUserExclusions: Bool {
-        !patterns.isEmpty
+        !basenamePatterns.isEmpty || !pathPatterns.isEmpty
     }
 
     func excludes(_ url: URL, isDirectory: Bool) -> Bool {
@@ -91,20 +93,22 @@ nonisolated struct ScanExclusionMatcher: Sendable {
             return true
         }
 
-        guard !patterns.isEmpty,
+        if !basenamePatterns.isEmpty {
+            let basename = Self.basename(fromNormalizedPath: normalizedPath)
+            if basenamePatterns.contains(where: {
+                $0.matches(value: basename, isDirectory: isDirectory)
+            }) {
+                return true
+            }
+        }
+
+        guard !pathPatterns.isEmpty,
               let relativePath = relativePath(forNormalizedPath: normalizedPath),
               !relativePath.isEmpty else {
             return false
         }
 
-        let basename = Self.basename(fromNormalizedPath: normalizedPath)
-        return patterns.contains { pattern in
-            pattern.matches(
-                basename: basename,
-                relativePath: relativePath,
-                isDirectory: isDirectory
-            )
-        }
+        return pathPatterns.contains { $0.matches(value: relativePath, isDirectory: isDirectory) }
     }
 
     static func normalizedPatterns(_ patterns: [String]) -> [String] {
@@ -232,16 +236,16 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         pattern.hasSuffix("/") ? String(pattern.dropLast()) : pattern
     }
 
-    private static func basename(fromNormalizedPath path: String) -> String {
+    private static func basename(fromNormalizedPath path: String) -> Substring {
         let endIndex = path.count > 1 && path.hasSuffix("/")
             ? path.index(before: path.endIndex)
             : path.endIndex
         guard let separatorIndex = path[..<endIndex].lastIndex(of: "/") else {
-            return String(path[..<endIndex])
+            return path[..<endIndex]
         }
 
         let basenameStartIndex = path.index(after: separatorIndex)
-        return String(path[basenameStartIndex..<endIndex])
+        return path[basenameStartIndex..<endIndex]
     }
 
     private static func normalizedPattern(_ pattern: String) -> String? {
@@ -271,16 +275,16 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         return isDirectoryOnly ? "\(normalized)/" : normalized
     }
 
-    private func relativePath(forNormalizedPath path: String) -> String? {
+    private func relativePath(forNormalizedPath path: String) -> Substring? {
         guard path != rootPath else { return "" }
 
         if rootPath == "/" {
-            return path.hasPrefix("/") ? String(path.dropFirst()) : path
+            return path.hasPrefix("/") ? path.dropFirst() : path[...]
         }
 
         let rootPrefix = rootPath.hasSuffix("/") ? rootPath : "\(rootPath)/"
         guard path.hasPrefix(rootPrefix) else { return nil }
-        return String(path.dropFirst(rootPrefix.count))
+        return path.dropFirst(rootPrefix.count)
     }
 }
 
@@ -320,10 +324,9 @@ nonisolated private struct CloudLocation: Sendable {
 }
 
 nonisolated private struct CompiledPattern: Sendable {
-    private let matchesBasename: Bool
+    let matchesBasename: Bool
     private let directoryOnly: Bool
-    private let exactPattern: String?
-    private let globPatterns: [GlobPattern]
+    private let matchers: [PatternMatcher]
     private let directoryPrefixPatterns: [GlobPattern]
 
     init?(rawPattern: String) {
@@ -340,9 +343,8 @@ nonisolated private struct CompiledPattern: Sendable {
         self.directoryOnly = directoryOnly
 
         if Self.containsGlobSyntax(pattern) {
-            self.exactPattern = nil
-            self.globPatterns = Self.globstarSlashVariants(for: pattern).map {
-                GlobPattern(pattern: $0, matchesPath: !matchesBasename)
+            self.matchers = Self.globstarSlashVariants(for: pattern).map {
+                PatternMatcher(pattern: $0, matchesPath: !matchesBasename)
             }
 
             if !matchesBasename, pattern.hasSuffix("/**") {
@@ -354,25 +356,19 @@ nonisolated private struct CompiledPattern: Sendable {
                 self.directoryPrefixPatterns = []
             }
         } else {
-            self.exactPattern = pattern
-            self.globPatterns = []
+            self.matchers = [.exact(pattern)]
             self.directoryPrefixPatterns = []
         }
     }
 
-    func matches(basename: String, relativePath: String, isDirectory: Bool) -> Bool {
+    func matches<Value: StringProtocol>(value: Value, isDirectory: Bool) -> Bool {
         guard !directoryOnly || isDirectory else { return false }
 
-        let value = matchesBasename ? basename : relativePath
-        if let exactPattern {
-            return value == exactPattern
-        }
-
-        if globPatterns.contains(where: { $0.matches(value) }) {
+        if matchers.contains(where: { $0.matches(value) }) {
             return true
         }
 
-        return isDirectory && directoryPrefixPatterns.contains { $0.matches(relativePath) }
+        return isDirectory && directoryPrefixPatterns.contains { $0.matches(value) }
     }
 
     private static func containsGlobSyntax(_ pattern: String) -> Bool {
@@ -408,6 +404,55 @@ nonisolated private struct CompiledPattern: Sendable {
         }
 
         return variants.sorted()
+    }
+}
+
+/// Common basename patterns stay in String's optimized native search
+/// operations. The general glob engine remains the compatibility path for
+/// multi-wildcard, single-character, and path-scoped patterns.
+nonisolated private enum PatternMatcher: Sendable {
+    case exact(String)
+    case prefix(String)
+    case suffix(String)
+    case contains(String)
+    case glob(GlobPattern)
+
+    init(pattern: String, matchesPath: Bool) {
+        guard !matchesPath, !pattern.contains("?") else {
+            self = .glob(GlobPattern(pattern: pattern, matchesPath: matchesPath))
+            return
+        }
+
+        let starCount = pattern.reduce(into: 0) { count, character in
+            if character == "*" {
+                count += 1
+            }
+        }
+
+        if starCount == 1, pattern.first == "*" {
+            self = .suffix(String(pattern.dropFirst()))
+        } else if starCount == 1, pattern.last == "*" {
+            self = .prefix(String(pattern.dropLast()))
+        } else if starCount == 2, pattern.first == "*", pattern.last == "*" {
+            self = .contains(String(pattern.dropFirst().dropLast()))
+        } else {
+            self = .glob(GlobPattern(pattern: pattern, matchesPath: matchesPath))
+        }
+    }
+
+    func matches<Value: StringProtocol>(_ value: Value) -> Bool {
+        switch self {
+        case .exact(let pattern):
+            return value.elementsEqual(pattern)
+        case .prefix(let prefix):
+            return value.hasPrefix(prefix)
+        case .suffix(let suffix):
+            return value.hasSuffix(suffix)
+        case .contains(let substring):
+            return value.range(of: substring) != nil
+        case .glob(let pattern):
+            return pattern.matches(value)
+        }
     }
 }
 
@@ -455,7 +500,7 @@ nonisolated private struct GlobPattern: Sendable {
         self.tokens = tokens
     }
 
-    func matches(_ value: String) -> Bool {
+    func matches<Value: StringProtocol>(_ value: Value) -> Bool {
         let characters = Array(value)
         var memo: [MemoKey: Bool] = [:]
 

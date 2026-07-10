@@ -158,7 +158,11 @@ extension AtomicDirectorySummarizer {
             guard visitedItems <= maxVisitedItems else { return profile }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
-            if exclusionMatcher.excludes(childURL, isDirectory: hintedIsDirectory) {
+            let childPath = childURL.path
+            if exclusionMatcher.excludesKnownNormalizedPath(
+                childPath,
+                isDirectory: hintedIsDirectory
+            ) {
                 if hintedIsDirectory {
                     enumerator.skipDescendants()
                 }
@@ -170,7 +174,8 @@ extension AtomicDirectorySummarizer {
                 let isDirectory = values.isDirectory ?? false
                 let isSymbolicLink = values.isSymbolicLink ?? false
 
-                if exclusionMatcher.excludes(childURL, isDirectory: isDirectory) {
+                if isDirectory != hintedIsDirectory,
+                   exclusionMatcher.excludesKnownNormalizedPath(childPath, isDirectory: isDirectory) {
                     if isDirectory {
                         enumerator.skipDescendants()
                     }

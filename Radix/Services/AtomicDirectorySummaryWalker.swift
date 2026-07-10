@@ -77,7 +77,11 @@ extension AtomicDirectorySummarizer {
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
-            if exclusionMatcher.excludes(childURL, isDirectory: hintedIsDirectory) {
+            let childPath = childURL.path
+            if exclusionMatcher.excludesKnownNormalizedPath(
+                childPath,
+                isDirectory: hintedIsDirectory
+            ) {
                 if hintedIsDirectory {
                     enumerator.skipDescendants()
                 }
@@ -86,7 +90,11 @@ extension AtomicDirectorySummarizer {
 
             do {
                 let childMetadata = try metadataLoader.atomicSummaryMetadata(for: childURL)
-                if exclusionMatcher.excludes(childURL, isDirectory: childMetadata.isDirectory) {
+                if childMetadata.isDirectory != hintedIsDirectory,
+                   exclusionMatcher.excludesKnownNormalizedPath(
+                       childPath,
+                       isDirectory: childMetadata.isDirectory
+                   ) {
                     if childMetadata.isDirectory {
                         enumerator.skipDescendants()
                     }
@@ -163,13 +171,6 @@ extension AtomicDirectorySummarizer {
                 )
             }
 
-            guard !exclusionMatcher.excludes(
-                childEntry.url,
-                isDirectory: childEntry.metadata?.isDirectory ?? childEntry.url.hasDirectoryPath
-            ) else {
-                continue
-            }
-
             let childMetadata: NodeMetadata
             if let preloadedMetadata = childEntry.metadata {
                 childMetadata = preloadedMetadata
@@ -180,6 +181,13 @@ extension AtomicDirectorySummarizer {
                     recordAtomicWarning(for: childEntry.url, error: error, in: state)
                     continue
                 }
+            }
+
+            guard !exclusionMatcher.excludesKnownNormalizedPath(
+                childEntry.url.path,
+                isDirectory: childMetadata.isDirectory
+            ) else {
+                continue
             }
 
             try await accumulateAtomicSummary(
@@ -214,7 +222,6 @@ extension AtomicDirectorySummarizer {
         emissionState: inout ScanEmissionState
     ) async throws {
         try cancellationCheck()
-        guard !exclusionMatcher.excludes(url, isDirectory: metadata.isDirectory) else { return }
         updateAtomicAccessibility(metadata.isReadable, in: state)
 
         if metadata.isDirectory {
@@ -265,12 +272,6 @@ extension AtomicDirectorySummarizer {
         skipDescendants: () -> Void
     ) async throws {
         try cancellationCheck()
-        guard !exclusionMatcher.excludes(url, isDirectory: metadata.isDirectory) else {
-            if metadata.isDirectory {
-                skipDescendants()
-            }
-            return
-        }
         updateAtomicAccessibility(metadata.isReadable, in: state)
 
         guard metadata.isDirectory else {
