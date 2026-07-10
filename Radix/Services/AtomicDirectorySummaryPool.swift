@@ -50,6 +50,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         var completedWorkItems = 0
         var pendingWorkItems: Int
         var visitedByActiveLease: [Int: Int] = [:]
+        var latestVisitedPath: String?
         var fraction = 0.0
     }
 
@@ -152,6 +153,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
             job.visitedByActiveLease[leaseID] ?? 0,
             delta
         )
+        job.latestVisitedPath = currentPath
         jobs[jobID] = job
         emitIfDueLocked(currentPath: currentPath, force: false)
         lock.unlock()
@@ -177,7 +179,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
             max(discoveredWorkItems, 0)
         )
         jobs[jobID] = job
-        emitIfDueLocked(currentPath: currentPath, force: false)
+        emitIfDueLocked(currentPath: job.latestVisitedPath ?? currentPath, force: false)
         lock.unlock()
     }
 
@@ -197,6 +199,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         job.completedWorkItems = 0
         job.pendingWorkItems = max(pendingWorkItems, 0)
         job.visitedByActiveLease.removeAll()
+        job.latestVisitedPath = nil
         jobs[jobID] = job
         emitIfDueLocked(currentPath: currentPath, force: false)
         lock.unlock()
