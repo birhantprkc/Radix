@@ -78,10 +78,14 @@ struct ContentView: View {
         }
         .focusedSceneValue(\.inspectorVisibility, $showsInspector)
         .onChange(of: appModel.scanComparison?.id) { previousID, currentID in
-            updateSidebarPresentationForComparison(
-                wasComparing: previousID != nil,
-                isComparing: currentID != nil
-            )
+            Task { @MainActor in
+                await Task.yield()
+                guard appModel.scanComparison?.id == currentID else { return }
+                updateSidebarPresentationForComparison(
+                    wasComparing: previousID != nil,
+                    isComparing: currentID != nil
+                )
+            }
         }
         .onChange(of: appModel.archiveOperation) { previousOperation, currentOperation in
             guard previousOperation?.kind == .compare,
@@ -711,7 +715,6 @@ private extension ContentView {
 
     func confirmComparisonSetup() {
         appModel.confirmComparisonSetup()
-        restoreInspectorIfComparisonInactive()
     }
 
     func closeScanComparison() {

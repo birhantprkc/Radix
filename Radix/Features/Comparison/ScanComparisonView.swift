@@ -17,13 +17,14 @@ struct ScanComparisonView: View {
     private static let initialSortOrder = [
         ScanComparisonRowComparator.defaultOrder
     ]
+    private static let allChangeKinds = Set(ScanComparisonChangeKind.allCases)
 
     let comparison: ScanComparison
     let actions: ScanComparisonRowActions
     let onClose: () -> Void
 
     @State private var displayMode: ScanComparisonDisplayMode = .significant
-    @State private var impactFilter: ScanComparisonImpactFilter
+    @State private var selectedChangeKinds: Set<ScanComparisonChangeKind>
     @State private var searchText = ""
     @State private var focusedLocationPath: String?
     @State private var sortOrder: [ScanComparisonRowComparator]
@@ -42,24 +43,17 @@ struct ScanComparisonView: View {
         self.onClose = onClose
 
         let sortOrder = Self.initialSortOrder
-        let impactFilter: ScanComparisonImpactFilter = if comparison.summary.allocatedDelta > 0 {
-            .takingSpace
-        } else if comparison.summary.allocatedDelta < 0 {
-            .freeingSpace
-        } else {
-            .allActivity
-        }
-        self._impactFilter = State(initialValue: impactFilter)
+        let selectedChangeKinds = Self.allChangeKinds
+        self._selectedChangeKinds = State(initialValue: selectedChangeKinds)
         self._sortOrder = State(initialValue: sortOrder)
         self._displayedRows = State(initialValue: ScanComparisonRowQuery(
-            changeKind: nil,
-            impactFilter: impactFilter,
+            changeKinds: selectedChangeKinds,
             searchText: "",
             sortOrder: sortOrder,
             pathPrefix: nil
         ).applying(to: comparison.rows))
         self._projection = State(initialValue: comparison.changeTree.significantProjection(
-            impactFilter: impactFilter
+            changeKinds: selectedChangeKinds
         ))
     }
 
@@ -88,11 +82,12 @@ struct ScanComparisonView: View {
                 .help("Back to Scan")
             }
         }
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search Changes")
         .onChange(of: rowQuery) { _, query in
             refreshDisplayedRows(using: query)
         }
-        .onChange(of: impactFilter) { _, filter in
-            projection = comparison.changeTree.significantProjection(impactFilter: filter)
+        .onChange(of: selectedChangeKinds) { _, changeKinds in
+            projection = comparison.changeTree.significantProjection(changeKinds: changeKinds)
             aggregateSelection.removeAll()
         }
         .onChange(of: displayMode) { _, mode in
@@ -105,7 +100,7 @@ struct ScanComparisonView: View {
         }
         .onChange(of: comparison.id) { _, _ in
             refreshDisplayedRows(using: rowQuery)
-            projection = comparison.changeTree.significantProjection(impactFilter: impactFilter)
+            projection = comparison.changeTree.significantProjection(changeKinds: selectedChangeKinds)
         }
     }
 
@@ -143,7 +138,7 @@ struct ScanComparisonView: View {
                 coverageBanner
             }
 
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 Picker("Detail", selection: $displayMode) {
                     ForEach(ScanComparisonDisplayMode.allCases) { mode in
                         Text(mode.title).tag(mode)
@@ -151,49 +146,43 @@ struct ScanComparisonView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 240)
+                .frame(width: 240, alignment: .leading)
                 .accessibilityLabel("Comparison detail")
 
                 Divider()
                     .frame(height: 22)
 
-                Picker("Show", selection: $impactFilter) {
-                    ForEach(ScanComparisonImpactFilter.allCases) { filter in
-                        Label(filter.title, systemImage: filter.systemImageName).tag(filter)
+                Text("Show")
+
+                Menu(changeKindSelectionTitle) {
+                    ForEach(ScanComparisonChangeKind.allCases) { kind in
+                        Toggle(kind.title, isOn: changeKindBinding(for: kind))
                     }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
-                .accessibilityLabel("Show changes")
 
-                Spacer(minLength: 16)
+                    Divider()
 
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-
-                    TextField("Search names and paths", text: $searchText)
-                        .textFieldStyle(.plain)
-
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Clear Search")
+                    Button("Select All") {
+                        selectedChangeKinds = Self.allChangeKinds
                     }
-                }
-                .padding(.horizontal, 8)
-                .frame(width: 280, height: 28)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-            }
+                    .disabled(selectedChangeKinds == Self.allChangeKinds)
 
-            if !comparison.rows.isEmpty {
-                comparisonStatus
+                    Button("Clear") {
+                        selectedChangeKinds.removeAll()
+                    }
+                    .disabled(selectedChangeKinds.isEmpty)
+                }
+                .frame(width: 120, alignment: .leading)
+                .help(selectedChangeKindDescription)
+                .accessibilityLabel("Shown change types")
+
+                if !comparison.rows.isEmpty {
+                    comparisonStatus
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                } else {
+                    Spacer(minLength: 16)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if effectiveDisplayMode == .significant, let selectedAggregateNode {
                 aggregateSelectionActions(for: selectedAggregateNode)
@@ -203,6 +192,7 @@ struct ScanComparisonView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var changeHeadline: String {
@@ -238,6 +228,7 @@ struct ScanComparisonView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
@@ -337,6 +328,41 @@ struct ScanComparisonView: View {
         .frame(minWidth: 66, alignment: .leading)
     }
 
+    private var selectedChangeKindDescription: String {
+        let selectedKinds = ScanComparisonChangeKind.allCases.filter(selectedChangeKinds.contains)
+        if selectedKinds.isEmpty {
+            return "No change types selected"
+        }
+        return selectedKinds.map(\.title).joined(separator: ", ")
+    }
+
+    private var changeKindSelectionTitle: String {
+        if selectedChangeKinds == Self.allChangeKinds {
+            return "All Types"
+        }
+        if selectedChangeKinds.isEmpty {
+            return "None"
+        }
+        let selectedKinds = ScanComparisonChangeKind.allCases.filter(selectedChangeKinds.contains)
+        if selectedKinds.count <= 2 {
+            return selectedKinds.map(\.title).joined(separator: ", ")
+        }
+        return "\(selectedKinds.count) Types"
+    }
+
+    private func changeKindBinding(for kind: ScanComparisonChangeKind) -> Binding<Bool> {
+        Binding(
+            get: { selectedChangeKinds.contains(kind) },
+            set: { isSelected in
+                if isSelected {
+                    selectedChangeKinds.insert(kind)
+                } else {
+                    selectedChangeKinds.remove(kind)
+                }
+            }
+        )
+    }
+
     private var effectiveDisplayMode: ScanComparisonDisplayMode {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? displayMode
@@ -369,20 +395,22 @@ struct ScanComparisonView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+        .lineLimit(1)
         .accessibilityElement(children: .combine)
     }
 
     private var significantStatusText: String {
         let percentage = projection.representedFraction.formatted(.percent.precision(.fractionLength(0)))
-        let effect = impactFilter.statusNoun
-        if projection.hiddenRootCount == 0 {
-            return "Showing all meaningful \(effect) contributors; expand folders to trace their source."
+        if selectedChangeKinds.isEmpty {
+            return "No change types selected."
         }
-        return "Named contributors represent \(percentage) of \(effect); \(projection.groupedAffectedCount.formatted()) smaller changes are grouped under Other."
+        if projection.hiddenRootCount == 0 {
+            return "Showing all meaningful contributors; expand folders to trace their source."
+        }
+        return "Named contributors represent \(percentage) of selected impact; \(projection.groupedAffectedCount.formatted()) smaller changes are grouped under Other."
     }
 
     private var significantTable: some View {
@@ -391,60 +419,45 @@ struct ScanComparisonView: View {
             children: \.children,
             selection: $aggregateSelection
         ) {
-            TableColumn("Contributor") { node in
-                HStack(spacing: 8) {
-                    Image(systemName: itemSymbol(for: node))
-                        .foregroundStyle(node.isRemainder ? Color.secondary : Color.accentColor)
-                        .frame(width: 16)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(node.name)
-                            .fontWeight(node.isRemainder ? .regular : .medium)
-                            .lineLimit(1)
-
-                        if node.isRemainder {
-                            Text("Switch to All Changes to inspect every item")
-                        } else if node.relativePath != node.name {
-                            Text(node.relativePath)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(node.isRemainder ? .secondary : .primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                }
+            TableColumn("Item") { node in
+                comparisonItemLabel(
+                    name: node.name,
+                    symbol: itemSymbol(for: node),
+                    detail: node.isRemainder
+                        ? "Switch to All Changes to inspect every item"
+                        : itemLocation(for: node),
+                    isRemainder: node.isRemainder
+                )
             }
-            .width(min: 280, ideal: 520)
+            .width(min: 280, ideal: 500)
 
-            TableColumn("Taking Space") { node in
+            TableColumn("Change") { node in
+                aggregateChangeLabel(for: node)
+            }
+            .width(min: 105, ideal: 120)
+
+            TableColumn("Increase") { node in
                 Text(node.increasedAllocatedSize == 0 ? "–" : "+" + RadixFormatters.size(node.increasedAllocatedSize))
                     .foregroundStyle(node.increasedAllocatedSize == 0 ? Color.secondary : Color.red)
                     .monospacedDigit()
-                    .accessibilityLabel("Taking \(RadixFormatters.size(node.increasedAllocatedSize))")
+                    .accessibilityLabel("Increased by \(RadixFormatters.size(node.increasedAllocatedSize))")
             }
-            .width(min: 110, ideal: 130)
+            .width(min: 120, ideal: 140)
 
-            TableColumn("Freeing Space") { node in
+            TableColumn("Decrease") { node in
                 Text(node.reclaimedAllocatedSize == 0 ? "–" : "−" + RadixFormatters.size(node.reclaimedAllocatedSize))
                     .foregroundStyle(node.reclaimedAllocatedSize == 0 ? Color.secondary : Color.green)
                     .monospacedDigit()
-                    .accessibilityLabel("Freeing \(RadixFormatters.size(node.reclaimedAllocatedSize))")
+                    .accessibilityLabel("Decreased by \(RadixFormatters.size(node.reclaimedAllocatedSize))")
             }
-            .width(min: 110, ideal: 130)
+            .width(min: 135, ideal: 155)
 
-            TableColumn("Net") { node in
+            TableColumn("Net Change") { node in
                 Text(signedSize(node.allocatedDelta))
                     .foregroundStyle(deltaColor(node.allocatedDelta))
                     .monospacedDigit()
             }
-            .width(min: 100, ideal: 120)
-
-            TableColumn("Changes") { node in
-                Text(node.affectedCount.formatted())
-                    .monospacedDigit()
-                    .accessibilityLabel("\(node.affectedCount.formatted()) affected items")
-            }
-            .width(min: 75, ideal: 90)
+            .width(min: 105, ideal: 120)
         }
         .contextMenu(forSelectionType: ScanComparisonChangeTreeNode.ID.self) { ids in
             aggregateContextMenu(for: ids)
@@ -460,46 +473,38 @@ struct ScanComparisonView: View {
 
     private var comparisonTable: some View {
         Table(of: ScanComparisonRow.self, selection: $selection, sortOrder: $sortOrder) {
+            TableColumn("Item", sortUsing: ScanComparisonRowComparator(field: .relativePath)) { row in
+                comparisonItemLabel(
+                    name: row.name,
+                    symbol: itemSymbol(for: row),
+                    detail: itemLocation(for: row)
+                )
+            }
+            .width(min: 280, ideal: 500)
+
             TableColumn("Change", sortUsing: ScanComparisonRowComparator(field: .changeKind)) { row in
                 Label(row.kind.title, systemImage: row.kind.systemImageName)
                     .foregroundStyle(row.kind.tintColor)
             }
             .width(min: 105, ideal: 120)
 
-            TableColumn("Item", sortUsing: ScanComparisonRowComparator(field: .relativePath)) { row in
-                HStack(spacing: 8) {
-                    Image(systemName: itemSymbol(for: row))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(row.name)
-                            .lineLimit(1)
-
-                        Text(itemLocation(for: row))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-                }
-            }
-            .width(min: 280, ideal: 500)
-
-            TableColumn("Earlier", sortUsing: ScanComparisonRowComparator(field: .beforeAllocatedSize)) { row in
-                Text(sizeText(row.beforeAllocatedSize))
+            TableColumn("Increase", sortUsing: ScanComparisonRowComparator(field: .allocatedDelta)) { row in
+                Text(row.allocatedDelta > 0 ? "+" + RadixFormatters.size(row.allocatedDelta) : "–")
+                    .foregroundStyle(row.allocatedDelta > 0 ? Color.red : Color.secondary)
                     .monospacedDigit()
+                    .accessibilityLabel(positiveChangeAccessibilityLabel(for: row))
             }
-            .width(min: 105, ideal: 120)
+            .width(min: 120, ideal: 140)
 
-            TableColumn("Later", sortUsing: ScanComparisonRowComparator(field: .afterAllocatedSize)) { row in
-                Text(sizeText(row.afterAllocatedSize))
+            TableColumn("Decrease", sortUsing: ScanComparisonRowComparator(field: .allocatedDelta)) { row in
+                Text(row.allocatedDelta < 0 ? "−" + RadixFormatters.size(abs(row.allocatedDelta)) : "–")
+                    .foregroundStyle(row.allocatedDelta < 0 ? Color.green : Color.secondary)
                     .monospacedDigit()
+                    .accessibilityLabel(negativeChangeAccessibilityLabel(for: row))
             }
-            .width(min: 105, ideal: 120)
+            .width(min: 135, ideal: 155)
 
-            TableColumn("Delta", sortUsing: ScanComparisonRowComparator(field: .allocatedDelta)) { row in
+            TableColumn("Net Change", sortUsing: ScanComparisonRowComparator(field: .allocatedDelta)) { row in
                 Text(signedSize(row.allocatedDelta))
                     .foregroundStyle(deltaColor(row.allocatedDelta))
                     .monospacedDigit()
@@ -516,7 +521,24 @@ struct ScanComparisonView: View {
             guard let row = singleRow(in: ids), actions.canReveal(row) else { return }
             actions.reveal(row)
         }
-        .alternatingRowBackgrounds(.disabled)
+    }
+
+    @ViewBuilder
+    private func aggregateChangeLabel(for node: ScanComparisonChangeTreeNode) -> some View {
+        if node.isRemainder {
+            Label("Grouped", systemImage: "ellipsis.circle")
+                .foregroundStyle(.secondary)
+        } else if node.affectedCount == 1,
+                  let directRowID = node.directRowID,
+                  let row = comparison.rows.first(where: { $0.id == directRowID }),
+                  selectedChangeKinds.contains(row.kind) {
+            Label(row.kind.title, systemImage: row.kind.systemImageName)
+                .foregroundStyle(row.kind.tintColor)
+        } else {
+            Label("Summary", systemImage: "list.bullet.indent")
+                .foregroundStyle(.secondary)
+                .help("\(node.affectedCount.formatted()) changes summarized")
+        }
     }
 
     private var selectedRow: ScanComparisonRow? {
@@ -709,15 +731,17 @@ struct ScanComparisonView: View {
     }
 
     private var emptyStateDescription: String {
-        comparison.rows.isEmpty
+        if selectedChangeKinds.isEmpty {
+            return "Choose one or more change types to display."
+        }
+        return comparison.rows.isEmpty
             ? "No tracked size changes were found."
             : "Choose a different view or adjust your search."
     }
 
     private var rowQuery: ScanComparisonRowQuery {
         ScanComparisonRowQuery(
-            changeKind: nil,
-            impactFilter: impactFilter,
+            changeKinds: selectedChangeKinds,
             searchText: searchText,
             sortOrder: sortOrder,
             pathPrefix: focusedLocationPath
@@ -730,9 +754,40 @@ struct ScanComparisonView: View {
         selection.formIntersection(rows.lazy.map(\.id))
     }
 
-    private func sizeText(_ size: Int64?) -> String {
-        guard let size else { return "-" }
-        return RadixFormatters.size(size)
+    private func positiveChangeAccessibilityLabel(for row: ScanComparisonRow) -> String {
+        guard row.allocatedDelta > 0 else { return "No increase" }
+        return "Increased by \(RadixFormatters.size(row.allocatedDelta))"
+    }
+
+    private func negativeChangeAccessibilityLabel(for row: ScanComparisonRow) -> String {
+        guard row.allocatedDelta < 0 else { return "No decrease" }
+        return "Decreased by \(RadixFormatters.size(abs(row.allocatedDelta)))"
+    }
+
+    private func comparisonItemLabel(
+        name: String,
+        symbol: String,
+        detail: String,
+        isRemainder: Bool = false
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name)
+                    .foregroundStyle(isRemainder ? Color.secondary : Color.primary)
+                    .lineLimit(1)
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+        }
     }
 
     private func itemLocation(for row: ScanComparisonRow) -> String {
@@ -740,9 +795,17 @@ struct ScanComparisonView: View {
             return "\(movedFromRelativePath) → \(row.relativePath)"
         }
 
-        let components = row.relativePath.split(separator: "/")
+        return itemLocation(relativePath: row.relativePath, itemKind: row.itemKind)
+    }
+
+    private func itemLocation(for node: ScanComparisonChangeTreeNode) -> String {
+        itemLocation(relativePath: node.relativePath, itemKind: itemKind(for: node))
+    }
+
+    private func itemLocation(relativePath: String, itemKind: String) -> String {
+        let components = relativePath.split(separator: "/")
         let parent = components.dropLast().joined(separator: "/")
-        return parent.isEmpty ? row.itemKind : parent
+        return parent.isEmpty ? itemKind : parent
     }
 
     private func itemSymbol(for row: ScanComparisonRow) -> String {
@@ -756,7 +819,14 @@ struct ScanComparisonView: View {
         if node.isRemainder {
             return "ellipsis.circle"
         }
+        if itemKind(for: node) == "Package" {
+            return "shippingbox.fill"
+        }
         return node.isDirectory ? "folder.fill" : "doc.fill"
+    }
+
+    private func itemKind(for node: ScanComparisonChangeTreeNode) -> String {
+        (node.afterNode ?? node.beforeNode)?.itemKind ?? (node.isDirectory ? "Folder" : "Item")
     }
 
     private func comparisonDate(_ date: Date) -> String {
@@ -797,47 +867,6 @@ private enum ScanComparisonDisplayMode: String, CaseIterable, Identifiable {
             return "Significant"
         case .allChanges:
             return "All Changes"
-        }
-    }
-}
-
-private extension ScanComparisonImpactFilter {
-    var title: String {
-        switch self {
-        case .takingSpace:
-            return "Taking Space"
-        case .freeingSpace:
-            return "Freeing Space"
-        case .moved:
-            return "Moves"
-        case .allActivity:
-            return "Everything"
-        }
-    }
-
-    var systemImageName: String {
-        switch self {
-        case .takingSpace:
-            return "arrow.up.right"
-        case .freeingSpace:
-            return "arrow.down.right"
-        case .moved:
-            return "arrow.left.arrow.right"
-        case .allActivity:
-            return "waveform.path.ecg"
-        }
-    }
-
-    var statusNoun: String {
-        switch self {
-        case .takingSpace:
-            return "storage growth"
-        case .freeingSpace:
-            return "reclaimed storage"
-        case .moved:
-            return "moves"
-        case .allActivity:
-            return "storage activity"
         }
     }
 }

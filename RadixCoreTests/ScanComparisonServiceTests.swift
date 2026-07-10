@@ -293,9 +293,11 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(location.representativeRelativePath, "Documents/new-name.bin")
         XCTAssertEqual(location.afterNode?.id, "/scan/Documents")
 
-        let movedProjection = comparison.changeTree.significantProjection(impactFilter: .moved)
+        let movedProjection = comparison.changeTree.significantProjection(changeKinds: [.moved])
         XCTAssertEqual(movedProjection.roots.map(\.relativePath), ["Documents"])
-        let allActivityProjection = comparison.changeTree.significantProjection(impactFilter: .allActivity)
+        let allActivityProjection = comparison.changeTree.significantProjection(
+            changeKinds: Set(ScanComparisonChangeKind.allCases)
+        )
         XCTAssertEqual(allActivityProjection.roots.map(\.relativePath), ["Documents"])
     }
 
@@ -570,7 +572,6 @@ final class ScanComparisonServiceTests: XCTestCase {
             ),
         ]
         let query = ScanComparisonRowQuery(
-            changeKind: nil,
             searchText: "",
             sortOrder: [ScanComparisonRowComparator(field: .allocatedDelta, order: .reverse)]
         )
@@ -602,7 +603,7 @@ final class ScanComparisonServiceTests: XCTestCase {
             ),
         ]
         let query = ScanComparisonRowQuery(
-            changeKind: .added,
+            changeKinds: [.added],
             searchText: "application support",
             sortOrder: []
         )
@@ -638,7 +639,6 @@ final class ScanComparisonServiceTests: XCTestCase {
             ),
         ]
         let query = ScanComparisonRowQuery(
-            changeKind: nil,
             searchText: "",
             sortOrder: [],
             pathPrefix: "Library"
@@ -824,7 +824,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         )
 
         let projection = comparison.changeTree.significantProjection(
-            impactFilter: .allActivity,
+            changeKinds: Set(ScanComparisonChangeKind.allCases),
             coverageTarget: 0.95
         )
 
@@ -835,7 +835,34 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertTrue(projection.roots.contains(where: \.isRemainder))
     }
 
-    func testImpactQueryUsesSignedBytesAndMovementIndependently() {
+    func testSignificantProjectionHonorsExactChangeKindSelection() async throws {
+        let grewBefore = makeTestFileNode(id: "/scan/grew.bin", name: "grew.bin", size: 10)
+        let beforeRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [grewBefore])
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [grewBefore]])
+
+        let grewAfter = makeTestFileNode(id: "/scan/grew.bin", name: "grew.bin", size: 20)
+        let added = makeTestFileNode(id: "/scan/added.bin", name: "added.bin", size: 50)
+        let afterRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [grewAfter, added])
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [grewAfter, added],
+        ])
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: beforeRoot, store: beforeStore),
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+
+        let addedProjection = comparison.changeTree.significantProjection(changeKinds: [.added])
+        let grewProjection = comparison.changeTree.significantProjection(changeKinds: [.grew])
+        let combinedProjection = comparison.changeTree.significantProjection(changeKinds: [.added, .grew])
+
+        XCTAssertEqual(addedProjection.roots.map(\.relativePath), ["added.bin"])
+        XCTAssertEqual(addedProjection.roots.first?.increasedAllocatedSize, 50)
+        XCTAssertEqual(grewProjection.roots.map(\.relativePath), ["grew.bin"])
+        XCTAssertEqual(grewProjection.roots.first?.increasedAllocatedSize, 10)
+        XCTAssertEqual(Set(combinedProjection.roots.map(\.relativePath)), ["added.bin", "grew.bin"])
+    }
+
+    func testRowQueryCombinesSelectedChangeKinds() {
         let movedBefore = makeTestFileNode(id: "/before/old.bin", name: "old.bin", size: 100)
         let movedAfter = makeTestFileNode(id: "/after/new.bin", name: "new.bin", size: 150)
         let movedAndGrew = ScanComparisonRow(
@@ -853,27 +880,24 @@ final class ScanComparisonServiceTests: XCTestCase {
         )
         let rows = [movedAndGrew, removed]
 
-        let taking = ScanComparisonRowQuery(
-            changeKind: nil,
-            impactFilter: .takingSpace,
+        let movedAndRemoved = ScanComparisonRowQuery(
+            changeKinds: [.moved, .removed],
             searchText: "",
             sortOrder: []
         ).applying(to: rows)
-        let freeing = ScanComparisonRowQuery(
-            changeKind: nil,
-            impactFilter: .freeingSpace,
+        let removedOnly = ScanComparisonRowQuery(
+            changeKinds: [.removed],
             searchText: "",
             sortOrder: []
         ).applying(to: rows)
-        let moved = ScanComparisonRowQuery(
-            changeKind: nil,
-            impactFilter: .moved,
+        let movedOnly = ScanComparisonRowQuery(
+            changeKinds: [.moved],
             searchText: "",
             sortOrder: []
         ).applying(to: rows)
 
-        XCTAssertEqual(taking.map(\.relativePath), ["new.bin"])
-        XCTAssertEqual(freeing.map(\.relativePath), ["removed.bin"])
-        XCTAssertEqual(moved.map(\.relativePath), ["new.bin"])
+        XCTAssertEqual(movedAndRemoved.map(\.relativePath), ["new.bin", "removed.bin"])
+        XCTAssertEqual(removedOnly.map(\.relativePath), ["removed.bin"])
+        XCTAssertEqual(movedOnly.map(\.relativePath), ["new.bin"])
     }
 }
