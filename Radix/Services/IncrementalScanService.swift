@@ -23,7 +23,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         self.planner = planner
     }
 
-    func scan(
+    nonisolated func scan(
         target: ScanTarget,
         options: ScanOptions
     ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
@@ -40,7 +40,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         }
     }
 
-    func rescan(
+    nonisolated func rescan(
         target: ScanTarget,
         options: ScanOptions,
         from baseline: ScanSnapshot
@@ -126,7 +126,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         }
     }
 
-    private func performIncrementalScan(
+    private nonisolated func performIncrementalScan(
         target: ScanTarget,
         options: ScanOptions,
         baseline: ScanSnapshot,
@@ -166,9 +166,9 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                     replacementSnapshot = snapshot
                 }
             }
-            let replacement = try replacementSnapshot.unwrap(
-                or: FileSystemEventHistoryError.targetUnavailable(nodeID)
-            )
+            guard let replacement = replacementSnapshot else {
+                throw FileSystemEventHistoryError.targetUnavailable(nodeID)
+            }
             replacements[nodeID] = replacement.treeStore
             replacementWarnings.append(contentsOf: replacement.scanWarnings)
         }
@@ -202,7 +202,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         continuation.finish()
     }
 
-    private func forwardFullScan(
+    private nonisolated func forwardFullScan(
         target: ScanTarget,
         options: ScanOptions,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
@@ -213,7 +213,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         continuation.finish()
     }
 
-    private func bridge(
+    private nonisolated func bridge(
         _ stream: AsyncThrowingStream<ScanProgressEvent, Error>,
         finishedTransform: @escaping @Sendable (ScanSnapshot) -> ScanSnapshot
     ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
@@ -238,7 +238,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         }
     }
 
-    private func canIncrementallyRescan(
+    private nonisolated func canIncrementallyRescan(
         _ baseline: ScanSnapshot,
         target: ScanTarget,
         options: ScanOptions
@@ -256,7 +256,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         return baseline.root.fileIdentity == nil || liveIdentity == baseline.root.fileIdentity
     }
 
-    private func eligibleCheckpoint(
+    private nonisolated func eligibleCheckpoint(
         _ checkpoint: ScanIncrementalCheckpoint?,
         for snapshot: ScanSnapshot,
         options: ScanOptions
@@ -265,7 +265,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         return options.includeCloudStorage ? nil : checkpoint
     }
 
-    private func snapshot(
+    private nonisolated func snapshot(
         _ snapshot: ScanSnapshot,
         checkpoint: ScanIncrementalCheckpoint?
     ) -> ScanSnapshot {
@@ -284,7 +284,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         )
     }
 
-    private func refreshedSnapshot(
+    private nonisolated func refreshedSnapshot(
         _ snapshot: ScanSnapshot,
         checkpoint: ScanIncrementalCheckpoint,
         startedAt: Date
@@ -301,12 +301,5 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             source: .live,
             incrementalCheckpoint: checkpoint
         )
-    }
-}
-
-private extension Optional {
-    func unwrap(or error: @autoclosure () -> Error) throws -> Wrapped {
-        guard let self else { throw error() }
-        return self
     }
 }

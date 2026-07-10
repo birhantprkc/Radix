@@ -14,8 +14,8 @@ enum AppModelPhase: Equatable, Sendable {
 }
 
 protocol ScanEventStreaming: Sendable {
-    func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error>
-    func rescan(
+    nonisolated func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error>
+    nonisolated func rescan(
         target: ScanTarget,
         options: ScanOptions,
         from baseline: ScanSnapshot
@@ -23,7 +23,7 @@ protocol ScanEventStreaming: Sendable {
 }
 
 extension ScanEventStreaming {
-    func rescan(
+    nonisolated func rescan(
         target: ScanTarget,
         options: ScanOptions,
         from baseline: ScanSnapshot
