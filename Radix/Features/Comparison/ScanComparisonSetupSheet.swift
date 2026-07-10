@@ -135,6 +135,25 @@ private struct ScanComparisonCandidateGroup: View {
                 alignment: .topLeading
             )
             .padding(8)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .background {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.accentColor.opacity(isDropTargeted ? 0.1 : 0))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        Color.accentColor.opacity(isDropTargeted ? 0.9 : 0),
+                        style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+                    )
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                guard !actionsDisabled, let sourceURL = urls.first else { return false }
+                onDropSnapshot(sourceURL, slot)
+                return true
+            } isTargeted: { isTargeted in
+                isDropTargeted = isTargeted && !actionsDisabled
+            }
         } label: {
             HStack(spacing: 8) {
                 Text(slot.title)
@@ -148,24 +167,6 @@ private struct ScanComparisonCandidateGroup: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.accentColor.opacity(isDropTargeted ? 0.1 : 0))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(
-                    Color.accentColor.opacity(isDropTargeted ? 0.9 : 0),
-                    style: StrokeStyle(lineWidth: 2, dash: [6, 4])
-                )
-        }
-        .dropDestination(for: URL.self) { urls, _ in
-            guard !actionsDisabled, let sourceURL = urls.first else { return false }
-            onDropSnapshot(sourceURL, slot)
-            return true
-        } isTargeted: { isTargeted in
-            isDropTargeted = isTargeted && !actionsDisabled
-        }
     }
 
     private var emptyContent: some View {

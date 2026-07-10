@@ -526,8 +526,9 @@ struct ScanComparisonView: View {
     @ViewBuilder
     private func aggregateChangeLabel(for node: ScanComparisonChangeTreeNode) -> some View {
         if node.isRemainder {
-            Label("Grouped", systemImage: "ellipsis.circle")
+            Text("-")
                 .foregroundStyle(.secondary)
+                .accessibilityLabel("Grouped smaller changes")
         } else if node.affectedCount == 1,
                   let directRowID = node.directRowID,
                   let row = comparison.rows.first(where: { $0.id == directRowID }),
