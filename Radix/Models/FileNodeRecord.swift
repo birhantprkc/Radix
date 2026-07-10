@@ -26,7 +26,7 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
     let isSynthetic: Bool
     let isAutoSummarized: Bool
 
-    nonisolated init(
+    init(
         id: String,
         url: URL,
         name: String,
@@ -64,7 +64,7 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
         self.isAutoSummarized = isAutoSummarized
     }
 
-    nonisolated var itemKind: String {
+    var itemKind: String {
         if isSynthetic {
             return "System Data"
         }
@@ -80,11 +80,11 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
         return isDirectory ? "Folder" : "File"
     }
 
-    nonisolated var supportsFileActions: Bool {
+    var supportsFileActions: Bool {
         !isSynthetic
     }
 
-    nonisolated static func directory(
+    static func directory(
         id: String,
         url: URL,
         name: String,

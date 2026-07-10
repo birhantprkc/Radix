@@ -81,7 +81,6 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
     private var isAccessible = true
     private var warnings: [ScanWarning] = []
     private var hardLinkClaims: [HardLinkClaim] = []
-    private var visitedItemCount = 0
 
     func updateAccessibility(_ readable: Bool) {
         lock.lock()
@@ -104,7 +103,6 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
         isAccessible = isAccessible && partial.isAccessible
         warnings.append(contentsOf: partial.warnings)
         hardLinkClaims.append(contentsOf: partial.hardLinkClaims)
-        visitedItemCount += partial.visitedItemCount
         lock.unlock()
     }
 
@@ -129,12 +127,6 @@ nonisolated private struct AtomicSummaryPartial: Sendable {
     var isAccessible = true
     var warnings: [ScanWarning] = []
     var hardLinkClaims: [HardLinkClaim] = []
-    var visitedItemCount = 0
-
-    mutating func recordVisitedItem() {
-        visitedItemCount += 1
-    }
-
     mutating func updateAccessibility(_ readable: Bool) {
         isAccessible = isAccessible && readable
     }
@@ -305,7 +297,6 @@ extension AtomicDirectorySummarizer {
         while let nextObject = enumerator.nextObject() {
             try Task.checkCancellation()
             guard let childURL = nextObject as? URL else { continue }
-            partial.recordVisitedItem()
             workerVisitedItemCount += 1
             if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
                 progressReporter.emit(currentURL: childURL)

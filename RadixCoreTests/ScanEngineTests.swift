@@ -1388,6 +1388,8 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(rootChildren(in: parallelSnapshot).map(\.name), rootChildren(in: serialSnapshot).map(\.name))
         XCTAssertFalse(rootChildren(in: parallelSnapshot).contains(where: { $0.name == "excluded.log" }))
         XCTAssertEqual(parallelSnapshot.root.descendantFileCount, serialSnapshot.root.descendantFileCount)
+        XCTAssertEqual(parallelSnapshot.root.isAccessible, serialSnapshot.root.isAccessible)
+        XCTAssertEqual(parallelSnapshot.root.isSelfAccessible, serialSnapshot.root.isSelfAccessible)
         XCTAssertEqual(parallelSnapshot.root.logicalSize, serialSnapshot.root.logicalSize)
         XCTAssertEqual(parallelSnapshot.root.allocatedSize, serialSnapshot.root.allocatedSize)
         XCTAssertEqual(parallelSnapshot.aggregateStats.fileCount, serialSnapshot.aggregateStats.fileCount)
@@ -1442,6 +1444,8 @@ final class ScanEngineTests: XCTestCase {
         for serialChild in rootChildren(in: serialSnapshot) {
             let parallelChild = try XCTUnwrap(rootChildren(in: parallelSnapshot).first { $0.id == serialChild.id })
             XCTAssertEqual(children(of: parallelChild, in: parallelSnapshot).map(\.name), children(of: serialChild, in: serialSnapshot).map(\.name))
+            XCTAssertEqual(parallelChild.isAccessible, serialChild.isAccessible)
+            XCTAssertEqual(parallelChild.isSelfAccessible, serialChild.isSelfAccessible)
         }
     }
 

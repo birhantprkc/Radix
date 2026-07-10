@@ -141,6 +141,8 @@ enum SystemIntegration {
 
     @MainActor
     static func presentComparisonSnapshotPanel() async -> URL? {
+        guard !Task.isCancelled else { return nil }
+
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [radixScanArchiveContentType]
         panel.allowsMultipleSelection = false
@@ -150,18 +152,18 @@ enum SystemIntegration {
         panel.prompt = "Choose"
         panel.message = "Choose a Radix scan snapshot."
 
-        return await withCheckedContinuation { continuation in
-            let completionHandler: (NSApplication.ModalResponse) -> Void = { response in
-                let selectedURL = response == .OK ? panel.url : nil
-                DispatchQueue.main.async {
-                    continuation.resume(returning: selectedURL)
-                }
-            }
-
-            if let parentWindow = comparisonPanelParentWindow {
-                panel.beginSheetModal(for: parentWindow, completionHandler: completionHandler)
-            } else {
-                panel.begin(completionHandler: completionHandler)
+        let cancellationState = ExportPanelCancellationState()
+        let presentation = ExportPanelPresentation(
+            panel: panel,
+            parentWindow: comparisonPanelParentWindow,
+            cancellationState: cancellationState
+        )
+        return await withTaskCancellationHandler {
+            await presentation.begin()
+        } onCancel: {
+            cancellationState.cancel()
+            Task { @MainActor in
+                presentation.cancel()
             }
         }
     }

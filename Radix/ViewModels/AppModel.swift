@@ -437,6 +437,7 @@ final class AppModel: ObservableObject {
     private var deferredNavigationContextSnapshotID: UUID?
     private var postTrashRemovalTask: Task<Void, Never>?
     private var exportPanelTask: Task<Void, Never>?
+    private var comparisonPanelTask: Task<Void, Never>?
     private var snapshotArchiveTask: Task<Void, Never>?
     private var snapshotArchiveProgressTask: Task<Void, Never>?
     private var exportConfirmationDismissTask: Task<Void, Never>?
@@ -516,6 +517,8 @@ final class AppModel: ObservableObject {
         targetCapacityDescriptionsRefreshTask = nil
         exportPanelTask?.cancel()
         exportPanelTask = nil
+        comparisonPanelTask?.cancel()
+        comparisonPanelTask = nil
         isExportPanelPresented = false
         cancelArchiveOperation()
         dismissExportConfirmation()
@@ -715,7 +718,7 @@ final class AppModel: ObservableObject {
             !isArchiveOperationInProgress
     }
 
-    var canImportScanSnapshot: Bool {
+    private var canPresentScanSnapshotPanel: Bool {
         !scanCoordinator.isScanning &&
             !isExportPanelPresented &&
             !isArchiveOperationInProgress &&
@@ -723,12 +726,12 @@ final class AppModel: ObservableObject {
             pendingImportPreview == nil
     }
 
+    var canImportScanSnapshot: Bool {
+        canPresentScanSnapshotPanel
+    }
+
     var canCompareScanSnapshots: Bool {
-        !scanCoordinator.isScanning &&
-            !isExportPanelPresented &&
-            !isArchiveOperationInProgress &&
-            pendingComparisonSetup == nil &&
-            pendingImportPreview == nil
+        canPresentScanSnapshotPanel
     }
 
     var canUseWorkspaceCommands: Bool {
@@ -1146,7 +1149,9 @@ final class AppModel: ObservableObject {
         guard pendingComparisonSetup?.loadingSlot == nil else { return }
         let setupID = pendingComparisonSetup?.id
 
-        Task { @MainActor [weak self] in
+        comparisonPanelTask?.cancel()
+        comparisonPanelTask = Task { @MainActor [weak self] in
+            defer { self?.comparisonPanelTask = nil }
             guard let self,
                   let sourceURL = await self.dependencies.systemActions.presentComparisonSnapshotPanel(),
                   self.pendingComparisonSetup?.id == setupID,
@@ -1288,46 +1293,6 @@ final class AppModel: ObservableObject {
                 let setup = try await Self.value(cancelling: setupTask)
                 guard !Task.isCancelled,
                       self.isCurrentArchiveOperation(id: operationID) else { return }
-                self.pendingComparisonSetup = setup
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error, title: "Comparison Failed")
-            }
-        }
-    }
-
-    private func previewCurrentScanComparison(sourceURL: URL, currentSnapshot: ScanSnapshot) {
-        cancelArchiveOperation()
-        pendingComparisonSetup = nil
-        let currentSnapshotID = currentSnapshot.id
-        let operationID = beginArchiveOperation(
-            kind: .compare,
-            title: "Preparing Comparison",
-            message: "Reading snapshot",
-            progressReporter: nil
-        )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let setupTask = Task.detached(priority: .utility) {
-                    let preview = try await archiveService.previewSnapshot(from: sourceURL)
-                    try Task.checkCancellation()
-                    return ScanComparisonSetup(
-                        before: ScanComparisonCandidate(preview: preview),
-                        after: ScanComparisonCandidate(snapshot: currentSnapshot)
-                    )
-                }
-                let setup = try await Self.value(cancelling: setupTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID),
-                      self.scanCoordinator.snapshot?.id == currentSnapshotID else { return }
                 self.pendingComparisonSetup = setup
                 self.lastErrorMessage = nil
             } catch is CancellationError {
