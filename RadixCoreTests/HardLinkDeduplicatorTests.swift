@@ -53,6 +53,60 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         XCTAssertEqual(store.parent(of: duplicateLinkID)?.id, parentID)
     }
 
+    func testOnlineOwnershipAcrossPackageAndVisibleFileKeepsLexicographicWinner() {
+        let rootID = "/root"
+        let packageID = "/root/z.app"
+        let packageLinkPath = "/root/z.app/Contents/shared.bin"
+        let visibleFileID = "/root/a-shared.bin"
+        let identity = FileIdentity(device: 1, inode: 47)
+        let nodes = [
+            makeDirectory(id: rootID, allocatedSize: 220, descendantFileCount: 2),
+            makeDirectory(id: packageID, allocatedSize: 120, descendantFileCount: 1),
+            makeFile(id: visibleFileID, allocatedSize: 100)
+        ]
+        let indices = nodes.indices.map { FileTreeNodeIndex(rawValue: UInt32($0)) }
+        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        // Package work may finish first even though its nested path sorts later.
+        hardLinkAccumulator.record(HardLinkClaim(
+            identity: identity,
+            ownerNodeID: packageID,
+            path: packageLinkPath,
+            allocatedSize: 100
+        ))
+        hardLinkAccumulator.record(HardLinkClaim(
+            identity: identity,
+            ownerNodeID: visibleFileID,
+            path: visibleFileID,
+            allocatedSize: 100
+        ))
+
+        let store = HardLinkDeduplicator.deduplicatedStore(
+            rootIndex: indices[0],
+            nodes: nodes,
+            childIndicesByIndex: [[indices[1], indices[2]], [], []],
+            parentIndices: [nil, indices[0], indices[0]],
+            orderedNodeIndices: indices,
+            aggregateStats: ScanAggregateStats(
+                totalAllocatedSize: 220,
+                totalLogicalSize: 220,
+                fileCount: 2,
+                directoryCount: 2,
+                accessibleItemCount: 3,
+                inaccessibleItemCount: 0
+            ),
+            hardLinkAccumulator: hardLinkAccumulator,
+            minimumAllocatedSizeByNodeID: [packageID: 20]
+        )
+
+        XCTAssertEqual(hardLinkAccumulator.identityCount, 1)
+        XCTAssertEqual(hardLinkAccumulator.winner(for: identity)?.ownerNodeID, visibleFileID)
+        XCTAssertEqual(hardLinkAccumulator.duplicateAllocatedSizeByOwner, [packageID: 100])
+        XCTAssertEqual(store.node(id: visibleFileID)?.allocatedSize, 100)
+        XCTAssertEqual(store.node(id: packageID)?.allocatedSize, 20)
+        XCTAssertEqual(store.root.allocatedSize, 120)
+        XCTAssertEqual(store.children(of: rootID).map(\.id), [visibleFileID, packageID])
+    }
+
     func testHardLinkDedupRebuildsOnlyAffectedAncestorChains() {
         let rootID = "/root"
         let affectedID = "/root/Affected"

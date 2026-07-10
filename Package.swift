@@ -55,6 +55,7 @@ let package = Package(
                 "Services/FileSizeFormatter.swift",
                 "Services/FileSystemEventHistory.swift",
                 "Services/HardLinkDeduplicator.swift",
+                "Services/HardLinkIdentityOwnerAccumulator.swift",
                 "Services/IncrementalRescanPlanner.swift",
                 "Services/IncrementalScanService.swift",
                 "Services/PackageClassifier.swift",

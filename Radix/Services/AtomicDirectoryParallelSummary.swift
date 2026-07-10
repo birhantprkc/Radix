@@ -97,7 +97,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
     private var descendantFileCount = 0
     private var isAccessible = true
     private var warnings: [ScanWarning] = []
-    private var hardLinkClaims: [HardLinkClaim] = []
+    private var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
 
     init(seed: AtomicDirectorySummaryPartial? = nil) {
         guard let seed else { return }
@@ -106,7 +106,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
         descendantFileCount = seed.descendantFileCount
         isAccessible = seed.isAccessible
         warnings = seed.warnings
-        hardLinkClaims = seed.hardLinkClaims
+        hardLinkAccumulator = seed.hardLinkAccumulator
     }
 
     func updateAccessibility(_ readable: Bool) {
@@ -129,7 +129,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
         descendantFileCount += partial.descendantFileCount
         isAccessible = isAccessible && partial.isAccessible
         warnings.append(contentsOf: partial.warnings)
-        hardLinkClaims.append(contentsOf: partial.hardLinkClaims)
+        hardLinkAccumulator.merge(partial.hardLinkAccumulator)
         lock.unlock()
     }
 
@@ -142,7 +142,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
             descendantFileCount: descendantFileCount,
             isAccessible: isAccessible,
             warnings: warnings,
-            hardLinkClaims: hardLinkClaims
+            hardLinkAccumulator: hardLinkAccumulator
         )
     }
 }

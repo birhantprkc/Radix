@@ -37,7 +37,27 @@ nonisolated struct HardLinkDeduplicator {
         hardLinkClaims: [HardLinkClaim],
         minimumAllocatedSizeByNodeID: [String: Int64]
     ) -> FileTreeStore {
-        let duplicateAllocatedSizeByOwner = duplicateHardLinkAllocatedSizeByOwner(from: hardLinkClaims)
+        deduplicatedStore(
+            rootID: rootID,
+            nodesByID: inputNodesByID,
+            childIDsByID: inputChildIDsByID,
+            parentIDByID: parentIDByID,
+            aggregateStats: aggregateStats,
+            hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(hardLinkClaims),
+            minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
+        )
+    }
+
+    nonisolated static func deduplicatedStore(
+        rootID: String,
+        nodesByID inputNodesByID: [String: FileNodeRecord],
+        childIDsByID inputChildIDsByID: [String: [String]],
+        parentIDByID: [String: String],
+        aggregateStats: ScanAggregateStats,
+        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        minimumAllocatedSizeByNodeID: [String: Int64]
+    ) -> FileTreeStore {
+        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
             return FileTreeStore(
                 verifiedRootID: rootID,
@@ -92,15 +112,37 @@ nonisolated struct HardLinkDeduplicator {
     /// full-path-keyed dictionaries before constructing the compact store.
     nonisolated static func deduplicatedStore(
         rootIndex: FileTreeNodeIndex,
+        nodes: [FileNodeRecord],
+        childIndicesByIndex: [[FileTreeNodeIndex]],
+        parentIndices: [FileTreeNodeIndex?],
+        orderedNodeIndices: [FileTreeNodeIndex],
+        aggregateStats: ScanAggregateStats,
+        hardLinkClaims: [HardLinkClaim],
+        minimumAllocatedSizeByNodeID: [String: Int64]
+    ) -> FileTreeStore {
+        deduplicatedStore(
+            rootIndex: rootIndex,
+            nodes: nodes,
+            childIndicesByIndex: childIndicesByIndex,
+            parentIndices: parentIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: aggregateStats,
+            hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(hardLinkClaims),
+            minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
+        )
+    }
+
+    nonisolated static func deduplicatedStore(
+        rootIndex: FileTreeNodeIndex,
         nodes inputNodes: [FileNodeRecord],
         childIndicesByIndex inputChildIndicesByIndex: [[FileTreeNodeIndex]],
         parentIndices: [FileTreeNodeIndex?],
         orderedNodeIndices inputOrderedNodeIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
-        hardLinkClaims: [HardLinkClaim],
+        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
         minimumAllocatedSizeByNodeID: [String: Int64]
     ) -> FileTreeStore {
-        let duplicateAllocatedSizeByOwner = duplicateHardLinkAllocatedSizeByOwner(from: hardLinkClaims)
+        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
             return FileTreeStore(
                 verifiedRootIndex: rootIndex,
@@ -168,8 +210,7 @@ nonisolated struct HardLinkDeduplicator {
         _ store: FileTreeStore,
         cancellationCheck: () throws -> Void = {}
     ) throws -> FileTreeStore {
-        var claims: [HardLinkClaim] = []
-        claims.reserveCapacity(store.nodeCount)
+        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
 
         for (offset, nodeID) in store.indexedNodeIDs().enumerated() {
             if offset.isMultiple(of: 256) {
@@ -179,35 +220,26 @@ nonisolated struct HardLinkDeduplicator {
                   let claim = claim(for: node) else {
                 continue
             }
-            claims.append(claim)
+            hardLinkAccumulator.record(claim)
         }
 
-        guard !claims.isEmpty else { return store }
-
-        let duplicateAllocatedSizeByOwner = duplicateHardLinkAllocatedSizeByOwner(from: claims)
-        var targetAllocatedSizeByNodeID: [String: Int64] = [:]
-        targetAllocatedSizeByNodeID.reserveCapacity(claims.count)
-        for claim in claims {
-            targetAllocatedSizeByNodeID[claim.ownerNodeID] = claim.allocatedSize
-        }
-        for (nodeID, duplicateAllocatedSize) in duplicateAllocatedSizeByOwner {
-            let baseAllocatedSize = targetAllocatedSizeByNodeID[nodeID] ?? 0
-            targetAllocatedSizeByNodeID[nodeID] = max(0, baseAllocatedSize - duplicateAllocatedSize)
-        }
+        guard !hardLinkAccumulator.isEmpty else { return store }
 
         var nodesByID = store.nodesByID
         var childIDsByID = store.childIDsByID
         var changedNodeIDs: Set<String> = []
-        for (offset, entry) in targetAllocatedSizeByNodeID.enumerated() {
+        for (offset, nodeID) in store.indexedNodeIDs().enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            guard let node = nodesByID[entry.key],
-                  node.allocatedSize != entry.value else {
+            guard let node = nodesByID[nodeID], claim(for: node) != nil else {
                 continue
             }
-            nodesByID[entry.key] = node.replacingAllocatedSize(entry.value)
-            changedNodeIDs.insert(entry.key)
+            let duplicateAllocatedSize = hardLinkAccumulator.duplicateAllocatedSizeByOwner[nodeID] ?? 0
+            let targetAllocatedSize = max(0, node.unduplicatedAllocatedSize - duplicateAllocatedSize)
+            guard node.allocatedSize != targetAllocatedSize else { continue }
+            nodesByID[nodeID] = node.replacingAllocatedSize(targetAllocatedSize)
+            changedNodeIDs.insert(nodeID)
         }
 
         try rebuildAffectedAncestorDirectories(
@@ -362,28 +394,6 @@ nonisolated struct HardLinkDeduplicator {
             path: node.url.path,
             allocatedSize: node.unduplicatedAllocatedSize
         )
-    }
-
-    private nonisolated static func duplicateHardLinkAllocatedSizeByOwner(
-        from claims: [HardLinkClaim]
-    ) -> [String: Int64] {
-        let claimsByIdentity = Dictionary(grouping: claims.filter { $0.allocatedSize > 0 }, by: \.identity)
-        var duplicateAllocatedSizeByOwner: [String: Int64] = [:]
-
-        for identityClaims in claimsByIdentity.values where identityClaims.count > 1 {
-            let sortedClaims = identityClaims.sorted { lhs, rhs in
-                if lhs.path == rhs.path {
-                    return lhs.ownerNodeID < rhs.ownerNodeID
-                }
-                return lhs.path < rhs.path
-            }
-
-            for duplicateClaim in sortedClaims.dropFirst() {
-                duplicateAllocatedSizeByOwner[duplicateClaim.ownerNodeID, default: 0] += duplicateClaim.allocatedSize
-            }
-        }
-
-        return duplicateAllocatedSizeByOwner
     }
 
     private nonisolated static func affectedAncestorDirectoryIDs(

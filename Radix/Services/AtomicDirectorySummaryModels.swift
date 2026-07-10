@@ -37,7 +37,7 @@ nonisolated struct AtomicDirectorySummary: Sendable {
     let descendantFileCount: Int
     let isAccessible: Bool
     let warnings: [ScanWarning]
-    let hardLinkClaims: [HardLinkClaim]
+    let hardLinkAccumulator: HardLinkIdentityOwnerAccumulator
 }
 
 nonisolated struct AtomicDirectorySummaryPartial: Sendable {
@@ -46,7 +46,7 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
     var descendantFileCount = 0
     var isAccessible = true
     var warnings: [ScanWarning] = []
-    var hardLinkClaims: [HardLinkClaim] = []
+    var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
 
     mutating func updateAccessibility(_ readable: Bool) {
         isAccessible = isAccessible && readable
@@ -65,7 +65,7 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
         }
         if metadata.linkCount > 1,
            let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {
-            hardLinkClaims.append(claim)
+            hardLinkAccumulator.record(claim)
         }
     }
 }
@@ -129,7 +129,7 @@ nonisolated final class AtomicDirectorySummaryState {
     var descendantFileCount = 0
     var isAccessible = true
     var warnings: [ScanWarning] = []
-    var hardLinkClaims: [HardLinkClaim] = []
+    var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
     let ownerNodeID: String
 
     init(ownerNodeID: String) {

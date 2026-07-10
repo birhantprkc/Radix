@@ -176,7 +176,7 @@ actor ScanEngine {
     private struct LeafNodeResult: Sendable {
         let node: FileNodeRecord
         let warnings: [ScanWarning]
-        let hardLinkClaims: [HardLinkClaim]
+        let hardLinkAccumulator: HardLinkIdentityOwnerAccumulator
         let minimumAllocatedSize: Int64?
     }
 
@@ -624,7 +624,7 @@ actor ScanEngine {
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
         metrics.currentPath = target.url.path
         metrics.recalculateProgress()
-        var hardLinkClaims: [HardLinkClaim] = []
+        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
         var minimumAllocatedSizeByNodeID: [String: Int64] = [:]
         let atomicSummaryWorkerLimit = ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options)
         let atomicSummaryPool = AtomicDirectorySummaryPool(
@@ -663,7 +663,7 @@ actor ScanEngine {
                 continuation: continuation,
                 emissionState: &emissionState
             )
-            hardLinkClaims.append(contentsOf: leafResult.hardLinkClaims)
+            hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
             if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                 minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
             }
@@ -687,7 +687,7 @@ actor ScanEngine {
                 childIDsByID: [:],
                 parentIDByID: [:],
                 aggregateStats: rawStore.aggregateStats,
-                hardLinkClaims: hardLinkClaims,
+                hardLinkAccumulator: hardLinkAccumulator,
                 minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
             )
             await atomicSummaryPool.finish()
@@ -894,7 +894,7 @@ actor ScanEngine {
                             continuation: continuation,
                             emissionState: &emissionState
                         )
-                        hardLinkClaims.append(contentsOf: leafResult.hardLinkClaims)
+                        hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
                         if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                             minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
                         }
@@ -1010,7 +1010,7 @@ actor ScanEngine {
                             isSynthetic: false,
                             isAutoSummarized: true
                         )
-                        hardLinkClaims.append(contentsOf: summary.hardLinkClaims)
+                        hardLinkAccumulator.merge(summary.hardLinkAccumulator)
                         minimumAllocatedSizeByNodeID[atomicNode.id] = meta.allocatedSize
                         // The summarized children will never be enqueued: count them as
                         // completed and release their frontier claims.
@@ -1092,7 +1092,7 @@ actor ScanEngine {
                                    ownerNodeID: childNode.id,
                                    path: childPath
                                ) {
-                                hardLinkClaims.append(hardLinkClaim)
+                                hardLinkAccumulator.record(hardLinkClaim)
                             }
                             metrics.currentPath = childPath
                             applyLeafMetrics(childNode, weight: childWeight, metrics: &metrics)
@@ -1181,7 +1181,7 @@ actor ScanEngine {
                     activePackageTasks -= 1
                     let item = packageResult.item
                     let leafResult = packageResult.leaf
-                    hardLinkClaims.append(contentsOf: leafResult.hardLinkClaims)
+                    hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
                     if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                         minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
                     }
@@ -1382,7 +1382,7 @@ actor ScanEngine {
             parentIndices: parentIndices,
             orderedNodeIndices: orderedNodeIndices,
             aggregateStats: aggregateStats.makeStats(root: rootNode),
-            hardLinkClaims: hardLinkClaims,
+            hardLinkAccumulator: hardLinkAccumulator,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
         )
         await atomicSummaryPool.finish()
@@ -1931,10 +1931,14 @@ actor ScanEngine {
             let hardLinkClaim = metadata.linkCount > 1
                 ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
                 : nil
+            var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+            if let hardLinkClaim {
+                hardLinkAccumulator.record(hardLinkClaim)
+            }
             return LeafNodeResult(
                 node: node,
                 warnings: [],
-                hardLinkClaims: hardLinkClaim.map { [$0] } ?? [],
+                hardLinkAccumulator: hardLinkAccumulator,
                 minimumAllocatedSize: nil
             )
         }
@@ -1959,10 +1963,14 @@ actor ScanEngine {
             let hardLinkClaim = metadata.linkCount > 1
                 ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
                 : nil
+            var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+            if let hardLinkClaim {
+                hardLinkAccumulator.record(hardLinkClaim)
+            }
             return LeafNodeResult(
                 node: node,
                 warnings: [],
-                hardLinkClaims: hardLinkClaim.map { [$0] } ?? [],
+                hardLinkAccumulator: hardLinkAccumulator,
                 minimumAllocatedSize: nil
             )
         }
@@ -1987,7 +1995,7 @@ actor ScanEngine {
                 isAutoSummarized: false
             ),
             warnings: summary.warnings,
-            hardLinkClaims: summary.hardLinkClaims,
+            hardLinkAccumulator: summary.hardLinkAccumulator,
             minimumAllocatedSize: metadata.allocatedSize
         )
     }

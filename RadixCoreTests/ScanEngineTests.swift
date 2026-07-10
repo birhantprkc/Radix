@@ -243,6 +243,39 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.aggregateStats.totalAllocatedSize, snapshot.root.allocatedSize)
     }
 
+    func testHardLinkCrossingAtomicPackageAndVisibleFileUsesLexicographicOwner() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let visibleFileURL = rootURL.appending(path: "a-shared.bin")
+        let packageURL = rootURL.appending(path: "z.app", directoryHint: .isDirectory)
+        let packageLinkURL = packageURL.appending(path: "Contents/Resources/shared.bin")
+        try FileManager.default.createDirectory(
+            at: packageLinkURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data(repeating: 0xA6, count: 4_096).write(to: visibleFileURL)
+        try FileManager.default.linkItem(at: visibleFileURL, to: packageLinkURL)
+
+        let packageMinimumAllocatedSize = try ScanMetadataLoader().metadata(for: packageURL).allocatedSize
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions()
+        )
+        let visibleNode = try XCTUnwrap(snapshot.treeStore.node(id: visibleFileURL.path))
+        let packageNode = try XCTUnwrap(snapshot.treeStore.node(id: packageURL.path))
+
+        XCTAssertGreaterThan(visibleNode.allocatedSize, 0)
+        XCTAssertEqual(packageNode.allocatedSize, packageMinimumAllocatedSize)
+        XCTAssertEqual(packageNode.descendantFileCount, 1)
+        XCTAssertEqual(snapshot.root.logicalSize, 8_192)
+        XCTAssertEqual(
+            snapshot.root.allocatedSize,
+            visibleNode.allocatedSize + packageNode.allocatedSize
+        )
+        XCTAssertEqual(snapshot.aggregateStats.totalAllocatedSize, snapshot.root.allocatedSize)
+    }
+
     func testParallelPackageSummaryMatchesSerialSummary() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -2511,17 +2544,26 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(resumed?.allocatedSize, reference?.allocatedSize)
         XCTAssertEqual(resumed?.isAccessible, reference?.isAccessible)
         XCTAssertEqual(resumed?.warnings.count, reference?.warnings.count)
+        let hardLinkIdentity = try XCTUnwrap(metadataLoader.metadata(for: originalURL).fileIdentity)
         XCTAssertEqual(
-            Set(resumed?.hardLinkClaims.map(\.path) ?? []),
-            Set(reference?.hardLinkClaims.map(\.path) ?? [])
+            resumed?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path,
+            reference?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path
         )
-        XCTAssertEqual(resumed?.hardLinkClaims.count, 2)
+        XCTAssertEqual(
+            resumed?.hardLinkAccumulator.duplicateAllocatedSizeByOwner,
+            reference?.hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        )
+        XCTAssertEqual(resumed?.hardLinkAccumulator.identityCount, 1)
         XCTAssertEqual(resumedSerial?.descendantFileCount, resumed?.descendantFileCount)
         XCTAssertEqual(resumedSerial?.logicalSize, resumed?.logicalSize)
         XCTAssertEqual(resumedSerial?.allocatedSize, resumed?.allocatedSize)
         XCTAssertEqual(
-            Set(resumedSerial?.hardLinkClaims.map(\.path) ?? []),
-            Set(resumed?.hardLinkClaims.map(\.path) ?? [])
+            resumedSerial?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path,
+            resumed?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path
+        )
+        XCTAssertEqual(
+            resumedSerial?.hardLinkAccumulator.duplicateAllocatedSizeByOwner,
+            resumed?.hardLinkAccumulator.duplicateAllocatedSizeByOwner
         )
     }
 
