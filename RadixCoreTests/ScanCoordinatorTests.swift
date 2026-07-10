@@ -38,6 +38,36 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testStartScanWithEligibleBaselineRoutesToRescan() {
+        let service = RescanRecordingService()
+        let coordinator = ScanCoordinator(scanService: service)
+        let target = makeCoordinatorTarget("/scan/incremental")
+        let baseline = makeCoordinatorSnapshot(target: target)
+        let options = ScanOptions(includeHiddenFiles: true)
+
+        coordinator.startScan(target, options: options, baseline: baseline)
+
+        XCTAssertTrue(service.scanRequests.isEmpty)
+        XCTAssertEqual(service.rescanRequests.map(\.target), [target])
+        XCTAssertEqual(service.rescanRequests.map(\.baselineID), [baseline.id])
+        XCTAssertEqual(service.rescanRequests.first?.options.includeHiddenFiles, true)
+        coordinator.stopScan()
+    }
+
+    @MainActor
+    func testStartScanBaselineUsesDefaultFullScanFallback() {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(scanService: service)
+        let target = makeCoordinatorTarget("/scan/fallback")
+        let baseline = makeCoordinatorSnapshot(target: target)
+
+        coordinator.startScan(target, options: ScanOptions(), baseline: baseline)
+
+        XCTAssertEqual(service.requests.map(\.target), [target])
+        coordinator.stopScan()
+    }
+
+    @MainActor
     func testRestoreCompletedSnapshotDisplaysWithoutScanRequest() {
         let service = ControlledScanService()
         let coordinator = ScanCoordinator(scanService: service, progressThrottleDuration: .milliseconds(40))
@@ -1428,6 +1458,60 @@ final class ScanCoordinatorTests: XCTestCase {
 private struct ControlledScanRequest {
     let target: ScanTarget
     let options: ScanOptions
+}
+
+private struct ControlledRescanRequest {
+    let target: ScanTarget
+    let options: ScanOptions
+    let baselineID: UUID
+}
+
+private final class RescanRecordingService: ScanEventStreaming, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedScanRequests: [ControlledScanRequest] = []
+    private var storedRescanRequests: [ControlledRescanRequest] = []
+
+    var scanRequests: [ControlledScanRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedScanRequests
+    }
+
+    var rescanRequests: [ControlledRescanRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRescanRequests
+    }
+
+    func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        lock.lock()
+        storedScanRequests.append(ControlledScanRequest(target: target, options: options))
+        lock.unlock()
+        return finishedStream()
+    }
+
+    func rescan(
+        target: ScanTarget,
+        options: ScanOptions,
+        from baseline: ScanSnapshot
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        lock.lock()
+        storedRescanRequests.append(
+            ControlledRescanRequest(
+                target: target,
+                options: options,
+                baselineID: baseline.id
+            )
+        )
+        lock.unlock()
+        return finishedStream()
+    }
+
+    private func finishedStream() -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
 }
 
 private actor RecordingSnapshotTransformService: ScanSnapshotTransforming {

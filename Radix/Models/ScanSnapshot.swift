@@ -113,6 +113,7 @@ struct ScanSnapshot: Identifiable, Sendable {
     let isComplete: Bool
     let scanOptions: ScanOptions?
     let source: ScanSnapshotSource
+    let incrementalCheckpoint: ScanIncrementalCheckpoint?
 
     nonisolated init(
         id: UUID = UUID(),
@@ -124,7 +125,8 @@ struct ScanSnapshot: Identifiable, Sendable {
         aggregateStats: ScanAggregateStats,
         isComplete: Bool,
         scanOptions: ScanOptions? = nil,
-        source: ScanSnapshotSource = .live
+        source: ScanSnapshotSource = .live,
+        incrementalCheckpoint: ScanIncrementalCheckpoint? = nil
     ) {
         self.id = id
         self.target = target
@@ -136,6 +138,7 @@ struct ScanSnapshot: Identifiable, Sendable {
         self.isComplete = isComplete
         self.scanOptions = scanOptions
         self.source = source
+        self.incrementalCheckpoint = source.allowsFileMutation ? incrementalCheckpoint : nil
     }
 
     nonisolated var root: FileNodeRecord {
@@ -166,7 +169,8 @@ struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
-            source: source
+            source: source,
+            incrementalCheckpoint: incrementalCheckpoint
         )
     }
 
@@ -180,6 +184,59 @@ struct ScanSnapshot: Identifiable, Sendable {
             with: replacement,
             additionalWarnings: additionalWarnings,
             cancellationCheck: {}
+        )
+    }
+
+    nonisolated func replacingSubtrees(
+        _ replacements: [String: FileTreeStore],
+        additionalWarnings: [ScanWarning] = []
+    ) -> ScanSnapshot? {
+        try? replacingSubtrees(
+            replacements,
+            additionalWarnings: additionalWarnings,
+            cancellationCheck: {}
+        )
+    }
+
+    /// Applies disjoint subtree rescans as one snapshot update. Warnings from
+    /// replaced paths are stale and are pruned before the replacement scans'
+    /// warnings are merged and deduplicated.
+    nonisolated func replacingSubtrees(
+        _ replacements: [String: FileTreeStore],
+        additionalWarnings: [ScanWarning] = [],
+        cancellationCheck: () throws -> Void
+    ) throws -> ScanSnapshot? {
+        try cancellationCheck()
+        guard !replacements.isEmpty else { return self }
+        guard let updatedStore = try treeStore.replacingSubtrees(
+            replacements,
+            cancellationCheck: cancellationCheck
+        ) else { return nil }
+
+        let replacedRootPaths = Array(replacements.keys)
+        var retainedWarnings: [ScanWarning] = []
+        retainedWarnings.reserveCapacity(scanWarnings.count)
+        for warning in scanWarnings {
+            try cancellationCheck()
+            guard !replacedRootPaths.contains(where: { replacedRootPath in
+                Self.path(warning.path, isContainedIn: replacedRootPath)
+            }) else {
+                continue
+            }
+            retainedWarnings.append(warning)
+        }
+
+        return ScanSnapshot(
+            target: target,
+            treeStore: updatedStore,
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            scanWarnings: Self.mergedWarnings(existing: retainedWarnings, additional: additionalWarnings),
+            aggregateStats: updatedStore.aggregateStats,
+            isComplete: isComplete,
+            scanOptions: scanOptions,
+            source: source,
+            incrementalCheckpoint: incrementalCheckpoint
         )
     }
 
@@ -205,7 +262,8 @@ struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
-            source: source
+            source: source,
+            incrementalCheckpoint: incrementalCheckpoint
         )
     }
 
@@ -241,7 +299,8 @@ struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: scopedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
-            source: source
+            source: source,
+            incrementalCheckpoint: incrementalCheckpoint
         )
     }
 

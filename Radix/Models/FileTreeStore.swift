@@ -25,13 +25,23 @@ struct FileTreeStore: Sendable {
         let didDropReferences: Bool
     }
 
+    private struct SubtreeReplacementPlan {
+        let targetID: String
+        let oldParentID: String?
+        let oldSubtreeIDs: Set<String>
+        let replacement: FileTreeStore
+    }
+
     private enum StoreError: LocalizedError {
         case replacementIDCollision(String)
+        case overlappingReplacementTargets(String, String)
 
         var errorDescription: String? {
             switch self {
             case .replacementIDCollision(let id):
                 return "The replacement tree reuses an existing node ID outside the replaced subtree: \(id)."
+            case .overlappingReplacementTargets(let ancestorID, let descendantID):
+                return "Batch replacements must be disjoint, but \(ancestorID) contains \(descendantID)."
             }
         }
     }
@@ -619,6 +629,199 @@ struct FileTreeStore: Sendable {
         return try HardLinkDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
     }
 
+    /// Replaces multiple disjoint subtrees as one topology transaction.
+    ///
+    /// All replacements are validated before the store is changed. Their shared
+    /// ancestor chain is then rebuilt once, followed by one scan-wide hard-link
+    /// rebalance so links crossing replacement boundaries remain correct.
+    nonisolated func replacingSubtrees(
+        _ replacements: [String: FileTreeStore]
+    ) -> FileTreeStore? {
+        try? replacingSubtrees(replacements, cancellationCheck: {})
+    }
+
+    nonisolated func replacingSubtrees(
+        _ replacements: [String: FileTreeStore],
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore? {
+        try cancellationCheck()
+        guard !replacements.isEmpty else { return self }
+
+        let targetIDs = Array(replacements.keys)
+        for targetID in targetIDs {
+            guard nodesByID[targetID] != nil else { return nil }
+        }
+
+        let targetIDSet = Set(targetIDs)
+        for targetID in targetIDs {
+            var cursor = parentIDByID[targetID]
+            while let ancestorID = cursor {
+                try cancellationCheck()
+                if targetIDSet.contains(ancestorID) {
+                    throw StoreError.overlappingReplacementTargets(ancestorID, targetID)
+                }
+                cursor = parentIDByID[ancestorID]
+            }
+        }
+
+        var plans: [SubtreeReplacementPlan] = []
+        plans.reserveCapacity(replacements.count)
+        for (offset, targetID) in targetIDs.enumerated() {
+            if offset.isMultiple(of: 64) {
+                try cancellationCheck()
+            }
+            guard let replacement = replacements[targetID] else { continue }
+            plans.append(SubtreeReplacementPlan(
+                targetID: targetID,
+                oldParentID: parentIDByID[targetID],
+                oldSubtreeIDs: Set(try subtreeNodeIDs(
+                    rootedAt: targetID,
+                    cancellationCheck: cancellationCheck
+                )),
+                replacement: replacement
+            ))
+        }
+
+        var replacementOwnerByNodeID: [String: String] = [:]
+        replacementOwnerByNodeID.reserveCapacity(plans.reduce(0) { $0 + $1.replacement.nodeCount })
+        for plan in plans {
+            try preflightReplacement(
+                plan.replacement,
+                removing: plan.oldSubtreeIDs,
+                cancellationCheck: cancellationCheck
+            )
+            for (offset, replacementID) in plan.replacement.nodesByID.keys.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                if replacementOwnerByNodeID.updateValue(plan.targetID, forKey: replacementID) != nil {
+                    throw StoreError.replacementIDCollision(replacementID)
+                }
+            }
+        }
+
+        let removedIDs = plans.reduce(into: Set<String>()) { result, plan in
+            result.formUnion(plan.oldSubtreeIDs)
+        }
+        var updatedNodes = nodesByID
+        var updatedChildIDs = childIDsByID
+        var updatedParentIDs = parentIDByID
+
+        for (offset, removedID) in removedIDs.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            updatedNodes.removeValue(forKey: removedID)
+            updatedChildIDs.removeValue(forKey: removedID)
+            updatedParentIDs.removeValue(forKey: removedID)
+        }
+
+        for plan in plans {
+            for (offset, entry) in plan.replacement.nodesByID.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                updatedNodes[entry.key] = entry.value
+            }
+            for (offset, entry) in plan.replacement.childIDsByID.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                updatedChildIDs[entry.key] = entry.value
+            }
+            for (offset, entry) in plan.replacement.parentIDByID.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                updatedParentIDs[entry.key] = entry.value
+            }
+        }
+
+        let replacementRootIDByTargetID = Dictionary(uniqueKeysWithValues: plans.map {
+            ($0.targetID, $0.replacement.rootID)
+        })
+        let affectedParentIDs = Set(plans.compactMap(\.oldParentID))
+        for parentID in affectedParentIDs {
+            try cancellationCheck()
+            let previousChildIDs = childIDsByID[parentID] ?? []
+            let replacementChildIDs = previousChildIDs.compactMap { childID -> String? in
+                if let replacementRootID = replacementRootIDByTargetID[childID] {
+                    return replacementRootID
+                }
+                return removedIDs.contains(childID) ? nil : childID
+            }
+            if replacementChildIDs.isEmpty {
+                updatedChildIDs.removeValue(forKey: parentID)
+            } else {
+                updatedChildIDs[parentID] = replacementChildIDs
+            }
+        }
+
+        for plan in plans {
+            if let oldParentID = plan.oldParentID {
+                updatedParentIDs[plan.replacement.rootID] = oldParentID
+            } else {
+                updatedParentIDs.removeValue(forKey: plan.replacement.rootID)
+            }
+        }
+
+        let updatedRootID: String
+        if let rootPlan = plans.first(where: { $0.oldParentID == nil }) {
+            updatedRootID = rootPlan.replacement.rootID
+        } else {
+            updatedRootID = rootID
+        }
+
+        var affectedAncestorIDs = Set<String>()
+        for parentID in affectedParentIDs {
+            var cursor: String? = parentID
+            while let currentID = cursor {
+                try cancellationCheck()
+                affectedAncestorIDs.insert(currentID)
+                cursor = updatedParentIDs[currentID]
+            }
+        }
+
+        for currentID in orderedNodeIDs.reversed() where affectedAncestorIDs.contains(currentID) {
+            try cancellationCheck()
+            guard let current = updatedNodes[currentID] else { continue }
+            let childRecords = (updatedChildIDs[currentID] ?? []).compactMap { updatedNodes[$0] }
+            let sortedChildRecords = Self.sortedChildren(childRecords)
+            updatedNodes[currentID] = FileNodeRecord.directory(
+                id: current.id,
+                url: current.url,
+                name: current.name,
+                children: sortedChildRecords,
+                lastModified: current.lastModified,
+                fileIdentity: current.fileIdentity,
+                linkCount: current.linkCount,
+                isPackage: current.isPackage,
+                isAccessible: current.isSelfAccessible,
+                childrenAreSorted: true
+            )
+            if sortedChildRecords.isEmpty {
+                updatedChildIDs.removeValue(forKey: currentID)
+            } else {
+                updatedChildIDs[currentID] = sortedChildRecords.map(\.id)
+            }
+        }
+
+        let aggregateStats = try Self.aggregateStats(
+            rootID: updatedRootID,
+            nodesByID: updatedNodes,
+            childIDsByID: updatedChildIDs,
+            cancellationCheck: cancellationCheck
+        )
+        let updatedStore = FileTreeStore(
+            verifiedRootID: updatedRootID,
+            nodesByID: updatedNodes,
+            childIDsByID: updatedChildIDs,
+            parentIDByID: updatedParentIDs,
+            aggregateStats: aggregateStats
+        )
+        return try HardLinkDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
+    }
+
     private nonisolated func preflightReplacement(
         _ replacement: FileTreeStore,
         removing oldSubtreeIDs: Set<String>,
@@ -632,6 +835,53 @@ struct FileTreeStore: Sendable {
                 throw StoreError.replacementIDCollision(replacementID)
             }
         }
+    }
+
+    private nonisolated static func aggregateStats(
+        rootID: String,
+        nodesByID: [String: FileNodeRecord],
+        childIDsByID: [String: [String]],
+        cancellationCheck: () throws -> Void
+    ) throws -> ScanAggregateStats {
+        guard let root = nodesByID[rootID] else {
+            preconditionFailure("Verified FileTreeStore root is missing.")
+        }
+
+        var fileCount = 0
+        var directoryCount = 0
+        var accessibleItemCount = 0
+        var inaccessibleItemCount = 0
+        for (offset, node) in nodesByID.values.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            if node.isDirectory {
+                directoryCount += 1
+                if node.isPackage && childIDsByID[node.id]?.isEmpty != false {
+                    fileCount += node.descendantFileCount
+                }
+                if node.isAutoSummarized {
+                    fileCount += node.descendantFileCount
+                }
+            } else if !node.isSymbolicLink && !node.isSynthetic {
+                fileCount += 1
+            }
+
+            if node.isAccessible {
+                accessibleItemCount += 1
+            } else {
+                inaccessibleItemCount += 1
+            }
+        }
+
+        return ScanAggregateStats(
+            totalAllocatedSize: root.allocatedSize,
+            totalLogicalSize: root.logicalSize,
+            fileCount: fileCount,
+            directoryCount: directoryCount,
+            accessibleItemCount: accessibleItemCount,
+            inaccessibleItemCount: inaccessibleItemCount
+        )
     }
 
     nonisolated func subtree(rootedAt targetID: String) -> FileTreeStore? {

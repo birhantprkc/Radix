@@ -1706,7 +1706,11 @@ final class AppModel: ObservableObject {
             currentSnapshot: scanCoordinator.snapshot
         )
         sidebarScanCacheController.prepareForScanStart(target: target, options: options)
-        scanCoordinator.startScan(target, options: options) {
+        scanCoordinator.startScan(
+            target,
+            options: options,
+            baseline: pendingScanComparisonBaseline
+        ) {
             prepareForScan(target)
         }
     }

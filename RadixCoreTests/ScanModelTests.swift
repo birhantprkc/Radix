@@ -561,6 +561,74 @@ final class ScanModelTests: XCTestCase {
         ])
     }
 
+    func testSnapshotReplacingSubtreesPrunesStaleWarningsAndMergesReplacementWarnings() throws {
+        let oldA = makeNode(id: "/root/A", isDirectory: false, isSynthetic: false, isAccessible: false, allocatedSize: 5)
+        let oldB = makeNode(id: "/root/B", isDirectory: false, isSynthetic: false, isAccessible: false, allocatedSize: 7)
+        let kept = makeNode(id: "/root/kept.txt", isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 3)
+        let root = FileNodeRecord.directory(
+            id: "/root",
+            url: URL(filePath: "/root", directoryHint: .isDirectory),
+            name: "root",
+            children: [oldA, oldB, kept],
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [oldA, oldB, kept]])
+        let staleA = ScanWarning(path: "/root/A", message: "stale A", category: .permissionDenied)
+        let staleBDescendant = ScanWarning(path: "/root/B/child", message: "stale B", category: .fileSystem)
+        let retained = ScanWarning(path: kept.id, message: "retained", category: .fileSystem)
+        let snapshot = makeSnapshot(root: root, treeStore: store, warnings: [staleA, retained, staleBDescendant])
+
+        let newA = makeNode(id: oldA.id, isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 11)
+        let newB = makeNode(id: oldB.id, isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 13)
+        let newWarning = ScanWarning(path: "/root/B/new-child", message: "new", category: .fileSystem)
+        let duplicateNewWarning = ScanWarning(path: newWarning.path, message: newWarning.message, category: newWarning.category)
+
+        let updated = try XCTUnwrap(try snapshot.replacingSubtrees(
+            [
+                oldA.id: FileTreeStore(root: newA),
+                oldB.id: FileTreeStore(root: newB),
+            ],
+            additionalWarnings: [newWarning, duplicateNewWarning],
+            cancellationCheck: {}
+        ))
+
+        XCTAssertEqual(updated.root.allocatedSize, 27)
+        XCTAssertEqual(updated.scanWarnings.map(\.path), [retained.path, newWarning.path])
+        XCTAssertEqual(updated.scanWarnings.map(\.message), [retained.message, newWarning.message])
+    }
+
+    func testSnapshotTransformServiceReplacesSubtrees() async throws {
+        let oldA = makeNode(id: "/root/A", isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 5)
+        let oldB = makeNode(id: "/root/B", isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 7)
+        let root = FileNodeRecord.directory(
+            id: "/root",
+            url: URL(filePath: "/root", directoryHint: .isDirectory),
+            name: "root",
+            children: [oldA, oldB],
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [oldA, oldB]])
+        let snapshot = makeSnapshot(root: root, treeStore: store)
+        let newA = makeNode(id: oldA.id, isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 10)
+        let newB = makeNode(id: oldB.id, isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 20)
+
+        let transformed = try await ScanSnapshotTransformService().replacingSubtrees(
+            in: snapshot,
+            replacements: [
+                oldA.id: FileTreeStore(root: newA),
+                oldB.id: FileTreeStore(root: newB),
+            ]
+        )
+        let updated = try XCTUnwrap(transformed)
+
+        XCTAssertEqual(updated.root.allocatedSize, 30)
+        XCTAssertEqual(Set(updated.treeStore.children(of: root.id).map(\.id)), Set([oldA.id, oldB.id]))
+    }
+
     func testPermissionAdvisorSuppressesSuggestionWhenFullDiskAccessGranted() {
         let root = makeNode(id: "/", isDirectory: true, isSynthetic: false, isAccessible: true)
         let snapshot = makeSnapshot(

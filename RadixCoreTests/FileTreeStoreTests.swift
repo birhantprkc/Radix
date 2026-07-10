@@ -349,6 +349,143 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertNil(updated.node(id: oldChild.id))
     }
 
+    func testReplacingDisjointSubtreesRebuildsSharedAncestors() throws {
+        let oldAFile = makeFileNode(id: "/root/A/old.txt", name: "old.txt", size: 5)
+        let oldBFile = makeFileNode(id: "/root/B/old.txt", name: "old.txt", size: 7)
+        let oldA = makeDirectoryNode(id: "/root/A", name: "A", children: [oldAFile])
+        let oldB = makeDirectoryNode(id: "/root/B", name: "B", children: [oldBFile])
+        let sibling = makeFileNode(id: "/root/sibling.txt", name: "sibling.txt", size: 3)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [oldA, oldB, sibling])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [oldA, oldB, sibling],
+            oldA.id: [oldAFile],
+            oldB.id: [oldBFile],
+        ])
+
+        let newAFile = makeFileNode(id: "/root/A/new.txt", name: "new.txt", size: 20)
+        let newA = makeDirectoryNode(id: oldA.id, name: "A", children: [newAFile])
+        let newBFile = makeFileNode(id: "/root/B/new.txt", name: "new.txt", size: 10)
+        let newBExtra = makeFileNode(id: "/root/B/extra.txt", name: "extra.txt", size: 2)
+        let newB = makeDirectoryNode(id: oldB.id, name: "B", children: [newBFile, newBExtra])
+
+        let updated = try XCTUnwrap(try store.replacingSubtrees(
+            [
+                oldA.id: FileTreeStore(root: newA, childrenByID: [newA.id: [newAFile]]),
+                oldB.id: FileTreeStore(root: newB, childrenByID: [newB.id: [newBFile, newBExtra]]),
+            ],
+            cancellationCheck: {}
+        ))
+
+        XCTAssertNil(updated.node(id: oldAFile.id))
+        XCTAssertNil(updated.node(id: oldBFile.id))
+        XCTAssertEqual(updated.children(of: root.id).map(\.id), [newA.id, newB.id, sibling.id])
+        XCTAssertEqual(updated.children(of: newA.id).map(\.id), [newAFile.id])
+        XCTAssertEqual(updated.children(of: newB.id).map(\.id), [newBFile.id, newBExtra.id])
+        XCTAssertEqual(updated.root.allocatedSize, 35)
+        XCTAssertEqual(updated.root.logicalSize, 35)
+        XCTAssertEqual(updated.root.descendantFileCount, 4)
+        XCTAssertEqual(updated.aggregateStats.fileCount, 4)
+        XCTAssertEqual(updated.aggregateStats.directoryCount, 3)
+    }
+
+    func testReplacingSubtreesRejectsOverlappingTargets() throws {
+        let leaf = makeFileNode(id: "/root/folder/leaf.txt", name: "leaf.txt", size: 4)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [leaf],
+        ])
+
+        XCTAssertThrowsError(try store.replacingSubtrees(
+            [
+                folder.id: FileTreeStore(root: folder, childrenByID: [folder.id: [leaf]]),
+                leaf.id: FileTreeStore(root: leaf),
+            ],
+            cancellationCheck: {}
+        )) { error in
+            XCTAssertTrue(error.localizedDescription.contains("must be disjoint"))
+        }
+    }
+
+    func testReplacingSubtreesRejectsIDsSharedByReplacementTrees() throws {
+        let oldA = makeFileNode(id: "/root/A", name: "A", size: 1)
+        let oldB = makeFileNode(id: "/root/B", name: "B", size: 1)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [oldA, oldB])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [oldA, oldB]])
+        let sharedID = "/root/shared.txt"
+        let firstShared = makeFileNode(id: sharedID, name: "shared.txt", size: 2)
+        let secondShared = makeFileNode(id: sharedID, name: "shared.txt", size: 3)
+
+        XCTAssertThrowsError(try store.replacingSubtrees(
+            [
+                oldA.id: FileTreeStore(root: firstShared),
+                oldB.id: FileTreeStore(root: secondShared),
+            ],
+            cancellationCheck: {}
+        )) { error in
+            XCTAssertTrue(error.localizedDescription.contains(sharedID))
+        }
+        XCTAssertEqual(store.root.allocatedSize, 2)
+    }
+
+    func testReplacingSubtreesRebalancesHardLinksAcrossReplacementBoundaries() throws {
+        let oldA = makeFileNode(id: "/root/A", name: "A", size: 1)
+        let oldB = makeFileNode(id: "/root/B", name: "B", size: 1)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [oldA, oldB])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [oldA, oldB]])
+        let identity = FileIdentity(device: 9, inode: 42)
+        let firstLink = FileNodeRecord(
+            id: "/root/A/link.bin",
+            url: URL(filePath: "/root/A/link.bin"),
+            name: "link.bin",
+            isDirectory: false,
+            isSymbolicLink: false,
+            allocatedSize: 4_096,
+            logicalSize: 4_096,
+            descendantFileCount: 1,
+            lastModified: nil,
+            fileIdentity: identity,
+            linkCount: 2,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+        let secondLink = FileNodeRecord(
+            id: "/root/B/link.bin",
+            url: URL(filePath: "/root/B/link.bin"),
+            name: "link.bin",
+            isDirectory: false,
+            isSymbolicLink: false,
+            allocatedSize: 4_096,
+            logicalSize: 4_096,
+            descendantFileCount: 1,
+            lastModified: nil,
+            fileIdentity: identity,
+            linkCount: 2,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+
+        let updated = try XCTUnwrap(try store.replacingSubtrees(
+            [
+                oldA.id: FileTreeStore(root: firstLink),
+                oldB.id: FileTreeStore(root: secondLink),
+            ],
+            cancellationCheck: {}
+        ))
+
+        XCTAssertEqual(updated.root.allocatedSize, 4_096)
+        XCTAssertEqual(updated.root.logicalSize, 8_192)
+        XCTAssertEqual(updated.node(id: firstLink.id)?.allocatedSize, 4_096)
+        XCTAssertEqual(updated.node(id: secondLink.id)?.allocatedSize, 0)
+    }
+
     func testDeepTreeIndexingAndAggregateStatsAvoidRecursiveTraversal() {
         let depth = 5_000
         let leafID = "/root/file.txt"

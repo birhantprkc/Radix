@@ -15,6 +15,21 @@ enum AppModelPhase: Equatable, Sendable {
 
 protocol ScanEventStreaming: Sendable {
     func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error>
+    func rescan(
+        target: ScanTarget,
+        options: ScanOptions,
+        from baseline: ScanSnapshot
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error>
+}
+
+extension ScanEventStreaming {
+    func rescan(
+        target: ScanTarget,
+        options: ScanOptions,
+        from baseline: ScanSnapshot
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        scan(target: target, options: options)
+    }
 }
 
 extension ScanEngine: ScanEventStreaming {}
@@ -64,7 +79,7 @@ final class ScanCoordinator: ObservableObject {
     var onScanFinished: ((ScanSnapshot) -> Void)?
 
     init(
-        scanService: any ScanEventStreaming = ScanEngine(),
+        scanService: any ScanEventStreaming = IncrementalScanService(),
         snapshotTransformService: any ScanSnapshotTransforming = ScanSnapshotTransformService(),
         progressThrottleDuration: Duration = .milliseconds(100),
         progress: ScanProgressState = ScanProgressState(),
@@ -105,6 +120,7 @@ final class ScanCoordinator: ObservableObject {
     func startScan(
         _ target: ScanTarget,
         options: ScanOptions,
+        baseline: ScanSnapshot? = nil,
         prepare: () -> Void = {}
     ) {
         stopScan(resetState: false)
@@ -121,7 +137,12 @@ final class ScanCoordinator: ObservableObject {
 
         let scanID = UUID()
         activeScanID = scanID
-        let stream = scanService.scan(target: target, options: options)
+        let stream: AsyncThrowingStream<ScanProgressEvent, Error>
+        if let baseline {
+            stream = scanService.rescan(target: target, options: options, from: baseline)
+        } else {
+            stream = scanService.scan(target: target, options: options)
+        }
         scanTask = Task { [weak self] in
             await self?.consumeScanStream(stream, scanID: scanID)
         }
