@@ -140,6 +140,44 @@ enum SystemIntegration {
     }
 
     @MainActor
+    static func presentComparisonSnapshotPanel() async -> URL? {
+        guard !Task.isCancelled else { return nil }
+
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [radixScanArchiveContentType]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.canCreateDirectories = false
+        panel.prompt = "Choose"
+        panel.message = "Choose a Radix scan snapshot."
+
+        let cancellationState = ExportPanelCancellationState()
+        let presentation = ExportPanelPresentation(
+            panel: panel,
+            parentWindow: comparisonPanelParentWindow,
+            cancellationState: cancellationState
+        )
+        return await withTaskCancellationHandler {
+            await presentation.begin()
+        } onCancel: {
+            cancellationState.cancel()
+            Task { @MainActor in
+                presentation.cancel()
+            }
+        }
+    }
+
+    @MainActor
+    private static var comparisonPanelParentWindow: NSWindow? {
+        NSApp.keyWindow ??
+            NSApp.mainWindow ??
+            NSApp.windows.first { window in
+                window.isVisible && !window.isMiniaturized
+            }
+    }
+
+    @MainActor
     private static var exportPanelParentWindow: NSWindow? {
         NSApp.mainWindow ??
             NSApp.keyWindow ??

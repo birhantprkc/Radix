@@ -15,7 +15,9 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarWasAutoHiddenForComparison = false
     @State private var showsInspector = true
+    @State private var inspectorPresentationBeforeComparison: Bool?
     @State private var showsDiscardPileReview = false
     @State private var discardPileDragIsActive = false
     @State private var discardPileDragMonitorTask: Task<Void, Never>?
@@ -36,6 +38,7 @@ struct ContentView: View {
             WorkspaceDetailView(
                 scanState: appModel.scanState,
                 navigation: appModel.navigation,
+                scanComparison: appModel.scanComparison,
                 isInspectorPresented: $showsInspector,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
                 maxRenderedDepth: appModel.maxRenderedDepth,
@@ -46,6 +49,11 @@ struct ContentView: View {
                 freeSpaceAvailableCapacity: { snapshot, focusNode in
                     appModel.sunburstFreeSpaceAvailableCapacity(for: snapshot, focusNode: focusNode)
                 },
+                closeScanComparison: {
+                    closeScanComparison()
+                },
+                workspaceDidAppear: workspaceDidAppear,
+                comparisonRowActions: comparisonRowActions,
                 actions: workspaceActions
             )
         }
@@ -69,6 +77,23 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
         }
         .focusedSceneValue(\.inspectorVisibility, $showsInspector)
+        .onChange(of: appModel.scanComparison?.id) { previousID, currentID in
+            Task { @MainActor in
+                await Task.yield()
+                guard appModel.scanComparison?.id == currentID else { return }
+                updateSidebarPresentationForComparison(
+                    wasComparing: previousID != nil,
+                    isComparing: currentID != nil
+                )
+            }
+        }
+        .onChange(of: appModel.archiveOperation) { previousOperation, currentOperation in
+            guard previousOperation?.kind == .compare,
+                  currentOperation == nil else {
+                return
+            }
+            restoreInspectorIfComparisonInactive()
+        }
         .overlay(alignment: .top) {
             if let archiveOperation = appModel.archiveOperation {
                 ArchiveOperationBanner(
@@ -127,6 +152,44 @@ struct ContentView: View {
                 }
             )
             .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: Binding(
+            get: { appModel.pendingComparisonSetup != nil },
+            set: { isPresented in
+                if !isPresented {
+                    cancelComparisonSetup()
+                }
+            }
+        )) {
+            if let setup = appModel.pendingComparisonSetup {
+                ScanComparisonSetupSheet(
+                    setup: setup,
+                    canUseCurrentScan: appModel.canUseCurrentScanInComparisonSetup,
+                    onChooseSnapshot: { slot in
+                        appModel.chooseComparisonSnapshot(for: slot)
+                    },
+                    onDropSnapshot: { url, slot in
+                        appModel.dropComparisonSnapshot(url, for: slot)
+                    },
+                    onUseCurrentScan: { slot in
+                        appModel.useCurrentScanForComparisonSlot(slot)
+                    },
+                    onClear: { slot in
+                        appModel.clearComparisonSlot(slot)
+                    },
+                    onSwap: {
+                        appModel.swapPendingComparisonSetup()
+                    },
+                    onCancel: {
+                        cancelComparisonSetup()
+                    },
+                    onCompare: {
+                        confirmComparisonSetup()
+                    }
+                )
+                .onAppear(perform: comparisonSetupDidAppear)
+                .interactiveDismissDisabled()
+            }
         }
         .alert(
             appModel.errorAlertTitle,
@@ -562,6 +625,7 @@ private struct WorkspaceWindowObserver: NSViewRepresentable {
 private struct WorkspaceDetailView: View {
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
+    let scanComparison: ScanComparison?
     @Binding var isInspectorPresented: Bool
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
 
@@ -571,51 +635,129 @@ private struct WorkspaceDetailView: View {
     let startupDiskTarget: ScanTarget?
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
+    let closeScanComparison: () -> Void
+    let workspaceDidAppear: () -> Void
+    let comparisonRowActions: ScanComparisonRowActions
     let actions: WorkspaceActions
 
     var body: some View {
-        WorkspaceView(
-            scanState: scanState,
-            navigation: navigation,
-            isInspectorPresented: $isInspectorPresented,
-            focusedWorkspaceTarget: $focusedWorkspaceTarget,
-            maxRenderedDepth: maxRenderedDepth,
-            showFreeSpaceInSunburst: showFreeSpaceInSunburst,
-            discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
-            startupDiskTarget: startupDiskTarget,
-            fullDiskAccessStatus: fullDiskAccessStatus,
-            freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
-            actions: actions
-        )
-            .toolbar {
-                ToolbarItemGroup(placement: .navigation) {
-                    Button {
-                        actions.navigateBack()
-                    } label: {
-                        Label("Back", systemImage: "chevron.backward")
-                    }
-                    .disabled(!navigation.canNavigateBack)
-                    .help("Back")
+        if let scanComparison {
+            ScanComparisonView(
+                comparison: scanComparison,
+                actions: comparisonRowActions,
+                onClose: closeScanComparison
+            )
+        } else {
+            WorkspaceView(
+                scanState: scanState,
+                navigation: navigation,
+                isInspectorPresented: $isInspectorPresented,
+                focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                maxRenderedDepth: maxRenderedDepth,
+                showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+                discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
+                startupDiskTarget: startupDiskTarget,
+                fullDiskAccessStatus: fullDiskAccessStatus,
+                freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
+                actions: actions
+            )
+                .onAppear(perform: workspaceDidAppear)
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button {
+                            actions.navigateBack()
+                        } label: {
+                            Label("Back", systemImage: "chevron.backward")
+                        }
+                        .disabled(!navigation.canNavigateBack)
+                        .help("Back")
 
-                    Button {
-                        actions.navigateForward()
-                    } label: {
-                        Label("Forward", systemImage: "chevron.forward")
+                        Button {
+                            actions.navigateForward()
+                        } label: {
+                            Label("Forward", systemImage: "chevron.forward")
+                        }
+                        .disabled(!navigation.canNavigateForward)
+                        .help("Forward")
                     }
-                    .disabled(!navigation.canNavigateForward)
-                    .help("Forward")
                 }
-            }
+        }
     }
 }
 
 private extension ContentView {
+    func updateSidebarPresentationForComparison(wasComparing: Bool, isComparing: Bool) {
+        if !wasComparing, isComparing, splitViewVisibility == .all {
+            sidebarWasAutoHiddenForComparison = true
+            splitViewVisibility = .detailOnly
+            return
+        }
+
+        guard wasComparing, !isComparing, sidebarWasAutoHiddenForComparison else { return }
+        sidebarWasAutoHiddenForComparison = false
+
+        if splitViewVisibility == .detailOnly {
+            splitViewVisibility = .all
+        }
+    }
+
+    func comparisonSetupDidAppear() {
+        guard inspectorPresentationBeforeComparison == nil else { return }
+
+        inspectorPresentationBeforeComparison = showsInspector
+        setInspectorPresented(false)
+    }
+
+    func cancelComparisonSetup() {
+        appModel.cancelComparisonSetup()
+        restoreInspectorIfComparisonInactive()
+    }
+
+    func confirmComparisonSetup() {
+        appModel.confirmComparisonSetup()
+    }
+
+    func closeScanComparison() {
+        appModel.closeScanComparison()
+    }
+
+    func workspaceDidAppear() {
+        guard inspectorPresentationBeforeComparison != nil else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            restoreInspectorIfComparisonInactive()
+        }
+    }
+
+    func restoreInspectorIfComparisonInactive() {
+        guard appModel.pendingComparisonSetup == nil,
+              appModel.archiveOperation?.kind != .compare,
+              appModel.scanComparison == nil,
+              let previousPresentation = inspectorPresentationBeforeComparison else {
+            return
+        }
+
+        inspectorPresentationBeforeComparison = nil
+        setInspectorPresented(previousPresentation)
+    }
+
+    func setInspectorPresented(_ isPresented: Bool) {
+        guard showsInspector != isPresented else { return }
+
+        withTransaction(Transaction(animation: nil)) {
+            showsInspector = isPresented
+        }
+    }
+
     var workspaceActions: WorkspaceActions {
         WorkspaceActions(
             chooseFolder: { appModel.presentOpenPanelAndScan() },
             startScan: { appModel.startScan($0) },
             stopScan: { appModel.stopScan() },
             rescan: { appModel.rescan() },
+            compareWithPreviousScan: { appModel.compareCurrentScanWithPreviousScan() },
+            canCompareWithPreviousScan: { appModel.canCompareCurrentScanWithPreviousScan },
             handleDroppedURLs: { appModel.handleDroppedURLs($0) },
             selectNodeImmediately: { appModel.select(nodeID: $0) },
             selectNode: { appModel.selectAfterViewUpdate(nodeID: $0) },
@@ -634,6 +776,21 @@ private extension ContentView {
             openFullDiskAccessSettings: { appModel.prepareAndOpenFullDiskAccessSettings() },
             setDiscardPileDragActive: setDiscardPileDragIsActive,
             setDiscardPileDragActiveAfterThreshold: setDiscardPileDragIsActiveAfterThreshold
+        )
+    }
+
+    var comparisonRowActions: ScanComparisonRowActions {
+        ScanComparisonRowActions(
+            reveal: { appModel.revealComparisonRowInFinder($0) },
+            canReveal: { appModel.canRevealComparisonRowInFinder($0) },
+            showInBrowser: { appModel.showComparisonRowInBrowser($0) },
+            canShowInBrowser: { appModel.canShowComparisonRowInBrowser($0) },
+            copyPath: { appModel.copyComparisonRowPath($0) },
+            revealNode: { appModel.revealComparisonChangeNodeInFinder($0) },
+            canRevealNode: { appModel.canRevealComparisonChangeNodeInFinder($0) },
+            showNodeInBrowser: { appModel.showComparisonChangeNodeInBrowser($0) },
+            canShowNodeInBrowser: { appModel.canShowComparisonChangeNodeInBrowser($0) },
+            copyNodePath: { appModel.copyComparisonChangeNodePath($0) }
         )
     }
 

@@ -85,6 +85,7 @@ struct AppSystemActions {
     var presentOpenPanel: () -> ScanTarget?
     var presentExportScanPanel: (String) async -> URL?
     var presentImportScanPanel: () -> URL?
+    var presentComparisonSnapshotPanel: () async -> URL?
     var fileExists: (URL) -> Bool
     var verifyTrashIdentity: (FileNodeRecord) -> TrashIdentityVerificationResult
     var asyncVerifyTrashIdentity: (@Sendable (FileNodeRecord) async -> TrashIdentityVerificationResult)?
@@ -142,6 +143,9 @@ struct AppSystemActions {
         },
         presentImportScanPanel: {
             SystemIntegration.presentImportScanPanel()
+        },
+        presentComparisonSnapshotPanel: {
+            await SystemIntegration.presentComparisonSnapshotPanel()
         },
         fileExists: { url in
             FileManager.default.fileExists(atPath: url.path)
@@ -202,6 +206,7 @@ struct AppSystemActions {
         presentOpenPanel: { nil },
         presentExportScanPanel: { _ in nil },
         presentImportScanPanel: { nil },
+        presentComparisonSnapshotPanel: { nil },
         fileExists: { _ in false },
         verifyTrashIdentity: { _ in .matches },
         asyncVerifyTrashIdentity: nil,

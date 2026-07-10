@@ -6,7 +6,7 @@
 import CryptoKit
 import Foundation
 
-private enum ScanArchiveNodeIOConstants {
+private nonisolated enum ScanArchiveNodeIOConstants {
     static let readChunkSize = 1024 * 1024
     static let maxNodeLineByteCount = 1024 * 1024
     static let newlineData = Data([0x0A])

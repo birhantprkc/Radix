@@ -145,6 +145,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(preview.totalLogicalSize, snapshot.aggregateStats.totalLogicalSize)
         XCTAssertEqual(preview.fileCount, snapshot.aggregateStats.fileCount)
         XCTAssertEqual(preview.directoryCount, snapshot.aggregateStats.directoryCount)
+        XCTAssertEqual(preview.scanOptions, snapshot.scanOptions)
     }
 
     func testExportWritesOrdinalTopology() async throws {

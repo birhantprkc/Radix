@@ -3,6 +3,8 @@
 //  Radix
 //
 
+import Foundation
+
 extension ScanArchiveService {
     func validateTopology(
         _ topology: ScanArchiveResolvedTopology,

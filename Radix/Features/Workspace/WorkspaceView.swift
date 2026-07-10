@@ -18,6 +18,8 @@ struct WorkspaceActions {
     let startScan: (ScanTarget) -> Void
     let stopScan: () -> Void
     let rescan: () -> Void
+    let compareWithPreviousScan: () -> Void
+    let canCompareWithPreviousScan: () -> Bool
     let handleDroppedURLs: ([URL]) -> Bool
     let selectNodeImmediately: (String?) -> Void
     let selectNode: (String?) -> Void
@@ -141,6 +143,16 @@ struct WorkspaceView: View {
                     }
                     .disabled(!scanState.canRescan)
                     .help("Rescan")
+
+                    if scanState.snapshot?.isComplete == true {
+                        Button {
+                            actions.compareWithPreviousScan()
+                        } label: {
+                            Label("View Storage Changes", systemImage: "chart.bar.xaxis")
+                        }
+                        .disabled(!actions.canCompareWithPreviousScan())
+                        .help("Compare with the previous compatible scan")
+                    }
                 }
             }
             ToolbarItem(placement: .automatic) { Spacer() }
