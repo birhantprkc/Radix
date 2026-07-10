@@ -33,7 +33,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         maxAverageFileSize: Int64,
         workerLimit: Int,
         exclusionMatcher: ScanExclusionMatcher,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState
@@ -137,7 +137,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         workerLimit: Int,
         ownerNodeID: String,
         exclusionMatcher: ScanExclusionMatcher,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState
@@ -155,6 +155,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 ownerNodeID: ownerNodeID,
                 exclusionMatcher: exclusionMatcher,
                 metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
                 metrics: metrics,
                 continuation: continuation
             )

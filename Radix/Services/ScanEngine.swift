@@ -1719,7 +1719,7 @@ actor ScanEngine {
         metadata: NodeMetadata,
         options: ScanOptions,
         exclusionMatcher: ScanExclusionMatcher,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState

@@ -13,6 +13,10 @@ nonisolated private struct AtomicSummaryWorkItem: Sendable {
     let ownerNodeID: String
 }
 
+nonisolated private struct AtomicSummaryCancellation: Error {
+    let underlyingError: Error
+}
+
 nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
     private let condition = NSCondition()
     private var pendingItems: [AtomicSummaryWorkItem]
@@ -23,13 +27,13 @@ nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
         pendingItems = [rootItem]
     }
 
-    func take() throws -> AtomicSummaryWorkItem? {
+    func take(cancellationCheck: CancellationCheck) throws -> AtomicSummaryWorkItem? {
         condition.lock()
         defer { condition.unlock() }
 
         while pendingItems.isEmpty, activeItemCount > 0, failure == nil {
             _ = condition.wait(until: Date(timeIntervalSinceNow: 0.05))
-            try Task.checkCancellation()
+            try cancellationCheck()
         }
 
         if let failure {
@@ -189,10 +193,11 @@ extension AtomicDirectorySummarizer {
         ownerNodeID: String,
         exclusionMatcher: ScanExclusionMatcher,
         metadataLoader: ScanMetadataLoader,
+        cancellationCheck: @escaping CancellationCheck,
         metrics: ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
     ) async throws -> AtomicDirectorySummary? {
-        try Task.checkCancellation()
+        try cancellationCheck()
         let progressReporter = AtomicSummaryProgressReporter(
             metrics: metrics,
             continuation: continuation
@@ -220,8 +225,8 @@ extension AtomicDirectorySummarizer {
                 group.addTask {
                     var workerVisitedItemCount = 0
                     while true {
-                        try Task.checkCancellation()
-                        guard let item = try queue.take() else { return }
+                        try cancellationCheck()
+                        guard let item = try queue.take(cancellationCheck: cancellationCheck) else { return }
 
                         do {
                             try Self.processWorkItem(
@@ -231,6 +236,7 @@ extension AtomicDirectorySummarizer {
                                 accumulator: accumulator,
                                 queue: queue,
                                 metadataLoader: metadataLoader,
+                                cancellationCheck: cancellationCheck,
                                 progressReporter: progressReporter,
                                 workerVisitedItemCount: &workerVisitedItemCount
                             )
@@ -263,10 +269,127 @@ extension AtomicDirectorySummarizer {
         accumulator: AtomicSummaryAccumulator,
         queue: AtomicSummaryWorkQueue,
         metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter,
         workerVisitedItemCount: inout Int
     ) throws {
-        try Task.checkCancellation()
+        try cancellationCheck()
+
+        let bulkResult: BulkDirectoryEnumerator.Result?
+        do {
+            bulkResult = try BulkDirectoryEnumerator.directoryEntries(
+                at: item.url,
+                includeHiddenFiles: includeHiddenFiles,
+                loadsPackageMetadata: !item.treatPackagesAsDirectories,
+                metadataLoader: metadataLoader,
+                cancellationCheck: {
+                    do {
+                        try cancellationCheck()
+                    } catch {
+                        throw AtomicSummaryCancellation(underlyingError: error)
+                    }
+                }
+            )
+        } catch let cancellation as AtomicSummaryCancellation {
+            throw cancellation.underlyingError
+        } catch {
+            accumulator.recordWarning(for: item.url, error: error)
+            return
+        }
+
+        guard let bulkResult else {
+            try processWorkItemUsingFoundation(
+                item,
+                includeHiddenFiles: includeHiddenFiles,
+                exclusionMatcher: exclusionMatcher,
+                accumulator: accumulator,
+                queue: queue,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
+                progressReporter: progressReporter,
+                workerVisitedItemCount: &workerVisitedItemCount
+            )
+            return
+        }
+
+        var partial = AtomicSummaryPartial()
+        for childEntry in bulkResult.entries {
+            try cancellationCheck()
+            let childURL = childEntry.url
+            workerVisitedItemCount += 1
+            if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
+                progressReporter.emit(currentURL: childURL)
+            }
+
+            let hintedIsDirectory = childEntry.isDirectoryHint ?? childURL.hasDirectoryPath
+            let childPath = childURL.path
+            guard !exclusionMatcher.excludesKnownNormalizedPath(
+                childPath,
+                isDirectory: hintedIsDirectory
+            ) else {
+                continue
+            }
+
+            guard let childMetadata = childEntry.metadata else {
+                partial.recordWarning(
+                    for: childURL,
+                    error: childEntry.localizedEnumerationError ?? NSError(
+                        domain: NSCocoaErrorDomain,
+                        code: NSFileReadUnknownError,
+                        userInfo: [NSURLErrorKey: childURL]
+                    )
+                )
+                continue
+            }
+
+            guard childMetadata.isDirectory == hintedIsDirectory ||
+                    !exclusionMatcher.excludesKnownNormalizedPath(
+                        childPath,
+                        isDirectory: childMetadata.isDirectory
+                    ) else {
+                continue
+            }
+
+            partial.updateAccessibility(childMetadata.isReadable)
+
+            guard childMetadata.isDirectory else {
+                partial.accumulateFile(childMetadata, url: childURL, ownerNodeID: item.ownerNodeID)
+                continue
+            }
+
+            let isTraversablePackageSymlink = childMetadata.isSymbolicLink
+                && childMetadata.isPackage
+                && !item.treatPackagesAsDirectories
+            guard !childMetadata.isSymbolicLink || isTraversablePackageSymlink else {
+                continue
+            }
+
+            queue.enqueue(
+                AtomicSummaryWorkItem(
+                    url: childURL,
+                    treatPackagesAsDirectories: childMetadata.isPackage ? true : item.treatPackagesAsDirectories,
+                    ownerNodeID: item.ownerNodeID
+                )
+            )
+        }
+        accumulator.merge(partial)
+    }
+
+    /// Compatibility path for filesystems that do not support the requested
+    /// `getattrlistbulk` attributes. Supported Darwin filesystems stay on the
+    /// native batched path above and never load per-child resource values.
+    private nonisolated static func processWorkItemUsingFoundation(
+        _ item: AtomicSummaryWorkItem,
+        includeHiddenFiles: Bool,
+        exclusionMatcher: ScanExclusionMatcher,
+        accumulator: AtomicSummaryAccumulator,
+        queue: AtomicSummaryWorkQueue,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
+        progressReporter: AtomicSummaryProgressReporter,
+        workerVisitedItemCount: inout Int
+    ) throws {
+        try cancellationCheck()
 
         var options: FileManager.DirectoryEnumerationOptions = [.skipsSubdirectoryDescendants]
         if !includeHiddenFiles {
@@ -295,7 +418,7 @@ extension AtomicDirectorySummarizer {
 
         var partial = AtomicSummaryPartial()
         while let nextObject = enumerator.nextObject() {
-            try Task.checkCancellation()
+            try cancellationCheck()
             guard let childURL = nextObject as? URL else { continue }
             workerVisitedItemCount += 1
             if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {

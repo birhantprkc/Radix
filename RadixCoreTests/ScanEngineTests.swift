@@ -12,6 +12,7 @@ final class ScanEngineTests: XCTestCase {
 
         returned.fileattr &= ~attrgroup_t(ATTR_FILE_LINKCOUNT)
         XCTAssertFalse(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VREG.rawValue))
+        XCTAssertFalse(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VLNK.rawValue))
         XCTAssertTrue(BulkDirectoryEnumerator.hasRequiredMetadataAttributes(returned, objectType: VDIR.rawValue))
 
         returned.commonattr &= ~attrgroup_t(ATTR_CMN_OBJTYPE)
@@ -212,6 +213,86 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(parallelSnapshot.aggregateStats.fileCount, serialSnapshot.aggregateStats.fileCount)
         XCTAssertEqual(parallelSnapshot.aggregateStats.totalLogicalSize, serialSnapshot.aggregateStats.totalLogicalSize)
         XCTAssertEqual(parallelSnapshot.aggregateStats.totalAllocatedSize, serialSnapshot.aggregateStats.totalAllocatedSize)
+    }
+
+    func testRecursiveBulkPackageSummaryMatchesSerialAcrossMultipleBatches() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let packageURL = rootURL.appending(path: "Wide.app", directoryHint: .isDirectory)
+        let wideDirectoryURL = packageURL.appending(
+            path: "Contents/Resources/Wide",
+            directoryHint: .isDirectory
+        )
+        let nestedPackageDirectoryURL = packageURL.appending(
+            path: "Contents/PlugIns/Nested.bundle/Contents/Resources",
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: wideDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nestedPackageDirectoryURL, withIntermediateDirectories: true)
+
+        for index in 0..<700 {
+            try Data([UInt8(index % 256)]).write(
+                to: wideDirectoryURL.appending(path: String(format: "wide-payload-%06d-with-padding.dat", index))
+            )
+        }
+        for index in 0..<50 {
+            try Data(repeating: UInt8(index), count: 2).write(
+                to: nestedPackageDirectoryURL.appending(path: String(format: "nested-%04d.dat", index))
+            )
+        }
+
+        let originalURL = nestedPackageDirectoryURL.appending(path: "original.bin")
+        let linkedURL = wideDirectoryURL.appending(path: "linked.bin")
+        try Data(repeating: 0xA5, count: 64).write(to: originalURL)
+        try FileManager.default.linkItem(at: originalURL, to: linkedURL)
+
+        var serialOptions = ScanOptions()
+        serialOptions.atomicSummaryWorkerLimit = 1
+        var parallelOptions = ScanOptions()
+        parallelOptions.atomicSummaryWorkerLimit = 4
+
+        let serialSnapshot = try await finishedSnapshot(target: ScanTarget(url: rootURL), options: serialOptions)
+        let parallelSnapshot = try await finishedSnapshot(target: ScanTarget(url: rootURL), options: parallelOptions)
+        let serialPackageNode = try XCTUnwrap(rootChildren(in: serialSnapshot).first { $0.name == "Wide.app" })
+        let parallelPackageNode = try XCTUnwrap(rootChildren(in: parallelSnapshot).first { $0.name == "Wide.app" })
+
+        XCTAssertEqual(serialPackageNode.descendantFileCount, 752)
+        XCTAssertEqual(serialPackageNode.logicalSize, 928)
+        XCTAssertEqual(parallelPackageNode.descendantFileCount, serialPackageNode.descendantFileCount)
+        XCTAssertEqual(parallelPackageNode.logicalSize, serialPackageNode.logicalSize)
+        XCTAssertEqual(parallelPackageNode.allocatedSize, serialPackageNode.allocatedSize)
+        XCTAssertEqual(parallelSnapshot.aggregateStats.totalAllocatedSize, serialSnapshot.aggregateStats.totalAllocatedSize)
+    }
+
+    func testRecursiveBulkPackageSummaryDoesNotFollowDirectorySymlinks() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let externalDirectoryURL = rootURL.appending(path: "External", directoryHint: .isDirectory)
+        let externalFileURL = externalDirectoryURL.appending(path: "large.bin")
+        let packageURL = rootURL.appending(path: "Links.app", directoryHint: .isDirectory)
+        let resourcesURL = packageURL.appending(path: "Contents/Resources", directoryHint: .isDirectory)
+        let localFileURL = resourcesURL.appending(path: "local.bin")
+        let externalLinkURL = resourcesURL.appending(path: "ExternalLink")
+        let cycleLinkURL = resourcesURL.appending(path: "PackageCycle")
+
+        try FileManager.default.createDirectory(at: externalDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+        try Data(repeating: 0xEE, count: 32_768).write(to: externalFileURL)
+        try Data(repeating: 0x11, count: 32).write(to: localFileURL)
+        try FileManager.default.createSymbolicLink(at: externalLinkURL, withDestinationURL: externalDirectoryURL)
+        try FileManager.default.createSymbolicLink(at: cycleLinkURL, withDestinationURL: packageURL)
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions()
+        )
+        let packageNode = try XCTUnwrap(rootChildren(in: snapshot).first { $0.name == "Links.app" })
+
+        XCTAssertEqual(packageNode.descendantFileCount, 1)
+        XCTAssertLessThan(packageNode.logicalSize, 32_768)
+        XCTAssertFalse(containsChildren(packageNode, in: snapshot))
     }
 
     func testPackagesCanBeExpandedWhenEnabled() async throws {

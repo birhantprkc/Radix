@@ -135,7 +135,7 @@ nonisolated enum BulkDirectoryEnumerator {
         guard returned.commonattr & requiredCommonAttributes == requiredCommonAttributes else {
             return false
         }
-        return objectType != VREG.rawValue ||
+        return objectType == VDIR.rawValue ||
             returned.fileattr & requiredFileAttributes == requiredFileAttributes
     }
 
