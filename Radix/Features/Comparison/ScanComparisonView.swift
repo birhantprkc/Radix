@@ -59,13 +59,13 @@ struct ScanComparisonView: View {
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .toolbar {
-            ToolbarItem(placement: .automatic) {
+            ToolbarItem(placement: .navigation) {
                 Button {
                     onClose()
                 } label: {
-                    Label("Close Comparison", systemImage: "xmark")
+                    Label("Back to Scan", systemImage: "chevron.backward")
                 }
-                .help("Close Comparison")
+                .help("Back to Scan")
             }
         }
         .onChange(of: rowQuery) { _, query in
@@ -86,34 +86,23 @@ struct ScanComparisonView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Storage Changes")
-                .font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Storage Changes")
+                        .font(.title2.weight(.semibold))
 
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 18) {
-                    sourceSummary(title: "Earlier Scan", snapshot: comparison.before)
-                    Image(systemName: "arrow.right")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(height: 44)
-                    sourceSummary(title: "Later Scan", snapshot: comparison.after)
-                    Spacer(minLength: 10)
-                    metricStrip
+                    Text(changeHeadline)
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(deltaColor(comparison.summary.allocatedDelta))
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 18) {
-                        sourceSummary(title: "Earlier Scan", snapshot: comparison.before)
-                        Image(systemName: "arrow.right")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(height: 44)
-                        sourceSummary(title: "Later Scan", snapshot: comparison.after)
-                    }
-                    metricStrip
-                }
+                Spacer(minLength: 16)
+
+                metricStrip
             }
+
+            scanTimeline
 
             if comparison.coverage.confidence != .high {
                 coverageBanner
@@ -126,11 +115,14 @@ struct ScanComparisonView: View {
             HStack(spacing: 12) {
                 Picker("Filter", selection: $filter) {
                     ForEach(ScanComparisonRowFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
+                        Text(filterTitle(filter))
+                            .tag(filter)
+                            .disabled(filter != .all && filterCount(filter) == 0)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 420)
+                .labelsHidden()
+                .frame(maxWidth: 520)
 
                 if let focusedLocationPath {
                     Button {
@@ -145,13 +137,71 @@ struct ScanComparisonView: View {
 
                 Spacer()
 
-                TextField("Search", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 240)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+
+                    TextField("Search names and paths", text: $searchText)
+                        .textFieldStyle(.plain)
+
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear Search")
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(width: 250, height: 28)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            if let selectedRow {
+                selectionActions(for: selectedRow)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    private var changeHeadline: String {
+        let delta = comparison.summary.allocatedDelta
+        if delta > 0 {
+            return "Storage increased by \(RadixFormatters.size(delta))"
+        }
+        if delta < 0 {
+            return "Storage decreased by \(RadixFormatters.size(-delta))"
+        }
+        return "No net storage change"
+    }
+
+    private var scanTimeline: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                .foregroundStyle(.secondary)
+
+            sourceSummary(title: "Earlier", snapshot: comparison.before)
+
+            Image(systemName: "arrow.right")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.tertiary)
+
+            sourceSummary(title: "Later", snapshot: comparison.after)
+
+            Spacer(minLength: 8)
+
+            Text("\(signedSize(comparison.summary.grossIncreasedAllocatedSize)) added or grew  •  \(RadixFormatters.size(comparison.summary.grossReclaimedAllocatedSize)) reclaimed")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var coverageBanner: some View {
@@ -228,17 +278,8 @@ struct ScanComparisonView: View {
 
     private var locationOverview: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(locationOverviewTitle)
-                    .font(.subheadline.weight(.semibold))
-
-                Spacer()
-
-                Text("\(signedSize(comparison.summary.grossIncreasedAllocatedSize)) added or grew • \(RadixFormatters.size(comparison.summary.grossReclaimedAllocatedSize)) reclaimed")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
+            Text(locationOverviewTitle)
+                .font(.subheadline.weight(.semibold))
 
             ForEach(highlightedLocations) { location in
                 locationRow(location)
@@ -249,82 +290,69 @@ struct ScanComparisonView: View {
     }
 
     private func locationRow(_ location: ScanComparisonLocationChange) -> some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(location.relativePath)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Text("\(location.affectedCount.formatted()) affected item\(location.affectedCount == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            Text(signedSize(location.allocatedDelta))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(deltaColor(location.allocatedDelta))
-                .monospacedDigit()
-
-            Button("Show Changes") {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
                 focusedLocationPath = location.relativePath
             }
-            .controlSize(.small)
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(location.relativePath)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Text("\(location.affectedCount.formatted()) affected item\(location.affectedCount == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(signedSize(location.allocatedDelta))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(deltaColor(location.allocatedDelta))
+                    .monospacedDigit()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .padding(.vertical, 2)
+        .help("Show changes in \(location.relativePath)")
     }
 
     private func sourceSummary(title: String, snapshot: ComparedSnapshotSummary) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 5) {
             Text(title)
-                .font(.caption)
                 .foregroundStyle(.secondary)
 
             Text(snapshot.displayName)
-                .font(.subheadline.weight(.semibold))
+                .fontWeight(.medium)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Text(RadixFormatters.date(snapshot.comparisonDate))
-                .font(.caption)
+            Text("·")
+                .foregroundStyle(.tertiary)
+
+            Text(comparisonDate(snapshot.comparisonDate))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .monospacedDigit()
         }
-        .frame(minWidth: 160, idealWidth: 220, maxWidth: 260, alignment: .leading)
+        .font(.caption)
     }
 
     private var metricStrip: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) {
-                comparisonMetric("Tracked", signedSize(comparison.summary.allocatedDelta))
-                comparisonMetric("Files", signedCount(comparison.summary.fileCountDelta))
-                comparisonMetric("Folders", signedCount(comparison.summary.directoryCountDelta))
-                comparisonMetric("Warnings", signedCount(comparison.summary.warningCountDelta))
-                comparisonMetric(
-                    "Changed",
-                    comparison.summary.changedCount.formatted()
-                )
+        HStack(spacing: 14) {
+            comparisonMetric("Files", signedCount(comparison.summary.fileCountDelta))
+            comparisonMetric("Folders", signedCount(comparison.summary.directoryCountDelta))
+            comparisonMetric("Modified", comparison.summary.changedCount.formatted())
                 .help("Items present in both scans whose tracked size changed")
-            }
-
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                GridRow {
-                    comparisonMetric("Tracked", signedSize(comparison.summary.allocatedDelta))
-                    comparisonMetric("Files", signedCount(comparison.summary.fileCountDelta))
-                    comparisonMetric("Folders", signedCount(comparison.summary.directoryCountDelta))
-                }
-                GridRow {
-                    comparisonMetric("Warnings", signedCount(comparison.summary.warningCountDelta))
-                    comparisonMetric(
-                        "Changed",
-                        comparison.summary.changedCount.formatted()
-                    )
-                    .help("Items present in both scans whose tracked size changed")
-                    Color.clear.frame(width: 1, height: 1)
-                }
-            }
+            comparisonMetric("Warnings", signedCount(comparison.summary.warningCountDelta))
         }
     }
 
@@ -338,7 +366,7 @@ struct ScanComparisonView: View {
                 .lineLimit(1)
                 .monospacedDigit()
         }
-        .frame(minWidth: 78, alignment: .leading)
+        .frame(minWidth: 66, alignment: .leading)
     }
 
     private var comparisonTable: some View {
@@ -349,13 +377,26 @@ struct ScanComparisonView: View {
             }
             .width(min: 105, ideal: 120)
 
-            TableColumn("Path", sortUsing: ScanComparisonRowComparator(field: .relativePath)) { row in
-                Text(pathText(for: row))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
+            TableColumn("Item", sortUsing: ScanComparisonRowComparator(field: .relativePath)) { row in
+                HStack(spacing: 8) {
+                    Image(systemName: itemSymbol(for: row))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.name)
+                            .lineLimit(1)
+
+                        Text(itemLocation(for: row))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                }
             }
-            .width(min: 260, ideal: 430)
+            .width(min: 280, ideal: 500)
 
             TableColumn("Earlier", sortUsing: ScanComparisonRowComparator(field: .beforeAllocatedSize)) { row in
                 Text(sizeText(row.beforeAllocatedSize))
@@ -375,11 +416,6 @@ struct ScanComparisonView: View {
                     .monospacedDigit()
             }
             .width(min: 105, ideal: 120)
-
-            TableColumn("Kind", sortUsing: ScanComparisonRowComparator(field: .itemKind)) { row in
-                Text(row.itemKind)
-            }
-            .width(min: 95, ideal: 115)
         } rows: {
             ForEach(displayedRows) { row in
                 TableRow(row)
@@ -391,6 +427,48 @@ struct ScanComparisonView: View {
             guard let row = singleRow(in: ids), actions.canReveal(row) else { return }
             actions.reveal(row)
         }
+        .alternatingRowBackgrounds(.disabled)
+    }
+
+    private var selectedRow: ScanComparisonRow? {
+        singleRow(in: selection)
+    }
+
+    private func selectionActions(for row: ScanComparisonRow) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: itemSymbol(for: row))
+                .foregroundStyle(.secondary)
+
+            Text(row.name)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+
+            Spacer()
+
+            Button {
+                actions.showInBrowser(row)
+            } label: {
+                Label("Show in Browser", systemImage: "sidebar.squares.left")
+            }
+            .disabled(!actions.canShowInBrowser(row))
+
+            Button {
+                actions.reveal(row)
+            } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+            }
+            .disabled(!actions.canReveal(row))
+
+            Button {
+                actions.copyPath(row)
+            } label: {
+                Label("Copy Path", systemImage: "doc.on.doc")
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -468,11 +546,46 @@ struct ScanComparisonView: View {
         return RadixFormatters.size(size)
     }
 
-    private func pathText(for row: ScanComparisonRow) -> String {
-        guard let movedFromRelativePath = row.movedFromRelativePath else {
-            return row.relativePath
+    private func itemLocation(for row: ScanComparisonRow) -> String {
+        if let movedFromRelativePath = row.movedFromRelativePath {
+            return "\(movedFromRelativePath) → \(row.relativePath)"
         }
-        return "\(movedFromRelativePath) → \(row.relativePath)"
+
+        let components = row.relativePath.split(separator: "/")
+        let parent = components.dropLast().joined(separator: "/")
+        return parent.isEmpty ? row.itemKind : parent
+    }
+
+    private func itemSymbol(for row: ScanComparisonRow) -> String {
+        if row.itemKind == "Package" {
+            return "shippingbox.fill"
+        }
+        return row.isDirectory ? "folder.fill" : "doc.fill"
+    }
+
+    private func comparisonDate(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .standard)
+    }
+
+    private func filterTitle(_ filter: ScanComparisonRowFilter) -> String {
+        "\(filter.title) \(filterCount(filter).formatted())"
+    }
+
+    private func filterCount(_ filter: ScanComparisonRowFilter) -> Int {
+        switch filter {
+        case .all:
+            return comparison.rows.count
+        case .added:
+            return comparison.summary.addedCount
+        case .removed:
+            return comparison.summary.removedCount
+        case .grew:
+            return comparison.summary.grewCount
+        case .shrank:
+            return comparison.summary.shrankCount
+        case .moved:
+            return comparison.summary.movedCount
+        }
     }
 
     private func signedSize(_ size: Int64) -> String {

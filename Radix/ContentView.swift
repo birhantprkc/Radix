@@ -15,6 +15,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarWasAutoHiddenForComparison = false
     @State private var showsInspector = true
     @State private var inspectorPresentationBeforeComparison: Bool?
     @State private var showsDiscardPileReview = false
@@ -76,6 +77,12 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
         }
         .focusedSceneValue(\.inspectorVisibility, $showsInspector)
+        .onChange(of: appModel.scanComparison?.id) { previousID, currentID in
+            updateSidebarPresentationForComparison(
+                wasComparing: previousID != nil,
+                isComparing: currentID != nil
+            )
+        }
         .onChange(of: appModel.archiveOperation) { previousOperation, currentOperation in
             guard previousOperation?.kind == .compare,
                   currentOperation == nil else {
@@ -675,6 +682,21 @@ private struct WorkspaceDetailView: View {
 }
 
 private extension ContentView {
+    func updateSidebarPresentationForComparison(wasComparing: Bool, isComparing: Bool) {
+        if !wasComparing, isComparing, splitViewVisibility == .all {
+            sidebarWasAutoHiddenForComparison = true
+            splitViewVisibility = .detailOnly
+            return
+        }
+
+        guard wasComparing, !isComparing, sidebarWasAutoHiddenForComparison else { return }
+        sidebarWasAutoHiddenForComparison = false
+
+        if splitViewVisibility == .detailOnly {
+            splitViewVisibility = .all
+        }
+    }
+
     func comparisonSetupDidAppear() {
         guard inspectorPresentationBeforeComparison == nil else { return }
 
