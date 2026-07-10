@@ -53,6 +53,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         }
 
         let deepCandidate: Bool
+        var probeResumeState: AtomicDirectoryProbeResumeState? = nil
         if immediateCandidate {
             deepCandidate = true
         } else if Self.isKnownGeneratedDirectory(at: url) {
@@ -65,10 +66,12 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             ) else {
                 return nil
             }
-            let profile = try descendantAtomicProbeProfile(
+            let outcome = try descendantAtomicProbeProfile(
                 at: url,
                 rootEntries: childEntries,
+                rootMetadata: metadata,
                 includeHiddenFiles: includeHiddenFiles,
+                treatPackagesAsDirectories: treatPackagesAsDirectories,
                 isNodeDependencyLayout: isNodeDependencyLayout,
                 minFileCount: minFileCount,
                 maxAverageFileSize: maxAverageFileSize,
@@ -78,10 +81,11 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 continuation: continuation,
                 emissionState: &emissionState
             )
-            deepCandidate = profile.suggestsAtomicDirectory(
+            deepCandidate = outcome.profile.suggestsAtomicDirectory(
                 minFileCount: minFileCount,
                 maxAverageFileSize: maxAverageFileSize
             )
+            probeResumeState = deepCandidate ? outcome.resumeState : nil
         }
 
         guard deepCandidate else {
@@ -121,7 +125,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             cancellationCheck: cancellationCheck,
             metrics: &metrics,
             continuation: continuation,
-            emissionState: &emissionState
+            emissionState: &emissionState,
+            resumeState: probeResumeState
         ) else { return nil }
         return summary
     }
@@ -140,25 +145,45 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
+        emissionState: inout ScanEmissionState,
+        resumeState: AtomicDirectoryProbeResumeState? = nil
     ) async throws -> AtomicDirectorySummary? {
         try cancellationCheck()
         if workerLimit > 1 {
             #if DEBUG
             let summaryStart = diagnostics?.start()
             #endif
-            let summary = try await Self.summarizeInParallel(
-                at: url,
-                includeHiddenFiles: includeHiddenFiles,
-                treatPackagesAsDirectories: treatPackagesAsDirectories,
-                workerLimit: workerLimit,
-                ownerNodeID: ownerNodeID,
-                exclusionMatcher: exclusionMatcher,
-                metadataLoader: metadataLoader,
-                cancellationCheck: cancellationCheck,
-                metrics: metrics,
-                continuation: continuation
-            )
+            let summary: AtomicDirectorySummary?
+            do {
+                summary = try await Self.summarizeInParallel(
+                    at: url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    treatPackagesAsDirectories: treatPackagesAsDirectories,
+                    workerLimit: workerLimit,
+                    ownerNodeID: ownerNodeID,
+                    exclusionMatcher: exclusionMatcher,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: cancellationCheck,
+                    metrics: metrics,
+                    continuation: continuation,
+                    resumeState: resumeState
+                )
+            } catch is AtomicSummaryRootFallbackRequired {
+                resumeState?.invalidateCursors()
+                summary = try await Self.summarizeInParallel(
+                    at: url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    treatPackagesAsDirectories: treatPackagesAsDirectories,
+                    workerLimit: workerLimit,
+                    ownerNodeID: ownerNodeID,
+                    exclusionMatcher: exclusionMatcher,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: cancellationCheck,
+                    metrics: metrics,
+                    continuation: continuation,
+                    forcesFoundationTraversal: true
+                )
+            }
             #if DEBUG
             diagnostics?.record(
                 operation: "atomic.summary.parallel",
@@ -181,7 +206,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             cancellationCheck: cancellationCheck,
             metrics: &metrics,
             continuation: continuation,
-            emissionState: &emissionState
+            emissionState: &emissionState,
+            resumeState: resumeState
         )
     }
 }

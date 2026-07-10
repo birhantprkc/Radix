@@ -1405,39 +1405,59 @@ actor ScanEngine {
 
         if usesBulkDirectoryEnumeration {
             #if DEBUG
-            let bulkEnumerationStart = DispatchTime.now().uptimeNanoseconds
+            var enumerationNanoseconds: UInt64 = 0
+            var classificationNanoseconds: UInt64 = 0
             #endif
-            if let bulkResult = try BulkDirectoryEnumerator.directoryEntries(
+            let cursor = try BulkDirectoryEnumerator.makeCursor(
                 at: url,
                 includeHiddenFiles: includeHiddenFiles,
                 metadataLoader: metadataLoader,
                 cancellationCheck: cancellationCheck
-            ) {
+            )
+            var entries: [DirectoryEntry] = []
+            var enumeratedItemCount = 0
+            do {
+                while true {
+                    #if DEBUG
+                    let batchStart = DispatchTime.now().uptimeNanoseconds
+                    #endif
+                    guard let batch = try cursor.nextBatch(cancellationCheck: cancellationCheck) else {
+                        #if DEBUG
+                        enumerationNanoseconds += DispatchTime.now().uptimeNanoseconds - batchStart
+                        #endif
+                        break
+                    }
+                    #if DEBUG
+                    enumerationNanoseconds += DispatchTime.now().uptimeNanoseconds - batchStart
+                    let classificationStart = DispatchTime.now().uptimeNanoseconds
+                    #endif
+                    entries.append(contentsOf: try filteredDirectoryEntries(
+                        batch.entries,
+                        under: url,
+                        behavior: behavior,
+                        exclusionMatcher: exclusionMatcher,
+                        cancellationCheck: cancellationCheck
+                    ))
+                    enumeratedItemCount += batch.enumeratedItemCount
+                    #if DEBUG
+                    classificationNanoseconds += DispatchTime.now().uptimeNanoseconds - classificationStart
+                    #endif
+                }
                 #if DEBUG
-                let enumerationNanoseconds = DispatchTime.now().uptimeNanoseconds - bulkEnumerationStart
-                let classificationStart = DispatchTime.now().uptimeNanoseconds
-                #endif
-                let entries = try filteredDirectoryEntries(
-                    bulkResult.entries,
-                    under: url,
-                    behavior: behavior,
-                    exclusionMatcher: exclusionMatcher,
-                    cancellationCheck: cancellationCheck
-                )
-                #if DEBUG
-                let classificationNanoseconds = DispatchTime.now().uptimeNanoseconds - classificationStart
                 return DirectoryContentsScanResult(
                     entries: entries,
-                    enumeratedItemCount: bulkResult.enumeratedItemCount,
+                    enumeratedItemCount: enumeratedItemCount,
                     enumerationNanoseconds: enumerationNanoseconds,
                     classificationNanoseconds: classificationNanoseconds
                 )
                 #else
                 return DirectoryContentsScanResult(
                     entries: entries,
-                    enumeratedItemCount: bulkResult.enumeratedItemCount
+                    enumeratedItemCount: enumeratedItemCount
                 )
                 #endif
+            } catch BulkDirectoryEnumerator.StreamError.unavailable {
+                // Discard the uncommitted native batches and use the Foundation path.
             }
         }
 

@@ -84,6 +84,75 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(packageMetadata.isPackage)
     }
 
+    func testBulkDirectoryCursorStreamsAndCancelsBetweenBatches() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        for index in 0..<1_200 {
+            try Data([UInt8(index % 256)]).write(
+                to: rootURL.appending(path: String(format: "streamed-%06d-with-padding-payload.dat", index))
+            )
+        }
+
+        let metadataLoader = ScanMetadataLoader()
+        let cursor = try BulkDirectoryEnumerator.makeCursor(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {}
+        )
+        var names: Set<String> = []
+        var batchCount = 0
+        var maxBatchSize = 0
+        var enumeratedItemCount = 0
+        while let batch = try cursor.nextBatch(cancellationCheck: {}) {
+            batchCount += 1
+            maxBatchSize = max(maxBatchSize, batch.entries.count)
+            enumeratedItemCount += batch.enumeratedItemCount
+            names.formUnion(batch.entries.map(\.url.lastPathComponent))
+        }
+
+        XCTAssertGreaterThan(batchCount, 1)
+        XCTAssertLessThan(maxBatchSize, 1_200)
+        XCTAssertEqual(enumeratedItemCount, 1_200)
+        XCTAssertEqual(names.count, 1_200)
+
+        let unavailableResult = try BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            forcedUnavailableAfterBatchCount: 1
+        )
+        XCTAssertNil(unavailableResult, "Late native fallback must discard earlier uncommitted batches.")
+
+        let cancellation = DirectoryEnumerationCancellation()
+        let cancellingCursor = try BulkDirectoryEnumerator.makeCursor(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: cancellation.check
+        )
+        let firstBatch = try XCTUnwrap(cancellingCursor.nextBatch(cancellationCheck: cancellation.check))
+        XCTAssertLessThan(firstBatch.enumeratedItemCount, 1_200)
+        cancellation.cancel()
+        XCTAssertThrowsError(try cancellingCursor.nextBatch(cancellationCheck: cancellation.check)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+
+        let parsingCancellation = CancellationAfterChecks(3)
+        let parsingCursor = try BulkDirectoryEnumerator.makeCursor(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: parsingCancellation.check
+        )
+        XCTAssertThrowsError(try parsingCursor.nextBatch(cancellationCheck: parsingCancellation.check)) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertNil(try parsingCursor.nextBatch(cancellationCheck: {}))
+    }
+
     func testPackagesAreLeafNodesByDefault() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -2071,6 +2140,190 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(cacheNode.descendantFileCount, 12)
     }
 
+    #if DEBUG
+    func testSuccessfulAtomicProbeResumesTraversalState() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        for index in 0..<12 {
+            let shardURL = rootURL.appending(path: "shard-\(index)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+            try Data(repeating: UInt8(index), count: 32)
+                .write(to: shardURL.appending(path: "payload.bin"))
+        }
+
+        let diagnostics = ScanDiagnostics(environment: [
+            "RADIX_SCAN_DIAGNOSTICS_LIMIT": "20",
+            "RADIX_SCAN_DIAGNOSTICS_SLOW_MS": "0"
+        ])
+        let metadataLoader = ScanMetadataLoader(diagnostics: diagnostics)
+        let rootMetadata = try metadataLoader.metadata(for: rootURL)
+        let rootEntries = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {}
+        )).entries
+        let summarizer = AtomicDirectorySummarizer(
+            metadataLoader: metadataLoader,
+            diagnostics: diagnostics
+        )
+        let exclusionMatcher = ScanExclusionMatcher(
+            patterns: [],
+            rootURL: rootURL,
+            includeCloudStorage: true
+        )
+        var progressContinuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let progressStream = AsyncThrowingStream<ScanProgressEvent, Error> { continuation in
+            progressContinuation = continuation
+        }
+        defer { progressContinuation.finish() }
+        var metrics = ScanMetrics()
+        var emissionState = ScanEmissionState()
+
+        let summary = try await summarizer.summaryIfNeeded(
+            url: rootURL,
+            childEntries: rootEntries,
+            metadata: rootMetadata,
+            includeHiddenFiles: true,
+            treatPackagesAsDirectories: false,
+            isNodeDependencyLayout: false,
+            minFileCount: 10,
+            maxAverageFileSize: 256,
+            workerLimit: 4,
+            exclusionMatcher: exclusionMatcher,
+            cancellationCheck: {},
+            metrics: &metrics,
+            continuation: progressContinuation,
+            emissionState: &emissionState
+        )
+        _ = progressStream
+
+        XCTAssertEqual(summary?.descendantFileCount, 12)
+        XCTAssertEqual(summary?.logicalSize, 384)
+        let report = diagnostics.makeReport(targetPath: rootURL.path, elapsedSeconds: 0)
+        XCTAssertTrue(report.contains("atomic.summary.resumed_probe"))
+        let cursorOpenLine = try XCTUnwrap(
+            report.split(separator: "\n").first { $0.contains("bulk.cursor.open: ") }
+        )
+        XCTAssertTrue(cursorOpenLine.contains("count=13"))
+    }
+    #endif
+
+    func testResumedAtomicProbeMatchesFullSummarySemantics() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        var shardURLs: [URL] = []
+        for index in 0..<14 {
+            let shardURL = rootURL.appending(path: "shard-\(index)", directoryHint: .isDirectory)
+            shardURLs.append(shardURL)
+            try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+            try Data(repeating: UInt8(index), count: 32)
+                .write(to: shardURL.appending(path: "payload.bin"))
+        }
+        let originalURL = shardURLs[0].appending(path: "original.bin")
+        let linkedURL = shardURLs[13].appending(path: "linked.bin")
+        try Data(repeating: 0xA5, count: 64).write(to: originalURL)
+        try FileManager.default.linkItem(at: originalURL, to: linkedURL)
+        try Data(repeating: 0xEE, count: 4_096).write(to: shardURLs[1].appending(path: "ignored.tmp"))
+        try Data(repeating: 0xDD, count: 2_048).write(to: shardURLs[2].appending(path: ".hidden.bin"))
+        try FileManager.default.createSymbolicLink(
+            at: shardURLs[3].appending(path: "cycle"),
+            withDestinationURL: rootURL
+        )
+
+        let metadataLoader = ScanMetadataLoader()
+        let rootMetadata = try metadataLoader.metadata(for: rootURL)
+        let rootEntries = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: false,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {}
+        )).entries
+        let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
+        let exclusionMatcher = ScanExclusionMatcher(
+            patterns: ["*.tmp"],
+            rootURL: rootURL,
+            includeCloudStorage: true
+        )
+        var progressContinuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let progressStream = AsyncThrowingStream<ScanProgressEvent, Error> { continuation in
+            progressContinuation = continuation
+        }
+        defer { progressContinuation.finish() }
+        var referenceMetrics = ScanMetrics()
+        var referenceEmissionState = ScanEmissionState()
+        var resumedSerialMetrics = ScanMetrics()
+        var resumedSerialEmissionState = ScanEmissionState()
+        var resumedMetrics = ScanMetrics()
+        var resumedEmissionState = ScanEmissionState()
+
+        let reference = try await summarizer.summarize(
+            at: rootURL,
+            includeHiddenFiles: false,
+            treatPackagesAsDirectories: false,
+            workerLimit: 1,
+            ownerNodeID: rootURL.path,
+            exclusionMatcher: exclusionMatcher,
+            cancellationCheck: {},
+            metrics: &referenceMetrics,
+            continuation: progressContinuation,
+            emissionState: &referenceEmissionState
+        )
+        let resumed = try await summarizer.summaryIfNeeded(
+            url: rootURL,
+            childEntries: rootEntries,
+            metadata: rootMetadata,
+            includeHiddenFiles: false,
+            treatPackagesAsDirectories: false,
+            isNodeDependencyLayout: false,
+            minFileCount: 10,
+            maxAverageFileSize: 256,
+            workerLimit: 4,
+            exclusionMatcher: exclusionMatcher,
+            cancellationCheck: {},
+            metrics: &resumedMetrics,
+            continuation: progressContinuation,
+            emissionState: &resumedEmissionState
+        )
+        let resumedSerial = try await summarizer.summaryIfNeeded(
+            url: rootURL,
+            childEntries: rootEntries,
+            metadata: rootMetadata,
+            includeHiddenFiles: false,
+            treatPackagesAsDirectories: false,
+            isNodeDependencyLayout: false,
+            minFileCount: 10,
+            maxAverageFileSize: 256,
+            workerLimit: 1,
+            exclusionMatcher: exclusionMatcher,
+            cancellationCheck: {},
+            metrics: &resumedSerialMetrics,
+            continuation: progressContinuation,
+            emissionState: &resumedSerialEmissionState
+        )
+        _ = progressStream
+
+        XCTAssertEqual(resumed?.descendantFileCount, reference?.descendantFileCount)
+        XCTAssertEqual(resumed?.logicalSize, reference?.logicalSize)
+        XCTAssertEqual(resumed?.allocatedSize, reference?.allocatedSize)
+        XCTAssertEqual(resumed?.isAccessible, reference?.isAccessible)
+        XCTAssertEqual(resumed?.warnings.count, reference?.warnings.count)
+        XCTAssertEqual(
+            Set(resumed?.hardLinkClaims.map(\.path) ?? []),
+            Set(reference?.hardLinkClaims.map(\.path) ?? [])
+        )
+        XCTAssertEqual(resumed?.hardLinkClaims.count, 2)
+        XCTAssertEqual(resumedSerial?.descendantFileCount, resumed?.descendantFileCount)
+        XCTAssertEqual(resumedSerial?.logicalSize, resumed?.logicalSize)
+        XCTAssertEqual(resumedSerial?.allocatedSize, resumed?.allocatedSize)
+        XCTAssertEqual(
+            Set(resumedSerial?.hardLinkClaims.map(\.path) ?? []),
+            Set(resumed?.hardLinkClaims.map(\.path) ?? [])
+        )
+    }
+
     func testNodeModulesPnpmStoreAutoSummarizesAtShallowDepth() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -2481,6 +2734,25 @@ private final class DirectoryEnumerationCancellation: @unchecked Sendable {
         let isCancelled = isCancelled
         lock.unlock()
         if isCancelled {
+            throw CancellationError()
+        }
+    }
+}
+
+private final class CancellationAfterChecks: @unchecked Sendable {
+    private let lock = NSLock()
+    private var remainingChecks: Int
+
+    init(_ remainingChecks: Int) {
+        self.remainingChecks = remainingChecks
+    }
+
+    func check() throws {
+        lock.lock()
+        remainingChecks -= 1
+        let shouldCancel = remainingChecks == 0
+        lock.unlock()
+        if shouldCancel {
             throw CancellationError()
         }
     }

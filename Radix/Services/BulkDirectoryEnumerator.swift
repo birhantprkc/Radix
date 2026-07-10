@@ -15,9 +15,156 @@ import Foundation
 /// the directory entry and the metadata Radix needs in the same kernel operation.
 /// Unsupported filesystems return `nil` so callers can transparently fall back.
 nonisolated enum BulkDirectoryEnumerator {
+    struct Batch: Sendable {
+        let entries: [DirectoryEntry]
+        let enumeratedItemCount: Int
+    }
+
     struct Result: Sendable {
         let entries: [DirectoryEntry]
         let enumeratedItemCount: Int
+    }
+
+    enum StreamError: Error {
+        case unavailable
+    }
+
+    /// Single-consumer cursor over the batches returned by `getattrlistbulk(2)`.
+    /// Dropping a partially consumed cursor closes its descriptor, which lets
+    /// threshold probes stop without reading or retaining the rest of a wide directory.
+    final class Cursor: @unchecked Sendable {
+        private let directoryURL: URL
+        private let includeHiddenFiles: Bool
+        private let loadsPackageMetadata: Bool
+        private let metadataLoader: ScanMetadataLoader
+        private let lock = NSLock()
+        private var descriptor: Int32
+        private var attributes = requestedAttributes
+        private var isFinished = false
+        private var buffer: UnsafeMutableRawBufferPointer?
+        private let forcedUnavailableAfterBatchCount: Int?
+        private var successfulBatchCount = 0
+
+        fileprivate init(
+            directoryURL: URL,
+            includeHiddenFiles: Bool,
+            loadsPackageMetadata: Bool,
+            metadataLoader: ScanMetadataLoader,
+            descriptor: Int32,
+            forcedUnavailableAfterBatchCount: Int?
+        ) {
+            self.directoryURL = directoryURL
+            self.includeHiddenFiles = includeHiddenFiles
+            self.loadsPackageMetadata = loadsPackageMetadata
+            self.metadataLoader = metadataLoader
+            self.descriptor = descriptor
+            self.forcedUnavailableAfterBatchCount = forcedUnavailableAfterBatchCount
+            buffer = UnsafeMutableRawBufferPointer.allocate(
+                byteCount: bufferCapacity,
+                alignment: 8
+            )
+        }
+
+        deinit {
+            closeDescriptor()
+            releaseBuffer()
+        }
+
+        func invalidate() {
+            lock.lock()
+            isFinished = true
+            closeDescriptor()
+            releaseBuffer()
+            lock.unlock()
+        }
+
+        func nextBatch(cancellationCheck: CancellationCheck) throws -> Batch? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !isFinished else { return nil }
+            try cancellationCheck()
+            if let forcedUnavailableAfterBatchCount,
+               successfulBatchCount == forcedUnavailableAfterBatchCount {
+                isFinished = true
+                closeDescriptor()
+                releaseBuffer()
+                throw StreamError.unavailable
+            }
+
+            guard let buffer,
+                  let bufferAddress = buffer.baseAddress else {
+                isFinished = true
+                closeDescriptor()
+                releaseBuffer()
+                throw StreamError.unavailable
+            }
+            let count = getattrlistbulk(
+                descriptor,
+                &attributes,
+                bufferAddress,
+                buffer.count,
+                UInt64(FSOPT_PACK_INVAL_ATTRS)
+            )
+            if count < 0 {
+                let errorCode = errno
+                isFinished = true
+                closeDescriptor()
+                releaseBuffer()
+                if unsupportedErrors.contains(errorCode) {
+                    throw StreamError.unavailable
+                }
+                throw posixError(errorCode, url: directoryURL)
+            }
+            guard count > 0 else {
+                try cancellationCheck()
+                isFinished = true
+                closeDescriptor()
+                releaseBuffer()
+                return nil
+            }
+
+            var entries: [DirectoryEntry] = []
+            var enumeratedItemCount = 0
+            do {
+                guard try parseBatch(
+                    bufferAddress: UnsafeRawPointer(bufferAddress),
+                    bufferByteCount: buffer.count,
+                    entryCount: Int(count),
+                    directoryURL: directoryURL,
+                    includeHiddenFiles: includeHiddenFiles,
+                    loadsPackageMetadata: loadsPackageMetadata,
+                    metadataLoader: metadataLoader,
+                    entries: &entries,
+                    enumeratedItemCount: &enumeratedItemCount,
+                    cancellationCheck: cancellationCheck
+                ) else {
+                    isFinished = true
+                    closeDescriptor()
+                    throw StreamError.unavailable
+                }
+            } catch {
+                isFinished = true
+                closeDescriptor()
+                releaseBuffer()
+                throw error
+            }
+            successfulBatchCount += 1
+            return Batch(
+                entries: entries,
+                enumeratedItemCount: enumeratedItemCount
+            )
+        }
+
+        private func closeDescriptor() {
+            guard descriptor >= 0 else { return }
+            close(descriptor)
+            descriptor = -1
+        }
+
+        private func releaseBuffer() {
+            buffer?.deallocate()
+            buffer = nil
+        }
     }
 
     private static let bufferCapacity = 64 * 1_024
@@ -28,10 +175,45 @@ nonisolated enum BulkDirectoryEnumerator {
         includeHiddenFiles: Bool,
         loadsPackageMetadata: Bool = true,
         metadataLoader: ScanMetadataLoader,
-        cancellationCheck: CancellationCheck
+        cancellationCheck: CancellationCheck,
+        forcedUnavailableAfterBatchCount: Int? = nil
     ) throws -> Result? {
-        try cancellationCheck()
+        var entries: [DirectoryEntry] = []
+        var enumeratedItemCount = 0
+        let cursor = try makeCursor(
+            at: directoryURL,
+            includeHiddenFiles: includeHiddenFiles,
+            loadsPackageMetadata: loadsPackageMetadata,
+            metadataLoader: metadataLoader,
+            cancellationCheck: cancellationCheck,
+            forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
+        )
+        do {
+            while let batch = try cursor.nextBatch(cancellationCheck: cancellationCheck) {
+                entries.append(contentsOf: batch.entries)
+                enumeratedItemCount += batch.enumeratedItemCount
+            }
+        } catch StreamError.unavailable {
+            return nil
+        }
+        return Result(
+            entries: entries,
+            enumeratedItemCount: enumeratedItemCount
+        )
+    }
 
+    static func makeCursor(
+        at directoryURL: URL,
+        includeHiddenFiles: Bool,
+        loadsPackageMetadata: Bool = true,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: CancellationCheck,
+        forcedUnavailableAfterBatchCount: Int? = nil
+    ) throws -> Cursor {
+        try cancellationCheck()
+        #if DEBUG
+        let openStart = metadataLoader.diagnostics?.start()
+        #endif
         let descriptor = directoryURL.withUnsafeFileSystemRepresentation { path in
             guard let path else { return Int32(-1) }
             return open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
@@ -39,61 +221,21 @@ nonisolated enum BulkDirectoryEnumerator {
         guard descriptor >= 0 else {
             throw posixError(errno, url: directoryURL)
         }
-        defer { close(descriptor) }
-
-        var attributes = requestedAttributes
-        var entries: [DirectoryEntry] = []
-        var enumeratedItemCount = 0
-        var batchCount = 0
-        let buffer = UnsafeMutableRawBufferPointer.allocate(
-            byteCount: bufferCapacity,
-            alignment: 8
+        #if DEBUG
+        metadataLoader.diagnostics?.record(
+            operation: "bulk.cursor.open",
+            url: directoryURL,
+            startedAt: openStart
         )
-        defer { buffer.deallocate() }
-        guard let bufferAddress = buffer.baseAddress else { return nil }
-
-        while true {
-            if batchCount.isMultiple(of: 8) {
-                try cancellationCheck()
-            }
-            batchCount += 1
-
-            let count = getattrlistbulk(
-                descriptor,
-                &attributes,
-                bufferAddress,
-                buffer.count,
-                UInt64(FSOPT_PACK_INVAL_ATTRS)
-            )
-            if count < 0 {
-                let errorCode = errno
-                if unsupportedErrors.contains(errorCode) {
-                    return nil
-                }
-                throw posixError(errorCode, url: directoryURL)
-            }
-            guard count > 0 else {
-                try cancellationCheck()
-                return Result(
-                    entries: entries,
-                    enumeratedItemCount: enumeratedItemCount
-                )
-            }
-
-            guard parseBatch(
-                bufferAddress: UnsafeRawPointer(bufferAddress),
-                bufferByteCount: buffer.count,
-                entryCount: Int(count),
-                directoryURL: directoryURL,
-                includeHiddenFiles: includeHiddenFiles,
-                loadsPackageMetadata: loadsPackageMetadata,
-                metadataLoader: metadataLoader,
-                entries: &entries,
-                enumeratedItemCount: &enumeratedItemCount
-            ) else {
-                return nil
-            }
-        }
+        #endif
+        return Cursor(
+            directoryURL: directoryURL,
+            includeHiddenFiles: includeHiddenFiles,
+            loadsPackageMetadata: loadsPackageMetadata,
+            metadataLoader: metadataLoader,
+            descriptor: descriptor,
+            forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
+        )
     }
 
     private static var requestedAttributes: attrlist {
@@ -148,12 +290,16 @@ nonisolated enum BulkDirectoryEnumerator {
         loadsPackageMetadata: Bool,
         metadataLoader: ScanMetadataLoader,
         entries: inout [DirectoryEntry],
-        enumeratedItemCount: inout Int
-    ) -> Bool {
+        enumeratedItemCount: inout Int,
+        cancellationCheck: CancellationCheck
+    ) throws -> Bool {
         let bufferEnd = bufferAddress.advanced(by: bufferByteCount)
         var entryAddress = bufferAddress
 
-        for _ in 0..<entryCount {
+        for index in 0..<entryCount {
+            if index.isMultiple(of: 64) {
+                try cancellationCheck()
+            }
             guard MemoryLayout<UInt32>.size <= entryAddress.distance(to: bufferEnd) else {
                 return false
             }

@@ -18,23 +18,43 @@ extension AtomicDirectorySummarizer {
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
+        emissionState: inout ScanEmissionState,
+        resumeState: AtomicDirectoryProbeResumeState? = nil
     ) async throws -> AtomicDirectorySummary? {
         #if DEBUG
         let summaryStart = diagnostics?.start()
         #endif
-        let summary = try await Self.summarizeInParallel(
-            at: url,
-            includeHiddenFiles: includeHiddenFiles,
-            treatPackagesAsDirectories: treatPackagesAsDirectories,
-            workerLimit: 1,
-            ownerNodeID: ownerNodeID,
-            exclusionMatcher: exclusionMatcher,
-            metadataLoader: metadataLoader,
-            cancellationCheck: cancellationCheck,
-            metrics: metrics,
-            continuation: continuation
-        )
+        let summary: AtomicDirectorySummary?
+        do {
+            summary = try await Self.summarizeInParallel(
+                at: url,
+                includeHiddenFiles: includeHiddenFiles,
+                treatPackagesAsDirectories: treatPackagesAsDirectories,
+                workerLimit: 1,
+                ownerNodeID: ownerNodeID,
+                exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
+                metrics: metrics,
+                continuation: continuation,
+                resumeState: resumeState
+            )
+        } catch is AtomicSummaryRootFallbackRequired {
+            resumeState?.invalidateCursors()
+            summary = try await Self.summarizeInParallel(
+                at: url,
+                includeHiddenFiles: includeHiddenFiles,
+                treatPackagesAsDirectories: treatPackagesAsDirectories,
+                workerLimit: 1,
+                ownerNodeID: ownerNodeID,
+                exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
+                metrics: metrics,
+                continuation: continuation,
+                forcesFoundationTraversal: true
+            )
+        }
         #if DEBUG
         diagnostics?.record(
             operation: "atomic.summary.enumerate",

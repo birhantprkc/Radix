@@ -7,6 +7,10 @@
 
 import Foundation
 
+nonisolated private struct AtomicProbeCancellation: Error {
+    let underlyingError: Error
+}
+
 extension AtomicDirectorySummarizer {
     private nonisolated static func directoryOnlyProbeLimit(minFileCount: Int) -> Int {
         min(max(64, minFileCount / 4), 512)
@@ -81,7 +85,9 @@ extension AtomicDirectorySummarizer {
     nonisolated func descendantAtomicProbeProfile(
         at url: URL,
         rootEntries: [DirectoryEntry],
+        rootMetadata: NodeMetadata,
         includeHiddenFiles: Bool,
+        treatPackagesAsDirectories: Bool,
         isNodeDependencyLayout: Bool,
         minFileCount: Int,
         maxAverageFileSize: Int64,
@@ -90,7 +96,7 @@ extension AtomicDirectorySummarizer {
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState
-    ) throws -> AtomicDirectoryProbeProfile {
+    ) throws -> AtomicDirectoryProbeOutcome {
         try cancellationCheck()
         #if DEBUG
         let probeStart = diagnostics?.start()
@@ -113,8 +119,11 @@ extension AtomicDirectorySummarizer {
             : max(1_000, minFileCount)
 
         if let bulkResult = try bulkDescendantAtomicProbeProfile(
+            at: url,
             rootEntries: rootEntries,
+            rootMetadata: rootMetadata,
             includeHiddenFiles: includeHiddenFiles,
+            treatPackagesAsDirectories: treatPackagesAsDirectories,
             isNodeDependencyLayout: isNodeDependencyLayout,
             minFileCount: minFileCount,
             maxAverageFileSize: maxAverageFileSize,
@@ -126,7 +135,7 @@ extension AtomicDirectorySummarizer {
             emissionState: &emissionState
         ) {
             visitedItems = bulkResult.visitedItems
-            return bulkResult.profile
+            return bulkResult.outcome
         }
 
         var enumeratorOptions: FileManager.DirectoryEnumerationOptions = []
@@ -140,7 +149,7 @@ extension AtomicDirectorySummarizer {
             options: enumeratorOptions,
             errorHandler: { _, _ in true }
         ) else {
-            return profile
+            return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
         }
 
         while let nextObject = enumerator.nextObject() {
@@ -155,7 +164,9 @@ extension AtomicDirectorySummarizer {
                     emissionState: &emissionState
                 )
             }
-            guard visitedItems <= maxVisitedItems else { return profile }
+            guard visitedItems <= maxVisitedItems else {
+                return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+            }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
             let childPath = childURL.path
@@ -192,7 +203,7 @@ extension AtomicDirectorySummarizer {
                     if !isNodeDependencyLayout,
                        profile.observedFileCount == 0,
                        profile.observedDirectoryCount >= Self.directoryOnlyProbeLimit(minFileCount: minFileCount) {
-                        return profile
+                        return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
                     }
                     continue
                 }
@@ -205,26 +216,29 @@ extension AtomicDirectorySummarizer {
                     minFileCount: minFileCount,
                     maxAverageFileSize: maxAverageFileSize
                 ) {
-                    return profile
+                    return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
                 }
                 // Once minimum sample is large-file-biased, skip summary and keep full detail.
                 if profile.observedFileCount >= minFileCount {
-                    return profile
+                    return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
                 }
             } catch {
-                return profile
+                return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
             }
         }
 
-        return profile
+        return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
     }
 
     /// Mirrors `FileManager.DirectoryEnumerator`'s depth-first probe using
     /// immediate-child bulk metadata batches. Returning `nil` selects the
     /// Foundation compatibility path above on unsupported filesystems.
     private nonisolated func bulkDescendantAtomicProbeProfile(
+        at url: URL,
         rootEntries: [DirectoryEntry],
+        rootMetadata: NodeMetadata,
         includeHiddenFiles: Bool,
+        treatPackagesAsDirectories: Bool,
         isNodeDependencyLayout: Bool,
         minFileCount: Int,
         maxAverageFileSize: Int64,
@@ -234,24 +248,98 @@ extension AtomicDirectorySummarizer {
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         emissionState: inout ScanEmissionState
-    ) throws -> (profile: AtomicDirectoryProbeProfile, visitedItems: Int)? {
+    ) throws -> (outcome: AtomicDirectoryProbeOutcome, visitedItems: Int)? {
         var profile = AtomicDirectoryProbeProfile(observedNodeDependencyLayout: isNodeDependencyLayout)
         var visitedItems = 0
+        var partial = AtomicDirectorySummaryPartial()
+        partial.updateAccessibility(rootMetadata.isReadable)
         // The caller already enumerated and classified the root directory.
-        // Reusing that array avoids a second full materialization before the
-        // bounded descendant probe has examined even one item.
-        var frames = [BulkProbeFrame(entries: rootEntries)]
+        // A successful probe hands these frames directly to the summary queue.
+        var frames = [AtomicSummaryWorkItem(
+            url: url,
+            treatPackagesAsDirectories: treatPackagesAsDirectories,
+            ownerNodeID: url.path,
+            bufferedEntries: rootEntries,
+            needsCursor: false
+        )]
 
         while !frames.isEmpty {
             try cancellationCheck()
             let frameIndex = frames.index(before: frames.endIndex)
-            guard frames[frameIndex].nextIndex < frames[frameIndex].entries.count else {
+            if frames[frameIndex].nextEntryIndex >= frames[frameIndex].bufferedEntries.count {
+                if frames[frameIndex].cursor == nil, frames[frameIndex].needsCursor {
+                    do {
+                        if frames.lazy.filter({ $0.cursor != nil }).count >= 64 {
+                            guard let childResult = try BulkDirectoryEnumerator.directoryEntries(
+                                at: frames[frameIndex].url,
+                                includeHiddenFiles: includeHiddenFiles,
+                                loadsPackageMetadata: !frames[frameIndex].treatPackagesAsDirectories,
+                                metadataLoader: metadataLoader,
+                                cancellationCheck: {
+                                    do {
+                                        try cancellationCheck()
+                                    } catch {
+                                        throw AtomicProbeCancellation(underlyingError: error)
+                                    }
+                                }
+                            ) else {
+                                return nil
+                            }
+                            frames[frameIndex].bufferedEntries = childResult.entries
+                            frames[frameIndex].nextEntryIndex = 0
+                            frames[frameIndex].needsCursor = false
+                            continue
+                        }
+                        frames[frameIndex].cursor = try BulkDirectoryEnumerator.makeCursor(
+                            at: frames[frameIndex].url,
+                            includeHiddenFiles: includeHiddenFiles,
+                            loadsPackageMetadata: !frames[frameIndex].treatPackagesAsDirectories,
+                            metadataLoader: metadataLoader,
+                            cancellationCheck: {
+                                do {
+                                    try cancellationCheck()
+                                } catch {
+                                    throw AtomicProbeCancellation(underlyingError: error)
+                                }
+                            }
+                        )
+                        frames[frameIndex].needsCursor = false
+                    } catch let cancellation as AtomicProbeCancellation {
+                        throw cancellation.underlyingError
+                    } catch {
+                        partial.recordWarning(for: frames[frameIndex].url, error: error)
+                        frames.removeLast()
+                        continue
+                    }
+                }
+
+                if let cursor = frames[frameIndex].cursor {
+                    do {
+                        if let batch = try cursor.nextBatch(cancellationCheck: {
+                            do {
+                                try cancellationCheck()
+                            } catch {
+                                throw AtomicProbeCancellation(underlyingError: error)
+                            }
+                        }) {
+                            frames[frameIndex].bufferedEntries = batch.entries
+                            frames[frameIndex].nextEntryIndex = 0
+                            continue
+                        }
+                    } catch let cancellation as AtomicProbeCancellation {
+                        throw cancellation.underlyingError
+                    } catch BulkDirectoryEnumerator.StreamError.unavailable {
+                        return nil
+                    } catch {
+                        return nil
+                    }
+                }
                 frames.removeLast()
                 continue
             }
 
-            let entry = frames[frameIndex].entries[frames[frameIndex].nextIndex]
-            frames[frameIndex].nextIndex += 1
+            let entry = frames[frameIndex].bufferedEntries[frames[frameIndex].nextEntryIndex]
+            frames[frameIndex].nextEntryIndex += 1
             visitedItems += 1
             if visitedItems == 1 || visitedItems.isMultiple(of: 64) {
                 emitProgressHeartbeat(
@@ -262,11 +350,17 @@ extension AtomicDirectorySummarizer {
                 )
             }
             guard visitedItems <= maxVisitedItems else {
-                return (profile, visitedItems)
+                return (
+                    AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                    visitedItems
+                )
             }
 
             guard let metadata = entry.metadata else {
-                return (profile, visitedItems)
+                return (
+                    AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                    visitedItems
+                )
             }
             let entryPath = entry.url.path
             guard !exclusionMatcher.excludesKnownNormalizedPath(
@@ -279,34 +373,36 @@ extension AtomicDirectorySummarizer {
             if Self.isNodeDependencyLayoutDirectory(at: entry.url) {
                 profile.observedNodeDependencyLayout = true
             }
+            partial.updateAccessibility(metadata.isReadable)
 
             if metadata.isDirectory {
                 profile.observedDirectoryCount += 1
                 if !isNodeDependencyLayout,
                    profile.observedFileCount == 0,
                    profile.observedDirectoryCount >= Self.directoryOnlyProbeLimit(minFileCount: minFileCount) {
-                    return (profile, visitedItems)
+                    return (
+                        AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                        visitedItems
+                    )
                 }
 
-                do {
-                    guard let childResult = try BulkDirectoryEnumerator.directoryEntries(
-                        at: entry.url,
-                        includeHiddenFiles: includeHiddenFiles,
-                        loadsPackageMetadata: false,
-                        metadataLoader: metadataLoader,
-                        cancellationCheck: cancellationCheck
-                    ) else {
-                        return nil
-                    }
-                    frames.append(BulkProbeFrame(entries: childResult.entries))
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    // Foundation's error handler skips unreadable descendants and
-                    // continues probing readable siblings.
+                let isTraversablePackageSymlink = metadata.isSymbolicLink
+                    && metadata.isPackage
+                    && !frames[frameIndex].treatPackagesAsDirectories
+                if !metadata.isSymbolicLink || isTraversablePackageSymlink {
+                    frames.append(
+                        AtomicSummaryWorkItem(
+                            url: entry.url,
+                            treatPackagesAsDirectories: metadata.isPackage
+                                ? true
+                                : frames[frameIndex].treatPackagesAsDirectories,
+                            ownerNodeID: frames[frameIndex].ownerNodeID
+                        )
+                    )
                 }
                 continue
             }
+            partial.accumulateFile(metadata, url: entry.url, ownerNodeID: frames[frameIndex].ownerNodeID)
             guard !metadata.isSymbolicLink else { continue }
 
             profile.totalSampledLogicalSize += metadata.logicalSize
@@ -314,16 +410,33 @@ extension AtomicDirectorySummarizer {
             if profile.suggestsAtomicDirectory(
                 minFileCount: minFileCount,
                 maxAverageFileSize: maxAverageFileSize
-            ) || profile.observedFileCount >= minFileCount {
-                return (profile, visitedItems)
+            ) {
+                for index in frames.indices {
+                    frames[index].requiresRootRestartOnFallback = true
+                }
+                return (
+                    AtomicDirectoryProbeOutcome(
+                        profile: profile,
+                        resumeState: AtomicDirectoryProbeResumeState(
+                            partial: partial,
+                            workItems: frames,
+                            visitedItemCount: visitedItems
+                        )
+                    ),
+                    visitedItems
+                )
+            }
+            if profile.observedFileCount >= minFileCount {
+                return (
+                    AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                    visitedItems
+                )
             }
         }
 
-        return (profile, visitedItems)
+        return (
+            AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+            visitedItems
+        )
     }
-}
-
-nonisolated private struct BulkProbeFrame {
-    let entries: [DirectoryEntry]
-    var nextIndex = 0
 }

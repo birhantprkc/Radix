@@ -254,6 +254,86 @@ final class ScanBenchmarkTests: XCTestCase {
         }
     }
 
+    func testAtomicProbeResumeBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_ATOMIC_PROBE"] == "1" else {
+            throw XCTSkip("Set RADIX_BENCH_ATOMIC_PROBE=1 to run the atomic-probe benchmark.")
+        }
+
+        let directoryCount = environment["RADIX_BENCH_ATOMIC_PROBE_DIRS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 32
+        let filesPerDirectory = environment["RADIX_BENCH_ATOMIC_PROBE_FILES_PER_DIR"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 200
+        let minFileCount = environment["RADIX_BENCH_ATOMIC_PROBE_THRESHOLD"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 5_000
+        let iterations = environment["RADIX_BENCH_ATOMIC_PROBE_ITERATIONS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 3
+        let workerLimit = environment["RADIX_BENCH_ATOMIC_PROBE_WORKERS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 8
+        let fileCount = directoryCount * filesPerDirectory
+        guard fileCount >= minFileCount else {
+            throw XCTSkip("Atomic-probe fixture must contain at least the threshold file count.")
+        }
+
+        let rootURL = try makeAtomicProbeBenchmarkDirectory(
+            directoryCount: directoryCount,
+            filesPerDirectory: filesPerDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let metadataLoader = ScanMetadataLoader()
+        let rootMetadata = try metadataLoader.metadata(for: rootURL)
+        let rootEntries = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {}
+        )).entries
+
+        for resumesProbe in [false, true] {
+            _ = try await runAtomicProbeBenchmark(
+                rootURL: rootURL,
+                rootEntries: rootEntries,
+                rootMetadata: rootMetadata,
+                expectedFileCount: fileCount,
+                minFileCount: minFileCount,
+                workerLimit: workerLimit,
+                resumesProbe: resumesProbe
+            )
+        }
+
+        var elapsedByMode: [Bool: [Double]] = [:]
+        for iteration in 1...iterations {
+            for resumesProbe in [false, true] {
+                let elapsed = try await runAtomicProbeBenchmark(
+                    rootURL: rootURL,
+                    rootEntries: rootEntries,
+                    rootMetadata: rootMetadata,
+                    expectedFileCount: fileCount,
+                    minFileCount: minFileCount,
+                    workerLimit: workerLimit,
+                    resumesProbe: resumesProbe
+                )
+                elapsedByMode[resumesProbe, default: []].append(elapsed)
+                print(
+                    "RADIX_BENCH_ATOMIC_PROBE_RESULT mode=\(resumesProbe ? "resume" : "restart") iteration=\(iteration) elapsed=\(String(format: "%.3f", elapsed))s"
+                )
+            }
+        }
+
+        for resumesProbe in [false, true] {
+            let elapsed = elapsedByMode[resumesProbe, default: []]
+            let average = elapsed.reduce(0, +) / Double(elapsed.count)
+            print(
+                "RADIX_BENCH_ATOMIC_PROBE_SUMMARY mode=\(resumesProbe ? "resume" : "restart") files=\(fileCount) threshold=\(minFileCount) workers=\(workerLimit) iterations=\(elapsed.count) avg_elapsed=\(String(format: "%.3f", average))s"
+            )
+        }
+    }
+
     func testPackageSummaryBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_PACKAGE_SUMMARY"] == "1" else {
@@ -378,6 +458,113 @@ final class ScanBenchmarkTests: XCTestCase {
             .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
             .filter { $0 > 0 }
         return parsed.isEmpty ? defaultValues : parsed
+    }
+
+    private func makeAtomicProbeBenchmarkDirectory(
+        directoryCount: Int,
+        filesPerDirectory: Int
+    ) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "radix-atomic-probe-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let payload = Data(repeating: 0x41, count: 32)
+        for directoryIndex in 0..<directoryCount {
+            let directoryURL = rootURL.appending(
+                path: String(format: "shard-%04d", directoryIndex),
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            for fileIndex in 0..<filesPerDirectory {
+                try payload.write(
+                    to: directoryURL.appending(path: String(format: "payload-%06d.dat", fileIndex))
+                )
+            }
+        }
+        return rootURL
+    }
+
+    private func runAtomicProbeBenchmark(
+        rootURL: URL,
+        rootEntries: [DirectoryEntry],
+        rootMetadata: NodeMetadata,
+        expectedFileCount: Int,
+        minFileCount: Int,
+        workerLimit: Int,
+        resumesProbe: Bool
+    ) async throws -> Double {
+        let metadataLoader = ScanMetadataLoader()
+        let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
+        let exclusionMatcher = ScanExclusionMatcher(
+            patterns: [],
+            rootURL: rootURL,
+            includeCloudStorage: true
+        )
+        var progressContinuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let progressStream = AsyncThrowingStream<ScanProgressEvent, Error> { continuation in
+            progressContinuation = continuation
+        }
+        defer { progressContinuation.finish() }
+        var metrics = ScanMetrics()
+        var emissionState = ScanEmissionState()
+        let startedAt = ContinuousClock.now
+        let summary: AtomicDirectorySummary?
+
+        if resumesProbe {
+            summary = try await summarizer.summaryIfNeeded(
+                url: rootURL,
+                childEntries: rootEntries,
+                metadata: rootMetadata,
+                includeHiddenFiles: true,
+                treatPackagesAsDirectories: false,
+                isNodeDependencyLayout: true,
+                minFileCount: minFileCount,
+                maxAverageFileSize: 256,
+                workerLimit: workerLimit,
+                exclusionMatcher: exclusionMatcher,
+                cancellationCheck: {},
+                metrics: &metrics,
+                continuation: progressContinuation,
+                emissionState: &emissionState
+            )
+        } else {
+            let outcome = try summarizer.descendantAtomicProbeProfile(
+                at: rootURL,
+                rootEntries: rootEntries,
+                rootMetadata: rootMetadata,
+                includeHiddenFiles: true,
+                treatPackagesAsDirectories: false,
+                isNodeDependencyLayout: true,
+                minFileCount: minFileCount,
+                maxAverageFileSize: 256,
+                exclusionMatcher: exclusionMatcher,
+                cancellationCheck: {},
+                metrics: &metrics,
+                continuation: progressContinuation,
+                emissionState: &emissionState
+            )
+            XCTAssertTrue(outcome.profile.suggestsAtomicDirectory(
+                minFileCount: minFileCount,
+                maxAverageFileSize: 256
+            ))
+            summary = try await summarizer.summarize(
+                at: rootURL,
+                includeHiddenFiles: true,
+                treatPackagesAsDirectories: false,
+                workerLimit: workerLimit,
+                ownerNodeID: rootURL.path,
+                exclusionMatcher: exclusionMatcher,
+                cancellationCheck: {},
+                metrics: &metrics,
+                continuation: progressContinuation,
+                emissionState: &emissionState
+            )
+        }
+        _ = progressStream
+
+        XCTAssertEqual(summary?.descendantFileCount, expectedFileCount)
+        let elapsed = startedAt.duration(to: .now)
+        return Double(elapsed.components.seconds) +
+            Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
     }
 
     private func makeWideBenchmarkDirectory(fileCount: Int) throws -> URL {

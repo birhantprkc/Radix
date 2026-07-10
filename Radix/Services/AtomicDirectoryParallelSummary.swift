@@ -7,15 +7,11 @@
 
 import Foundation
 
-nonisolated private struct AtomicSummaryWorkItem: Sendable {
-    let url: URL
-    let treatPackagesAsDirectories: Bool
-    let ownerNodeID: String
-}
-
 nonisolated private struct AtomicSummaryCancellation: Error {
     let underlyingError: Error
 }
+
+nonisolated struct AtomicSummaryRootFallbackRequired: Error {}
 
 nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
     private let condition = NSCondition()
@@ -23,8 +19,8 @@ nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
     private var activeItemCount = 0
     private var failure: Error?
 
-    init(rootItem: AtomicSummaryWorkItem) {
-        pendingItems = [rootItem]
+    init(items: [AtomicSummaryWorkItem]) {
+        pendingItems = items
     }
 
     func take(cancellationCheck: CancellationCheck) throws -> AtomicSummaryWorkItem? {
@@ -86,6 +82,16 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
     private var warnings: [ScanWarning] = []
     private var hardLinkClaims: [HardLinkClaim] = []
 
+    init(seed: AtomicDirectorySummaryPartial? = nil) {
+        guard let seed else { return }
+        allocatedSize = seed.allocatedSize
+        logicalSize = seed.logicalSize
+        descendantFileCount = seed.descendantFileCount
+        isAccessible = seed.isAccessible
+        warnings = seed.warnings
+        hardLinkClaims = seed.hardLinkClaims
+    }
+
     func updateAccessibility(_ readable: Bool) {
         lock.lock()
         isAccessible = isAccessible && readable
@@ -99,7 +105,7 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
         lock.unlock()
     }
 
-    func merge(_ partial: AtomicSummaryPartial) {
+    func merge(_ partial: AtomicDirectorySummaryPartial) {
         lock.lock()
         allocatedSize += partial.allocatedSize
         logicalSize += partial.logicalSize
@@ -121,35 +127,6 @@ nonisolated private final class AtomicSummaryAccumulator: @unchecked Sendable {
             warnings: warnings,
             hardLinkClaims: hardLinkClaims
         )
-    }
-}
-
-nonisolated private struct AtomicSummaryPartial: Sendable {
-    var allocatedSize: Int64 = 0
-    var logicalSize: Int64 = 0
-    var descendantFileCount = 0
-    var isAccessible = true
-    var warnings: [ScanWarning] = []
-    var hardLinkClaims: [HardLinkClaim] = []
-    mutating func updateAccessibility(_ readable: Bool) {
-        isAccessible = isAccessible && readable
-    }
-
-    mutating func recordWarning(for url: URL, error: Error) {
-        isAccessible = false
-        warnings.append(ScanWarningFactory.makeWarning(for: url, error: error))
-    }
-
-    mutating func accumulateFile(_ metadata: NodeMetadata, url: URL, ownerNodeID: String) {
-        allocatedSize += metadata.allocatedSize
-        logicalSize += metadata.logicalSize
-        if !metadata.isSymbolicLink {
-            descendantFileCount += 1
-        }
-        if metadata.linkCount > 1,
-           let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {
-            hardLinkClaims.append(claim)
-        }
     }
 }
 
@@ -195,29 +172,37 @@ extension AtomicDirectorySummarizer {
         metadataLoader: ScanMetadataLoader,
         cancellationCheck: @escaping CancellationCheck,
         metrics: ScanMetrics,
-        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
+        resumeState: AtomicDirectoryProbeResumeState? = nil,
+        forcesFoundationTraversal: Bool = false
     ) async throws -> AtomicDirectorySummary? {
         try cancellationCheck()
+        #if DEBUG
+        let resumedSummaryStart = resumeState == nil ? nil : metadataLoader.diagnostics?.start()
+        #endif
         let progressReporter = AtomicSummaryProgressReporter(
             metrics: metrics,
             continuation: continuation
         )
 
-        let accumulator = AtomicSummaryAccumulator()
-        do {
-            let rootValues = try url.resourceValues(forKeys: ScanMetadataLoader.atomicSummaryResourceKeySet)
-            accumulator.updateAccessibility(rootValues.isReadable ?? false)
-        } catch {
-            accumulator.recordWarning(for: url, error: error)
+        let accumulator = AtomicSummaryAccumulator(seed: resumeState?.partial)
+        if resumeState == nil {
+            do {
+                let rootValues = try url.resourceValues(forKeys: ScanMetadataLoader.atomicSummaryResourceKeySet)
+                accumulator.updateAccessibility(rootValues.isReadable ?? false)
+            } catch {
+                accumulator.recordWarning(for: url, error: error)
+            }
         }
 
-        let queue = AtomicSummaryWorkQueue(
-            rootItem: AtomicSummaryWorkItem(
+        let initialItems = resumeState?.workItems ?? [
+            AtomicSummaryWorkItem(
                 url: url,
                 treatPackagesAsDirectories: treatPackagesAsDirectories,
                 ownerNodeID: ownerNodeID
             )
-        )
+        ]
+        let queue = AtomicSummaryWorkQueue(items: initialItems)
         let workerCount = max(1, workerLimit)
 
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -238,7 +223,8 @@ extension AtomicDirectorySummarizer {
                                 metadataLoader: metadataLoader,
                                 cancellationCheck: cancellationCheck,
                                 progressReporter: progressReporter,
-                                workerVisitedItemCount: &workerVisitedItemCount
+                                workerVisitedItemCount: &workerVisitedItemCount,
+                                forcesFoundationTraversal: forcesFoundationTraversal
                             )
                             queue.finishCurrentItem()
                         } catch {
@@ -259,11 +245,23 @@ extension AtomicDirectorySummarizer {
             }
         }
 
-        return accumulator.makeSummary()
+        let summary = accumulator.makeSummary()
+        #if DEBUG
+        if let resumeState {
+            metadataLoader.diagnostics?.record(
+                operation: "atomic.summary.resumed_probe",
+                url: url,
+                startedAt: resumedSummaryStart,
+                itemCount: resumeState.visitedItemCount,
+                detail: "sources=\(resumeState.workItems.count)"
+            )
+        }
+        #endif
+        return summary
     }
 
     private nonisolated static func processWorkItem(
-        _ item: AtomicSummaryWorkItem,
+        _ initialItem: AtomicSummaryWorkItem,
         includeHiddenFiles: Bool,
         exclusionMatcher: ScanExclusionMatcher,
         accumulator: AtomicSummaryAccumulator,
@@ -271,33 +269,13 @@ extension AtomicDirectorySummarizer {
         metadataLoader: ScanMetadataLoader,
         cancellationCheck: CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter,
-        workerVisitedItemCount: inout Int
+        workerVisitedItemCount: inout Int,
+        forcesFoundationTraversal: Bool
     ) throws {
         try cancellationCheck()
+        var item = initialItem
 
-        let bulkResult: BulkDirectoryEnumerator.Result?
-        do {
-            bulkResult = try BulkDirectoryEnumerator.directoryEntries(
-                at: item.url,
-                includeHiddenFiles: includeHiddenFiles,
-                loadsPackageMetadata: !item.treatPackagesAsDirectories,
-                metadataLoader: metadataLoader,
-                cancellationCheck: {
-                    do {
-                        try cancellationCheck()
-                    } catch {
-                        throw AtomicSummaryCancellation(underlyingError: error)
-                    }
-                }
-            )
-        } catch let cancellation as AtomicSummaryCancellation {
-            throw cancellation.underlyingError
-        } catch {
-            accumulator.recordWarning(for: item.url, error: error)
-            return
-        }
-
-        guard let bulkResult else {
+        if forcesFoundationTraversal {
             try processWorkItemUsingFoundation(
                 item,
                 includeHiddenFiles: includeHiddenFiles,
@@ -312,8 +290,115 @@ extension AtomicDirectorySummarizer {
             return
         }
 
-        var partial = AtomicSummaryPartial()
-        for childEntry in bulkResult.entries {
+        var partial = AtomicDirectorySummaryPartial()
+        var pendingItems: [AtomicSummaryWorkItem] = []
+        if item.nextEntryIndex < item.bufferedEntries.count {
+            try stageEntries(
+                item.bufferedEntries[item.nextEntryIndex...],
+                from: item,
+                exclusionMatcher: exclusionMatcher,
+                partial: &partial,
+                pendingItems: &pendingItems,
+                cancellationCheck: cancellationCheck,
+                progressReporter: progressReporter,
+                workerVisitedItemCount: &workerVisitedItemCount
+            )
+            item.nextEntryIndex = item.bufferedEntries.count
+        }
+
+        var cursor = item.cursor
+        if cursor == nil, item.needsCursor {
+            do {
+                cursor = try BulkDirectoryEnumerator.makeCursor(
+                    at: item.url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    loadsPackageMetadata: !item.treatPackagesAsDirectories,
+                    metadataLoader: metadataLoader,
+                    cancellationCheck: {
+                        do {
+                            try cancellationCheck()
+                        } catch {
+                            throw AtomicSummaryCancellation(underlyingError: error)
+                        }
+                    }
+                )
+            } catch let cancellation as AtomicSummaryCancellation {
+                throw cancellation.underlyingError
+            } catch {
+                accumulator.merge(partial)
+                for pendingItem in pendingItems {
+                    queue.enqueue(pendingItem)
+                }
+                accumulator.recordWarning(for: item.url, error: error)
+                return
+            }
+        }
+
+        do {
+            while let batch = try cursor?.nextBatch(cancellationCheck: {
+                do {
+                    try cancellationCheck()
+                } catch {
+                    throw AtomicSummaryCancellation(underlyingError: error)
+                }
+            }) {
+                try stageEntries(
+                    batch.entries[...],
+                    from: item,
+                    exclusionMatcher: exclusionMatcher,
+                    partial: &partial,
+                    pendingItems: &pendingItems,
+                    cancellationCheck: {
+                        do {
+                            try cancellationCheck()
+                        } catch {
+                            throw AtomicSummaryCancellation(underlyingError: error)
+                        }
+                    },
+                    progressReporter: progressReporter,
+                    workerVisitedItemCount: &workerVisitedItemCount
+                )
+            }
+        } catch let cancellation as AtomicSummaryCancellation {
+            throw cancellation.underlyingError
+        } catch BulkDirectoryEnumerator.StreamError.unavailable {
+            if item.requiresRootRestartOnFallback {
+                throw AtomicSummaryRootFallbackRequired()
+            }
+            try processWorkItemUsingFoundation(
+                item,
+                includeHiddenFiles: includeHiddenFiles,
+                exclusionMatcher: exclusionMatcher,
+                accumulator: accumulator,
+                queue: queue,
+                metadataLoader: metadataLoader,
+                cancellationCheck: cancellationCheck,
+                progressReporter: progressReporter,
+                workerVisitedItemCount: &workerVisitedItemCount
+            )
+            return
+        } catch {
+            accumulator.recordWarning(for: item.url, error: error)
+            return
+        }
+
+        accumulator.merge(partial)
+        for pendingItem in pendingItems {
+            queue.enqueue(pendingItem)
+        }
+    }
+
+    private nonisolated static func stageEntries(
+        _ entries: ArraySlice<DirectoryEntry>,
+        from item: AtomicSummaryWorkItem,
+        exclusionMatcher: ScanExclusionMatcher,
+        partial: inout AtomicDirectorySummaryPartial,
+        pendingItems: inout [AtomicSummaryWorkItem],
+        cancellationCheck: CancellationCheck,
+        progressReporter: AtomicSummaryProgressReporter,
+        workerVisitedItemCount: inout Int
+    ) throws {
+        for childEntry in entries {
             try cancellationCheck()
             let childURL = childEntry.url
             workerVisitedItemCount += 1
@@ -351,7 +436,6 @@ extension AtomicDirectorySummarizer {
             }
 
             partial.updateAccessibility(childMetadata.isReadable)
-
             guard childMetadata.isDirectory else {
                 partial.accumulateFile(childMetadata, url: childURL, ownerNodeID: item.ownerNodeID)
                 continue
@@ -364,7 +448,7 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
-            queue.enqueue(
+            pendingItems.append(
                 AtomicSummaryWorkItem(
                     url: childURL,
                     treatPackagesAsDirectories: childMetadata.isPackage ? true : item.treatPackagesAsDirectories,
@@ -372,7 +456,6 @@ extension AtomicDirectorySummarizer {
                 )
             )
         }
-        accumulator.merge(partial)
     }
 
     /// Compatibility path for filesystems that do not support the requested
@@ -416,7 +499,7 @@ extension AtomicDirectorySummarizer {
             return
         }
 
-        var partial = AtomicSummaryPartial()
+        var partial = AtomicDirectorySummaryPartial()
         while let nextObject = enumerator.nextObject() {
             try cancellationCheck()
             guard let childURL = nextObject as? URL else { continue }

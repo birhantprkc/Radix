@@ -40,6 +40,84 @@ nonisolated struct AtomicDirectorySummary: Sendable {
     let hardLinkClaims: [HardLinkClaim]
 }
 
+nonisolated struct AtomicDirectorySummaryPartial: Sendable {
+    var allocatedSize: Int64 = 0
+    var logicalSize: Int64 = 0
+    var descendantFileCount = 0
+    var isAccessible = true
+    var warnings: [ScanWarning] = []
+    var hardLinkClaims: [HardLinkClaim] = []
+
+    mutating func updateAccessibility(_ readable: Bool) {
+        isAccessible = isAccessible && readable
+    }
+
+    mutating func recordWarning(for url: URL, error: Error) {
+        isAccessible = false
+        warnings.append(ScanWarningFactory.makeWarning(for: url, error: error))
+    }
+
+    mutating func accumulateFile(_ metadata: NodeMetadata, url: URL, ownerNodeID: String) {
+        allocatedSize += metadata.allocatedSize
+        logicalSize += metadata.logicalSize
+        if !metadata.isSymbolicLink {
+            descendantFileCount += 1
+        }
+        if metadata.linkCount > 1,
+           let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {
+            hardLinkClaims.append(claim)
+        }
+    }
+}
+
+nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
+    let url: URL
+    let treatPackagesAsDirectories: Bool
+    let ownerNodeID: String
+    var bufferedEntries: [DirectoryEntry]
+    var nextEntryIndex: Int
+    var cursor: BulkDirectoryEnumerator.Cursor?
+    var needsCursor: Bool
+    var requiresRootRestartOnFallback: Bool
+
+    init(
+        url: URL,
+        treatPackagesAsDirectories: Bool,
+        ownerNodeID: String,
+        bufferedEntries: [DirectoryEntry] = [],
+        nextEntryIndex: Int = 0,
+        cursor: BulkDirectoryEnumerator.Cursor? = nil,
+        needsCursor: Bool = true,
+        requiresRootRestartOnFallback: Bool = false
+    ) {
+        self.url = url
+        self.treatPackagesAsDirectories = treatPackagesAsDirectories
+        self.ownerNodeID = ownerNodeID
+        self.bufferedEntries = bufferedEntries
+        self.nextEntryIndex = nextEntryIndex
+        self.cursor = cursor
+        self.needsCursor = needsCursor
+        self.requiresRootRestartOnFallback = requiresRootRestartOnFallback
+    }
+}
+
+nonisolated struct AtomicDirectoryProbeResumeState: @unchecked Sendable {
+    var partial: AtomicDirectorySummaryPartial
+    var workItems: [AtomicSummaryWorkItem]
+    let visitedItemCount: Int
+
+    func invalidateCursors() {
+        for workItem in workItems {
+            workItem.cursor?.invalidate()
+        }
+    }
+}
+
+nonisolated struct AtomicDirectoryProbeOutcome: @unchecked Sendable {
+    var profile: AtomicDirectoryProbeProfile
+    var resumeState: AtomicDirectoryProbeResumeState?
+}
+
 nonisolated final class AtomicDirectorySummaryState {
     var allocatedSize: Int64 = 0
     var logicalSize: Int64 = 0
