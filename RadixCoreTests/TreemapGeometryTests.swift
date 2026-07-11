@@ -86,6 +86,26 @@ final class TreemapGeometryTests: XCTestCase {
         XCTAssertNil(aggregate?.nodeID)
     }
 
+    func testAggregateTileIsSortedBySizeBeforeSquarification() {
+        let large = makeTestFileNode(id: "/root/large", name: "large", size: 10_000)
+        let medium = makeTestFileNode(id: "/root/medium", name: "medium", size: 100)
+        let smallNodes = (0..<200).map {
+            makeTestFileNode(id: "/root/small-\($0)", name: "small-\($0)", size: 1)
+        }
+        let children = [large, medium] + smallNodes
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+
+        let segments = TreemapLayout.segments(
+            in: store,
+            rootID: root.id,
+            depthLimit: 1,
+            size: CGSize(width: 1_000, height: 1_000)
+        )
+
+        XCTAssertEqual(segments.map(\.id), [large.id, "treemap-aggregate-\(root.id)", medium.id])
+    }
+
     func testHitTestingPrefersDeepestContainingTile() throws {
         let nested = makeTestFileNode(id: "/root/folder/nested", name: "nested", size: 100)
         let folder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: [nested])

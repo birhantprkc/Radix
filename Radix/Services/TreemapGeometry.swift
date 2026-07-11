@@ -60,7 +60,17 @@ enum TreemapLayout {
         let rootChildren = try treeStore.children(of: root.id, cancellationCheck: cancellationCheck)
         let visibleChildren = rootChildren.isEmpty ? [root] : rootChildren
         let rootBounds = CGRect(origin: .zero, size: size)
-        let colorBranchContext = ColorBranchContext(rootChildIDs: rootColorBranchIDs(in: treeStore))
+        let colorBranchContext = try ColorBranchContext(
+            rootChildIDs: rootColorBranchIDs(
+                in: treeStore,
+                layoutRootID: root.id,
+                layoutRootChildren: rootChildren,
+                cancellationCheck: cancellationCheck
+            ),
+            rootEntries: visibleChildren,
+            treeStore: treeStore,
+            cancellationCheck: cancellationCheck
+        )
 
         var result: [TreemapSegment] = []
         try appendSegments(
@@ -118,7 +128,6 @@ enum TreemapLayout {
             let siblingIndex = siblingIndexes[entry.id] ?? 0
             let branch = branchContext ?? colorBranch(
                 for: entry,
-                in: treeStore,
                 context: colorBranchContext,
                 fallbackIndex: siblingIndex,
                 fallbackCount: siblingCount
@@ -226,7 +235,12 @@ enum TreemapLayout {
             visible.append(Entry(node: onlyGrouped))
         }
 
-        return visible
+        return visible.sorted {
+            if $0.totalSize == $1.totalSize {
+                return $0.id.localizedStandardCompare($1.id) == .orderedAscending
+            }
+            return $0.totalSize > $1.totalSize
+        }
     }
 
     private nonisolated static func squarifiedTiles(
@@ -367,20 +381,33 @@ enum TreemapLayout {
 
     private nonisolated static func colorBranch(
         for entry: Entry,
-        in treeStore: FileTreeStore,
         context: ColorBranchContext,
         fallbackIndex: Int,
         fallbackCount: Int
     ) -> ColorBranch {
-        guard let branchID = topLevelBranchID(for: entry.nodeID, in: treeStore),
-              let branch = context.branch(id: branchID) else {
+        guard let branch = context.branch(forNodeID: entry.nodeID) else {
             return ColorBranch(id: entry.colorID, index: fallbackIndex, count: fallbackCount)
         }
         return branch
     }
 
-    private nonisolated static func rootColorBranchIDs(in treeStore: FileTreeStore) -> [String] {
-        treeStore.children(of: treeStore.rootID)
+    private nonisolated static func rootColorBranchIDs(
+        in treeStore: FileTreeStore,
+        layoutRootID: String,
+        layoutRootChildren: [FileNodeRecord],
+        cancellationCheck: CancellationCheck
+    ) throws -> [String] {
+        let rootChildren: [FileNodeRecord]
+        if layoutRootID == treeStore.rootID {
+            rootChildren = layoutRootChildren
+        } else {
+            rootChildren = try treeStore.children(
+                of: treeStore.rootID,
+                cancellationCheck: cancellationCheck
+            )
+        }
+
+        return rootChildren
             .map(\.id)
             .filter { !SunburstFreeSpaceVisualization.isFreeSpaceNodeID($0) }
     }
@@ -421,20 +448,41 @@ enum TreemapLayout {
 
     private nonisolated struct ColorBranchContext {
         private let indexByID: [String: Int]
+        private let branchIDByNodeID: [String: String]
         private let count: Int
 
-        nonisolated init(rootChildIDs: [String]) {
+        nonisolated init(
+            rootChildIDs: [String],
+            rootEntries: [FileNodeRecord],
+            treeStore: FileTreeStore,
+            cancellationCheck: CancellationCheck
+        ) throws {
             var indexByID: [String: Int] = [:]
             for id in rootChildIDs where indexByID[id] == nil {
                 indexByID[id] = indexByID.count
             }
             self.indexByID = indexByID
             self.count = max(indexByID.count, 1)
+
+            var branchIDByNodeID: [String: String] = [:]
+            branchIDByNodeID.reserveCapacity(rootEntries.count)
+            for entry in rootEntries {
+                try cancellationCheck()
+                branchIDByNodeID[entry.id] = TreemapLayout.topLevelBranchID(
+                    for: entry.id,
+                    in: treeStore
+                ) ?? entry.id
+            }
+            self.branchIDByNodeID = branchIDByNodeID
         }
 
-        nonisolated func branch(id: String) -> ColorBranch? {
-            guard let index = indexByID[id] else { return nil }
-            return ColorBranch(id: id, index: index, count: count)
+        nonisolated func branch(forNodeID nodeID: String?) -> ColorBranch? {
+            guard let nodeID,
+                  let branchID = branchIDByNodeID[nodeID],
+                  let index = indexByID[branchID] else {
+                return nil
+            }
+            return ColorBranch(id: branchID, index: index, count: count)
         }
     }
 
