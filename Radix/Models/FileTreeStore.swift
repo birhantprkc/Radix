@@ -1215,25 +1215,6 @@ struct FileTreeStore: Sendable {
         return result
     }
 
-    private nonisolated static func makeOrderedNodeIDs(
-        rootID: String,
-        childIDsByID: [String: [String]],
-        nodesByID: [String: FileNodeRecord]
-    ) -> [String] {
-        guard nodesByID[rootID] != nil else { return [] }
-        var result: [String] = []
-        var stack: [String] = [rootID]
-        var visited: Set<String> = []
-
-        while let nodeID = stack.popLast() {
-            guard nodesByID[nodeID] != nil, visited.insert(nodeID).inserted else { continue }
-            result.append(nodeID)
-            stack.append(contentsOf: (childIDsByID[nodeID] ?? []).reversed())
-        }
-
-        return result
-    }
-
     private nonisolated static func sanitizedTopology(
         rootID: String,
         nodesByID inputNodesByID: [String: FileNodeRecord],

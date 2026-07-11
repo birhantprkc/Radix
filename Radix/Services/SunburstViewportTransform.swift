@@ -32,10 +32,6 @@ struct SunburstViewportTransform: Equatable {
         )
     }
 
-    func localPoint(for point: CGPoint, in baseFrame: CGRect) -> CGPoint? {
-        localChartPoint(for: point, in: baseFrame)?.point
-    }
-
     func localChartPoint(
         for point: CGPoint,
         in baseFrame: CGRect

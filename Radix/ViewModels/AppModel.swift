@@ -22,9 +22,6 @@ struct ArchiveOperationState: Identifiable, Equatable, Sendable {
     var message: String
     var progressFraction: Double?
 
-    var isDeterminate: Bool {
-        progressFraction != nil
-    }
 }
 
 struct ExportConfirmationState: Identifiable, Equatable, Sendable {
@@ -972,16 +969,6 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func compareCurrentScan(with sourceURL: URL) {
-        guard canCompareCurrentScanWithSnapshot,
-              let currentSnapshot = scanCoordinator.snapshot else {
-            presentErrorMessage(currentScanComparisonUnavailableMessage)
-            return
-        }
-        beginComparisonSetup(after: ScanComparisonCandidate(snapshot: currentSnapshot))
-        previewComparisonSnapshot(from: sourceURL, for: .before)
-    }
-
     private var currentScanComparisonUnavailableMessage: String {
         if !canCompareScanSnapshots {
             return comparisonUnavailableMessage
@@ -994,34 +981,21 @@ final class AppModel: ObservableObject {
     }
 
     func canRevealComparisonRowInFinder(_ row: ScanComparisonRow) -> Bool {
-        guard let node = currentScanNode(for: row.beforeNode, afterNode: row.afterNode) else {
-            return false
-        }
-        return dependencies.systemActions.fileExists(node.url)
+        canRevealComparisonNodeInFinder(
+            beforeNode: row.beforeNode,
+            afterNode: row.afterNode
+        )
     }
 
     func revealComparisonRowInFinder(_ row: ScanComparisonRow) {
-        guard let node = currentScanNode(for: row.beforeNode, afterNode: row.afterNode) else {
-            presentError(FileActionError.currentComparisonSnapshotUnavailable)
-            return
-        }
-        guard dependencies.systemActions.fileExists(node.url) else {
-            presentError(FileActionError.unavailable(path: node.url.path))
-            return
-        }
-        dependencies.systemActions.reveal(node.url)
+        revealComparisonNodeInFinder(
+            beforeNode: row.beforeNode,
+            afterNode: row.afterNode
+        )
     }
 
     func copyComparisonRowPath(_ row: ScanComparisonRow) {
-        guard let url = row.fileURL else {
-            presentError(FileActionError.unsupported)
-            return
-        }
-        do {
-            try dependencies.systemActions.copyPath(url)
-        } catch {
-            presentError(error)
-        }
+        copyComparisonPath(row.fileURL)
     }
 
     func canShowComparisonRowInBrowser(_ row: ScanComparisonRow) -> Bool {
@@ -1033,34 +1007,21 @@ final class AppModel: ObservableObject {
     }
 
     func canRevealComparisonChangeNodeInFinder(_ node: ScanComparisonChangeTreeNode) -> Bool {
-        guard let currentNode = currentScanNode(for: node.beforeNode, afterNode: node.afterNode) else {
-            return false
-        }
-        return dependencies.systemActions.fileExists(currentNode.url)
+        canRevealComparisonNodeInFinder(
+            beforeNode: node.beforeNode,
+            afterNode: node.afterNode
+        )
     }
 
     func revealComparisonChangeNodeInFinder(_ node: ScanComparisonChangeTreeNode) {
-        guard let currentNode = currentScanNode(for: node.beforeNode, afterNode: node.afterNode) else {
-            presentError(FileActionError.currentComparisonSnapshotUnavailable)
-            return
-        }
-        guard dependencies.systemActions.fileExists(currentNode.url) else {
-            presentError(FileActionError.unavailable(path: currentNode.url.path))
-            return
-        }
-        dependencies.systemActions.reveal(currentNode.url)
+        revealComparisonNodeInFinder(
+            beforeNode: node.beforeNode,
+            afterNode: node.afterNode
+        )
     }
 
     func copyComparisonChangeNodePath(_ node: ScanComparisonChangeTreeNode) {
-        guard let url = node.fileURL else {
-            presentError(FileActionError.unsupported)
-            return
-        }
-        do {
-            try dependencies.systemActions.copyPath(url)
-        } catch {
-            presentError(error)
-        }
+        copyComparisonPath(node.fileURL)
     }
 
     func canShowComparisonChangeNodeInBrowser(_ node: ScanComparisonChangeTreeNode) -> Bool {
@@ -1071,15 +1032,28 @@ final class AppModel: ObservableObject {
         showComparisonNodeInBrowser(beforeNode: node.beforeNode, afterNode: node.afterNode)
     }
 
-    func canRevealComparisonLocationInFinder(_ location: ScanComparisonLocationChange) -> Bool {
-        guard let node = currentScanNode(for: location.beforeNode, afterNode: location.afterNode) else {
+    func canShowComparisonLocationInBrowser(_ location: ScanComparisonLocationChange) -> Bool {
+        canShowComparisonNodeInBrowser(
+            beforeNode: location.beforeNode,
+            afterNode: location.afterNode
+        )
+    }
+
+    private func canRevealComparisonNodeInFinder(
+        beforeNode: FileNodeRecord?,
+        afterNode: FileNodeRecord?
+    ) -> Bool {
+        guard let node = currentScanNode(beforeNode: beforeNode, afterNode: afterNode) else {
             return false
         }
         return dependencies.systemActions.fileExists(node.url)
     }
 
-    func revealComparisonLocationInFinder(_ location: ScanComparisonLocationChange) {
-        guard let node = currentScanNode(for: location.beforeNode, afterNode: location.afterNode) else {
+    private func revealComparisonNodeInFinder(
+        beforeNode: FileNodeRecord?,
+        afterNode: FileNodeRecord?
+    ) {
+        guard let node = currentScanNode(beforeNode: beforeNode, afterNode: afterNode) else {
             presentError(FileActionError.currentComparisonSnapshotUnavailable)
             return
         }
@@ -1090,12 +1064,16 @@ final class AppModel: ObservableObject {
         dependencies.systemActions.reveal(node.url)
     }
 
-    func canShowComparisonLocationInBrowser(_ location: ScanComparisonLocationChange) -> Bool {
-        canShowComparisonNodeInBrowser(beforeNode: location.beforeNode, afterNode: location.afterNode)
-    }
-
-    func showComparisonLocationInBrowser(_ location: ScanComparisonLocationChange) {
-        showComparisonNodeInBrowser(beforeNode: location.beforeNode, afterNode: location.afterNode)
+    private func copyComparisonPath(_ url: URL?) {
+        guard let url else {
+            presentError(FileActionError.unsupported)
+            return
+        }
+        do {
+            try dependencies.systemActions.copyPath(url)
+        } catch {
+            presentError(error)
+        }
     }
 
     private func canShowComparisonNodeInBrowser(
@@ -1127,7 +1105,7 @@ final class AppModel: ObservableObject {
     /// The node ID for a comparison row within the current live scan, or nil when the row's
     /// side is not the current scan (e.g. comparing two imported archives) or the node is gone.
     private func currentScanNode(
-        for beforeNode: FileNodeRecord?,
+        beforeNode: FileNodeRecord?,
         afterNode: FileNodeRecord?
     ) -> FileNodeRecord? {
         guard let comparison = scanComparison,
@@ -1147,7 +1125,7 @@ final class AppModel: ObservableObject {
         beforeNode: FileNodeRecord?,
         afterNode: FileNodeRecord?
     ) -> String? {
-        currentScanNode(for: beforeNode, afterNode: afterNode)?.id
+        currentScanNode(beforeNode: beforeNode, afterNode: afterNode)?.id
     }
 
     func swapPendingComparisonSetup() {
@@ -2182,11 +2160,6 @@ final class AppModel: ObservableObject {
         }
 
         scheduleDeferredDiscardPileAdd([node])
-    }
-
-    @discardableResult
-    func addNodeToDiscardPile(_ node: FileNodeRecord) -> Bool {
-        addNodesToDiscardPile([node])
     }
 
     @discardableResult

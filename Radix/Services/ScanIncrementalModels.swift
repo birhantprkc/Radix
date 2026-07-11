@@ -49,16 +49,6 @@ nonisolated struct FileSystemEventFlags: OptionSet, Codable, Hashable, Sendable 
     static let itemIsDirectory = Self(rawValue: 1 << 13)
     static let itemIsSymbolicLink = Self(rawValue: 1 << 14)
 
-    var requiresFullTargetScan: Bool {
-        !intersection([
-            .userDropped,
-            .kernelDropped,
-            .eventIDsWrapped,
-            .rootChanged,
-            .volumeMounted,
-            .volumeUnmounted,
-        ]).isEmpty
-    }
 }
 
 nonisolated struct FileSystemEventRecord: Codable, Hashable, Sendable {

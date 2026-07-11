@@ -70,10 +70,6 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         !hasActiveRule
     }
 
-    var hasUserExclusions: Bool {
-        !basenamePatterns.isEmpty || !pathPatterns.isEmpty
-    }
-
     func excludes(_ url: URL, isDirectory: Bool) -> Bool {
         guard hasActiveRule else { return false }
         let normalizedPath = url.standardizedFileURL.path

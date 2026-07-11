@@ -25,8 +25,7 @@ let package = Package(
                 "Features",
                 "Info.plist",
                 "RadixApp.swift",
-                "Shared",
-                "Views"
+                "Shared"
             ],
             sources: [
                 "Models/FileNodeActions.swift",
