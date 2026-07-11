@@ -66,22 +66,16 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
     }
 
     init(snapshot: ScanSnapshot) {
-        self.id = snapshot.id
-        self.source = .currentSnapshot(snapshot.id)
-        self.displayName = snapshot.target.displayName
-        self.path = snapshot.target.url.path
-        self.targetKind = snapshot.target.kind
-        self.scanDate = snapshot.finishedAt ?? snapshot.startedAt
-        self.totalAllocatedSize = snapshot.aggregateStats.totalAllocatedSize
-        self.fileCount = snapshot.aggregateStats.fileCount
-        self.directoryCount = snapshot.aggregateStats.directoryCount
-        self.warningCount = snapshot.scanWarnings.count
-        self.scanOptions = snapshot.scanOptions
+        self.init(snapshot: snapshot, source: .currentSnapshot(snapshot.id))
     }
 
     init(retainedSnapshot snapshot: ScanSnapshot) {
+        self.init(snapshot: snapshot, source: .retainedSnapshot(snapshot))
+    }
+
+    private init(snapshot: ScanSnapshot, source: ScanComparisonCandidateSource) {
         self.id = snapshot.id
-        self.source = .retainedSnapshot(snapshot)
+        self.source = source
         self.displayName = snapshot.target.displayName
         self.path = snapshot.target.url.path
         self.targetKind = snapshot.target.kind
