@@ -66,7 +66,7 @@ private struct GeneralSettingsPane: View {
             }
 
             Section("Visualization") {
-                Toggle("Show free space in disk maps", isOn: $appModel.showFreeSpaceInSunburst)
+                Toggle("Show free space in disk maps", isOn: $appModel.showFreeSpaceInDiskMaps)
 
                 Picker("Disk map depth", selection: $appModel.maxRenderedDepth) {
                     ForEach(3...10, id: \.self) { depth in

@@ -78,7 +78,7 @@ struct WorkspaceView: View {
     @Binding var visualizationMode: ScanVisualizationMode
 
     let maxRenderedDepth: Int
-    let showFreeSpaceInSunburst: Bool
+    let showFreeSpaceInDiskMaps: Bool
     let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
     let startupDiskTarget: ScanTarget?
     let fullDiskAccessStatus: FullDiskAccessStatus
@@ -97,7 +97,7 @@ struct WorkspaceView: View {
                     focusedWorkspaceTarget: $focusedWorkspaceTarget,
                     visualizationMode: visualizationMode,
                     maxRenderedDepth: maxRenderedDepth,
-                    showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+                    showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
                     discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
                     fullDiskAccessStatus: fullDiskAccessStatus,
                     freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,

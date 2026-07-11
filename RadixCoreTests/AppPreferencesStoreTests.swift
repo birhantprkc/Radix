@@ -17,7 +17,7 @@ final class AppPreferencesStoreTests: XCTestCase {
             treatPackagesAsDirectories: true,
             maxRenderedDepth: 9,
             autoSummarizeDirectories: false,
-            showFreeSpaceInSunburst: true,
+            showFreeSpaceInDiskMaps: true,
             visualizationMode: .treemap,
             scanCloudStorageFolders: true,
             useScanExclusions: true,
@@ -56,7 +56,7 @@ final class AppPreferencesStoreTests: XCTestCase {
         XCTAssertTrue(preferences.treatPackagesAsDirectories)
         XCTAssertEqual(preferences.maxRenderedDepth, AppScanPreferences.defaults.maxRenderedDepth)
         XCTAssertFalse(preferences.autoSummarizeDirectories)
-        XCTAssertTrue(preferences.showFreeSpaceInSunburst)
+        XCTAssertTrue(preferences.showFreeSpaceInDiskMaps)
         XCTAssertEqual(preferences.visualizationMode, .treemap)
         XCTAssertTrue(preferences.scanCloudStorageFolders)
         XCTAssertTrue(preferences.useScanExclusions)

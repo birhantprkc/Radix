@@ -17,7 +17,7 @@ struct AppScanPreferences: Equatable {
     var treatPackagesAsDirectories: Bool
     var maxRenderedDepth: Int
     var autoSummarizeDirectories: Bool
-    var showFreeSpaceInSunburst: Bool
+    var showFreeSpaceInDiskMaps: Bool
     var visualizationMode: ScanVisualizationMode
     var scanCloudStorageFolders: Bool
     var useScanExclusions: Bool
@@ -28,7 +28,7 @@ struct AppScanPreferences: Equatable {
         treatPackagesAsDirectories: false,
         maxRenderedDepth: 6,
         autoSummarizeDirectories: true,
-        showFreeSpaceInSunburst: false,
+        showFreeSpaceInDiskMaps: false,
         visualizationMode: .sunburst,
         scanCloudStorageFolders: false,
         useScanExclusions: false,
@@ -60,7 +60,8 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
         static let treatPackagesAsDirectories = "treatPackagesAsDirectories"
         static let maxRenderedDepth = "maxRenderedDepth"
         static let autoSummarizeDirectories = "autoSummarizeDirectories"
-        static let showFreeSpaceInSunburst = "showFreeSpaceInSunburst"
+        // Keep the persisted key stable for existing installations.
+        static let showFreeSpaceInDiskMaps = "showFreeSpaceInSunburst"
         static let visualizationMode = "scanVisualizationMode"
         static let scanCloudStorageFolders = "scanCloudStorageFolders"
         static let useScanExclusions = "useScanExclusions"
@@ -100,11 +101,11 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
             scanCloudStorageFolders = defaults.bool(forKey: Key.scanCloudStorageFolders)
         }
 
-        let showFreeSpaceInSunburst: Bool
-        if defaults.object(forKey: Key.showFreeSpaceInSunburst) == nil {
-            showFreeSpaceInSunburst = AppScanPreferences.defaults.showFreeSpaceInSunburst
+        let showFreeSpaceInDiskMaps: Bool
+        if defaults.object(forKey: Key.showFreeSpaceInDiskMaps) == nil {
+            showFreeSpaceInDiskMaps = AppScanPreferences.defaults.showFreeSpaceInDiskMaps
         } else {
-            showFreeSpaceInSunburst = defaults.bool(forKey: Key.showFreeSpaceInSunburst)
+            showFreeSpaceInDiskMaps = defaults.bool(forKey: Key.showFreeSpaceInDiskMaps)
         }
 
         let visualizationMode = defaults.string(forKey: Key.visualizationMode)
@@ -127,7 +128,7 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
                 treatPackagesAsDirectories: defaults.bool(forKey: Key.treatPackagesAsDirectories),
                 maxRenderedDepth: maxRenderedDepth,
                 autoSummarizeDirectories: autoSummarizeDirectories,
-                showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+                showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
                 visualizationMode: visualizationMode,
                 scanCloudStorageFolders: scanCloudStorageFolders,
                 useScanExclusions: useScanExclusions,
@@ -142,7 +143,7 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
         defaults.set(preferences.treatPackagesAsDirectories, forKey: Key.treatPackagesAsDirectories)
         defaults.set(preferences.maxRenderedDepth, forKey: Key.maxRenderedDepth)
         defaults.set(preferences.autoSummarizeDirectories, forKey: Key.autoSummarizeDirectories)
-        defaults.set(preferences.showFreeSpaceInSunburst, forKey: Key.showFreeSpaceInSunburst)
+        defaults.set(preferences.showFreeSpaceInDiskMaps, forKey: Key.showFreeSpaceInDiskMaps)
         defaults.set(preferences.visualizationMode.rawValue, forKey: Key.visualizationMode)
         defaults.set(preferences.scanCloudStorageFolders, forKey: Key.scanCloudStorageFolders)
         defaults.set(preferences.useScanExclusions, forKey: Key.useScanExclusions)

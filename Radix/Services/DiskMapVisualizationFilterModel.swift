@@ -1,5 +1,5 @@
 //
-//  SunburstVisualizationFilterModel.swift
+//  DiskMapVisualizationFilterModel.swift
 //  Radix
 //
 
@@ -7,10 +7,10 @@ import Combine
 import Foundation
 
 @MainActor
-final class SunburstVisualizationFilterModel: ObservableObject {
-    @Published private var cachedResult: SunburstVisualizationFilterResult?
+final class DiskMapVisualizationFilterModel: ObservableObject {
+    @Published private var cachedResult: DiskMapVisualizationFilterResult?
 
-    private var pendingKey: SunburstVisualizationFilterKey?
+    private var pendingKey: DiskMapVisualizationFilterKey?
     private var filterTask: Task<Void, Never>?
 
     deinit {
@@ -18,11 +18,11 @@ final class SunburstVisualizationFilterModel: ObservableObject {
     }
 
     func input(
-        baseInput: SunburstVisualizationInput,
+        baseInput: DiskMapVisualizationInput,
         snapshotID: UUID,
         focusNodeID: FileNodeRecord.ID,
         hiddenNodeIDs: Set<FileNodeRecord.ID>
-    ) -> SunburstVisualizationInput {
+    ) -> DiskMapVisualizationInput {
         guard let key = filterKey(
             baseInput: baseInput,
             snapshotID: snapshotID,
@@ -40,7 +40,7 @@ final class SunburstVisualizationFilterModel: ObservableObject {
     }
 
     func update(
-        baseInput: SunburstVisualizationInput,
+        baseInput: DiskMapVisualizationInput,
         snapshotID: UUID,
         focusNodeID: FileNodeRecord.ID,
         hiddenNodeIDs: Set<FileNodeRecord.ID>
@@ -65,14 +65,14 @@ final class SunburstVisualizationFilterModel: ObservableObject {
     }
 
     private func filterKey(
-        baseInput: SunburstVisualizationInput,
+        baseInput: DiskMapVisualizationInput,
         snapshotID: UUID,
         focusNodeID: FileNodeRecord.ID,
         hiddenNodeIDs: Set<FileNodeRecord.ID>
-    ) -> SunburstVisualizationFilterKey? {
+    ) -> DiskMapVisualizationFilterKey? {
         guard !hiddenNodeIDs.isEmpty else { return nil }
 
-        return SunburstVisualizationFilterKey(
+        return DiskMapVisualizationFilterKey(
             snapshotID: snapshotID,
             focusNodeID: focusNodeID,
             rootNodeID: baseInput.rootNode.id,
@@ -83,8 +83,8 @@ final class SunburstVisualizationFilterModel: ObservableObject {
     }
 
     private func startFiltering(
-        baseInput: SunburstVisualizationInput,
-        key: SunburstVisualizationFilterKey
+        baseInput: DiskMapVisualizationInput,
+        key: DiskMapVisualizationFilterKey
     ) {
         filterTask?.cancel()
         pendingKey = key
@@ -95,7 +95,7 @@ final class SunburstVisualizationFilterModel: ObservableObject {
                     rootedAt: key.hiddenNodeIDs,
                     cancellationCheck: Task.checkCancellation
                 )
-                return SunburstVisualizationInput(
+                return DiskMapVisualizationInput(
                     rootNode: filteredStore.node(id: baseInput.rootNode.id) ?? filteredStore.root,
                     treeStore: filteredStore,
                     treeContentID: filteredStore.contentID,
@@ -121,14 +121,14 @@ final class SunburstVisualizationFilterModel: ObservableObject {
         }
     }
 
-    private func cache(_ input: SunburstVisualizationInput, for key: SunburstVisualizationFilterKey) {
+    private func cache(_ input: DiskMapVisualizationInput, for key: DiskMapVisualizationFilterKey) {
         guard pendingKey == key else { return }
-        cachedResult = SunburstVisualizationFilterResult(key: key, input: input)
+        cachedResult = DiskMapVisualizationFilterResult(key: key, input: input)
         pendingKey = nil
         filterTask = nil
     }
 
-    private func clearPendingFilter(for key: SunburstVisualizationFilterKey) {
+    private func clearPendingFilter(for key: DiskMapVisualizationFilterKey) {
         guard pendingKey == key else { return }
         pendingKey = nil
         filterTask = nil
@@ -143,12 +143,12 @@ final class SunburstVisualizationFilterModel: ObservableObject {
     }
 }
 
-private nonisolated struct SunburstVisualizationFilterResult {
-    let key: SunburstVisualizationFilterKey
-    let input: SunburstVisualizationInput
+private nonisolated struct DiskMapVisualizationFilterResult {
+    let key: DiskMapVisualizationFilterKey
+    let input: DiskMapVisualizationInput
 }
 
-private nonisolated struct SunburstVisualizationFilterKey: Hashable, Sendable {
+private nonisolated struct DiskMapVisualizationFilterKey: Hashable, Sendable {
     let snapshotID: UUID
     let focusNodeID: FileNodeRecord.ID
     let rootNodeID: FileNodeRecord.ID

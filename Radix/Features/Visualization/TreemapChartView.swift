@@ -227,7 +227,7 @@ struct TreemapChartView: View {
             return
         }
 
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
             if clickCount == 1 { onSelect(nil) }
             return
         }
@@ -252,7 +252,7 @@ struct TreemapChartView: View {
     ) -> TreemapDiscardPileDragItem? {
         guard let segment = hitTest(at: location, in: frame),
               let nodeID = segment.nodeID,
-              !SunburstFreeSpaceVisualization.isFreeSpaceNodeID(nodeID),
+              !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID),
               let node = treeStore.node(id: nodeID),
               canDragToDiscardPile(node) else {
             return nil
@@ -274,7 +274,7 @@ struct TreemapChartView: View {
     }
 
     private func summary(for node: FileNodeRecord) -> ChartSummary {
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
             return ChartSummary(
                 status: summaryStatus(for: node),
                 title: node.name,
@@ -300,7 +300,7 @@ struct TreemapChartView: View {
     }
 
     private func summaryStatus(for node: FileNodeRecord) -> String {
-        SunburstFreeSpaceVisualization.isFreeSpaceNodeID(node.id)
+        DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id)
             ? "Available Space"
             : node.itemKind
     }

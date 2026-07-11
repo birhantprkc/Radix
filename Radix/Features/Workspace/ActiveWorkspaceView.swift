@@ -9,7 +9,7 @@ struct ActiveWorkspaceView: View {
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
     let visualizationMode: ScanVisualizationMode
     let maxRenderedDepth: Int
-    let showFreeSpaceInSunburst: Bool
+    let showFreeSpaceInDiskMaps: Bool
     let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
@@ -17,7 +17,7 @@ struct ActiveWorkspaceView: View {
 
     // Dismissal is scoped to a single target scan: transformed snapshots keep it hidden.
     @State private var dismissedWarningsScanScope: WarningDismissalScope?
-    @StateObject private var visualizationFilter = SunburstVisualizationFilterModel()
+    @StateObject private var visualizationFilter = DiskMapVisualizationFilterModel()
 
     private var shouldSuggestFullDiskAccess: Bool {
         PermissionAdvisor.shouldSuggestFullDiskAccess(
@@ -56,7 +56,7 @@ struct ActiveWorkspaceView: View {
 
     @ViewBuilder
     private var chartContent: some View {
-        let baseVisualizationInput = sunburstVisualizationInput
+        let baseVisualizationInput = diskMapVisualizationInput
         let visualizationInput = visualizationFilter.input(
             baseInput: baseVisualizationInput,
             snapshotID: snapshot.id,
@@ -162,16 +162,16 @@ struct ActiveWorkspaceView: View {
         WarningDismissalScope(targetID: snapshot.target.id, startedAt: snapshot.startedAt)
     }
 
-    private var sunburstVisualizationInput: SunburstVisualizationInput {
-        SunburstFreeSpaceVisualization.input(
+    private var diskMapVisualizationInput: DiskMapVisualizationInput {
+        DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: focusNode,
-            showFreeSpace: showFreeSpaceInSunburst,
+            showFreeSpace: showFreeSpaceInDiskMaps,
             availableCapacity: freeSpaceAvailableCapacity(snapshot, focusNode)
         )
     }
 
-    private func visualizationParentNode(for input: SunburstVisualizationInput) -> FileNodeRecord? {
+    private func visualizationParentNode(for input: DiskMapVisualizationInput) -> FileNodeRecord? {
         guard input.rootNode.id == focusNode.id else { return nil }
         return input.treeStore.parent(of: input.rootNode.id)
     }
@@ -205,7 +205,7 @@ private struct VisualizationFilterUpdateToken: Equatable {
     let hiddenNodeIDs: [FileNodeRecord.ID]
 
     init(
-        baseInput: SunburstVisualizationInput,
+        baseInput: DiskMapVisualizationInput,
         snapshotID: UUID,
         focusNodeID: FileNodeRecord.ID,
         hiddenNodeIDs: Set<FileNodeRecord.ID>

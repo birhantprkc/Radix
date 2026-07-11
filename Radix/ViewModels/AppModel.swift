@@ -377,7 +377,7 @@ final class AppModel: ObservableObject {
     @Published var treatPackagesAsDirectories = false
     @Published var maxRenderedDepth = 6
     @Published var autoSummarizeDirectories = true
-    @Published var showFreeSpaceInSunburst = false
+    @Published var showFreeSpaceInDiskMaps = false
     @Published var scanVisualizationMode = ScanVisualizationMode.sunburst
     @Published var scanCloudStorageFolders = false
     @Published var useScanExclusions = false
@@ -472,7 +472,7 @@ final class AppModel: ObservableObject {
         treatPackagesAsDirectories = preferences.scan.treatPackagesAsDirectories
         maxRenderedDepth = preferences.scan.maxRenderedDepth
         autoSummarizeDirectories = preferences.scan.autoSummarizeDirectories
-        showFreeSpaceInSunburst = preferences.scan.showFreeSpaceInSunburst
+        showFreeSpaceInDiskMaps = preferences.scan.showFreeSpaceInDiskMaps
         scanVisualizationMode = preferences.scan.visualizationMode
         scanCloudStorageFolders = preferences.scan.scanCloudStorageFolders
         useScanExclusions = preferences.scan.useScanExclusions
@@ -651,7 +651,7 @@ final class AppModel: ObservableObject {
         treatPackagesAsDirectories = AppScanPreferences.defaults.treatPackagesAsDirectories
         maxRenderedDepth = AppScanPreferences.defaults.maxRenderedDepth
         autoSummarizeDirectories = AppScanPreferences.defaults.autoSummarizeDirectories
-        showFreeSpaceInSunburst = AppScanPreferences.defaults.showFreeSpaceInSunburst
+        showFreeSpaceInDiskMaps = AppScanPreferences.defaults.showFreeSpaceInDiskMaps
         scanVisualizationMode = AppScanPreferences.defaults.visualizationMode
         scanCloudStorageFolders = AppScanPreferences.defaults.scanCloudStorageFolders
         useScanExclusions = AppScanPreferences.defaults.useScanExclusions
@@ -1786,7 +1786,7 @@ final class AppModel: ObservableObject {
     }
 
     func sunburstFreeSpaceAvailableCapacity(for snapshot: ScanSnapshot, focusNode: FileNodeRecord) -> Int64? {
-        guard showFreeSpaceInSunburst,
+        guard showFreeSpaceInDiskMaps,
               snapshot.target.kind == .volume,
               focusNode.id == snapshot.root.id else {
             return nil
@@ -3226,7 +3226,7 @@ final class AppModel: ObservableObject {
         )
             .combineLatest(Publishers.CombineLatest4(
                 $autoSummarizeDirectories,
-                $showFreeSpaceInSunburst,
+                $showFreeSpaceInDiskMaps,
                 $useScanExclusions,
                 $exclusionPatterns
             ))
@@ -3249,7 +3249,7 @@ final class AppModel: ObservableObject {
             treatPackagesAsDirectories: treatPackagesAsDirectories,
             maxRenderedDepth: maxRenderedDepth,
             autoSummarizeDirectories: autoSummarizeDirectories,
-            showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+            showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
             visualizationMode: scanVisualizationMode,
             scanCloudStorageFolders: scanCloudStorageFolders,
             useScanExclusions: useScanExclusions,
@@ -3277,7 +3277,7 @@ final class AppModel: ObservableObject {
             treatPackagesAsDirectories: scanBasics.1,
             maxRenderedDepth: scanBasics.2,
             autoSummarizeDirectories: scanFilters.0,
-            showFreeSpaceInSunburst: scanFilters.1,
+            showFreeSpaceInDiskMaps: scanFilters.1,
             visualizationMode: visualizationMode,
             scanCloudStorageFolders: scanBasics.3,
             useScanExclusions: scanFilters.2,

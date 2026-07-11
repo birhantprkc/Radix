@@ -325,7 +325,7 @@ struct SunburstChartView: View {
             return
         }
 
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
             if clickCount == 1 {
                 onSelect(nil)
             }
@@ -392,7 +392,7 @@ struct SunburstChartView: View {
     private func discardPileDragItem(at location: CGPoint, in frame: CGRect) -> SunburstDiscardPileDragItem? {
         guard let segment = hitTest(at: location, in: frame),
               let nodeID = segment.nodeID,
-              !SunburstFreeSpaceVisualization.isFreeSpaceNodeID(nodeID),
+              !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID),
               let node = treeStore.node(id: nodeID),
               canDragToDiscardPile(node) else {
             return nil
@@ -433,7 +433,7 @@ struct SunburstChartView: View {
     }
 
     private func summary(for node: FileNodeRecord) -> ChartSummary {
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
             return ChartSummary(
                 status: summaryStatus(for: node),
                 title: node.name,
@@ -459,7 +459,7 @@ struct SunburstChartView: View {
     }
 
     private func summaryStatus(for node: FileNodeRecord) -> String {
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
             return "Available Space"
         }
         return node.itemKind

@@ -375,7 +375,7 @@ enum TreemapLayout {
 
     private nonisolated static func colorRole(for entry: Entry) -> SunburstColorRole {
         if entry.isAggregate { return .aggregate }
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(entry.nodeID) { return .freeSpace }
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(entry.nodeID) { return .freeSpace }
         return .normal
     }
 
@@ -409,7 +409,7 @@ enum TreemapLayout {
 
         return rootChildren
             .map(\.id)
-            .filter { !SunburstFreeSpaceVisualization.isFreeSpaceNodeID($0) }
+            .filter { !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0) }
     }
 
     private nonisolated static func topLevelBranchID(
