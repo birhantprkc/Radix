@@ -155,7 +155,6 @@ struct FileTreeStore: Sendable {
 
     nonisolated var childIDsByID: [String: [String]] {
         var result: [String: [String]] = [:]
-        result.reserveCapacity(topologyArena.childIndices.count)
         for parentIndex in topologyArena.orderedNodeIndices {
             let children = topologyArena.children(of: parentIndex)
             guard !children.isEmpty,
@@ -1210,25 +1209,6 @@ struct FileTreeStore: Sendable {
             guard let currentID = node(at: currentIndex)?.id else { continue }
             result.append(currentID)
             stack.append(contentsOf: topologyArena.children(of: currentIndex))
-        }
-
-        return result
-    }
-
-    private nonisolated static func makeOrderedNodeIDs(
-        rootID: String,
-        childIDsByID: [String: [String]],
-        nodesByID: [String: FileNodeRecord]
-    ) -> [String] {
-        guard nodesByID[rootID] != nil else { return [] }
-        var result: [String] = []
-        var stack: [String] = [rootID]
-        var visited: Set<String> = []
-
-        while let nodeID = stack.popLast() {
-            guard nodesByID[nodeID] != nil, visited.insert(nodeID).inserted else { continue }
-            result.append(nodeID)
-            stack.append(contentsOf: (childIDsByID[nodeID] ?? []).reversed())
         }
 
         return result

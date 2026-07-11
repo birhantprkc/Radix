@@ -1791,7 +1791,7 @@ actor ScanEngine {
                     enumerationNanoseconds += DispatchTime.now().uptimeNanoseconds - batchStart
                     let classificationStart = DispatchTime.now().uptimeNanoseconds
                     #endif
-                    let filteredEntries = try filteredDirectoryEntries(
+                    let filteredEntries = try ScanDirectoryEntryFilter.filteredEntries(
                         batch.entries,
                         under: url,
                         behavior: behavior,
@@ -1859,7 +1859,7 @@ actor ScanEngine {
             cancellationCheck: cancellationCheck
         )
         entries.append(contentsOf:
-            contentsOfLocalizedEnumerationFailures(
+            ScanDirectoryEntryFilter.entriesForLocalizedFailures(
                 enumerationResult.localizedFailures,
                 under: url,
                 behavior: behavior,
@@ -1886,55 +1886,6 @@ actor ScanEngine {
             directoryLease: nil
         )
         #endif
-    }
-
-    private nonisolated static func filteredDirectoryEntries(
-        _ entries: [DirectoryEntry],
-        under parentURL: URL,
-        behavior: ScanBehavior,
-        exclusionMatcher: ScanExclusionMatcher,
-        cancellationCheck: CancellationCheck
-    ) throws -> [DirectoryEntry] {
-        var filteredEntries: [DirectoryEntry] = []
-        filteredEntries.reserveCapacity(entries.count)
-        let parentPath = parentURL.path
-
-        for (index, entry) in entries.enumerated() {
-            if index.isMultiple(of: 64) {
-                try cancellationCheck()
-            }
-            let isDirectory = entry.metadata?.isDirectory ?? entry.isDirectoryHint ?? entry.url.hasDirectoryPath
-            let childPath = entry.url.path
-            guard includedChildName(entry.url.lastPathComponent, parentPath: parentPath, behavior: behavior),
-                  !exclusionMatcher.excludesKnownNormalizedPath(childPath, isDirectory: isDirectory) else {
-                continue
-            }
-            filteredEntries.append(entry)
-        }
-
-        try cancellationCheck()
-        return filteredEntries
-    }
-
-    private nonisolated static func contentsOfLocalizedEnumerationFailures(
-        _ failures: [DirectoryEnumerationFailure],
-        under parentURL: URL,
-        behavior: ScanBehavior,
-        exclusionMatcher: ScanExclusionMatcher
-    ) -> [DirectoryEntry] {
-        failures.compactMap { failure in
-            let isDirectoryHint = failure.isDirectoryHint ?? failure.url.hasDirectoryPath
-            guard includedChildURL(failure.url, under: parentURL, behavior: behavior),
-                  !exclusionMatcher.excludes(failure.url, isDirectory: isDirectoryHint) else {
-                return nil
-            }
-            return DirectoryEntry(
-                url: failure.url,
-                metadata: nil,
-                localizedEnumerationError: failure.error,
-                isDirectoryHint: isDirectoryHint
-            )
-        }
     }
 
     private nonisolated static func classifiedDirectoryEntries(
@@ -2025,7 +1976,11 @@ actor ScanEngine {
                 try cancellationCheck()
             }
             let childURL = contents[index]
-            guard includedChildURL(childURL, under: parentURL, behavior: behavior) else {
+            guard ScanDirectoryEntryFilter.includes(
+                childURL,
+                under: parentURL,
+                behavior: behavior
+            ) else {
                 continue
             }
 
@@ -2048,35 +2003,11 @@ actor ScanEngine {
     }
 
     private nonisolated static func shouldFilterStartupVolumeInternals(under parentURL: URL, behavior: ScanBehavior) -> Bool {
-        behavior.excludesStartupVolumeInternals && ["/", "/System"].contains(parentURL.path)
+        behavior.excludesStartupVolumeInternals && (parentURL.path == "/" || parentURL.path == "/System")
     }
 
     nonisolated static func includedChildURL(_ childURL: URL, under parentURL: URL, behavior: ScanBehavior) -> Bool {
-        includedChildName(childURL.lastPathComponent, parentPath: parentURL.path, behavior: behavior)
-    }
-
-    private nonisolated static func includedChildName(
-        _ childName: String,
-        parentPath: String,
-        behavior: ScanBehavior
-    ) -> Bool {
-        if parentPath == "/" && [".nofollow", ".resolve"].contains(childName) {
-            return false
-        }
-
-        if behavior.excludesStartupVolumeInternals &&
-            parentPath == "/" &&
-            [".file", ".vol", "dev", "Volumes"].contains(childName) {
-            return false
-        }
-
-        if behavior.excludesStartupVolumeInternals &&
-            parentPath == "/System" &&
-            childName == "Volumes" {
-            return false
-        }
-
-        return true
+        ScanDirectoryEntryFilter.includes(childURL, under: parentURL, behavior: behavior)
     }
 
     private nonisolated func makeFileNode(

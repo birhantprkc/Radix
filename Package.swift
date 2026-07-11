@@ -25,8 +25,7 @@ let package = Package(
                 "Features",
                 "Info.plist",
                 "RadixApp.swift",
-                "Shared",
-                "Views"
+                "Shared"
             ],
             sources: [
                 "Models/FileNodeActions.swift",
@@ -66,9 +65,12 @@ let package = Package(
                 "Services/ScanArchiveProgressReporting.swift",
                 "Services/ScanArchiveService.swift",
                 "Services/ScanArchiveTopologyValidator.swift",
+                "Services/ScanComparisonProjection.swift",
+                "Services/ScanComparisonQuery.swift",
                 "Services/ScanComparisonService.swift",
                 "Services/ScanDiagnostics.swift",
                 "Services/ScanDirectoryDescriptorPool.swift",
+                "Services/ScanDirectoryEntryFilter.swift",
                 "Services/ScanCoordinator.swift",
                 "Services/ScanEngine.swift",
                 "Services/ScanExclusionMatcher.swift",
@@ -85,6 +87,7 @@ let package = Package(
                 "Services/SystemIntegration.swift",
                 "ViewModels/AppQuickLookController.swift",
                 "ViewModels/AppModel.swift",
+                "ViewModels/ScanComparisonSetup.swift",
                 "ViewModels/SidebarScanCacheController.swift",
                 "ViewModels/SidebarModel.swift",
                 "ViewModels/WorkspaceNavigationModel.swift"
