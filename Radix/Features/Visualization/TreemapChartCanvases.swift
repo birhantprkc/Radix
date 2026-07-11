@@ -46,7 +46,7 @@ struct TreemapLabelCanvas: View, Equatable {
         in size: CGSize,
         context: inout GraphicsContext
     ) {
-        let rect = displayRect(for: segment, in: size)
+        let rect = TreemapRenderer.displayRect(for: segment, in: size)
         guard rect.width >= 42, rect.height >= 20 else { return }
 
         let horizontalPadding: CGFloat = 6
@@ -104,29 +104,22 @@ struct TreemapLabelCanvas: View, Equatable {
 }
 
 struct TreemapSelectionOverlay: View, Equatable {
-    let segments: [TreemapSelectionOverlaySegment]
-    let colorScheme: ColorScheme
+    let segment: TreemapSegment?
 
     var body: some View {
         Canvas { context, size in
-            for overlay in segments {
-                let path = tilePath(for: overlay.segment, in: size)
-                let style = TreemapChartStyler.selectionOverlayStyle(
-                    role: overlay.role,
-                    colorScheme: colorScheme
-                )
-                if style.fillOpacity > 0 {
-                    context.fill(path, with: .color(style.fillColor.opacity(style.fillOpacity)))
-                }
-                if style.underlayStrokeWidth > 0 {
-                    context.stroke(
-                        path,
-                        with: .color(style.underlayStrokeColor),
-                        lineWidth: style.underlayStrokeWidth
-                    )
-                }
-                context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
-            }
+            guard let segment else { return }
+            let style = TreemapChartStyler.selectionOverlayStyle()
+            guard let accentPath = strokedTilePath(
+                for: segment,
+                in: size,
+                lineWidth: style.strokeWidth
+            ) else { return }
+            context.stroke(
+                accentPath,
+                with: .color(style.strokeColor),
+                lineWidth: style.strokeWidth
+            )
         }
     }
 }
@@ -143,26 +136,49 @@ struct TreemapHoverOverlay: View, Equatable {
             if style.fillOpacity > 0 {
                 context.fill(path, with: .color(style.fillColor.opacity(style.fillOpacity)))
             }
-            if style.underlayStrokeWidth > 0 {
+            if let strokePath = strokedTilePath(
+                for: segment,
+                in: size,
+                lineWidth: style.strokeWidth
+            ) {
                 context.stroke(
-                    path,
-                    with: .color(style.underlayStrokeColor),
-                    lineWidth: style.underlayStrokeWidth
+                    strokePath,
+                    with: .color(style.strokeColor),
+                    lineWidth: style.strokeWidth
                 )
             }
-            context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
         }
     }
 }
 
-private func displayRect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
-    let rect = TreemapRenderer.rect(for: segment, in: size)
-    let inset = min(CGFloat(0.75), min(rect.width, rect.height) * 0.12)
-    return rect.insetBy(dx: inset, dy: inset)
+private func tilePath(
+    for segment: TreemapSegment,
+    in size: CGSize,
+    insetBy additionalInset: CGFloat = 0
+) -> Path {
+    let displayRect = TreemapRenderer.displayRect(for: segment, in: size)
+    let baseRadius = min(CGFloat(5), min(displayRect.width, displayRect.height) * 0.1)
+    let maximumInset = max(min(displayRect.width, displayRect.height) / 2, 0)
+    let inset = min(max(additionalInset, 0), maximumInset)
+    let rect = displayRect.insetBy(dx: inset, dy: inset)
+    let radius = max(baseRadius - inset, 0)
+    return Path(roundedRect: rect, cornerRadius: max(radius, 0))
 }
 
-private func tilePath(for segment: TreemapSegment, in size: CGSize) -> Path {
-    let rect = displayRect(for: segment, in: size)
-    let radius = min(CGFloat(5), min(rect.width, rect.height) * 0.1)
-    return Path(roundedRect: rect, cornerRadius: max(radius, 0))
+private func strokedTilePath(
+    for segment: TreemapSegment,
+    in size: CGSize,
+    lineWidth: CGFloat
+) -> Path? {
+    guard let strokeRect = TreemapRenderer.strokeRect(
+        for: segment,
+        in: size,
+        lineWidth: lineWidth
+    ) else {
+        return nil
+    }
+
+    let baseRadius = min(CGFloat(5), min(strokeRect.width, strokeRect.height) * 0.1)
+    let radius = max(baseRadius - (lineWidth / 2), 0)
+    return Path(roundedRect: strokeRect, cornerRadius: radius)
 }

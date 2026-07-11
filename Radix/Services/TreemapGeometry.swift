@@ -488,12 +488,40 @@ enum TreemapLayout {
 }
 
 enum TreemapRenderer {
+    private nonisolated static let displayInset: CGFloat = 0.75
+
     nonisolated static func rect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
         CGRect(
             x: segment.rect.minX * size.width,
             y: segment.rect.minY * size.height,
             width: segment.rect.width * size.width,
             height: segment.rect.height * size.height
+        )
+    }
+
+    nonisolated static func displayRect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
+        let rect = rect(for: segment, in: size)
+        let inset = min(
+            displayInset,
+            min(rect.width, rect.height) * 0.12
+        )
+        return rect.insetBy(dx: inset, dy: inset)
+    }
+
+    nonisolated static func strokeRect(
+        for segment: TreemapSegment,
+        in size: CGSize,
+        lineWidth: CGFloat
+    ) -> CGRect? {
+        let displayRect = displayRect(for: segment, in: size)
+        let effectiveLineWidth = max(lineWidth, 0)
+        guard min(displayRect.width, displayRect.height) >= effectiveLineWidth else {
+            return nil
+        }
+
+        return displayRect.insetBy(
+            dx: effectiveLineWidth / 2,
+            dy: effectiveLineWidth / 2
         )
     }
 }
@@ -555,7 +583,10 @@ struct TreemapHitTestIndex: Sendable {
 
         for index in candidates {
             let segment = segments[index]
-            if segment.rect.containsInclusively(unitPoint) { return segment }
+            guard segment.rect.containsInclusively(unitPoint) else { continue }
+            if TreemapRenderer.displayRect(for: segment, in: size).contains(point) {
+                return segment
+            }
         }
         return nil
     }

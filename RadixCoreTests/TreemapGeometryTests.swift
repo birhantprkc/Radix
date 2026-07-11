@@ -113,6 +113,37 @@ final class TreemapGeometryTests: XCTestCase {
         XCTAssertEqual(hit?.id, nested.id)
     }
 
+    func testHitTestingLeavesStructuralGuttersUnassigned() {
+        let left = makeTreemapSegment(
+            id: "left",
+            rect: CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        )
+        let right = makeTreemapSegment(
+            id: "right",
+            rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
+        )
+        let size = CGSize(width: 600, height: 300)
+        let index = TreemapHitTestIndex(segments: [left, right])
+
+        XCTAssertNil(index.segment(at: CGPoint(x: 300, y: 150), in: size))
+    }
+
+    func testSmallTilesDoNotProduceAnOutOfBoundsSelectionStrokeRect() {
+        let segment = makeTreemapSegment(
+            id: "tiny",
+            rect: CGRect(x: 0, y: 0, width: 0.004, height: 1)
+        )
+        let size = CGSize(width: 500, height: 300)
+
+        XCTAssertNil(
+            TreemapRenderer.strokeRect(
+                for: segment,
+                in: size,
+                lineWidth: 2.75
+            )
+        )
+    }
+
     func testDescendantsKeepTopLevelBranchColorFamily() throws {
         let nested = makeTestFileNode(id: "/root/folder/nested", name: "nested", size: 100)
         let folder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: [nested])
@@ -156,6 +187,21 @@ final class TreemapGeometryTests: XCTestCase {
             }
         ))
     }
+}
+
+private func makeTreemapSegment(id: String, rect: CGRect) -> TreemapSegment {
+    TreemapSegment(
+        id: id,
+        nodeID: id,
+        label: id,
+        rect: rect,
+        depth: 0,
+        colorToken: .single(id: id),
+        totalSize: 1,
+        isAggregate: false,
+        isDirectory: false,
+        showsContainerHeader: false
+    )
 }
 
 private extension CGRect {
