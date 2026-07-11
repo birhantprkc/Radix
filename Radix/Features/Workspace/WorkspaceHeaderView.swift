@@ -117,13 +117,13 @@ private struct MetricStrip: View {
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
-                    WorkspaceMetricView(title: "Scanned", value: RadixFormatters.size(displayedAllocatedSize))
-                    WorkspaceMetricView(title: "Files", value: "\(displayedFileCount)")
+                    WorkspaceMetricView(title: String(localized: "Scanned", comment: "Workspace metric label for allocated storage scanned."), value: RadixFormatters.size(displayedAllocatedSize))
+                    WorkspaceMetricView(title: String(localized: "Files", comment: "Workspace metric label for file count."), value: "\(displayedFileCount)")
                 }
 
                 GridRow {
-                    WorkspaceMetricView(title: "Folders", value: "\(displayedDirectoryCount)")
-                    WorkspaceMetricView(title: "Warnings", value: "\(warningCount)")
+                    WorkspaceMetricView(title: String(localized: "Folders", comment: "Workspace metric label for folder count."), value: "\(displayedDirectoryCount)")
+                    WorkspaceMetricView(title: String(localized: "Warnings", comment: "Workspace metric label for warning count."), value: "\(warningCount)")
                 }
             }
         }
@@ -131,10 +131,10 @@ private struct MetricStrip: View {
 
     private var metricRow: some View {
         Group {
-            WorkspaceMetricView(title: "Scanned", value: RadixFormatters.size(displayedAllocatedSize))
-            WorkspaceMetricView(title: "Files", value: "\(displayedFileCount)")
-            WorkspaceMetricView(title: "Folders", value: "\(displayedDirectoryCount)")
-            WorkspaceMetricView(title: "Warnings", value: "\(warningCount)")
+            WorkspaceMetricView(title: String(localized: "Scanned", comment: "Workspace metric label for allocated storage scanned."), value: RadixFormatters.size(displayedAllocatedSize))
+            WorkspaceMetricView(title: String(localized: "Files", comment: "Workspace metric label for file count."), value: "\(displayedFileCount)")
+            WorkspaceMetricView(title: String(localized: "Folders", comment: "Workspace metric label for folder count."), value: "\(displayedDirectoryCount)")
+            WorkspaceMetricView(title: String(localized: "Warnings", comment: "Workspace metric label for warning count."), value: "\(warningCount)")
         }
     }
 

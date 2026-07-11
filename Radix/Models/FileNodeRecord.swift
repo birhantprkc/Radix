@@ -66,18 +66,20 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
 
     var itemKind: String {
         if isSynthetic {
-            return "System Data"
+            return String(localized: "System Data", comment: "Kind label for storage that cannot be attributed to a regular file.")
         }
         if isAutoSummarized {
-            return "Summarized"
+            return String(localized: "Summarized", comment: "Kind label for a directory whose contents are summarized for performance.")
         }
         if isSymbolicLink {
-            return "Alias"
+            return String(localized: "Alias", comment: "Kind label for a symbolic link.")
         }
         if isPackage {
-            return "Package"
+            return String(localized: "Package", comment: "Kind label for an app bundle or package.")
         }
-        return isDirectory ? "Folder" : "File"
+        return isDirectory
+            ? String(localized: "Folder", comment: "Kind label for a directory.")
+            : String(localized: "File", comment: "Kind label for a regular file.")
     }
 
     var supportsFileActions: Bool {
@@ -150,22 +152,24 @@ extension FileNodeRecord {
 
     var secondaryStatusText: String? {
         if isSynthetic {
-            return "Estimated from volume usage"
+            return String(localized: "Estimated from volume usage", comment: "Secondary status shown for system storage estimated from volume usage.")
         }
         if isAutoSummarized {
-            return "Summarized (\(descendantFileCount) files)"
+            return String(localized: "Summarized (\(descendantFileCount) files)", comment: "Secondary status showing how many files are represented by a summarized directory.")
         }
         if !isAccessible {
-            return "Limited access"
+            return String(localized: "Limited access", comment: "Secondary status for a file or folder that could not be fully read.")
         }
         return nil
     }
 
     var accessDescription: String {
         if isSynthetic {
-            return "Estimated"
+            return String(localized: "Estimated", comment: "Metadata value indicating that storage is estimated.")
         }
-        return isAccessible ? "Readable" : "Limited"
+        return isAccessible
+            ? String(localized: "Readable", comment: "Metadata value indicating that a file or folder is readable.")
+            : String(localized: "Limited", comment: "Metadata value indicating that access to a file or folder is limited.")
     }
 
 }

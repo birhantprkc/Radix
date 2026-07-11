@@ -198,12 +198,12 @@ struct ScanComparisonView: View {
     private var changeHeadline: String {
         let delta = comparison.summary.allocatedDelta
         if delta > 0 {
-            return "Storage increased by \(RadixFormatters.size(delta))"
+            return String(localized: "Storage increased by \(RadixFormatters.size(delta))", comment: "Comparison headline for an increase in total storage.")
         }
         if delta < 0 {
-            return "Storage decreased by \(RadixFormatters.size(-delta))"
+            return String(localized: "Storage decreased by \(RadixFormatters.size(-delta))", comment: "Comparison headline for a decrease in total storage.")
         }
-        return "No net storage change"
+        return String(localized: "No net storage change", comment: "Comparison headline when total storage did not change.")
     }
 
     private var scanTimeline: some View {
@@ -211,13 +211,13 @@ struct ScanComparisonView: View {
             Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
                 .foregroundStyle(.secondary)
 
-            sourceSummary(title: "Earlier", snapshot: comparison.before)
+            sourceSummary(title: String(localized: "Earlier", comment: "Label for the older scan in a comparison."), snapshot: comparison.before)
 
             Image(systemName: "arrow.right")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.tertiary)
 
-            sourceSummary(title: "Later", snapshot: comparison.after)
+            sourceSummary(title: String(localized: "Later", comment: "Label for the newer scan in a comparison."), snapshot: comparison.after)
 
             Spacer(minLength: 8)
 
@@ -250,15 +250,18 @@ struct ScanComparisonView: View {
     private var coverageMessage: String {
         switch comparison.coverage.confidence {
         case .high:
-            return "Comparable: same location, matching scan settings, and complete scans."
+            return String(localized: "Comparable: same location, matching scan settings, and complete scans.", comment: "Comparison coverage message when both scans are directly comparable.")
         case .limited:
             let warningCount = comparison.coverage.beforeWarningCount + comparison.coverage.afterWarningCount
             if warningCount > 0 {
-                return "Limited coverage: \(warningCount) unreadable location\(warningCount == 1 ? "" : "s"). Missing entries below them are not necessarily deleted."
+                if warningCount == 1 {
+                    return String(localized: "Limited coverage: \(warningCount) unreadable location. Missing entries below it are not necessarily deleted.", comment: "Comparison coverage message when one location could not be read.")
+                }
+                return String(localized: "Limited coverage: \(warningCount) unreadable locations. Missing entries below them are not necessarily deleted.", comment: "Comparison coverage message when multiple locations could not be read.")
             }
-            return "Limited coverage: scan settings are unavailable for one or both scans."
+            return String(localized: "Limited coverage: scan settings are unavailable for one or both scans.", comment: "Comparison coverage message when scan settings are missing.")
         case .low:
-            return "Forensic comparison only: scan coverage or settings differ, so totals may not be directly comparable."
+            return String(localized: "Forensic comparison only: scan coverage or settings differ, so totals may not be directly comparable.", comment: "Comparison coverage message when scan totals should not be compared directly.")
         }
     }
 
@@ -307,11 +310,11 @@ struct ScanComparisonView: View {
 
     private var metricStrip: some View {
         HStack(spacing: 14) {
-            comparisonMetric("Files", signedCount(comparison.summary.fileCountDelta))
-            comparisonMetric("Folders", signedCount(comparison.summary.directoryCountDelta))
-            comparisonMetric("Modified", comparison.summary.changedCount.formatted())
+            comparisonMetric(String(localized: "Files", comment: "Comparison metric label for files."), signedCount(comparison.summary.fileCountDelta))
+            comparisonMetric(String(localized: "Folders", comment: "Comparison metric label for folders."), signedCount(comparison.summary.directoryCountDelta))
+            comparisonMetric(String(localized: "Modified", comment: "Comparison metric label for items whose tracked size changed."), comparison.summary.changedCount.formatted())
                 .help("Items present in both scans whose tracked size changed")
-            comparisonMetric("Warnings", signedCount(comparison.summary.warningCountDelta))
+            comparisonMetric(String(localized: "Warnings", comment: "Comparison metric label for scan warnings."), signedCount(comparison.summary.warningCountDelta))
         }
     }
 
@@ -331,23 +334,23 @@ struct ScanComparisonView: View {
     private var selectedChangeKindDescription: String {
         let selectedKinds = ScanComparisonChangeKind.allCases.filter(selectedChangeKinds.contains)
         if selectedKinds.isEmpty {
-            return "No change types selected"
+            return String(localized: "No change types selected", comment: "Accessibility description when no comparison change filters are selected.")
         }
         return selectedKinds.map(\.title).joined(separator: ", ")
     }
 
     private var changeKindSelectionTitle: String {
         if selectedChangeKinds == Self.allChangeKinds {
-            return "All Types"
+            return String(localized: "All Types", comment: "Comparison filter menu option when all change types are selected.")
         }
         if selectedChangeKinds.isEmpty {
-            return "None"
+            return String(localized: "None", comment: "Comparison filter menu option when no change types are selected.")
         }
         let selectedKinds = ScanComparisonChangeKind.allCases.filter(selectedChangeKinds.contains)
         if selectedKinds.count <= 2 {
             return selectedKinds.map(\.title).joined(separator: ", ")
         }
-        return "\(selectedKinds.count) Types"
+        return String(localized: "\(selectedKinds.count) Types", comment: "Comparison filter menu title showing the number of selected change types.")
     }
 
     private func changeKindBinding(for kind: ScanComparisonChangeKind) -> Binding<Bool> {
@@ -405,12 +408,12 @@ struct ScanComparisonView: View {
     private var significantStatusText: String {
         let percentage = projection.representedFraction.formatted(.percent.precision(.fractionLength(0)))
         if selectedChangeKinds.isEmpty {
-            return "No change types selected."
+            return String(localized: "No change types selected.", comment: "Comparison status when no change filters are selected.")
         }
         if projection.hiddenRootCount == 0 {
-            return "Showing all meaningful contributors; expand folders to trace their source."
+            return String(localized: "Showing all meaningful contributors; expand folders to trace their source.", comment: "Comparison status when all meaningful contributors are visible.")
         }
-        return "Named contributors represent \(percentage) of selected impact; \(projection.groupedAffectedCount.formatted()) smaller changes are grouped under Other."
+        return String(localized: "Named contributors represent \(percentage) of selected impact; \(projection.groupedAffectedCount.formatted()) smaller changes are grouped under Other.", comment: "Comparison status explaining that smaller changes are grouped under Other.")
     }
 
     private var significantTable: some View {
@@ -724,7 +727,9 @@ struct ScanComparisonView: View {
     }
 
     private var emptyStateTitle: String {
-        comparison.rows.isEmpty ? "No Tracked Size Changes" : "No Matching Changes"
+        comparison.rows.isEmpty
+            ? String(localized: "No Tracked Size Changes", comment: "Comparison empty-state title when no size changes were found.")
+            : String(localized: "No Matching Changes", comment: "Comparison empty-state title when filters hide all changes.")
     }
 
     private var emptyStateSystemImage: String {
@@ -733,11 +738,11 @@ struct ScanComparisonView: View {
 
     private var emptyStateDescription: String {
         if selectedChangeKinds.isEmpty {
-            return "Choose one or more change types to display."
+            return String(localized: "Choose one or more change types to display.", comment: "Comparison empty-state guidance when no change filters are selected.")
         }
         return comparison.rows.isEmpty
-            ? "No tracked size changes were found."
-            : "Choose a different view or adjust your search."
+            ? String(localized: "No tracked size changes were found.", comment: "Comparison empty-state message when scans have no tracked size changes.")
+            : String(localized: "Choose a different view or adjust your search.", comment: "Comparison empty-state guidance when filters produce no results.")
     }
 
     private var rowQuery: ScanComparisonRowQuery {
@@ -756,13 +761,17 @@ struct ScanComparisonView: View {
     }
 
     private func positiveChangeAccessibilityLabel(for row: ScanComparisonRow) -> String {
-        guard row.allocatedDelta > 0 else { return "No increase" }
-        return "Increased by \(RadixFormatters.size(row.allocatedDelta))"
+        guard row.allocatedDelta > 0 else {
+            return String(localized: "No increase", comment: "Accessibility label when a comparison row has no increase.")
+        }
+        return String(localized: "Increased by \(RadixFormatters.size(row.allocatedDelta))", comment: "Accessibility label for a comparison row's increase.")
     }
 
     private func negativeChangeAccessibilityLabel(for row: ScanComparisonRow) -> String {
-        guard row.allocatedDelta < 0 else { return "No decrease" }
-        return "Decreased by \(RadixFormatters.size(abs(row.allocatedDelta)))"
+        guard row.allocatedDelta < 0 else {
+            return String(localized: "No decrease", comment: "Accessibility label when a comparison row has no decrease.")
+        }
+        return String(localized: "Decreased by \(RadixFormatters.size(abs(row.allocatedDelta)))", comment: "Accessibility label for a comparison row's decrease.")
     }
 
     private func comparisonItemLabel(
@@ -810,7 +819,7 @@ struct ScanComparisonView: View {
     }
 
     private func itemSymbol(for row: ScanComparisonRow) -> String {
-        if row.itemKind == "Package" {
+        if (row.afterNode ?? row.beforeNode)?.isPackage == true {
             return "shippingbox.fill"
         }
         return row.isDirectory ? "folder.fill" : "doc.fill"
@@ -820,14 +829,16 @@ struct ScanComparisonView: View {
         if node.isRemainder {
             return "ellipsis.circle"
         }
-        if itemKind(for: node) == "Package" {
+        if (node.afterNode ?? node.beforeNode)?.isPackage == true {
             return "shippingbox.fill"
         }
         return node.isDirectory ? "folder.fill" : "doc.fill"
     }
 
     private func itemKind(for node: ScanComparisonChangeTreeNode) -> String {
-        (node.afterNode ?? node.beforeNode)?.itemKind ?? (node.isDirectory ? "Folder" : "Item")
+        (node.afterNode ?? node.beforeNode)?.itemKind ?? (node.isDirectory
+            ? String(localized: "Folder", comment: "Fallback kind label for a comparison folder.")
+            : String(localized: "Item", comment: "Fallback kind label for a comparison item."))
     }
 
     private func comparisonDate(_ date: Date) -> String {
@@ -865,9 +876,9 @@ private enum ScanComparisonDisplayMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .significant:
-            return "Significant"
+            return String(localized: "Significant", comment: "Comparison display mode showing the most meaningful contributors.")
         case .allChanges:
-            return "All Changes"
+            return String(localized: "All Changes", comment: "Comparison display mode showing every matching change.")
         }
     }
 }

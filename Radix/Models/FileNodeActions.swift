@@ -19,15 +19,15 @@ enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .quickLook:
-            return "Quick Look"
+            return String(localized: "Quick Look", comment: "File action that previews the selected item.")
         case .revealInFinder:
-            return "Reveal in Finder"
+            return String(localized: "Reveal in Finder", comment: "File action that shows the selected item in Finder.")
         case .open:
-            return "Open"
+            return String(localized: "Open", comment: "File action that opens the selected item.")
         case .copyPath:
-            return "Copy Path"
+            return String(localized: "Copy Path", comment: "File action that copies the selected item's path.")
         case .moveToTrash:
-            return "Move to Trash"
+            return String(localized: "Move to Trash", comment: "Destructive file action that moves the selected item to the Trash.")
         }
     }
 

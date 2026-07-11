@@ -60,13 +60,13 @@ enum SystemIntegration {
         var errorDescription: String? {
             switch self {
             case .openFailed(let path):
-                return "macOS could not open the item at \(path)."
+                return String(localized: "macOS could not open the item at \(path).", comment: "Error shown when opening a selected file fails.")
             case .copyPathFailed(let path):
-                return "macOS could not copy the path for \(path)."
+                return String(localized: "macOS could not copy the path for \(path).", comment: "Error shown when copying a selected file path fails.")
             case .quickLookUnavailable(let path):
-                return "The item at \(path) is no longer available for Quick Look."
+                return String(localized: "The item at \(path) is no longer available for Quick Look.", comment: "Error shown when Quick Look cannot preview a selected item.")
             case .protectedTrashLocation(let path):
-                return "Radix will not move the protected location at \(path) to the Trash."
+                return String(localized: "Radix will not move the protected location at \(path) to the Trash.", comment: "Safety error shown when a protected scan root is selected for deletion.")
             }
         }
     }
@@ -86,8 +86,8 @@ enum SystemIntegration {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = false
-        panel.prompt = "Scan"
-        panel.message = "Choose a folder or mounted volume to analyze."
+        panel.prompt = String(localized: "Scan", comment: "Open panel action button for choosing a folder or volume to scan.")
+        panel.message = String(localized: "Choose a folder or mounted volume to analyze.", comment: "Open panel instruction for selecting a scan location.")
 
         guard panel.runModal() == .OK, let url = panel.url else {
             return nil
@@ -104,7 +104,7 @@ enum SystemIntegration {
         panel.allowedContentTypes = [radixScanArchiveContentType]
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = defaultFileName
-        panel.prompt = "Export"
+        panel.prompt = String(localized: "Export", comment: "Save panel action button for exporting a scan snapshot.")
 
         let cancellationState = ExportPanelCancellationState()
         let presentation = ExportPanelPresentation(
@@ -131,7 +131,7 @@ enum SystemIntegration {
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.canCreateDirectories = false
-        panel.prompt = "Import"
+        panel.prompt = String(localized: "Import", comment: "Open panel action button for importing a scan snapshot.")
 
         guard panel.runModal() == .OK else {
             return nil
@@ -149,8 +149,8 @@ enum SystemIntegration {
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.canCreateDirectories = false
-        panel.prompt = "Choose"
-        panel.message = "Choose a Radix scan snapshot."
+        panel.prompt = String(localized: "Choose", comment: "Open panel action button for choosing a saved scan snapshot.")
+        panel.message = String(localized: "Choose a Radix scan snapshot.", comment: "Open panel instruction for selecting a saved scan snapshot.")
 
         let cancellationState = ExportPanelCancellationState()
         let presentation = ExportPanelPresentation(

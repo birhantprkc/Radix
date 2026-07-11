@@ -196,7 +196,9 @@ private extension WorkspaceView {
     }
 
     var inspectorToggleTitle: String {
-        isInspectorPresented ? "Hide Inspector" : "Show Inspector"
+        isInspectorPresented
+            ? String(localized: "Hide Inspector", comment: "Toolbar action for hiding the inspector sidebar.")
+            : String(localized: "Show Inspector", comment: "Toolbar action for showing the inspector sidebar.")
     }
 }
 

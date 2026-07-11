@@ -20,7 +20,7 @@ actor ScanEngine {
         var errorDescription: String? {
             switch self {
             case .missingRootNode:
-                return "The scan could not assemble a root node."
+                return String(localized: "The scan could not assemble a root node.", comment: "Error shown when a completed scan has no root node.")
             }
         }
     }

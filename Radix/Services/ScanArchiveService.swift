@@ -179,23 +179,23 @@ nonisolated enum ScanArchiveError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .incompleteSnapshot:
-            return "Only complete scans can be exported."
+            return String(localized: "Only complete scans can be exported.", comment: "Error shown when exporting a scan that is still in progress.")
         case .invalidArchivePackage(let detail):
-            return "The Radix scan snapshot package is invalid: \(detail)"
+            return String(localized: "The Radix scan snapshot package is invalid: \(detail)", comment: "Error shown when an imported snapshot package is malformed.")
         case .unsupportedFormat(let format):
-            return "Unsupported Radix scan snapshot format: \(format)."
+            return String(localized: "Unsupported Radix scan snapshot format: \(format).", comment: "Error shown when an imported snapshot uses an unknown format.")
         case .unsupportedVersion(let version):
-            return "Unsupported Radix scan snapshot version: \(version)."
+            return String(localized: "Unsupported Radix scan snapshot version: \(version).", comment: "Error shown when an imported snapshot uses an unsupported version.")
         case .manifest(let detail):
-            return "Radix could not read the scan snapshot manifest: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot manifest: \(detail)", comment: "Error shown when an imported snapshot manifest cannot be read.")
         case .nodes(let detail):
-            return "Radix could not read the scan snapshot node payload: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot node payload: \(detail)", comment: "Error shown when imported snapshot node data cannot be read.")
         case .topology(let detail):
-            return "Radix could not read the scan snapshot topology: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot topology: \(detail)", comment: "Error shown when imported snapshot tree topology cannot be read.")
         case .integrity(let detail):
-            return "Radix scan snapshot integrity check failed: \(detail)"
+            return String(localized: "Radix scan snapshot integrity check failed: \(detail)", comment: "Error shown when an imported snapshot fails its integrity check.")
         case .stats(let detail):
-            return "Radix could not read the scan snapshot stats: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot stats: \(detail)", comment: "Error shown when imported snapshot statistics cannot be read.")
         }
     }
 }
@@ -253,7 +253,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .preparing,
-            message: "Preparing archive"
+            message: String(localized: "Preparing archive", comment: "Progress message while preparing a scan archive.")
         ))
         let nodeChecksum = try await writeNodes(
             snapshot.treeStore,
@@ -264,13 +264,13 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .writingTopology,
-            message: "Writing topology"
+            message: String(localized: "Writing topology", comment: "Progress message while writing scan tree topology.")
         ))
         try writeJSON(ScanArchiveTopology(snapshot.treeStore), to: topologyURL)
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .writingMetadata,
-            message: "Writing metadata"
+            message: String(localized: "Writing metadata", comment: "Progress message while writing scan metadata.")
         ))
         try writeJSON(snapshot.scanWarnings.map(ScanArchiveWarningV1.init), to: warningsURL)
         try writeJSON(ScanArchiveStatsV1(snapshot.aggregateStats), to: statsURL)
@@ -319,7 +319,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingManifest,
-            message: "Reading manifest"
+            message: String(localized: "Reading manifest", comment: "Progress message while reading a scan archive manifest.")
         ))
         let manifest = try readValidatedManifest(from: sourceURL)
 
@@ -354,7 +354,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingTopology,
-            message: "Reading topology"
+            message: String(localized: "Reading topology", comment: "Progress message while reading scan tree topology.")
         ))
         let archivedTopology: ScanArchiveTopology = try readJSON(ScanArchiveTopology.self, from: topologyURL) { detail in
             ScanArchiveError.topology(detail)
@@ -374,7 +374,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingMetadata,
-            message: "Reading metadata"
+            message: String(localized: "Reading metadata", comment: "Progress message while reading scan metadata.")
         ))
         let warnings: [ScanArchiveWarningV1] = try readJSON([ScanArchiveWarningV1].self, from: warningsURL) { detail in
             ScanArchiveError.manifest("warnings section failed: \(detail)")
@@ -386,7 +386,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(
             phase: .rebuildingSnapshot,
-            message: "Rebuilding snapshot"
+            message: String(localized: "Rebuilding snapshot", comment: "Progress message while rebuilding an imported snapshot.")
         ))
         try validateCounts(manifest: manifest, nodesByID: nodePayload.nodesByID, warnings: warnings)
         let rebuiltParentIDs = try await validateTopology(
@@ -655,7 +655,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private static func repairedStatsWarning(rootID: String) -> ScanWarning {
         ScanWarning(
             path: rootID,
-            message: "Archive stats did not match node payload. Radix repaired totals during import.",
+            message: String(localized: "Archive stats did not match node payload. Radix repaired totals during import.", comment: "Warning shown when imported archive statistics are repaired."),
             category: .fileSystem
         )
     }

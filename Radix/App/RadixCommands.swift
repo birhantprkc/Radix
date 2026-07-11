@@ -221,15 +221,17 @@ struct RadixCommands: Commands {
 
     private var inspectorToggleTitle: String {
         if inspectorVisibility?.wrappedValue == true {
-            return "Hide Inspector"
+            return String(localized: "Hide Inspector", comment: "Command for hiding the inspector sidebar.")
         }
-        return "Show Inspector"
+        return String(localized: "Show Inspector", comment: "Command for showing the inspector sidebar.")
     }
 
     private var addSelectionToDiscardPileTitle: String {
         let count = navigation.selectedNodeIDs.count
-        guard count > 1 else { return "Add to Discard Pile" }
-        return "Add \(count) Items to Discard Pile"
+        guard count > 1 else {
+            return String(localized: "Add to Discard Pile", comment: "Action for marking one selected item for possible deletion.")
+        }
+        return String(localized: "Add \(count) Items to Discard Pile", comment: "Action for marking multiple selected items for possible deletion.")
     }
 
     private var commandSelectedFileActions: SelectedFileActions {

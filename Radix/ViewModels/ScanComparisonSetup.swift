@@ -28,9 +28,9 @@ nonisolated enum ScanComparisonSlot: String, CaseIterable, Identifiable, Sendabl
     var title: String {
         switch self {
         case .before:
-            return "Earlier Scan"
+            return String(localized: "Earlier Scan", comment: "Comparison slot label for the older scan.")
         case .after:
-            return "Later Scan"
+            return String(localized: "Later Scan", comment: "Comparison slot label for the newer scan.")
         }
     }
 }

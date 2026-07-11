@@ -23,13 +23,13 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
 
         let metadata: String
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
-            metadata = "APFS available capacity"
+            metadata = String(localized: "APFS available capacity", comment: "Tooltip metadata describing free space on an APFS volume.")
         } else if node.isDirectory {
             metadata = fileCountDescription(node.descendantFileCount)
         } else if let lastModified = node.lastModified {
-            metadata = "Modified \(RadixFormatters.date(lastModified))"
+            metadata = String(localized: "Modified \(RadixFormatters.date(lastModified))", comment: "Tooltip metadata showing when a file was modified.")
         } else {
-            metadata = "Modification date unavailable"
+            metadata = String(localized: "Modification date unavailable", comment: "Tooltip metadata shown when a file's modification date is unavailable.")
         }
 
         return TreemapTooltipContent(
@@ -67,8 +67,8 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
                 treeStore: treeStore
             ),
             metadata: itemCount == 1
-                ? "1 grouped item"
-                : "\(itemCount.formatted(.number)) grouped items"
+                ? String(localized: "1 grouped item", comment: "Tooltip metadata for one item represented by an aggregate segment.")
+                : String(localized: "\(itemCount.formatted(.number)) grouped items", comment: "Tooltip metadata for multiple items represented by an aggregate segment.")
         )
     }
 
@@ -83,7 +83,7 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
         ) else {
             return formattedSize
         }
-        return "\(formattedSize) · \(percentage) of \(rootNode.name)"
+        return String(localized: "\(formattedSize) · \(percentage) of \(rootNode.name)", comment: "Tooltip text showing an item's size and percentage of its parent.")
     }
 
     private static func pathDescription(
@@ -104,6 +104,8 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
     }
 
     private static func fileCountDescription(_ count: Int) -> String {
-        count == 1 ? "1 file" : "\(count.formatted(.number)) files"
+        count == 1
+            ? String(localized: "1 file", comment: "Tooltip metadata for a directory containing one file.")
+            : String(localized: "\(count.formatted(.number)) files", comment: "Tooltip metadata for a directory containing multiple files.")
     }
 }
