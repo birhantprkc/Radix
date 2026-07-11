@@ -3,20 +3,38 @@ import SwiftUI
 struct TreemapBaseCanvas: View, Equatable {
     let segments: [TreemapSegment]
     let renderVersion: Int
+    let colorScheme: ColorScheme
 
     static func == (lhs: TreemapBaseCanvas, rhs: TreemapBaseCanvas) -> Bool {
-        lhs.renderVersion == rhs.renderVersion
+        lhs.renderVersion == rhs.renderVersion && lhs.colorScheme == rhs.colorScheme
     }
 
     var body: some View {
         Canvas { context, size in
             for segment in segments {
                 let path = tilePath(for: segment, in: size)
-                let style = TreemapChartStyler.baseStyle(for: segment)
+                let style = TreemapChartStyler.baseStyle(
+                    for: segment,
+                    colorScheme: colorScheme
+                )
                 context.fill(path, with: .color(style.fillColor))
                 context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
             }
+        }
+    }
+}
 
+struct TreemapLabelCanvas: View, Equatable {
+    let segments: [TreemapSegment]
+    let renderVersion: Int
+    let colorScheme: ColorScheme
+
+    static func == (lhs: TreemapLabelCanvas, rhs: TreemapLabelCanvas) -> Bool {
+        lhs.renderVersion == rhs.renderVersion && lhs.colorScheme == rhs.colorScheme
+    }
+
+    var body: some View {
+        Canvas { context, size in
             for segment in segments {
                 drawLabel(for: segment, in: size, context: &context)
             }
@@ -35,11 +53,12 @@ struct TreemapBaseCanvas: View, Equatable {
         let availableWidth = rect.width - (horizontalPadding * 2)
         guard availableWidth > 18 else { return }
 
+        let labelStyle = TreemapChartStyler.labelStyle(colorScheme: colorScheme)
         let name = truncated(segment.label, for: availableWidth, averageCharacterWidth: 6.1)
         let nameText = context.resolve(
             Text(name)
                 .font(.system(size: 11, weight: segment.showsContainerHeader ? .semibold : .medium))
-                .foregroundStyle(.primary.opacity(0.86))
+                .foregroundStyle(labelStyle.primaryColor)
         )
         var labelContext = context
         let clipRect = CGRect(
@@ -64,7 +83,7 @@ struct TreemapBaseCanvas: View, Equatable {
         let sizeText = context.resolve(
             Text(RadixFormatters.size(segment.totalSize))
                 .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(.secondary.opacity(0.9))
+                .foregroundStyle(labelStyle.secondaryColor)
         )
         labelContext.draw(
             sizeText,
@@ -86,17 +105,25 @@ struct TreemapBaseCanvas: View, Equatable {
 
 struct TreemapSelectionOverlay: View, Equatable {
     let segments: [TreemapSelectionOverlaySegment]
+    let colorScheme: ColorScheme
 
     var body: some View {
         Canvas { context, size in
             for overlay in segments {
                 let path = tilePath(for: overlay.segment, in: size)
                 let style = TreemapChartStyler.selectionOverlayStyle(
-                    for: overlay.segment,
-                    role: overlay.role
+                    role: overlay.role,
+                    colorScheme: colorScheme
                 )
                 if style.fillOpacity > 0 {
-                    context.fill(path, with: .color(style.fillColor))
+                    context.fill(path, with: .color(style.fillColor.opacity(style.fillOpacity)))
+                }
+                if style.underlayStrokeWidth > 0 {
+                    context.stroke(
+                        path,
+                        with: .color(style.underlayStrokeColor),
+                        lineWidth: style.underlayStrokeWidth
+                    )
                 }
                 context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
             }
@@ -106,14 +133,22 @@ struct TreemapSelectionOverlay: View, Equatable {
 
 struct TreemapHoverOverlay: View, Equatable {
     let segment: TreemapSegment?
+    let colorScheme: ColorScheme
 
     var body: some View {
         Canvas { context, size in
             guard let segment else { return }
             let path = tilePath(for: segment, in: size)
-            let style = TreemapChartStyler.hoverOverlayStyle(for: segment)
+            let style = TreemapChartStyler.hoverOverlayStyle(colorScheme: colorScheme)
             if style.fillOpacity > 0 {
-                context.fill(path, with: .color(style.fillColor))
+                context.fill(path, with: .color(style.fillColor.opacity(style.fillOpacity)))
+            }
+            if style.underlayStrokeWidth > 0 {
+                context.stroke(
+                    path,
+                    with: .color(style.underlayStrokeColor),
+                    lineWidth: style.underlayStrokeWidth
+                )
             }
             context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
         }

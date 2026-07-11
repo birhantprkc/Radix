@@ -175,7 +175,13 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         }
 
         private func dragColor(for segment: TreemapSegment) -> NSColor {
-            let components = SunburstColorResolver.components(for: segment.colorToken)
+            let appearance: TreemapColorAppearance = effectiveAppearance.bestMatch(
+                from: [.darkAqua, .aqua]
+            ) == .darkAqua ? .dark : .light
+            let components = TreemapColorResolver.components(
+                for: segment.colorToken,
+                appearance: appearance
+            )
             return NSColor(
                 calibratedHue: CGFloat(components.hue),
                 saturation: CGFloat(components.saturation),

@@ -97,17 +97,12 @@ struct TreemapChartView: View {
                         selectedNodeID: selectedNodeID,
                         selectedAncestorIDs: selectedAncestorIDs
                     ),
+                    hoveredSegment: chartModel.hoveredSegment,
                     chartFrame: chartFrame
                 )
                 .id(chartModel.renderedLayoutVersion)
                 .transition(chartTransition)
                 .allowsHitTesting(false)
-
-                TreemapHoverOverlay(segment: chartModel.hoveredSegment)
-                    .equatable()
-                    .frame(width: chartFrame.width, height: chartFrame.height)
-                    .position(x: chartFrame.midX, y: chartFrame.midY)
-                    .allowsHitTesting(false)
 
                 if chartModel.isLayoutPending {
                     Color(nsColor: .windowBackgroundColor)
@@ -334,14 +329,39 @@ private struct TreemapRenderedChartLayer: View {
     let segments: [TreemapSegment]
     let renderVersion: Int
     let selectionSegments: [TreemapSelectionOverlaySegment]
+    let hoveredSegment: TreemapSegment?
     let chartFrame: CGRect
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            TreemapBaseCanvas(segments: segments, renderVersion: renderVersion)
+            TreemapBaseCanvas(
+                segments: segments,
+                renderVersion: renderVersion,
+                colorScheme: colorScheme
+            )
                 .equatable()
 
-            TreemapSelectionOverlay(segments: selectionSegments)
+            TreemapHoverOverlay(
+                segment: hoveredSegment,
+                colorScheme: colorScheme
+            )
+                .equatable()
+                .allowsHitTesting(false)
+
+            TreemapSelectionOverlay(
+                segments: selectionSegments,
+                colorScheme: colorScheme
+            )
+                .equatable()
+                .allowsHitTesting(false)
+
+            TreemapLabelCanvas(
+                segments: segments,
+                renderVersion: renderVersion,
+                colorScheme: colorScheme
+            )
                 .equatable()
                 .allowsHitTesting(false)
         }

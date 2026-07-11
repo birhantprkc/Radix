@@ -84,6 +84,7 @@ let package = Package(
                 "Services/SunburstViewportTransform.swift",
                 "Services/SystemIntegration.swift",
                 "Services/TreemapChartModel.swift",
+                "Services/TreemapColorResolver.swift",
                 "Services/TreemapGeometry.swift",
                 "ViewModels/AppQuickLookController.swift",
                 "ViewModels/AppModel.swift",
