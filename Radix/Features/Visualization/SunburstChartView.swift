@@ -343,6 +343,10 @@ struct SunburstChartView: View {
     }
 
     private var accessibilityValue: String {
+        if let hoverSummary {
+            return hoverSummary.accessibilityDescription
+        }
+
         let node = displayedNode ?? rootNode
         return "\(node.name), \(RadixFormatters.size(node.allocatedSize)), \(summaryStatus(for: node))"
     }

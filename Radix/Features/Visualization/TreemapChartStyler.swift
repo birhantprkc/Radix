@@ -11,11 +11,14 @@ struct TreemapLabelDrawingStyle {
     let secondaryColor: Color
 }
 
-struct TreemapOverlayDrawingStyle {
+struct TreemapSelectionDrawingStyle {
+    let strokeColor: Color
+    let strokeWidth: CGFloat
+}
+
+struct TreemapHoverDrawingStyle {
     let fillColor: Color
     let fillOpacity: Double
-    let underlayStrokeColor: Color
-    let underlayStrokeWidth: CGFloat
     let strokeColor: Color
     let strokeWidth: CGFloat
 }
@@ -52,40 +55,17 @@ enum TreemapChartStyler {
         }
     }
 
-    static func selectionOverlayStyle(
-        role: TreemapSelectionRole,
-        colorScheme: ColorScheme
-    ) -> TreemapOverlayDrawingStyle {
-        switch role {
-        case .ancestor:
-            return TreemapOverlayDrawingStyle(
-                fillColor: .clear,
-                fillOpacity: 0,
-                underlayStrokeColor: .clear,
-                underlayStrokeWidth: 0,
-                strokeColor: colorScheme == .dark
-                    ? Color.white.opacity(0.22)
-                    : Color.black.opacity(0.2),
-                strokeWidth: 1.25
-            )
-        case .selected:
-            return TreemapOverlayDrawingStyle(
-                fillColor: .clear,
-                fillOpacity: 0,
-                underlayStrokeColor: Color(nsColor: .windowBackgroundColor).opacity(0.88),
-                underlayStrokeWidth: 5,
-                strokeColor: Color.accentColor,
-                strokeWidth: 2.75
-            )
-        }
+    static func selectionOverlayStyle() -> TreemapSelectionDrawingStyle {
+        TreemapSelectionDrawingStyle(
+            strokeColor: Color.accentColor,
+            strokeWidth: 2.75
+        )
     }
 
-    static func hoverOverlayStyle(colorScheme: ColorScheme) -> TreemapOverlayDrawingStyle {
-        TreemapOverlayDrawingStyle(
+    static func hoverOverlayStyle(colorScheme: ColorScheme) -> TreemapHoverDrawingStyle {
+        TreemapHoverDrawingStyle(
             fillColor: colorScheme == .dark ? .white : .black,
             fillOpacity: colorScheme == .dark ? 0.075 : 0.055,
-            underlayStrokeColor: .clear,
-            underlayStrokeWidth: 0,
             strokeColor: colorScheme == .dark
                 ? Color.white.opacity(0.72)
                 : Color.black.opacity(0.58),

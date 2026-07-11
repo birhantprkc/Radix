@@ -3,6 +3,7 @@ import SwiftUI
 struct TreemapChartView: View {
     private static let chartPadding: CGFloat = 18
     private static let loadingDiskMapDelay: Duration = .milliseconds(150)
+    private static let tooltipSize = CGSize(width: 208, height: 82)
 
     let rootNode: FileNodeRecord
     let treeStore: FileTreeStore
@@ -11,7 +12,6 @@ struct TreemapChartView: View {
     let trashSafetyPolicy: TrashSafetyPolicy
     let snapshotSource: ScanSnapshotSource
     let selectedNodeID: String?
-    let selectedAncestorIDs: Set<String>
     let depthLimit: Int
     let layoutID: String
     let onSelect: (String?) -> Void
@@ -21,6 +21,7 @@ struct TreemapChartView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var chartModel: TreemapChartModel
     @State private var showsLoadingDiskMapProgress = false
+    @State private var hoverLocation: CGPoint?
 
     init(
         rootNode: FileNodeRecord,
@@ -30,7 +31,6 @@ struct TreemapChartView: View {
         trashSafetyPolicy: TrashSafetyPolicy,
         snapshotSource: ScanSnapshotSource,
         selectedNodeID: String?,
-        selectedAncestorIDs: Set<String>,
         depthLimit: Int,
         layoutID: String,
         onSelect: @escaping (String?) -> Void,
@@ -45,7 +45,6 @@ struct TreemapChartView: View {
         self.trashSafetyPolicy = trashSafetyPolicy
         self.snapshotSource = snapshotSource
         self.selectedNodeID = selectedNodeID
-        self.selectedAncestorIDs = selectedAncestorIDs
         self.depthLimit = depthLimit
         self.layoutID = layoutID
         self.onSelect = onSelect
@@ -93,10 +92,7 @@ struct TreemapChartView: View {
                 TreemapRenderedChartLayer(
                     segments: chartModel.renderedSegments,
                     renderVersion: chartModel.renderedLayoutVersion,
-                    selectionSegments: chartModel.selectionOverlaySegments(
-                        selectedNodeID: selectedNodeID,
-                        selectedAncestorIDs: selectedAncestorIDs
-                    ),
+                    selectedSegment: chartModel.selectedSegment(nodeID: selectedNodeID),
                     hoveredSegment: chartModel.hoveredSegment,
                     chartFrame: chartFrame
                 )
@@ -144,10 +140,13 @@ struct TreemapChartView: View {
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Select a tile to inspect it. Double-click a folder tile to zoom in. Use the breadcrumb to go up.")
             .overlay(alignment: .topLeading) {
-                if let hoverSummary {
-                    FloatingSummaryCard(summary: hoverSummary)
-                        .padding(.top, 16)
-                        .padding(.leading, 18)
+                if let hoverSummary, let hoverLocation {
+                    TreemapHoverTooltip(summary: hoverSummary)
+                        .frame(
+                            width: Self.tooltipSize.width,
+                            height: Self.tooltipSize.height
+                        )
+                        .offset(tooltipOrigin(at: hoverLocation, in: geometry.size))
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                         .transition(.opacity)
@@ -184,7 +183,11 @@ struct TreemapChartView: View {
     }
 
     private var accessibilityValue: String {
-        "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(summaryStatus(for: displayedNode))"
+        if let hoverSummary {
+            return hoverSummary.accessibilityDescription
+        }
+
+        return "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(summaryStatus(for: displayedNode))"
     }
 
     private func chartFrame(in size: CGSize) -> CGRect {
@@ -198,11 +201,23 @@ struct TreemapChartView: View {
     }
 
     private func updateHover(at location: CGPoint?, in frame: CGRect) {
-        guard let location else {
+        guard let location,
+              let segment = hitTest(at: location, in: frame) else {
+            hoverLocation = nil
             chartModel.setHoveredSegmentID(nil)
             return
         }
-        chartModel.setHoveredSegmentID(hitTest(at: location, in: frame)?.id)
+        hoverLocation = location
+        chartModel.setHoveredSegmentID(segment.id)
+    }
+
+    private func tooltipOrigin(at location: CGPoint, in size: CGSize) -> CGSize {
+        let origin = TreemapTooltipPlacement.origin(
+            for: location,
+            tooltipSize: Self.tooltipSize,
+            in: CGRect(origin: .zero, size: size)
+        )
+        return CGSize(width: origin.x, height: origin.y)
     }
 
     private func handleClick(at location: CGPoint, in frame: CGRect, clickCount: Int) {
@@ -307,6 +322,38 @@ struct TreemapChartView: View {
     }
 }
 
+private struct TreemapHoverTooltip: View {
+    let summary: ChartSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(summary.status)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 8)
+
+                Text(summary.value)
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            Text(summary.title)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+
+            Text(summary.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 7, y: 2)
+    }
+}
+
 private struct TreemapLayoutTaskID: Hashable {
     private nonisolated static let sizeBucket: CGFloat = 24
 
@@ -328,7 +375,7 @@ private struct TreemapLayoutTaskID: Hashable {
 private struct TreemapRenderedChartLayer: View {
     let segments: [TreemapSegment]
     let renderVersion: Int
-    let selectionSegments: [TreemapSelectionOverlaySegment]
+    let selectedSegment: TreemapSegment?
     let hoveredSegment: TreemapSegment?
     let chartFrame: CGRect
 
@@ -350,10 +397,7 @@ private struct TreemapRenderedChartLayer: View {
                 .equatable()
                 .allowsHitTesting(false)
 
-            TreemapSelectionOverlay(
-                segments: selectionSegments,
-                colorScheme: colorScheme
-            )
+            TreemapSelectionOverlay(segment: selectedSegment)
                 .equatable()
                 .allowsHitTesting(false)
 

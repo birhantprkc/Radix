@@ -109,7 +109,6 @@ struct ActiveWorkspaceView: View {
                     trashSafetyPolicy: scanState.trashSafetyPolicy,
                     snapshotSource: scanState.snapshotSource,
                     selectedNodeID: navigation.selectedNodeID,
-                    selectedAncestorIDs: navigation.selectedAncestorIDs,
                     depthLimit: maxRenderedDepth,
                     layoutID: layoutID,
                     onSelect: actions.selectNode,

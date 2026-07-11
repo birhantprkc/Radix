@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class TreemapChartModelTests: XCTestCase {
-    func testSelectionOverlayIncludesAncestorsAndSelectedTileLast() async {
+    func testSelectedSegmentDoesNotIncludeAncestorOverlays() async {
         let ancestor = makeTreemapSegment(id: "ancestor", depth: 0)
         let selected = makeTreemapSegment(id: "selected", depth: 1)
         let sibling = makeTreemapSegment(id: "sibling", depth: 1)
@@ -18,14 +18,12 @@ final class TreemapChartModelTests: XCTestCase {
             size: CGSize(width: 600, height: 300),
             layoutID: "layout"
         )
-        let overlays = model.selectionOverlaySegments(
-            selectedNodeID: selected.nodeID,
-            selectedAncestorIDs: Set([ancestor.nodeID!, selected.nodeID!, "missing"])
-        )
+        let selectedSegment = model.selectedSegment(nodeID: selected.nodeID)
 
         XCTAssertTrue(didApply)
-        XCTAssertEqual(overlays.map(\.segment.id), [ancestor.id, selected.id])
-        XCTAssertEqual(overlays.map(\.role), [.ancestor, .selected])
+        XCTAssertEqual(selectedSegment?.id, selected.id)
+        XCTAssertNil(model.selectedSegment(nodeID: "missing"))
+        XCTAssertNil(model.selectedSegment(nodeID: nil))
     }
 
     func testStaleLayoutResultDoesNotReplaceNewerTiles() async {
