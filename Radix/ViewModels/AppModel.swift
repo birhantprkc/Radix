@@ -378,6 +378,7 @@ final class AppModel: ObservableObject {
     @Published var maxRenderedDepth = 6
     @Published var autoSummarizeDirectories = true
     @Published var showFreeSpaceInSunburst = false
+    @Published var scanVisualizationMode = ScanVisualizationMode.sunburst
     @Published var scanCloudStorageFolders = false
     @Published var useScanExclusions = false
     @Published var exclusionPatterns = AppScanPreferences.defaults.exclusionPatterns
@@ -472,6 +473,7 @@ final class AppModel: ObservableObject {
         maxRenderedDepth = preferences.scan.maxRenderedDepth
         autoSummarizeDirectories = preferences.scan.autoSummarizeDirectories
         showFreeSpaceInSunburst = preferences.scan.showFreeSpaceInSunburst
+        scanVisualizationMode = preferences.scan.visualizationMode
         scanCloudStorageFolders = preferences.scan.scanCloudStorageFolders
         useScanExclusions = preferences.scan.useScanExclusions
         exclusionPatterns = preferences.scan.exclusionPatterns
@@ -650,6 +652,7 @@ final class AppModel: ObservableObject {
         maxRenderedDepth = AppScanPreferences.defaults.maxRenderedDepth
         autoSummarizeDirectories = AppScanPreferences.defaults.autoSummarizeDirectories
         showFreeSpaceInSunburst = AppScanPreferences.defaults.showFreeSpaceInSunburst
+        scanVisualizationMode = AppScanPreferences.defaults.visualizationMode
         scanCloudStorageFolders = AppScanPreferences.defaults.scanCloudStorageFolders
         useScanExclusions = AppScanPreferences.defaults.useScanExclusions
         exclusionPatterns = AppScanPreferences.defaults.exclusionPatterns
@@ -3227,8 +3230,9 @@ final class AppModel: ObservableObject {
                 $useScanExclusions,
                 $exclusionPatterns
             ))
-            .map { scanBasics, scanFilters in
-                Self.scanPreferences(scanBasics, scanFilters)
+            .combineLatest($scanVisualizationMode)
+            .map { preferences, visualizationMode in
+                Self.scanPreferences(preferences.0, preferences.1, visualizationMode)
             }
             .dropFirst()
             .removeDuplicates()
@@ -3246,6 +3250,7 @@ final class AppModel: ObservableObject {
             maxRenderedDepth: maxRenderedDepth,
             autoSummarizeDirectories: autoSummarizeDirectories,
             showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+            visualizationMode: scanVisualizationMode,
             scanCloudStorageFolders: scanCloudStorageFolders,
             useScanExclusions: useScanExclusions,
             exclusionPatterns: exclusionPatterns
@@ -3264,7 +3269,8 @@ final class AppModel: ObservableObject {
 
     private static func scanPreferences(
         _ scanBasics: (Bool, Bool, Int, Bool),
-        _ scanFilters: (Bool, Bool, Bool, [String])
+        _ scanFilters: (Bool, Bool, Bool, [String]),
+        _ visualizationMode: ScanVisualizationMode
     ) -> AppScanPreferences {
         AppScanPreferences(
             showHiddenFiles: scanBasics.0,
@@ -3272,6 +3278,7 @@ final class AppModel: ObservableObject {
             maxRenderedDepth: scanBasics.2,
             autoSummarizeDirectories: scanFilters.0,
             showFreeSpaceInSunburst: scanFilters.1,
+            visualizationMode: visualizationMode,
             scanCloudStorageFolders: scanBasics.3,
             useScanExclusions: scanFilters.2,
             exclusionPatterns: scanFilters.3

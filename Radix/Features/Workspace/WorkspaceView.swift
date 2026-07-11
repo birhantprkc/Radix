@@ -75,6 +75,7 @@ struct WorkspaceView: View {
     @ObservedObject var navigation: WorkspaceNavigationModel
     @Binding var isInspectorPresented: Bool
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
+    @Binding var visualizationMode: ScanVisualizationMode
 
     let maxRenderedDepth: Int
     let showFreeSpaceInSunburst: Bool
@@ -94,6 +95,7 @@ struct WorkspaceView: View {
                     snapshot: snapshot,
                     focusNode: focusNode,
                     focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                    visualizationMode: visualizationMode,
                     maxRenderedDepth: maxRenderedDepth,
                     showFreeSpaceInSunburst: showFreeSpaceInSunburst,
                     discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
@@ -148,14 +150,19 @@ struct WorkspaceView: View {
                         Button {
                             actions.compareWithPreviousScan()
                         } label: {
-                            Label("View Storage Changes", systemImage: "chart.bar.xaxis")
+                            Label("Compare Scans", systemImage: "rectangle.split.2x1")
                         }
                         .disabled(!actions.canCompareWithPreviousScan())
-                        .help("Compare with the previous compatible scan")
+                        .help("Compare Scans")
                     }
                 }
             }
             ToolbarItem(placement: .automatic) { Spacer() }
+            if scanState.snapshot != nil {
+                ToolbarItem(placement: .automatic) {
+                    visualizationModePicker
+                }
+            }
             ToolbarItem(placement: .automatic) {
                 Button {
                     isInspectorPresented.toggle()
@@ -173,6 +180,21 @@ struct WorkspaceView: View {
 }
 
 private extension WorkspaceView {
+    var visualizationModePicker: some View {
+        Picker("Disk Map Style", selection: $visualizationMode) {
+            Label("Sunburst", systemImage: "chart.pie")
+                .labelStyle(.iconOnly)
+                .tag(ScanVisualizationMode.sunburst)
+            Label("Treemap", systemImage: "rectangle.3.group")
+                .labelStyle(.iconOnly)
+                .tag(ScanVisualizationMode.treemap)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .help("Disk Map Style")
+        .accessibilityLabel("Disk map style")
+    }
+
     var inspectorToggleTitle: String {
         isInspectorPresented ? "Hide Inspector" : "Show Inspector"
     }

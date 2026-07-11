@@ -5,12 +5,20 @@
 
 import Foundation
 
+enum ScanVisualizationMode: String, CaseIterable, Identifiable, Sendable {
+    case sunburst
+    case treemap
+
+    var id: Self { self }
+}
+
 struct AppScanPreferences: Equatable {
     var showHiddenFiles: Bool
     var treatPackagesAsDirectories: Bool
     var maxRenderedDepth: Int
     var autoSummarizeDirectories: Bool
     var showFreeSpaceInSunburst: Bool
+    var visualizationMode: ScanVisualizationMode
     var scanCloudStorageFolders: Bool
     var useScanExclusions: Bool
     var exclusionPatterns: [String]
@@ -21,6 +29,7 @@ struct AppScanPreferences: Equatable {
         maxRenderedDepth: 6,
         autoSummarizeDirectories: true,
         showFreeSpaceInSunburst: false,
+        visualizationMode: .sunburst,
         scanCloudStorageFolders: false,
         useScanExclusions: false,
         exclusionPatterns: ScanExclusionMatcher.commonPresetPatterns
@@ -52,6 +61,7 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
         static let maxRenderedDepth = "maxRenderedDepth"
         static let autoSummarizeDirectories = "autoSummarizeDirectories"
         static let showFreeSpaceInSunburst = "showFreeSpaceInSunburst"
+        static let visualizationMode = "scanVisualizationMode"
         static let scanCloudStorageFolders = "scanCloudStorageFolders"
         static let useScanExclusions = "useScanExclusions"
         static let exclusionPatterns = "exclusionPatterns"
@@ -97,6 +107,10 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
             showFreeSpaceInSunburst = defaults.bool(forKey: Key.showFreeSpaceInSunburst)
         }
 
+        let visualizationMode = defaults.string(forKey: Key.visualizationMode)
+            .flatMap(ScanVisualizationMode.init(rawValue:))
+            ?? AppScanPreferences.defaults.visualizationMode
+
         let useScanExclusions: Bool
         if defaults.object(forKey: Key.useScanExclusions) == nil {
             useScanExclusions = AppScanPreferences.defaults.useScanExclusions
@@ -114,6 +128,7 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
                 maxRenderedDepth: maxRenderedDepth,
                 autoSummarizeDirectories: autoSummarizeDirectories,
                 showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+                visualizationMode: visualizationMode,
                 scanCloudStorageFolders: scanCloudStorageFolders,
                 useScanExclusions: useScanExclusions,
                 exclusionPatterns: exclusionPatterns
@@ -128,6 +143,7 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
         defaults.set(preferences.maxRenderedDepth, forKey: Key.maxRenderedDepth)
         defaults.set(preferences.autoSummarizeDirectories, forKey: Key.autoSummarizeDirectories)
         defaults.set(preferences.showFreeSpaceInSunburst, forKey: Key.showFreeSpaceInSunburst)
+        defaults.set(preferences.visualizationMode.rawValue, forKey: Key.visualizationMode)
         defaults.set(preferences.scanCloudStorageFolders, forKey: Key.scanCloudStorageFolders)
         defaults.set(preferences.useScanExclusions, forKey: Key.useScanExclusions)
         defaults.set(preferences.exclusionPatterns, forKey: Key.exclusionPatterns)

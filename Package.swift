@@ -83,6 +83,8 @@ let package = Package(
                 "Services/SunburstVisualizationFilterModel.swift",
                 "Services/SunburstViewportTransform.swift",
                 "Services/SystemIntegration.swift",
+                "Services/TreemapChartModel.swift",
+                "Services/TreemapGeometry.swift",
                 "ViewModels/AppQuickLookController.swift",
                 "ViewModels/AppModel.swift",
                 "ViewModels/SidebarScanCacheController.swift",

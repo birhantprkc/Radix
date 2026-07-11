@@ -41,6 +41,7 @@ struct ContentView: View {
                 scanComparison: appModel.scanComparison,
                 isInspectorPresented: $showsInspector,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                visualizationMode: $appModel.scanVisualizationMode,
                 maxRenderedDepth: appModel.maxRenderedDepth,
                 showFreeSpaceInSunburst: appModel.showFreeSpaceInSunburst,
                 discardPileHiddenNodeIDs: appModel.discardPileHiddenNodeIDs,
@@ -628,6 +629,7 @@ private struct WorkspaceDetailView: View {
     let scanComparison: ScanComparison?
     @Binding var isInspectorPresented: Bool
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
+    @Binding var visualizationMode: ScanVisualizationMode
 
     let maxRenderedDepth: Int
     let showFreeSpaceInSunburst: Bool
@@ -653,6 +655,7 @@ private struct WorkspaceDetailView: View {
                 navigation: navigation,
                 isInspectorPresented: $isInspectorPresented,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                visualizationMode: $visualizationMode,
                 maxRenderedDepth: maxRenderedDepth,
                 showFreeSpaceInSunburst: showFreeSpaceInSunburst,
                 discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,

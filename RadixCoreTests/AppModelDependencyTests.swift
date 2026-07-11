@@ -17,6 +17,7 @@ final class AppModelDependencyTests: XCTestCase {
                     maxRenderedDepth: 8,
                     autoSummarizeDirectories: false,
                     showFreeSpaceInSunburst: true,
+                    visualizationMode: .treemap,
                     scanCloudStorageFolders: true,
                     useScanExclusions: true,
                     exclusionPatterns: ["*.log"]
@@ -46,6 +47,7 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.maxRenderedDepth, 8)
         XCTAssertFalse(model.autoSummarizeDirectories)
         XCTAssertTrue(model.showFreeSpaceInSunburst)
+        XCTAssertEqual(model.scanVisualizationMode, .treemap)
         XCTAssertTrue(model.scanCloudStorageFolders)
         XCTAssertTrue(model.useScanExclusions)
         XCTAssertEqual(model.exclusionPatterns, ["*.log"])
@@ -107,6 +109,7 @@ final class AppModelDependencyTests: XCTestCase {
             maxRenderedDepth: 10,
             autoSummarizeDirectories: false,
             showFreeSpaceInSunburst: true,
+            visualizationMode: .treemap,
             scanCloudStorageFolders: true,
             useScanExclusions: true,
             exclusionPatterns: ["node_modules"]
@@ -117,6 +120,7 @@ final class AppModelDependencyTests: XCTestCase {
         model.maxRenderedDepth = 10
         model.autoSummarizeDirectories = false
         model.showFreeSpaceInSunburst = true
+        model.scanVisualizationMode = .treemap
         model.scanCloudStorageFolders = true
         model.useScanExclusions = true
         model.exclusionPatterns = ["node_modules"]
@@ -144,6 +148,7 @@ final class AppModelDependencyTests: XCTestCase {
             maxRenderedDepth: AppScanPreferences.defaults.maxRenderedDepth,
             autoSummarizeDirectories: AppScanPreferences.defaults.autoSummarizeDirectories,
             showFreeSpaceInSunburst: AppScanPreferences.defaults.showFreeSpaceInSunburst,
+            visualizationMode: AppScanPreferences.defaults.visualizationMode,
             scanCloudStorageFolders: AppScanPreferences.defaults.scanCloudStorageFolders,
             useScanExclusions: AppScanPreferences.defaults.useScanExclusions,
             exclusionPatterns: AppScanPreferences.defaults.exclusionPatterns

@@ -7,6 +7,7 @@ struct ActiveWorkspaceView: View {
     let snapshot: ScanSnapshot
     let focusNode: FileNodeRecord
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
+    let visualizationMode: ScanVisualizationMode
     let maxRenderedDepth: Int
     let showFreeSpaceInSunburst: Bool
     let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
@@ -49,12 +50,11 @@ struct ActiveWorkspaceView: View {
     }
 
     private var visualizationPane: some View {
-        VStack(spacing: 0) {
-            chartContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        chartContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private var chartContent: some View {
         let baseVisualizationInput = sunburstVisualizationInput
         let visualizationInput = visualizationFilter.input(
@@ -70,31 +70,54 @@ struct ActiveWorkspaceView: View {
             hiddenNodeIDs: discardPileHiddenNodeIDs
         )
 
-        return SunburstChartView(
-            rootNode: visualizationInput.rootNode,
-            parentNode: visualizationParentNode(for: visualizationInput),
-            treeStore: visualizationInput.treeStore,
-            snapshotID: snapshot.id,
-            activeTarget: scanState.selectedTarget,
-            trashSafetyPolicy: scanState.trashSafetyPolicy,
-            snapshotSource: scanState.snapshotSource,
-            selectedNodeID: navigation.selectedNodeID,
-            selectedAncestorIDs: navigation.selectedAncestorIDs,
-            depthLimit: maxRenderedDepth,
-            layoutID: [
-                snapshot.id.uuidString,
-                focusNode.id,
-                visualizationInput.rootNode.id,
-                visualizationInput.treeContentID.uuidString,
-                String(maxRenderedDepth),
-                visualizationInput.layoutIDComponent
-            ].joined(separator: "|"),
-            onSelect: actions.selectNode,
-            onZoom: actions.selectAndFocusNode,
-            onSegmentClick: actions.recordSunburstSegmentClick,
-            onNavigateToParent: actions.navigateToParent,
-            onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
-        )
+        let layoutID = [
+            snapshot.id.uuidString,
+            focusNode.id,
+            visualizationInput.rootNode.id,
+            visualizationInput.treeContentID.uuidString,
+            String(maxRenderedDepth),
+            visualizationInput.layoutIDComponent
+        ].joined(separator: "|")
+
+        Group {
+            switch visualizationMode {
+            case .sunburst:
+                SunburstChartView(
+                    rootNode: visualizationInput.rootNode,
+                    parentNode: visualizationParentNode(for: visualizationInput),
+                    treeStore: visualizationInput.treeStore,
+                    snapshotID: snapshot.id,
+                    activeTarget: scanState.selectedTarget,
+                    trashSafetyPolicy: scanState.trashSafetyPolicy,
+                    snapshotSource: scanState.snapshotSource,
+                    selectedNodeID: navigation.selectedNodeID,
+                    selectedAncestorIDs: navigation.selectedAncestorIDs,
+                    depthLimit: maxRenderedDepth,
+                    layoutID: layoutID,
+                    onSelect: actions.selectNode,
+                    onZoom: actions.selectAndFocusNode,
+                    onSegmentClick: actions.recordSunburstSegmentClick,
+                    onNavigateToParent: actions.navigateToParent,
+                    onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
+                )
+            case .treemap:
+                TreemapChartView(
+                    rootNode: visualizationInput.rootNode,
+                    treeStore: visualizationInput.treeStore,
+                    snapshotID: snapshot.id,
+                    activeTarget: scanState.selectedTarget,
+                    trashSafetyPolicy: scanState.trashSafetyPolicy,
+                    snapshotSource: scanState.snapshotSource,
+                    selectedNodeID: navigation.selectedNodeID,
+                    selectedAncestorIDs: navigation.selectedAncestorIDs,
+                    depthLimit: maxRenderedDepth,
+                    layoutID: layoutID,
+                    onSelect: actions.selectNode,
+                    onZoom: actions.selectAndFocusNode,
+                    onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
+                )
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .focusable()
         .focusEffectDisabled()
