@@ -42,10 +42,13 @@ final class TreemapChartModel: ObservableObject {
     private var layoutGeneration = 0
     private var activeLayoutID: String?
     private var layoutTask: Task<[TreemapSegment], Error>?
-    private var selectionOverlayCache = TreemapSelectionOverlayCache(capacity: 8)
 
     init(layoutService: any TreemapLayouting = TreemapLayoutService()) {
         self.layoutService = layoutService
+    }
+
+    deinit {
+        layoutTask?.cancel()
     }
 
     var renderedSegments: [TreemapSegment] {
@@ -75,21 +78,8 @@ final class TreemapChartModel: ObservableObject {
         renderState.segment(at: point, in: size)
     }
 
-    func selectionOverlaySegments(
-        selectedNodeID: String?,
-        selectedAncestorIDs: Set<String>
-    ) -> [TreemapSelectionOverlaySegment] {
-        let key = TreemapSelectionOverlayCacheKey(
-            renderVersion: renderedLayoutVersion,
-            selectedNodeID: selectedNodeID,
-            selectedAncestorIDs: selectedAncestorIDs
-        )
-        return selectionOverlayCache.segments(for: key) {
-            renderState.selectionOverlaySegments(
-                selectedNodeID: selectedNodeID,
-                selectedAncestorIDs: selectedAncestorIDs
-            )
-        }
+    func selectedSegment(nodeID: String?) -> TreemapSegment? {
+        renderState.segment(nodeID: nodeID)
     }
 
     @discardableResult
@@ -155,7 +145,6 @@ final class TreemapChartModel: ObservableObject {
     }
 
     private func apply(_ segments: [TreemapSegment]) {
-        selectionOverlayCache.removeAll()
         renderState = TreemapChartRenderState(
             segments: segments,
             version: renderState.version + 1
@@ -172,67 +161,6 @@ final class TreemapChartModel: ObservableObject {
     private func setIsLayoutPending(_ isPending: Bool) {
         guard isLayoutPending != isPending else { return }
         isLayoutPending = isPending
-    }
-}
-
-enum TreemapSelectionRole: Equatable, Sendable {
-    case ancestor
-    case selected
-}
-
-struct TreemapSelectionOverlaySegment: Identifiable, Equatable, Sendable {
-    let segment: TreemapSegment
-    let role: TreemapSelectionRole
-
-    var id: TreemapSegment.ID { segment.id }
-}
-
-private struct TreemapSelectionOverlayCacheKey: Hashable {
-    let renderVersion: Int
-    let selectedNodeID: String?
-    let selectedAncestorIDs: Set<String>
-}
-
-private struct TreemapSelectionOverlayCache {
-    private let capacity: Int
-    private var segmentsByKey: [TreemapSelectionOverlayCacheKey: [TreemapSelectionOverlaySegment]] = [:]
-    private var keysByRecency: [TreemapSelectionOverlayCacheKey] = []
-
-    init(capacity: Int) {
-        self.capacity = max(capacity, 1)
-    }
-
-    mutating func segments(
-        for key: TreemapSelectionOverlayCacheKey,
-        build: () -> [TreemapSelectionOverlaySegment]
-    ) -> [TreemapSelectionOverlaySegment] {
-        if let segments = segmentsByKey[key] {
-            markRecentlyUsed(key)
-            return segments
-        }
-
-        let segments = build()
-        segmentsByKey[key] = segments
-        markRecentlyUsed(key)
-        trimToCapacity()
-        return segments
-    }
-
-    mutating func removeAll() {
-        segmentsByKey.removeAll()
-        keysByRecency.removeAll()
-    }
-
-    private mutating func markRecentlyUsed(_ key: TreemapSelectionOverlayCacheKey) {
-        keysByRecency.removeAll { $0 == key }
-        keysByRecency.append(key)
-    }
-
-    private mutating func trimToCapacity() {
-        while segmentsByKey.count > capacity, let oldestKey = keysByRecency.first {
-            keysByRecency.removeFirst()
-            segmentsByKey[oldestKey] = nil
-        }
     }
 }
 
@@ -272,25 +200,8 @@ private struct TreemapChartRenderState {
         hitTestIndex.segment(at: point, in: size)
     }
 
-    func selectionOverlaySegments(
-        selectedNodeID: String?,
-        selectedAncestorIDs: Set<String>
-    ) -> [TreemapSelectionOverlaySegment] {
-        guard let selectedNodeID else { return [] }
-        var overlays: [TreemapSelectionOverlaySegment] = []
-
-        for segment in segments {
-            guard let nodeID = segment.nodeID,
-                  nodeID != selectedNodeID,
-                  selectedAncestorIDs.contains(nodeID) else {
-                continue
-            }
-            overlays.append(TreemapSelectionOverlaySegment(segment: segment, role: .ancestor))
-        }
-
-        if let selectedSegment = segmentByNodeID[selectedNodeID] {
-            overlays.append(TreemapSelectionOverlaySegment(segment: selectedSegment, role: .selected))
-        }
-        return overlays
+    func segment(nodeID: String?) -> TreemapSegment? {
+        guard let nodeID else { return nil }
+        return segmentByNodeID[nodeID]
     }
 }

@@ -45,6 +45,10 @@ final class SunburstChartModel: ObservableObject {
         self.layoutService = layoutService
     }
 
+    deinit {
+        layoutTask?.cancel()
+    }
+
     var renderedSegments: [SunburstSegment] {
         renderState.segments
     }
