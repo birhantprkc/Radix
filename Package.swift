@@ -86,6 +86,7 @@ let package = Package(
                 "Services/TreemapChartModel.swift",
                 "Services/TreemapColorResolver.swift",
                 "Services/TreemapGeometry.swift",
+                "Services/TreemapTooltipContent.swift",
                 "Services/TreemapTooltipPlacement.swift",
                 "ViewModels/AppQuickLookController.swift",
                 "ViewModels/AppModel.swift",

@@ -145,12 +145,14 @@ private func makeTreemapSegment(id: String, depth: Int = 0) -> TreemapSegment {
     TreemapSegment(
         id: id,
         nodeID: id,
+        containerNodeID: "/root",
         label: id,
         rect: CGRect(x: 0, y: 0, width: 1, height: 1),
         depth: depth,
         colorToken: .single(id: id, depth: depth),
         totalSize: 1,
         isAggregate: false,
+        groupedItemCount: nil,
         isDirectory: depth == 0,
         showsContainerHeader: depth == 0
     )

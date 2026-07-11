@@ -3,7 +3,9 @@ import SwiftUI
 struct TreemapChartView: View {
     private static let chartPadding: CGFloat = 18
     private static let loadingDiskMapDelay: Duration = .milliseconds(150)
-    private static let tooltipSize = CGSize(width: 208, height: 82)
+    /// The tooltip sizes itself vertically. This maximum keeps edge placement safe
+    /// when a long name wraps onto its second line.
+    private static let tooltipMaximumSize = CGSize(width: 272, height: 122)
 
     let rootNode: FileNodeRecord
     let treeStore: FileTreeStore
@@ -21,7 +23,7 @@ struct TreemapChartView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var chartModel: TreemapChartModel
     @State private var showsLoadingDiskMapProgress = false
-    @State private var hoverLocation: CGPoint?
+    @State private var tooltipAnchor: CGPoint?
 
     init(
         rootNode: FileNodeRecord,
@@ -65,17 +67,12 @@ struct TreemapChartView: View {
         return rootNode
     }
 
-    private var hoverSummary: ChartSummary? {
+    private var tooltipContent: TreemapTooltipContent? {
         guard let hoveredSegment = chartModel.hoveredSegment else { return nil }
-        if let nodeID = hoveredSegment.nodeID,
-           let node = treeStore.node(id: nodeID) {
-            return summary(for: node)
-        }
-        return ChartSummary(
-            status: "Grouped Items",
-            title: hoveredSegment.label,
-            value: RadixFormatters.size(hoveredSegment.totalSize),
-            detail: "Too small to show individually"
+        return TreemapTooltipContent.content(
+            for: hoveredSegment,
+            rootNode: rootNode,
+            treeStore: treeStore
         )
     }
 
@@ -140,13 +137,10 @@ struct TreemapChartView: View {
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Select a tile to inspect it. Double-click a folder tile to zoom in. Use the breadcrumb to go up.")
             .overlay(alignment: .topLeading) {
-                if let hoverSummary, let hoverLocation {
-                    TreemapHoverTooltip(summary: hoverSummary)
-                        .frame(
-                            width: Self.tooltipSize.width,
-                            height: Self.tooltipSize.height
-                        )
-                        .offset(tooltipOrigin(at: hoverLocation, in: geometry.size))
+                if let tooltipContent, let tooltipAnchor {
+                    TreemapHoverTooltip(content: tooltipContent)
+                        .frame(width: Self.tooltipMaximumSize.width)
+                        .offset(tooltipOrigin(at: tooltipAnchor, in: geometry.size))
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                         .transition(.opacity)
@@ -183,8 +177,8 @@ struct TreemapChartView: View {
     }
 
     private var accessibilityValue: String {
-        if let hoverSummary {
-            return hoverSummary.accessibilityDescription
+        if let tooltipContent {
+            return tooltipContent.accessibilityDescription
         }
 
         return "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(summaryStatus(for: displayedNode))"
@@ -203,18 +197,19 @@ struct TreemapChartView: View {
     private func updateHover(at location: CGPoint?, in frame: CGRect) {
         guard let location,
               let segment = hitTest(at: location, in: frame) else {
-            hoverLocation = nil
+            tooltipAnchor = nil
             chartModel.setHoveredSegmentID(nil)
             return
         }
-        hoverLocation = location
+
+        tooltipAnchor = location
         chartModel.setHoveredSegmentID(segment.id)
     }
 
     private func tooltipOrigin(at location: CGPoint, in size: CGSize) -> CGSize {
         let origin = TreemapTooltipPlacement.origin(
             for: location,
-            tooltipSize: Self.tooltipSize,
+            tooltipSize: Self.tooltipMaximumSize,
             in: CGRect(origin: .zero, size: size)
         )
         return CGSize(width: origin.x, height: origin.y)
@@ -273,32 +268,6 @@ struct TreemapChartView: View {
         ).canMoveToTrash
     }
 
-    private func summary(for node: FileNodeRecord) -> ChartSummary {
-        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
-            return ChartSummary(
-                status: summaryStatus(for: node),
-                title: node.name,
-                value: RadixFormatters.size(node.allocatedSize),
-                detail: "APFS available capacity"
-            )
-        }
-
-        let detail: String
-        if node.id != rootNode.id,
-           let percentage = RadixFormatters.percentage(part: node.allocatedSize, total: rootNode.allocatedSize) {
-            detail = percentage + " of current focus"
-        } else {
-            detail = node.itemKind
-        }
-
-        return ChartSummary(
-            status: node.itemKind,
-            title: node.name,
-            value: RadixFormatters.size(node.allocatedSize),
-            detail: detail
-        )
-    }
-
     private func summaryStatus(for node: FileNodeRecord) -> String {
         DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id)
             ? "Available Space"
@@ -323,34 +292,63 @@ struct TreemapChartView: View {
 }
 
 private struct TreemapHoverTooltip: View {
-    let summary: ChartSummary
+    private static let iconColumnWidth: CGFloat = 18
+
+    let content: TreemapTooltipContent
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(summary.status)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 8)
-
-                Text(summary.value)
+                Image(systemName: content.systemImageName)
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: Self.iconColumnWidth)
+
+                Text(content.title)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text(summary.title)
-                .font(.headline.weight(.semibold))
-                .lineLimit(1)
+            tooltipTextRow {
+                Text(content.sizeAndSignificance)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
 
-            Text(summary.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "folder")
+                        .frame(width: Self.iconColumnWidth)
+
+                    Text(content.location)
+                        .truncationMode(.middle)
+                }
+
+                tooltipTextRow {
+                    Text(content.metadata)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.primary.opacity(0.76))
+            .lineLimit(1)
         }
         .padding(10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .shadow(color: .black.opacity(0.18), radius: 7, y: 2)
+    }
+
+    private func tooltipTextRow<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Color.clear
+                .frame(width: Self.iconColumnWidth, height: 0)
+                .accessibilityHidden(true)
+            content()
+        }
     }
 }
 

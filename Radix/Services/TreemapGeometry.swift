@@ -9,6 +9,7 @@ import Foundation
 struct TreemapSegment: Identifiable, Hashable, Sendable {
     let id: String
     let nodeID: String?
+    let containerNodeID: String
     let label: String
     /// A unit-space rectangle. The renderer scales it to the current chart size.
     let rect: CGRect
@@ -16,6 +17,7 @@ struct TreemapSegment: Identifiable, Hashable, Sendable {
     let colorToken: SunburstColorToken
     let totalSize: Int64
     let isAggregate: Bool
+    let groupedItemCount: Int?
     let isDirectory: Bool
     let showsContainerHeader: Bool
 }
@@ -157,12 +159,14 @@ enum TreemapLayout {
             segments.append(TreemapSegment(
                 id: entry.id,
                 nodeID: entry.nodeID,
+                containerNodeID: parentID,
                 label: entry.label,
                 rect: normalized(tile.rect, in: rootSize),
                 depth: depth,
                 colorToken: colorToken,
                 totalSize: entry.totalSize,
                 isAggregate: entry.isAggregate,
+                groupedItemCount: entry.groupedItemCount,
                 isDirectory: entry.node?.isDirectory == true,
                 showsContainerHeader: showsContainerHeader
             ))
@@ -211,11 +215,11 @@ enum TreemapLayout {
 
         for child in children {
             try cancellationCheck()
-            let size = max(child.allocatedSize, 1)
-            let projectedArea = availableArea * CGFloat(Double(size) / max(totalWeight, 1))
+            let layoutSize = max(child.allocatedSize, 1)
+            let projectedArea = availableArea * CGFloat(Double(layoutSize) / max(totalWeight, 1))
             if projectedArea < minimumTileArea {
                 grouped.append(child)
-                groupedSize = addingClamped(groupedSize, size)
+                groupedSize = addingClamped(groupedSize, max(child.allocatedSize, 0))
             } else {
                 visible.append(Entry(node: child))
             }
@@ -228,6 +232,7 @@ enum TreemapLayout {
                 label: "Smaller Items",
                 totalSize: groupedSize,
                 isAggregate: true,
+                groupedItemCount: grouped.count,
                 colorID: "treemap-aggregate-\(parentID)",
                 node: nil
             ))
@@ -492,6 +497,7 @@ enum TreemapLayout {
         let label: String
         let totalSize: Int64
         let isAggregate: Bool
+        let groupedItemCount: Int?
         let colorID: String
         let node: FileNodeRecord?
 
@@ -499,8 +505,9 @@ enum TreemapLayout {
             id = node.id
             nodeID = node.id
             label = node.name
-            totalSize = max(node.allocatedSize, 1)
+            totalSize = max(node.allocatedSize, 0)
             isAggregate = false
+            groupedItemCount = nil
             colorID = node.id
             self.node = node
         }
@@ -511,14 +518,16 @@ enum TreemapLayout {
             label: String,
             totalSize: Int64,
             isAggregate: Bool,
+            groupedItemCount: Int?,
             colorID: String,
             node: FileNodeRecord?
         ) {
             self.id = id
             self.nodeID = nodeID
             self.label = label
-            self.totalSize = max(totalSize, 1)
+            self.totalSize = max(totalSize, 0)
             self.isAggregate = isAggregate
+            self.groupedItemCount = groupedItemCount
             self.colorID = colorID
             self.node = node
         }

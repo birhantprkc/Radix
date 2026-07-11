@@ -135,7 +135,7 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
 }
 
 extension FileNodeRecord {
-    var systemImageName: String {
+    nonisolated var systemImageName: String {
         if isSynthetic {
             return "internaldrive.fill"
         }

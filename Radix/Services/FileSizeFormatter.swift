@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum RadixFormatters {
+nonisolated enum RadixFormatters {
     private static let formatterCache = FormatterCache()
 
     static func size(_ bytes: Int64) -> String {
@@ -28,7 +28,7 @@ enum RadixFormatters {
     }
 }
 
-private final class FormatterCache: @unchecked Sendable {
+private nonisolated final class FormatterCache: @unchecked Sendable {
     private let lock = NSLock()
     private let byteFormatter: ByteCountFormatter
     private let dateFormatter: DateFormatter

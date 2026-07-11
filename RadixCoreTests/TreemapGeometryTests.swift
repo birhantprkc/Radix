@@ -83,7 +83,28 @@ final class TreemapGeometryTests: XCTestCase {
         let aggregate = segments.first { $0.isAggregate }
         XCTAssertEqual(aggregate?.label, "Smaller Items")
         XCTAssertEqual(aggregate?.totalSize, 4)
+        XCTAssertEqual(aggregate?.groupedItemCount, 4)
         XCTAssertNil(aggregate?.nodeID)
+    }
+
+    func testAggregateSizeDoesNotCountZeroByteLayoutWeightsAsDiskUsage() throws {
+        let large = makeTestFileNode(id: "/root/large", name: "large", size: 10_000)
+        let empty = (0..<3).map {
+            makeTestFileNode(id: "/root/empty-\($0)", name: "empty-\($0)", size: 0)
+        }
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [large] + empty)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [large] + empty])
+
+        let segments = TreemapLayout.segments(
+            in: store,
+            rootID: root.id,
+            depthLimit: 1,
+            size: CGSize(width: 500, height: 300)
+        )
+
+        let aggregate = try XCTUnwrap(segments.first(where: \.isAggregate))
+        XCTAssertEqual(aggregate.totalSize, 0)
+        XCTAssertEqual(aggregate.groupedItemCount, 3)
     }
 
     func testAggregateTileIsSortedBySizeBeforeSquarification() {
@@ -213,12 +234,14 @@ private func makeTreemapSegment(id: String, rect: CGRect) -> TreemapSegment {
     TreemapSegment(
         id: id,
         nodeID: id,
+        containerNodeID: "/root",
         label: id,
         rect: rect,
         depth: 0,
         colorToken: .single(id: id),
         totalSize: 1,
         isAggregate: false,
+        groupedItemCount: nil,
         isDirectory: false,
         showsContainerHeader: false
     )
