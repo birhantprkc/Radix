@@ -103,13 +103,14 @@
 			buildConfigurationList = 3BF007F92F7E285500DA9E45 /* Build configuration list for PBXProject "Radix" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
-			knownRegions = (
-				en,
-				es,
-				fr,
-				zh-Hans,
-				Base,
-			);
+	knownRegions = (
+		en,
+		es,
+		fr,
+		zh-Hans,
+		de,
+		Base,
+	);
 			mainGroup = 3BF007F52F7E285500DA9E45;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (

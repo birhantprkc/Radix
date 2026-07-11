@@ -20,6 +20,12 @@
             "state": "translated",
             "value": ""
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ""
+          }
         }
       }
     },
@@ -41,6 +47,12 @@
           "stringUnit": {
             "state": "translated",
             "value": " 个文件，"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " Dateien, "
           }
         }
       }
@@ -64,6 +76,12 @@
             "state": "translated",
             "value": " 个文件夹"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " Ordner"
+          }
         }
       }
     },
@@ -82,6 +100,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "-"
+          }
+        },
+        "de": {
           "stringUnit": {
             "state": "translated",
             "value": "-"
@@ -108,6 +132,12 @@
             "state": "translated",
             "value": "·"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "·"
+          }
         }
       }
     },
@@ -126,6 +156,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%"
+          }
+        },
+        "de": {
           "stringUnit": {
             "state": "translated",
             "value": "%"
@@ -159,6 +195,12 @@
             "state": "translated",
             "value": "%@ · %@（占 %@）"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %@ von %@"
+          }
         }
       }
     },
@@ -185,6 +227,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ • %@"
+          }
+        },
+        "de": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ %@ • %@"
@@ -217,6 +265,12 @@
             "state": "translated",
             "value": "新增或增长 %@  •  回收 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ hinzugefügt oder vergrößert  •  %@ freigegeben"
+          }
         }
       }
     },
@@ -238,6 +292,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "已汇总 %@ 项变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Änderungen zusammengefasst"
           }
         }
       }
@@ -262,6 +322,12 @@
             "state": "translated",
             "value": "%@ 个文件"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Dateien"
+          }
         }
       }
     },
@@ -284,6 +350,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 个分组项目"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ gruppierte Elemente"
           }
         }
       }
@@ -314,6 +386,12 @@
             "state": "translated",
             "value": "%@ 个项目 • %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Element • %@"
+          }
         }
       }
     },
@@ -343,6 +421,12 @@
             "state": "translated",
             "value": "%@ 个项目 • %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Elemente • %@"
+          }
         }
       }
     },
@@ -365,6 +449,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 占当前焦点"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ des aktuellen Fokus"
           }
         }
       }
@@ -395,6 +485,12 @@
             "state": "translated",
             "value": "%@、%@、%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, %@, %@"
+          }
         }
       }
     },
@@ -416,6 +512,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个层级"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Ebenen"
           }
         }
       }
@@ -440,6 +542,12 @@
             "state": "translated",
             "value": "%lld 个位置访问受限或存在扫描警告。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Standort hatte eingeschränkten Zugriff oder eine Scan-Warnung."
+          }
         }
       }
     },
@@ -462,6 +570,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个位置访问受限或有扫描警告。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Standorte hatten eingeschränkten Zugriff oder Scan-Warnungen."
           }
         }
       }
@@ -486,6 +600,12 @@
             "state": "translated",
             "value": "%lld 个系统位置受 macOS 保护，已跳过。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Systemstandort ist durch macOS geschützt und wurde übersprungen."
+          }
         }
       }
     },
@@ -508,6 +628,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个系统位置受 macOS 保护，已跳过。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Systemstandorte sind durch macOS geschützt und wurden übersprungen."
           }
         }
       }
@@ -532,6 +658,12 @@
             "state": "translated",
             "value": "%lld 个类型"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Typen"
+          }
         }
       }
     },
@@ -554,6 +686,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 个文件"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Datei"
           }
         }
       }
@@ -578,6 +716,12 @@
             "state": "translated",
             "value": "1 个分组项目"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 gruppiertes Element"
+          }
         }
       }
     },
@@ -599,6 +743,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "1. 打开“隐私与安全性”>“完全磁盘访问权限”。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1. Öffnen Sie „Datenschutz & Sicherheit“ > „Festplattenvollzugriff“."
           }
         }
       }
@@ -622,6 +772,12 @@
             "state": "translated",
             "value": "2. 打开 Radix。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2. Aktivieren Sie Radix."
+          }
         }
       }
     },
@@ -643,6 +799,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "3. macOS 提示时选择“退出并重新打开”。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3. Wählen Sie „Beenden & erneut öffnen“, wenn macOS Sie dazu auffordert."
           }
         }
       }
@@ -667,6 +829,12 @@
             "state": "translated",
             "value": "扫描结果中已合并重复的文件系统路径。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein doppelter Dateisystempfad wurde in den Scan-Ergebnissen zusammengeführt."
+          }
         }
       }
     },
@@ -688,6 +856,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "访问权限"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugriff"
           }
         }
       }
@@ -712,6 +886,12 @@
             "state": "translated",
             "value": "操作失败"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktion fehlgeschlagen"
+          }
         }
       }
     },
@@ -734,6 +914,12 @@
             "state": "translated",
             "value": "操作"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktionen"
+          }
         }
       }
     },
@@ -755,6 +941,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "实际大小"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tatsächliche Größe"
           }
         }
       }
@@ -780,6 +972,12 @@
             "state": "translated",
             "value": "将 %@ 个项目加入待处理列表"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Elemente zur Löschliste hinzufügen"
+          }
         }
       }
     },
@@ -803,6 +1001,12 @@
             "state": "translated",
             "value": "将 %lld 个项目加入待处理列表"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Elemente zur Löschliste hinzufügen"
+          }
         }
       }
     },
@@ -825,6 +1029,12 @@
             "state": "translated",
             "value": "添加模式"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muster hinzufügen"
+          }
         }
       }
     },
@@ -846,6 +1056,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加预设"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voreinstellung hinzufügen"
           }
         }
       }
@@ -870,6 +1086,12 @@
             "state": "translated",
             "value": "加入待处理列表"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zur Löschliste hinzufügen"
+          }
         }
       }
     },
@@ -892,6 +1114,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "新增"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hinzugefügt"
           }
         }
       }
@@ -916,6 +1144,12 @@
             "state": "translated",
             "value": "别名"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alias"
+          }
         }
       }
     },
@@ -938,6 +1172,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Änderungen"
           }
         }
       }
@@ -962,6 +1202,12 @@
             "state": "translated",
             "value": "所有重要贡献项"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle relevanten Verursacher"
+          }
         }
       }
     },
@@ -985,6 +1231,12 @@
             "state": "translated",
             "value": "所有类型"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Typen"
+          }
         }
       }
     },
@@ -1006,6 +1258,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "已分配"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugewiesen"
           }
         }
       }
@@ -1030,6 +1288,12 @@
             "state": "translated",
             "value": "APFS 可用容量"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verfügbare APFS-Kapazität"
+          }
         }
       }
     },
@@ -1052,6 +1316,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "应用程序"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Programme"
           }
         }
       }
@@ -1076,6 +1346,12 @@
             "state": "translated",
             "value": "归档统计信息与节点数据不一致。Radix 已在导入时修复总计。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Archivstatistiken stimmten nicht mit den Knotendaten überein. Radix hat die Summen beim Import repariert."
+          }
         }
       }
     },
@@ -1097,6 +1373,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动汇总包含大量小文件的文件夹"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner mit vielen kleinen Dateien automatisch zusammenfassen"
           }
         }
       }
@@ -1121,6 +1403,12 @@
             "state": "translated",
             "value": "可用空间"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verfügbarer Speicherplatz"
+          }
         }
       }
     },
@@ -1142,6 +1430,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "后退"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück"
           }
         }
       }
@@ -1165,6 +1459,12 @@
             "state": "translated",
             "value": "返回扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück zum Scan"
+          }
         }
       }
     },
@@ -1187,6 +1487,12 @@
             "state": "translated",
             "value": "返回扫描根目录"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück zum Scan-Stammverzeichnis"
+          }
         }
       }
     },
@@ -1208,6 +1514,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen"
           }
         }
       }
@@ -1232,6 +1544,12 @@
             "state": "translated",
             "value": "请先取消当前归档操作，再比较快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brechen Sie den aktuellen Archivvorgang ab, bevor Sie Snapshots vergleichen."
+          }
         }
       }
     },
@@ -1255,6 +1573,12 @@
             "state": "translated",
             "value": "请先取消当前归档操作，再导入快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brechen Sie den aktuellen Archivvorgang ab, bevor Sie einen Snapshot importieren."
+          }
         }
       }
     },
@@ -1276,6 +1600,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ändern"
           }
         }
       }
@@ -1299,6 +1629,12 @@
             "state": "translated",
             "value": "更改会立即应用于当前磁盘图。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Änderungen werden sofort auf die aktuelle Datenträgerkarte angewendet."
+          }
         }
       }
     },
@@ -1320,6 +1656,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "检查更新…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach Updates suchen …"
           }
         }
       }
@@ -1344,6 +1686,12 @@
             "state": "translated",
             "value": "选择"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswählen"
+          }
         }
       }
     },
@@ -1367,6 +1715,12 @@
             "state": "translated",
             "value": "请选择其他视图或调整搜索条件。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie eine andere Ansicht oder passen Sie Ihre Suche an."
+          }
         }
       }
     },
@@ -1388,6 +1742,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择文件夹或磁盘"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner oder Datenträger auswählen"
           }
         }
       }
@@ -1412,6 +1772,12 @@
             "state": "translated",
             "value": "选择要分析的文件夹或已挂载宗卷。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie einen Ordner oder ein eingebundenes Volume zur Analyse aus."
+          }
         }
       }
     },
@@ -1434,6 +1800,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择包含内容的文件夹以放大查看。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie einen Ordner mit Inhalt aus, um ihn zu vergrößern."
           }
         }
       }
@@ -1458,6 +1830,12 @@
             "state": "translated",
             "value": "选择 Radix 扫描快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie einen Radix-Scan-Snapshot aus."
+          }
         }
       }
     },
@@ -1480,6 +1858,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择已保存的扫描，或使用当前扫描。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie einen gespeicherten Scan oder den aktuellen Scan aus."
           }
         }
       }
@@ -1504,6 +1888,12 @@
             "state": "translated",
             "value": "选择已保存的扫描。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie einen gespeicherten Scan aus."
+          }
         }
       }
     },
@@ -1527,6 +1917,12 @@
             "state": "translated",
             "value": "请选择两个 Radix 扫描快照进行比较。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie genau zwei Radix-Scan-Snapshots zum Vergleichen aus."
+          }
         }
       }
     },
@@ -1549,6 +1945,12 @@
             "state": "translated",
             "value": "选择文件夹"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner auswählen"
+          }
         }
       }
     },
@@ -1570,6 +1972,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择文件夹…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner auswählen …"
           }
         }
       }
@@ -1594,6 +2002,12 @@
             "state": "translated",
             "value": "选择一个或多个要显示的变化类型。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie mindestens eine Änderungsart zur Anzeige aus."
+          }
         }
       }
     },
@@ -1615,6 +2029,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择已保存的扫描…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeicherten Scan auswählen …"
           }
         }
       }
@@ -1638,6 +2058,12 @@
             "state": "translated",
             "value": "选择同一位置且扫描设置匹配的两个扫描。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie zwei Scans desselben Standorts mit übereinstimmenden Scan-Einstellungen aus."
+          }
         }
       }
     },
@@ -1659,6 +2085,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschen"
           }
         }
       }
@@ -1682,6 +2114,12 @@
             "state": "translated",
             "value": "清除 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ löschen"
+          }
         }
       }
     },
@@ -1703,6 +2141,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部清除"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alles löschen"
           }
         }
       }
@@ -1726,6 +2170,12 @@
             "state": "translated",
             "value": "清除当前内容筛选条件"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuellen Inhaltsfilter löschen"
+          }
         }
       }
     },
@@ -1747,6 +2197,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除待处理列表？"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschliste löschen?"
           }
         }
       }
@@ -1770,6 +2226,12 @@
             "state": "translated",
             "value": "清除整个扫描搜索"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamte Scan-Suche löschen"
+          }
         }
       }
     },
@@ -1791,6 +2253,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除位置筛选条件"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standortfilter löschen"
           }
         }
       }
@@ -1814,6 +2282,12 @@
             "state": "translated",
             "value": "清除最近扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Scans löschen"
+          }
         }
       }
     },
@@ -1835,6 +2309,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除选择"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswahl löschen"
           }
         }
       }
@@ -1859,6 +2339,12 @@
             "state": "translated",
             "value": "可直接比较：位置相同、扫描设置匹配且扫描完整。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleichbar: gleicher Standort, übereinstimmende Scan-Einstellungen und vollständige Scans."
+          }
         }
       }
     },
@@ -1880,6 +2366,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "比较"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleichen"
           }
         }
       }
@@ -1903,6 +2395,12 @@
             "state": "translated",
             "value": "将当前扫描与已保存的扫描比较…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuellen Scan mit gespeichertem Scan vergleichen …"
+          }
         }
       }
     },
@@ -1925,6 +2423,12 @@
             "state": "translated",
             "value": "比较扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scans vergleichen"
+          }
         }
       }
     },
@@ -1946,6 +2450,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "比较扫描…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scans vergleichen …"
           }
         }
       }
@@ -1970,6 +2480,12 @@
             "state": "translated",
             "value": "正在比较快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshots werden verglichen"
+          }
         }
       }
     },
@@ -1991,6 +2507,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "比较详细信息"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleichsdetails"
           }
         }
       }
@@ -2015,6 +2537,12 @@
             "state": "translated",
             "value": "比较失败"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleich fehlgeschlagen"
+          }
         }
       }
     },
@@ -2038,6 +2566,12 @@
             "state": "translated",
             "value": "请先完成实时扫描，再将其与快照比较。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie einen Live-Scan ab, bevor Sie ihn mit einem Snapshot vergleichen."
+          }
         }
       }
     },
@@ -2060,6 +2594,12 @@
             "state": "translated",
             "value": "内容表"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inhaltstabelle"
+          }
         }
       }
     },
@@ -2081,6 +2621,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "继续"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fortfahren"
           }
         }
       }
@@ -2105,6 +2651,12 @@
             "state": "translated",
             "value": "复制路径"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pfad kopieren"
+          }
         }
       }
     },
@@ -2126,6 +2678,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制路径"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pfade kopieren"
           }
         }
       }
@@ -2150,6 +2708,12 @@
             "state": "translated",
             "value": "当前内容"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktueller Inhalt"
+          }
         }
       }
     },
@@ -2171,6 +2735,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件系统层次结构中的当前焦点。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktueller Fokus in der Dateisystemhierarchie."
           }
         }
       }
@@ -2194,6 +2764,12 @@
             "state": "translated",
             "value": "当前位置：%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktueller Standort, %@"
+          }
         }
       }
     },
@@ -2215,6 +2791,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktueller Scan"
           }
         }
       }
@@ -2239,6 +2821,12 @@
             "state": "translated",
             "value": "当前扫描已更改。请重新开始比较。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der aktuelle Scan wurde geändert. Starten Sie den Vergleich erneut."
+          }
         }
       }
     },
@@ -2260,6 +2848,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "减少"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abnahme"
           }
         }
       }
@@ -2284,6 +2878,12 @@
             "state": "translated",
             "value": "减少了 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um %@ verringert"
+          }
         }
       }
     },
@@ -2307,6 +2907,12 @@
             "state": "translated",
             "value": "桌面"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schreibtisch"
+          }
         }
       }
     },
@@ -2328,6 +2934,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "详细信息"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detail"
           }
         }
       }
@@ -2351,6 +2963,12 @@
             "state": "translated",
             "value": "详细信息…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Details …"
+          }
         }
       }
     },
@@ -2372,6 +2990,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "待处理列表"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschliste"
           }
         }
       }
@@ -2395,6 +3019,12 @@
             "state": "translated",
             "value": "磁盘图深度"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiefe der Datenträgerkarte"
+          }
         }
       }
     },
@@ -2416,6 +3046,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "磁盘图样式"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stil der Datenträgerkarte"
           }
         }
       }
@@ -2439,6 +3075,12 @@
             "state": "translated",
             "value": "磁盘图样式"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stil der Datenträgerkarte"
+          }
         }
       }
     },
@@ -2460,6 +3102,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "磁盘使用情况图表"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datenträgernutzungsdiagramm"
           }
         }
       }
@@ -2483,6 +3131,12 @@
             "state": "translated",
             "value": "关闭"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen"
+          }
         }
       }
     },
@@ -2504,6 +3158,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "关闭警告"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warnung schließen"
           }
         }
       }
@@ -2528,6 +3188,12 @@
             "state": "translated",
             "value": "文稿"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dokumente"
+          }
         }
       }
     },
@@ -2549,6 +3215,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig"
           }
         }
       }
@@ -2573,6 +3245,12 @@
             "state": "translated",
             "value": "下载"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads"
+          }
         }
       }
     },
@@ -2595,6 +3273,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "拖放文件夹或已挂载宗卷以开始扫描。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legen Sie einen Ordner oder ein eingebundenes Volume ab, um einen Scan zu starten."
           }
         }
       }
@@ -2619,6 +3303,12 @@
             "state": "translated",
             "value": "拖放到此处以添加"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Hinzufügen hier ablegen"
+          }
         }
       }
     },
@@ -2641,6 +3331,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "较早"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Früher"
           }
         }
       }
@@ -2665,6 +3361,12 @@
             "state": "translated",
             "value": "较早的扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Früherer Scan"
+          }
         }
       }
     },
@@ -2687,6 +3389,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "已启用"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktivieren"
           }
         }
       }
@@ -2711,6 +3419,12 @@
             "state": "translated",
             "value": "已启用"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktiviert"
+          }
         }
       }
     },
@@ -2733,6 +3447,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "整个扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamter Scan"
           }
         }
       }
@@ -2757,6 +3477,12 @@
             "state": "translated",
             "value": "估计"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschätzt"
+          }
         }
       }
     },
@@ -2780,6 +3506,12 @@
             "state": "translated",
             "value": "根据宗卷使用情况估算"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus der Volume-Nutzung geschätzt"
+          }
         }
       }
     },
@@ -2802,6 +3534,12 @@
             "state": "translated",
             "value": "macOS 报告为已用但 Radix 无法归因到普通文件路径的估计存储空间。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschätzter Speicherplatz, den macOS als belegt meldet, den Radix jedoch keinem regulären Dateipfad zuordnen konnte."
+          }
         }
       }
     },
@@ -2823,6 +3561,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "排除项"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausschlüsse"
           }
         }
       }
@@ -2852,6 +3596,12 @@
             "state": "translated",
             "value": "展开“%@”以扫描全部 %lld 个文件"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„%@“ erweitern, um alle %lld Dateien zu scannen"
+          }
         }
       }
     },
@@ -2873,6 +3623,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "展开 %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ erweitern"
           }
         }
       }
@@ -2896,6 +3652,12 @@
             "state": "translated",
             "value": "完全展开"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vollständig erweitern"
+          }
         }
       }
     },
@@ -2918,6 +3680,12 @@
             "state": "translated",
             "value": "正在展开…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird erweitert …"
+          }
         }
       }
     },
@@ -2939,6 +3707,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "探索磁盘图"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datenträgerkarte erkunden"
           }
         }
       }
@@ -2963,6 +3737,12 @@
             "state": "translated",
             "value": "导出"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exportieren"
+          }
         }
       }
     },
@@ -2986,6 +3766,12 @@
             "state": "translated",
             "value": "导出失败"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export fehlgeschlagen"
+          }
         }
       }
     },
@@ -3007,6 +3793,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "导出快照…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot exportieren …"
           }
         }
       }
@@ -3030,6 +3822,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在导出快照"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot wird exportiert"
           }
         }
       }
@@ -3060,6 +3858,12 @@
             "state": "translated",
             "value": "无法展开“%@”：%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„%@“ konnte nicht erweitert werden: %@"
+          }
         }
       }
     },
@@ -3083,6 +3887,12 @@
             "state": "translated",
             "value": "文件"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei"
+          }
         }
       }
     },
@@ -3104,6 +3914,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件操作"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateiaktionen"
           }
         }
       }
@@ -3128,6 +3944,12 @@
             "state": "translated",
             "value": "文件"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateien"
+          }
         }
       }
     },
@@ -3151,6 +3973,12 @@
             "state": "translated",
             "value": "筛选当前内容"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuellen Inhalt filtern"
+          }
         }
       }
     },
@@ -3173,6 +4001,12 @@
             "state": "translated",
             "value": "查找"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suchen"
+          }
         }
       }
     },
@@ -3194,6 +4028,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "在当前内容中查找"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im aktuellen Inhalt suchen"
           }
         }
       }
@@ -3218,6 +4058,12 @@
             "state": "translated",
             "value": "请先完成导出位置的选择，再比较快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie zuerst die Auswahl des Exportstandorts ab, bevor Sie Snapshots vergleichen."
+          }
         }
       }
     },
@@ -3240,6 +4086,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先完成导出位置的选择，再导入快照。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie zuerst die Auswahl des Exportstandorts ab, bevor Sie einen Snapshot importieren."
           }
         }
       }
@@ -3264,6 +4116,12 @@
             "state": "translated",
             "value": "请先完成或取消当前比较设置，再比较快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie die aktuelle Vergleichseinrichtung ab oder brechen Sie sie ab, bevor Sie Snapshots vergleichen."
+          }
         }
       }
     },
@@ -3286,6 +4144,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先完成或取消当前比较设置，再导入快照。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie die aktuelle Vergleichseinrichtung ab oder brechen Sie sie ab, bevor Sie einen Snapshot importieren."
           }
         }
       }
@@ -3310,6 +4174,12 @@
             "state": "translated",
             "value": "请先完成或取消当前导入预览，再比较快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie die aktuelle Importvorschau ab oder brechen Sie sie ab, bevor Sie Snapshots vergleichen."
+          }
         }
       }
     },
@@ -3333,6 +4203,12 @@
             "state": "translated",
             "value": "请先完成或取消当前导入预览，再导入另一个快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen Sie die aktuelle Importvorschau ab oder brechen Sie sie ab, bevor Sie einen weiteren Snapshot importieren."
+          }
         }
       }
     },
@@ -3354,6 +4230,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在完成 "
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird abgeschlossen "
           }
         }
       }
@@ -3377,6 +4259,12 @@
             "state": "translated",
             "value": "聚焦图表"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagramm fokussieren"
+          }
         }
       }
     },
@@ -3399,6 +4287,12 @@
             "state": "translated",
             "value": "聚焦内容"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inhalt fokussieren"
+          }
         }
       }
     },
@@ -3420,6 +4314,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "聚焦边栏"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seitenleiste fokussieren"
           }
         }
       }
@@ -3444,6 +4344,12 @@
             "state": "translated",
             "value": "文件夹"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner"
+          }
         }
       }
     },
@@ -3466,6 +4372,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件夹"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner"
           }
         }
       }
@@ -3490,6 +4402,12 @@
             "state": "translated",
             "value": "仅供取证比较：扫描覆盖范围或设置不同，因此总计可能无法直接比较。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur forensischer Vergleich: Scan-Abdeckung oder Einstellungen unterscheiden sich, daher sind die Summen möglicherweise nicht direkt vergleichbar."
+          }
         }
       }
     },
@@ -3511,6 +4429,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "前进"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorwärts"
           }
         }
       }
@@ -3534,6 +4458,12 @@
             "state": "translated",
             "value": "仅在扫描已挂载宗卷时显示可用空间，并使用 macOS 可用容量，其中可能包括可清除的 APFS 空间。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freier Speicherplatz wird nur bei Scans eingebundener Volumes angezeigt und verwendet die von macOS gemeldete verfügbare Kapazität, die löschbaren APFS-Speicher enthalten kann."
+          }
         }
       }
     },
@@ -3556,6 +4486,12 @@
             "state": "translated",
             "value": "完全磁盘访问权限"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Festplattenvollzugriff"
+          }
         }
       }
     },
@@ -3577,6 +4513,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "完全磁盘访问权限 %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Festplattenvollzugriff %@"
           }
         }
       }
@@ -3601,6 +4543,12 @@
             "state": "translated",
             "value": "无法验证完全磁盘访问权限。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Festplattenvollzugriff konnte nicht überprüft werden."
+          }
         }
       }
     },
@@ -3623,6 +4571,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "完全磁盘访问权限已启用。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Festplattenvollzugriff ist aktiviert."
           }
         }
       }
@@ -3647,6 +4601,12 @@
             "state": "translated",
             "value": "完全磁盘访问权限未启用。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Festplattenvollzugriff ist nicht aktiviert."
+          }
         }
       }
     },
@@ -3669,6 +4629,12 @@
             "state": "translated",
             "value": "通用"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allgemein"
+          }
         }
       }
     },
@@ -3690,6 +4656,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "转到上级文件夹"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum übergeordneten Element"
           }
         }
       }
@@ -3714,6 +4686,12 @@
             "state": "translated",
             "value": "转到 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine Ebene nach oben zu %@"
+          }
         }
       }
     },
@@ -3736,6 +4714,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "增大"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gewachsen"
           }
         }
       }
@@ -3760,6 +4744,12 @@
             "state": "translated",
             "value": "分组项目"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gruppierte Elemente"
+          }
         }
       }
     },
@@ -3782,6 +4772,12 @@
             "state": "translated",
             "value": "已分组的较小变化"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kleinere Änderungen gruppiert"
+          }
         }
       }
     },
@@ -3803,6 +4799,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "默认包含隐藏文件。扫描已挂载宗卷时始终会自动包含这些文件。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verborgene Dateien werden standardmäßig eingeschlossen. Scans eingebundener Volumes schließen sie immer automatisch ein."
           }
         }
       }
@@ -3827,6 +4829,12 @@
             "state": "translated",
             "value": "隐藏检查器"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspektor ausblenden"
+          }
         }
       }
     },
@@ -3850,6 +4858,12 @@
             "state": "translated",
             "value": "个人文件夹"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privat"
+          }
         }
       }
     },
@@ -3871,6 +4885,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "将鼠标悬停在分区上以查看详情。双击文件夹分区或表格行以深入查看。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bewegen Sie den Zeiger über Segmente, um sie zu untersuchen. Doppelklicken Sie auf ein Ordnersegment oder eine Tabellenzeile, um tiefer zu navigieren."
           }
         }
       }
@@ -3895,6 +4915,12 @@
             "state": "translated",
             "value": "导入"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importieren"
+          }
         }
       }
     },
@@ -3916,6 +4942,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "导入快照"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot importieren"
           }
         }
       }
@@ -3939,6 +4971,12 @@
             "state": "translated",
             "value": "导入快照…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot importieren …"
+          }
         }
       }
     },
@@ -3960,6 +4998,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "已导入快照"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importierter Snapshot"
           }
         }
       }
@@ -3984,6 +5028,12 @@
             "state": "translated",
             "value": "导入的快照为只读。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importierte Snapshots sind schreibgeschützt."
+          }
         }
       }
     },
@@ -4007,6 +5057,12 @@
             "state": "translated",
             "value": "正在导入快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot wird importiert"
+          }
         }
       }
     },
@@ -4028,6 +5084,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "增加"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zunahme"
           }
         }
       }
@@ -4052,6 +5114,12 @@
             "state": "translated",
             "value": "增加了 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um %@ erhöht"
+          }
         }
       }
     },
@@ -4075,6 +5143,12 @@
             "state": "translated",
             "value": "包含 %@ 的非本地宗卷不支持增量扫描。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inkrementelle Scans sind für das nicht lokale Volume mit %@ nicht verfügbar."
+          }
         }
       }
     },
@@ -4097,6 +5171,12 @@
             "state": "translated",
             "value": "检查"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untersuchen"
+          }
         }
       }
     },
@@ -4118,6 +5198,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "交互"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interaktion"
           }
         }
       }
@@ -4142,6 +5228,12 @@
             "state": "translated",
             "value": "项目"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Element"
+          }
         }
       }
     },
@@ -4163,6 +5255,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "两个扫描中都存在且跟踪大小发生变化的项目"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elemente, die in beiden Scans vorhanden sind und deren erfasste Größe sich geändert hat"
           }
         }
       }
@@ -4186,6 +5284,12 @@
             "state": "translated",
             "value": "关键统计信息"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wichtige Statistiken"
+          }
         }
       }
     },
@@ -4207,6 +5311,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "类型"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Art"
           }
         }
       }
@@ -4230,6 +5340,12 @@
             "state": "translated",
             "value": "最大子项"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Größte untergeordnete Elemente"
+          }
         }
       }
     },
@@ -4251,6 +5367,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "上次扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzter Scan"
           }
         }
       }
@@ -4275,6 +5397,12 @@
             "state": "translated",
             "value": "较晚"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Später"
+          }
         }
       }
     },
@@ -4297,6 +5425,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "较晚的扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Späterer Scan"
           }
         }
       }
@@ -4321,6 +5455,12 @@
             "state": "translated",
             "value": "资源库"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mediathek"
+          }
         }
       }
     },
@@ -4343,6 +5483,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "受限"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschränkt"
           }
         }
       }
@@ -4367,6 +5513,12 @@
             "state": "translated",
             "value": "访问受限"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschränkter Zugriff"
+          }
         }
       }
     },
@@ -4389,6 +5541,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "覆盖范围有限：%lld 个位置无法读取。其下缺失的项目不一定已删除。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschränkte Abdeckung: %lld Standort war nicht lesbar. Darunter fehlende Einträge wurden nicht unbedingt gelöscht."
           }
         }
       }
@@ -4420,6 +5578,12 @@
             "state": "translated",
             "value": "覆盖范围有限：%lld 个位置无法读取%@。其下缺失的项目不一定已删除。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschränkte Abdeckung: %lld nicht lesbare Standorte%@. Darunter fehlende Einträge wurden nicht unbedingt gelöscht."
+          }
         }
       }
     },
@@ -4442,6 +5606,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "覆盖范围有限：%lld 个位置无法读取。其下缺失的项目不一定已删除。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschränkte Abdeckung: %lld nicht lesbare Standorte. Darunter fehlende Einträge wurden nicht unbedingt gelöscht."
           }
         }
       }
@@ -4466,6 +5636,12 @@
             "state": "translated",
             "value": "覆盖范围有限：一个或两个扫描的设置不可用。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eingeschränkte Abdeckung: Die Scan-Einstellungen sind für einen oder beide Scans nicht verfügbar."
+          }
         }
       }
     },
@@ -4489,6 +5665,12 @@
             "state": "translated",
             "value": "正在加载内容…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inhalt wird geladen …"
+          }
         }
       }
     },
@@ -4510,6 +5692,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在加载磁盘图…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datenträgerkarte wird geladen …"
           }
         }
       }
@@ -4533,6 +5721,12 @@
             "state": "translated",
             "value": "位置"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standorte"
+          }
         }
       }
     },
@@ -4554,6 +5748,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "逻辑大小"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Logische Größe"
           }
         }
       }
@@ -4578,6 +5778,12 @@
             "state": "translated",
             "value": "macOS 无法复制 %@ 的路径。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS konnte den Pfad für %@ nicht kopieren."
+          }
         }
       }
     },
@@ -4601,6 +5807,12 @@
             "state": "translated",
             "value": "macOS 无法打开 %@ 处的项目。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS konnte das Element unter %@ nicht öffnen."
+          }
         }
       }
     },
@@ -4622,6 +5834,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "元数据"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadaten"
           }
         }
       }
@@ -4646,6 +5864,12 @@
             "state": "translated",
             "value": "修改日期不可用"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Änderungsdatum nicht verfügbar"
+          }
         }
       }
     },
@@ -4669,6 +5893,12 @@
             "state": "translated",
             "value": "已修改"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geändert"
+          }
         }
       }
     },
@@ -4691,6 +5921,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "修改时间 %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geändert %@"
           }
         }
       }
@@ -4722,6 +5958,12 @@
             "state": "translated",
             "value": "将 %@ %@ 移到废纸篓"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ in den Papierkorb bewegen"
+          }
         }
       }
     },
@@ -4744,6 +5986,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "将 %@ 个项目移到废纸篓"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Element in den Papierkorb bewegen"
           }
         }
       }
@@ -4768,6 +6016,12 @@
             "state": "translated",
             "value": "将 %@ 个项目移到废纸篓"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Elemente in den Papierkorb bewegen"
+          }
         }
       }
     },
@@ -4789,6 +6043,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "将 %lld 个项目移到废纸篓"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Elemente in den Papierkorb bewegen"
           }
         }
       }
@@ -4813,6 +6073,12 @@
             "state": "translated",
             "value": "移到废纸篓"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In den Papierkorb bewegen"
+          }
         }
       }
     },
@@ -4834,6 +6100,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "移到废纸篓？"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In den Papierkorb bewegen?"
           }
         }
       }
@@ -4858,6 +6130,12 @@
             "state": "translated",
             "value": "已移动"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verschoben"
+          }
         }
       }
     },
@@ -4879,6 +6157,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "名称"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
           }
         }
       }
@@ -4909,6 +6193,12 @@
             "state": "translated",
             "value": "已命名的贡献项占所选影响的 %@；%@ 个较小变化已归入“其他”。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die benannten Verursacher machen %@ der ausgewählten Auswirkung aus; %@ kleinere Änderungen sind unter „Andere“ gruppiert."
+          }
         }
       }
     },
@@ -4930,6 +6220,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "导航"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navigieren"
           }
         }
       }
@@ -4953,6 +6249,12 @@
             "state": "translated",
             "value": "导航到此位置。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navigiert zu diesem Standort."
+          }
         }
       }
     },
@@ -4974,6 +6276,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "净变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nettoänderung"
           }
         }
       }
@@ -4998,6 +6306,12 @@
             "state": "translated",
             "value": "未选择变化类型"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Änderungsarten ausgewählt"
+          }
         }
       }
     },
@@ -5020,6 +6334,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "未选择变化类型。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Änderungsarten ausgewählt."
           }
         }
       }
@@ -5044,6 +6364,12 @@
             "state": "translated",
             "value": "没有减少"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Abnahme"
+          }
         }
       }
     },
@@ -5066,6 +6392,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有增加"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Zunahme"
           }
         }
       }
@@ -5090,6 +6422,12 @@
             "state": "translated",
             "value": "此扫描中没有任何项目符合搜索条件。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In diesem Scan stimmen keine Elemente mit Ihrer Suche überein."
+          }
         }
       }
     },
@@ -5113,6 +6451,12 @@
             "state": "translated",
             "value": "没有标记的项目"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Elemente markiert"
+          }
         }
       }
     },
@@ -5134,6 +6478,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有标记的项目"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Elemente markiert"
           }
         }
       }
@@ -5158,6 +6508,12 @@
             "state": "translated",
             "value": "没有匹配的变化"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine passenden Änderungen"
+          }
         }
       }
     },
@@ -5179,6 +6535,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有匹配的项目"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine passenden Elemente"
           }
         }
       }
@@ -5203,6 +6565,12 @@
             "state": "translated",
             "value": "存储没有净变化"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Nettoänderung des Speicherplatzes"
+          }
         }
       }
     },
@@ -5224,6 +6592,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前扫描没有活动的受保护文件夹警告。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für den aktuellen Scan ist keine Warnung zu geschützten Ordnern aktiv."
           }
         }
       }
@@ -5247,6 +6621,12 @@
             "state": "translated",
             "value": "未选择"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Auswahl"
+          }
         }
       }
     },
@@ -5269,6 +6649,12 @@
             "state": "translated",
             "value": "未选择快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Snapshot ausgewählt"
+          }
         }
       }
     },
@@ -5290,6 +6676,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "尚无统计信息"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Statistiken"
           }
         }
       }
@@ -5314,6 +6706,12 @@
             "state": "translated",
             "value": "没有记录的大小变化"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Änderungen der erfassten Größe"
+          }
         }
       }
     },
@@ -5336,6 +6734,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "未找到记录的大小变化。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es wurden keine Änderungen der erfassten Größe gefunden."
           }
         }
       }
@@ -5360,6 +6764,12 @@
             "state": "translated",
             "value": "无"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine"
+          }
         }
       }
     },
@@ -5382,6 +6792,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "未启用"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht aktiviert"
           }
         }
       }
@@ -5406,6 +6822,12 @@
             "state": "translated",
             "value": "无"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts"
+          }
         }
       }
     },
@@ -5428,6 +6850,12 @@
             "state": "translated",
             "value": "没有可显示的内容"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts anzuzeigen"
+          }
         }
       }
     },
@@ -5449,6 +6877,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "好"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
           }
         }
       }
@@ -5473,6 +6907,12 @@
             "state": "translated",
             "value": "只有完整扫描才能导出。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur vollständige Scans können exportiert werden."
+          }
         }
       }
     },
@@ -5496,6 +6936,12 @@
             "state": "translated",
             "value": "打开"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnen"
+          }
         }
       }
     },
@@ -5518,6 +6964,12 @@
             "state": "translated",
             "value": "打开完全磁盘访问权限"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Festplattenvollzugriff öffnen"
+          }
         }
       }
     },
@@ -5539,6 +6991,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开完全磁盘访问权限设置"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen für den Festplattenvollzugriff öffnen"
           }
         }
       }
@@ -5563,6 +7021,12 @@
             "state": "translated",
             "value": "正在打开快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot wird geöffnet"
+          }
         }
       }
     },
@@ -5584,6 +7048,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "或将已保存的扫描拖放到此处"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "oder legen Sie hier einen gespeicherten Scan ab"
           }
         }
       }
@@ -5608,6 +7078,12 @@
             "state": "translated",
             "value": "软件包"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paket"
+          }
         }
       }
     },
@@ -5631,6 +7107,12 @@
             "state": "translated",
             "value": "软件包内容已隐藏"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paketinhalt ausgeblendet"
+          }
         }
       }
     },
@@ -5652,6 +7134,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "上级"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Übergeordnet"
           }
         }
       }
@@ -5675,6 +7163,12 @@
             "state": "translated",
             "value": "路径"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pfad"
+          }
         }
       }
     },
@@ -5696,6 +7190,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "模式"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muster"
           }
         }
       }
@@ -5720,6 +7220,12 @@
             "state": "translated",
             "value": "正在准备归档"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiv wird vorbereitet"
+          }
         }
       }
     },
@@ -5743,6 +7249,12 @@
             "state": "translated",
             "value": "正在准备比较"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleich wird vorbereitet"
+          }
         }
       }
     },
@@ -5764,6 +7276,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "隐私"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datenschutz"
           }
         }
       }
@@ -5788,6 +7306,12 @@
             "state": "translated",
             "value": "快速查看"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Übersicht"
+          }
         }
       }
     },
@@ -5806,6 +7330,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
+        },
+        "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Radix"
@@ -5833,6 +7363,12 @@
             "state": "translated",
             "value": "Radix 当前可以读取受保护的位置。现在可以开始完整扫描。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix kann derzeit geschützte Standorte lesen. Sie können jetzt einen vollständigen Scan starten."
+          }
         }
       }
     },
@@ -5854,6 +7390,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 可以立即扫描普通文件夹。对于 Mail、Safari、“信息”和资源库等受 macOS 保护的位置，请在“系统设置”中授予完全磁盘访问权限。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix kann gewöhnliche Ordner sofort scannen. Für geschützte macOS-Standorte wie Mail, Safari, Nachrichten und Inhalte der Mediathek gewähren Sie den Festplattenvollzugriff in den Systemeinstellungen."
           }
         }
       }
@@ -5878,6 +7420,12 @@
             "state": "translated",
             "value": "Radix 目前无法比较快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix kann Snapshots derzeit nicht vergleichen."
+          }
         }
       }
     },
@@ -5900,6 +7448,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 目前无法导入快照。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix kann derzeit keinen Snapshot importieren."
           }
         }
       }
@@ -5924,6 +7478,12 @@
             "state": "translated",
             "value": "Radix 无法创建 FSEvents 历史记录流。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte keinen FSEvents-Verlaufsstream erstellen."
+          }
         }
       }
     },
@@ -5946,6 +7506,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 无法打开完全磁盘访问权限设置。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte die Einstellungen für den Festplattenvollzugriff nicht öffnen."
           }
         }
       }
@@ -5970,6 +7536,12 @@
             "state": "translated",
             "value": "Radix 无法读取扫描快照清单：%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte das Manifest des Scan-Snapshots nicht lesen: %@"
+          }
         }
       }
     },
@@ -5992,6 +7564,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 无法读取扫描快照节点数据：%@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte die Knotendaten des Scan-Snapshots nicht lesen: %@"
           }
         }
       }
@@ -6016,6 +7594,12 @@
             "state": "translated",
             "value": "Radix 无法读取扫描快照统计信息：%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte die Statistiken des Scan-Snapshots nicht lesen: %@"
+          }
         }
       }
     },
@@ -6038,6 +7622,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 无法读取扫描快照拓扑结构：%@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte die Topologie des Scan-Snapshots nicht lesen: %@"
           }
         }
       }
@@ -6062,6 +7652,12 @@
             "state": "translated",
             "value": "Radix 无法启动 FSEvents 历史记录流。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte den FSEvents-Verlaufsstream nicht starten."
+          }
         }
       }
     },
@@ -6084,6 +7680,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 无法验证这台 Mac 的完全磁盘访问权限。你仍可扫描普通文件夹。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte den Festplattenvollzugriff auf diesem Mac nicht überprüfen. Sie können weiterhin gewöhnliche Ordner scannen."
           }
         }
       }
@@ -6114,6 +7716,12 @@
             "state": "translated",
             "value": "Radix 无法验证 %@ 的当前身份：%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte die aktuelle Identität für %@ nicht überprüfen: %@"
+          }
         }
       }
     },
@@ -6136,6 +7744,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 无法验证 %@ 的扫描身份。移到废纸篓前请重新扫描。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix konnte die Identität des Scans für %@ nicht überprüfen. Scannen Sie erneut, bevor Sie das Element in den Papierkorb bewegen."
           }
         }
       }
@@ -6160,6 +7774,12 @@
             "state": "translated",
             "value": "Radix 当前没有完全磁盘访问权限。普通扫描仍可运行，但可能跳过受保护的文件夹。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix verfügt derzeit nicht über den Festplattenvollzugriff. Normale Scans funktionieren weiterhin; geschützte Ordner werden möglicherweise übersprungen."
+          }
         }
       }
     },
@@ -6182,6 +7802,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 扫描快照完整性检查失败：%@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Integritätsprüfung des Radix-Scan-Snapshots ist fehlgeschlagen: %@"
           }
         }
       }
@@ -6206,6 +7832,12 @@
             "state": "translated",
             "value": "Radix 将此软件包作为单个项目扫描。若要缩放查看，请在“设置”中打开“将应用和软件包视为文件夹”，然后重新扫描此位置。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix hat dieses Paket als einzelnes Element gescannt. Aktivieren Sie in den Systemeinstellungen „App-Bundles und Pakete als Ordner behandeln“ und scannen Sie diesen Standort erneut, um den Inhalt zu vergrößern."
+          }
         }
       }
     },
@@ -6229,6 +7861,12 @@
             "state": "translated",
             "value": "Radix 在展开软件包内容前扫描了此软件包。请重新扫描此位置以缩放查看。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix hat dieses Paket gescannt, bevor sein Inhalt erweitert wurde. Scannen Sie diesen Standort erneut, um den Inhalt zu vergrößern."
+          }
         }
       }
     },
@@ -6251,6 +7889,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 将请求 macOS 将 %@ 移到废纸篓。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix wird macOS auffordern, %@ in den Papierkorb zu bewegen."
           }
         }
       }
@@ -6281,6 +7925,12 @@
             "state": "translated",
             "value": "Radix 将请求 macOS 将 %lld 个所选项目移到废纸篓：\n%@%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix wird macOS auffordern, die %lld ausgewählten Elemente in den Papierkorb zu bewegen:\n%@%@"
+          }
         }
       }
     },
@@ -6303,6 +7953,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 不会将 %@ 处的受保护位置移到废纸篓。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix wird den geschützten Standort unter %@ nicht in den Papierkorb bewegen."
           }
         }
       }
@@ -6327,6 +7983,12 @@
             "state": "translated",
             "value": "可读取"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lesbar"
+          }
         }
       }
     },
@@ -6349,6 +8011,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在读取归档"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiv wird gelesen"
           }
         }
       }
@@ -6373,6 +8041,12 @@
             "state": "translated",
             "value": "正在读取归档"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive werden gelesen"
+          }
         }
       }
     },
@@ -6395,6 +8069,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在读取清单"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manifest wird gelesen"
           }
         }
       }
@@ -6419,6 +8099,12 @@
             "state": "translated",
             "value": "正在读取元数据"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadaten werden gelesen"
+          }
         }
       }
     },
@@ -6442,6 +8128,12 @@
             "state": "translated",
             "value": "正在读取快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot wird gelesen"
+          }
         }
       }
     },
@@ -6463,6 +8155,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在读取快照…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot wird gelesen …"
           }
         }
       }
@@ -6487,6 +8185,12 @@
             "state": "translated",
             "value": "正在读取快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshots werden gelesen"
+          }
         }
       }
     },
@@ -6509,6 +8213,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在读取拓扑结构"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topologie wird gelesen"
           }
         }
       }
@@ -6533,6 +8243,12 @@
             "state": "translated",
             "value": "正在重建快照"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot wird neu erstellt"
+          }
         }
       }
     },
@@ -6554,6 +8270,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "最近扫描的位置会存储在本地，以便显示在边栏中。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kürzlich gescannte Standorte werden lokal gespeichert, damit sie in der Seitenleiste erscheinen können."
           }
         }
       }
@@ -6577,6 +8299,12 @@
             "state": "translated",
             "value": "最近扫描结果表明已跳过受保护的文件夹。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die letzten Scan-Ergebnisse deuten darauf hin, dass geschützte Ordner übersprungen wurden."
+          }
         }
       }
     },
@@ -6599,6 +8327,12 @@
             "state": "translated",
             "value": "最近扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Scans"
+          }
         }
       }
     },
@@ -6620,6 +8354,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新检查"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut prüfen"
           }
         }
       }
@@ -6644,6 +8384,12 @@
             "state": "translated",
             "value": "松开以添加"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Hinzufügen loslassen"
+          }
         }
       }
     },
@@ -6665,6 +8411,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernen"
           }
         }
       }
@@ -6688,6 +8440,12 @@
             "state": "translated",
             "value": "从最近扫描中移除"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus den letzten Scans entfernen"
+          }
         }
       }
     },
@@ -6709,6 +8467,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除模式"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muster entfernen"
           }
         }
       }
@@ -6733,6 +8497,12 @@
             "state": "translated",
             "value": "已移除"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernt"
+          }
         }
       }
     },
@@ -6754,6 +8524,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "替换…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ersetzen …"
           }
         }
       }
@@ -6777,6 +8553,12 @@
             "state": "translated",
             "value": "报告问题…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Problem melden …"
+          }
         }
       }
     },
@@ -6798,6 +8580,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut scannen"
           }
         }
       }
@@ -6821,6 +8609,12 @@
             "state": "translated",
             "value": "重置统计信息"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistiken zurücksetzen"
+          }
         }
       }
     },
@@ -6842,6 +8636,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "重置统计信息？"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistiken zurücksetzen?"
           }
         }
       }
@@ -6866,6 +8666,12 @@
             "state": "translated",
             "value": "重置缩放"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom zurücksetzen"
+          }
         }
       }
     },
@@ -6888,6 +8694,12 @@
             "state": "translated",
             "value": "调整面板大小"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bereiche anpassen"
+          }
         }
       }
     },
@@ -6909,6 +8721,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "恢复默认设置"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardwerte wiederherstellen"
           }
         }
       }
@@ -6933,6 +8751,12 @@
             "state": "translated",
             "value": "在访达中显示"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Finder anzeigen"
+          }
         }
       }
     },
@@ -6954,6 +8778,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示、打开、复制路径和移到废纸篓始终作用于当前可见选择。除非你明确选择文件操作，否则 Radix 保持只读。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeigen, Öffnen, Pfad kopieren und In den Papierkorb bewegen wirken immer auf die aktuell sichtbare Auswahl. Radix bleibt schreibgeschützt, sofern Sie nicht ausdrücklich eine Dateiaktion auswählen."
           }
         }
       }
@@ -6977,6 +8807,12 @@
             "state": "translated",
             "value": "查看待处理列表"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Löschliste überprüfen"
+          }
         }
       }
     },
@@ -6998,6 +8834,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行首次扫描以开始建立本地使用情况统计。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Führen Sie Ihren ersten Scan aus, um lokale Nutzungsstatistiken aufzubauen."
           }
         }
       }
@@ -7022,6 +8864,12 @@
             "state": "translated",
             "value": "扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan"
+          }
         }
       }
     },
@@ -7044,6 +8892,12 @@
             "state": "translated",
             "value": "扫描 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ scannen"
+          }
         }
       }
     },
@@ -7065,6 +8919,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "扫描云存储文件夹"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud-Speicherordner scannen"
           }
         }
       }
@@ -7089,6 +8949,12 @@
             "state": "translated",
             "value": "扫描失败"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan fehlgeschlagen"
+          }
         }
       }
     },
@@ -7111,6 +8977,12 @@
             "state": "translated",
             "value": "扫描文件夹…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner scannen …"
+          }
         }
       }
     },
@@ -7132,6 +9004,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "扫描文件夹和磁盘以查看空间使用情况。在你选择文件操作前，Radix 始终保持只读。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scannen Sie Ordner und Datenträger, um zu sehen, wohin der Speicherplatz geht. Radix bleibt schreibgeschützt, bis Sie eine Dateiaktion auswählen."
           }
         }
       }
@@ -7156,6 +9034,12 @@
             "state": "translated",
             "value": "已扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gescannt"
+          }
         }
       }
     },
@@ -7179,6 +9063,12 @@
             "state": "translated",
             "value": "扫描于 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ gescannt"
+          }
         }
       }
     },
@@ -7200,6 +9090,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan läuft"
           }
         }
       }
@@ -7224,6 +9120,12 @@
             "state": "translated",
             "value": "正在扫描 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird gescannt"
+          }
         }
       }
     },
@@ -7246,6 +9148,12 @@
             "state": "translated",
             "value": "扫描此摘要文件夹中的全部 %lld 个文件。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %lld Dateien in diesem zusammengefassten Ordner scannen."
+          }
         }
       }
     },
@@ -7267,6 +9175,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Änderungen durchsuchen"
           }
         }
       }
@@ -7291,6 +9205,12 @@
             "state": "translated",
             "value": "搜索整个扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamten Scan durchsuchen"
+          }
         }
       }
     },
@@ -7313,6 +9233,12 @@
             "state": "translated",
             "value": "搜索整个扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamten Scan durchsuchen"
+          }
         }
       }
     },
@@ -7334,6 +9260,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索使用“所有变化”。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Suche verwendet „Alle Änderungen“."
           }
         }
       }
@@ -7358,6 +9290,12 @@
             "state": "translated",
             "value": "正在搜索整个扫描…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamter Scan wird durchsucht …"
+          }
         }
       }
     },
@@ -7380,6 +9318,12 @@
             "state": "translated",
             "value": "选择图表分区或表格行以查看元数据和文件操作。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie ein Diagrammsegment oder eine Tabellenzeile aus, um Metadaten und Dateiaktionen zu untersuchen."
+          }
         }
       }
     },
@@ -7401,6 +9345,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择一行以查看详情。双击文件夹以放大，或双击摘要文件夹以展开。按空格键使用“快速查看”。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie eine Zeile aus, um sie zu untersuchen. Doppelklicken Sie auf einen Ordner, um ihn zu vergrößern, oder auf einen zusammengefassten Ordner, um ihn zu erweitern. Drücken Sie die Leertaste für die Übersicht."
           }
         }
       }
@@ -7425,6 +9375,12 @@
             "state": "translated",
             "value": "选择分区以查看详情。双击文件夹分区以放大查看。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie ein Segment aus, um es zu untersuchen. Doppelklicken Sie auf ein Ordnersegment, um es zu vergrößern."
+          }
         }
       }
     },
@@ -7448,6 +9404,12 @@
             "state": "translated",
             "value": "选择分区以查看详情。双击文件夹分区以放大查看。点按中心以上移。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie ein Segment aus, um es zu untersuchen. Doppelklicken Sie auf ein Ordnersegment, um es zu vergrößern. Klicken Sie auf die Mitte, um nach oben zu navigieren."
+          }
         }
       }
     },
@@ -7470,6 +9432,12 @@
             "state": "translated",
             "value": "选择磁贴以查看详情。双击文件夹磁贴以放大查看。使用面包屑路径上移。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie eine Kachel aus, um sie zu untersuchen. Doppelklicken Sie auf eine Ordnerkachel, um sie zu vergrößern. Verwenden Sie die Breadcrumb-Navigation, um nach oben zu navigieren."
+          }
         }
       }
     },
@@ -7491,6 +9459,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "全选"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle auswählen"
           }
         }
       }
@@ -7515,6 +9489,12 @@
             "state": "translated",
             "value": "请先选择一个项目。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie zuerst ein Element aus."
+          }
         }
       }
     },
@@ -7536,6 +9516,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeigen"
           }
         }
       }
@@ -7559,6 +9545,12 @@
             "state": "translated",
             "value": "显示 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ anzeigen"
+          }
         }
       }
     },
@@ -7580,6 +9572,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示所有变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Änderungen anzeigen"
           }
         }
       }
@@ -7603,6 +9601,12 @@
             "state": "translated",
             "value": "在磁盘图中显示可用空间"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freien Speicherplatz in Datenträgerkarten anzeigen"
+          }
         }
       }
     },
@@ -7624,6 +9628,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "扫描时显示隐藏文件"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verborgene Dateien beim Scannen anzeigen"
           }
         }
       }
@@ -7647,6 +9657,12 @@
             "state": "translated",
             "value": "在浏览器中显示"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Browser anzeigen"
+          }
         }
       }
     },
@@ -7668,6 +9684,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "在访达中显示"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Finder anzeigen"
           }
         }
       }
@@ -7692,6 +9714,12 @@
             "state": "translated",
             "value": "显示检查器"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspektor anzeigen"
+          }
         }
       }
     },
@@ -7713,6 +9741,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示欢迎屏幕"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Willkommensbildschirm anzeigen"
           }
         }
       }
@@ -7742,6 +9776,12 @@
             "state": "translated",
             "value": "正在显示 %@ / %@ 个文件系统变化。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ von %@ Dateisystemänderungen werden angezeigt."
+          }
         }
       }
     },
@@ -7765,6 +9805,12 @@
             "state": "translated",
             "value": "正在显示所有重要贡献项；展开文件夹以追踪来源。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle relevanten Verursacher werden angezeigt; erweitern Sie Ordner, um ihre Quelle nachzuverfolgen."
+          }
         }
       }
     },
@@ -7786,6 +9832,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示的变化类型"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angezeigte Änderungsarten"
           }
         }
       }
@@ -7810,6 +9862,12 @@
             "state": "translated",
             "value": "减小"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschrumpft"
+          }
         }
       }
     },
@@ -7833,6 +9891,12 @@
             "state": "translated",
             "value": "重要变化"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bedeutend"
+          }
         }
       }
     },
@@ -7854,6 +9918,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "大小"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Größe"
           }
         }
       }
@@ -7877,6 +9947,12 @@
             "state": "translated",
             "value": "智能位置"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intelligente Standorte"
+          }
         }
       }
     },
@@ -7898,6 +9974,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "快照已导出"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot exportiert"
           }
         }
       }
@@ -7921,6 +10003,12 @@
             "state": "translated",
             "value": "已探索空间"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erkundeter Speicherplatz"
+          }
         }
       }
     },
@@ -7942,6 +10030,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "开始首次扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ersten Scan starten"
           }
         }
       }
@@ -7965,6 +10059,12 @@
             "state": "translated",
             "value": "从边栏开始，向窗口中拖放文件夹，或手动选择位置。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beginnen Sie in der Seitenleiste, legen Sie einen Ordner im Fenster ab oder wählen Sie einen Standort manuell aus."
+          }
         }
       }
     },
@@ -7986,6 +10086,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "统计"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistiken"
           }
         }
       }
@@ -8009,6 +10115,12 @@
             "state": "translated",
             "value": "统计信息存储在此 Mac 本地。Radix 只记录汇总的数量和大小。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistiken werden lokal auf diesem Mac gespeichert. Radix erfasst nur zusammengefasste Anzahlen und Größen."
+          }
         }
       }
     },
@@ -8031,6 +10143,12 @@
             "state": "translated",
             "value": "停止"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stoppen"
+          }
         }
       }
     },
@@ -8052,6 +10170,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan stoppen"
           }
         }
       }
@@ -8076,6 +10200,12 @@
             "state": "translated",
             "value": "请先停止当前扫描，再比较快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stoppen Sie den aktuellen Scan, bevor Sie Snapshots vergleichen."
+          }
         }
       }
     },
@@ -8099,6 +10229,12 @@
             "state": "translated",
             "value": "请先停止当前扫描，再导入快照。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stoppen Sie den aktuellen Scan, bevor Sie einen Snapshot importieren."
+          }
         }
       }
     },
@@ -8120,6 +10256,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "存储变化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speicheränderungen"
           }
         }
       }
@@ -8144,6 +10286,12 @@
             "state": "translated",
             "value": "存储减少了 %@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speicherplatz um %@ verringert"
+          }
         }
       }
     },
@@ -8166,6 +10314,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "存储增加了 %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speicherplatz um %@ erhöht"
           }
         }
       }
@@ -8190,6 +10344,12 @@
             "state": "translated",
             "value": "摘要"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusammengefasst"
+          }
         }
       }
     },
@@ -8212,6 +10372,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "摘要（%lld 个文件）"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusammengefasst (%lld Dateien)"
           }
         }
       }
@@ -8236,6 +10402,12 @@
             "state": "translated",
             "value": "正在汇总结果…"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ergebnisse werden zusammengefasst …"
+          }
         }
       }
     },
@@ -8257,6 +10429,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "摘要"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusammenfassung"
           }
         }
       }
@@ -8280,6 +10458,12 @@
             "state": "translated",
             "value": "旭日图"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sunburst"
+          }
         }
       }
     },
@@ -8301,6 +10485,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "交换较早和较晚的扫描"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Früher und später tauschen"
           }
         }
       }
@@ -8325,6 +10515,12 @@
             "state": "translated",
             "value": "系统数据"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Systemdaten"
+          }
         }
       }
     },
@@ -8347,6 +10543,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "FSEvents 历史记录流在报告 HistoryDone 前结束。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der FSEvents-Verlaufsstream endete, bevor HistoryDone gemeldet wurde."
           }
         }
       }
@@ -8371,6 +10573,12 @@
             "state": "translated",
             "value": "增量扫描目标不是目录：%@。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Ziel des inkrementellen Scans ist kein Verzeichnis: %@."
+          }
         }
       }
     },
@@ -8393,6 +10601,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "增量扫描目标不可用：%@。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Ziel des inkrementellen Scans ist nicht verfügbar: %@."
           }
         }
       }
@@ -8417,6 +10631,12 @@
             "state": "translated",
             "value": "%@ 处的项目自本次扫描后已更改。移到废纸篓前请重新扫描。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Element unter %@ wurde seit diesem Scan geändert. Scannen Sie es erneut, bevor Sie es in den Papierkorb bewegen."
+          }
         }
       }
     },
@@ -8439,6 +10659,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 处的项目已无法使用“快速查看”。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Element unter %@ ist für die Übersicht nicht mehr verfügbar."
           }
         }
       }
@@ -8463,6 +10689,12 @@
             "state": "translated",
             "value": "%@ 处的项目已不可用。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Element unter %@ ist nicht mehr verfügbar."
+          }
         }
       }
     },
@@ -8485,6 +10717,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 扫描快照软件包无效：%@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Radix-Scan-Snapshot-Paket ist ungültig: %@"
           }
         }
       }
@@ -8509,6 +10747,12 @@
             "state": "translated",
             "value": "请求的 FSEvents 检查点范围无效。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der angeforderte FSEvents-Prüfpunktbereich ist ungültig."
+          }
         }
       }
     },
@@ -8531,6 +10775,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "扫描无法组装根节点。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Scan konnte keinen Stammknoten zusammenstellen."
           }
         }
       }
@@ -8555,6 +10805,12 @@
             "state": "translated",
             "value": "扫描目标现在位于另一个宗卷上。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Scan-Ziel befindet sich jetzt auf einem anderen Volume."
+          }
         }
       }
     },
@@ -8577,6 +10833,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "包含 %@ 的宗卷未提供 FSEvents 检查点。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Volume mit %@ stellt keinen FSEvents-Prüfpunkt bereit."
           }
         }
       }
@@ -8601,6 +10863,12 @@
             "state": "translated",
             "value": "包含 %@ 的宗卷未提供 FSEvents UUID。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Volume mit %@ stellt keine FSEvents-UUID bereit."
+          }
         }
       }
     },
@@ -8624,6 +10892,12 @@
             "state": "translated",
             "value": "宗卷的 FSEvents 历史记录早于保存的检查点。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der FSEvents-Verlauf des Volumes ist älter als der gespeicherte Prüfpunkt."
+          }
         }
       }
     },
@@ -8645,6 +10919,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "这会清除此 Mac 上本地存储的汇总使用情况统计。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dadurch werden die lokal auf diesem Mac gespeicherten zusammengefassten Nutzungsstatistiken gelöscht."
           }
         }
       }
@@ -8669,6 +10949,12 @@
             "state": "translated",
             "value": "此项目不支持该操作。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Element unterstützt diese Aktion nicht."
+          }
         }
       }
     },
@@ -8691,6 +10977,12 @@
             "state": "translated",
             "value": "这会从待处理列表中移除所有标记项目。磁盘上的文件不会更改。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dadurch werden alle markierten Elemente aus der Löschliste entfernt. Dateien auf dem Datenträger bleiben unverändert."
+          }
         }
       }
     },
@@ -8712,6 +11004,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "启用方法："
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "So aktivieren Sie es:"
           }
         }
       }
@@ -8736,6 +11034,12 @@
             "state": "translated",
             "value": "太小，无法单独显示"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu klein für eine einzelne Anzeige"
+          }
         }
       }
     },
@@ -8757,6 +11061,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "废纸篓"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Papierkorb"
           }
         }
       }
@@ -8780,6 +11090,12 @@
             "state": "translated",
             "value": "将应用和软件包视为文件夹"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App-Bundles und Pakete als Ordner behandeln"
+          }
         }
       }
     },
@@ -8802,6 +11118,12 @@
             "state": "translated",
             "value": "矩形树图"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Treemap"
+          }
         }
       }
     },
@@ -8823,6 +11145,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "矩形树图磁盘使用情况图表"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Treemap-Diagramm zur Datenträgernutzung"
           }
         }
       }
@@ -8847,6 +11175,12 @@
             "state": "translated",
             "value": "请尝试其他筛选条件，或清除当前内容筛选条件。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versuchen Sie einen anderen Filter oder löschen Sie den aktuellen Inhaltsfilter."
+          }
         }
       }
     },
@@ -8869,6 +11203,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "未知"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannt"
           }
         }
       }
@@ -8893,6 +11233,12 @@
             "state": "translated",
             "value": "未知错误"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannter Fehler"
+          }
         }
       }
     },
@@ -8915,6 +11261,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "不支持的 Radix 扫描快照格式：%@。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht unterstütztes Radix-Scan-Snapshot-Format: %@."
           }
         }
       }
@@ -8939,6 +11291,12 @@
             "state": "translated",
             "value": "不支持的 Radix 扫描快照版本：%lld。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht unterstützte Version des Radix-Scan-Snapshots: %lld."
+          }
         }
       }
     },
@@ -8960,6 +11318,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用情况统计"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nutzungsstatistiken"
           }
         }
       }
@@ -8983,6 +11347,12 @@
             "state": "translated",
             "value": "使用当前扫描"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuellen Scan verwenden"
+          }
         }
       }
     },
@@ -9004,6 +11374,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "将当前扫描用于 %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuellen Scan für %@ verwenden"
           }
         }
       }
@@ -9027,6 +11403,12 @@
             "state": "translated",
             "value": "使用扫描排除项"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan-Ausschlüsse verwenden"
+          }
         }
       }
     },
@@ -9049,6 +11431,12 @@
             "state": "translated",
             "value": "正在验证快照内容"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapshot-Inhalt wird überprüft"
+          }
         }
       }
     },
@@ -9070,6 +11458,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "可视化"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visualisierung"
           }
         }
       }
@@ -9094,6 +11488,12 @@
             "state": "translated",
             "value": "警告"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warnungen"
+          }
         }
       }
     },
@@ -9115,6 +11515,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "欢迎使用 Radix"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Willkommen bei Radix"
           }
         }
       }
@@ -9138,6 +11544,12 @@
             "state": "translated",
             "value": "启用后，包含数千个小文件（如 node_modules 或缓存）的目录会汇总显示，而不会展开每个文件，从而显著提高扫描速度。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn aktiviert, werden Verzeichnisse mit Tausenden winziger Dateien (z. B. node_modules oder Caches) zusammengefasst, ohne jede Datei zu erweitern. Dadurch wird der Scan deutlich beschleunigt."
+          }
         }
       }
     },
@@ -9160,6 +11572,12 @@
             "state": "translated",
             "value": "关闭后，Radix 会跳过 ~/Library/CloudStorage（Google Drive、Dropbox、OneDrive 和类似的同步文件夹）以及 ~/Library/Mobile Documents 中的 iCloud Drive。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn deaktiviert, überspringt Radix ~/Library/CloudStorage (Google Drive, Dropbox, OneDrive und ähnliche Synchronisierungsordner) sowie iCloud Drive unter ~/Library/Mobile Documents."
+          }
         }
       }
     },
@@ -9181,6 +11599,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "工作区"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arbeitsbereich"
           }
         }
       }
@@ -9205,6 +11629,12 @@
             "state": "translated",
             "value": "正在写入元数据"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Metadaten werden geschrieben"
+          }
         }
       }
     },
@@ -9227,6 +11657,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在写入拓扑结构"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topologie wird geschrieben"
           }
         }
       }
@@ -9251,6 +11687,12 @@
             "state": "translated",
             "value": "放大"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergrößern"
+          }
         }
       }
     },
@@ -9272,6 +11714,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "放大查看包含内容的目录以填充此表格。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergrößern Sie ein Verzeichnis mit Inhalt, um diese Tabelle zu füllen."
           }
         }
       }
@@ -9295,6 +11743,12 @@
             "state": "translated",
             "value": "缩放到文件夹"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordner vergrößern"
+          }
         }
       }
     },
@@ -9316,6 +11770,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "缩放到所选内容"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswahl vergrößern"
           }
         }
       }
@@ -9339,6 +11799,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "缩小"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verkleinern"
           }
         }
       }
