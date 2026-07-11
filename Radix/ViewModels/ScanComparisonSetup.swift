@@ -3,7 +3,6 @@ import Foundation
 nonisolated enum ScanComparisonCandidateSource: Equatable, Sendable {
     case archive(URL)
     case currentSnapshot(UUID)
-    case retainedSnapshot(ScanSnapshot)
 
     static func == (
         lhs: ScanComparisonCandidateSource,
@@ -14,8 +13,6 @@ nonisolated enum ScanComparisonCandidateSource: Equatable, Sendable {
             return lhsURL == rhsURL
         case (.currentSnapshot(let lhsID), .currentSnapshot(let rhsID)):
             return lhsID == rhsID
-        case (.retainedSnapshot(let lhsSnapshot), .retainedSnapshot(let rhsSnapshot)):
-            return lhsSnapshot.id == rhsSnapshot.id
         default:
             return false
         }
@@ -67,10 +64,6 @@ nonisolated struct ScanComparisonCandidate: Identifiable, Equatable, Sendable {
 
     init(snapshot: ScanSnapshot) {
         self.init(snapshot: snapshot, source: .currentSnapshot(snapshot.id))
-    }
-
-    init(retainedSnapshot snapshot: ScanSnapshot) {
-        self.init(snapshot: snapshot, source: .retainedSnapshot(snapshot))
     }
 
     private init(snapshot: ScanSnapshot, source: ScanComparisonCandidateSource) {

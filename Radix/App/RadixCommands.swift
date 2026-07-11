@@ -113,11 +113,6 @@ struct RadixCommands: Commands {
             .keyboardShortcut("d", modifiers: [.command, .option])
             .disabled(!appModel.canCompareCurrentScanWithSnapshot)
 
-            Button("Compare With Previous Scan", systemImage: "chart.bar.xaxis") {
-                appModel.compareCurrentScanWithPreviousScan()
-            }
-            .disabled(!appModel.canCompareCurrentScanWithPreviousScan)
-
             Divider()
 
             Button("Rescan", systemImage: "arrow.clockwise") {

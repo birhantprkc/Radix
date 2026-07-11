@@ -226,10 +226,6 @@ final class AppModel: ObservableObject {
     private var snapshotArchiveTask: Task<Void, Never>?
     private var snapshotArchiveProgressTask: Task<Void, Never>?
     private var exportConfirmationDismissTask: Task<Void, Never>?
-    /// The completed live scan immediately preceding the active scan. Keeping this in memory
-    /// makes a rescan comparison available without silently writing another full archive.
-    private var previousScanComparisonBaseline: ScanSnapshot?
-    private var pendingScanComparisonBaseline: ScanSnapshot?
     private var postTrashRemovalRequests: [PostTrashRemovalRequest] = []
     private var fullDiskAccessRefreshTask: Task<Void, Never>?
     private var targetCapacityDescriptionsRefreshTask: Task<Void, Never>?
@@ -531,18 +527,6 @@ final class AppModel: ObservableObject {
             scanCoordinator.snapshotSource.allowsFileMutation
     }
 
-    var canCompareCurrentScanWithPreviousScan: Bool {
-        guard canCompareScanSnapshots,
-              let currentSnapshot = scanCoordinator.snapshot,
-              let previousSnapshot = previousScanComparisonBaseline,
-              currentSnapshot.isComplete,
-              currentSnapshot.source.allowsFileMutation else {
-            return false
-        }
-
-        return Self.canUseAsComparisonBaseline(previousSnapshot, for: currentSnapshot)
-    }
-
     var canUseCurrentScanInComparisonSetup: Bool {
         scanCoordinator.snapshot?.isComplete == true &&
             scanCoordinator.snapshotSource.allowsFileMutation
@@ -743,20 +727,6 @@ final class AppModel: ObservableObject {
             return
         }
         beginComparisonSetup(after: ScanComparisonCandidate(snapshot: currentSnapshot))
-    }
-
-    func compareCurrentScanWithPreviousScan() {
-        guard canCompareCurrentScanWithPreviousScan,
-              let beforeSnapshot = previousScanComparisonBaseline,
-              let afterSnapshot = scanCoordinator.snapshot else {
-            presentErrorMessage("Rescan this location with the same scan options before comparing it with the previous scan.")
-            return
-        }
-
-        beginComparisonSetup(
-            before: ScanComparisonCandidate(retainedSnapshot: beforeSnapshot),
-            after: ScanComparisonCandidate(snapshot: afterSnapshot)
-        )
     }
 
     private var currentScanComparisonUnavailableMessage: String {
@@ -1359,8 +1329,6 @@ final class AppModel: ObservableObject {
                 throw FileActionError.currentComparisonSnapshotUnavailable
             }
             return currentSnapshot
-        case .retainedSnapshot(let snapshot):
-            return snapshot
         }
     }
 
@@ -1467,8 +1435,7 @@ final class AppModel: ObservableObject {
     private func startScanNow(_ target: ScanTarget) {
         cancelArchiveOperation()
         let options = scanOptions(for: target)
-        previousScanComparisonBaseline = nil
-        pendingScanComparisonBaseline = comparisonBaseline(
+        let baseline = incrementalRescanBaseline(
             for: target,
             options: options,
             currentSnapshot: scanCoordinator.snapshot
@@ -1477,13 +1444,13 @@ final class AppModel: ObservableObject {
         scanCoordinator.startScan(
             target,
             options: options,
-            baseline: pendingScanComparisonBaseline
+            baseline: baseline
         ) {
             prepareForScan(target)
         }
     }
 
-    private func comparisonBaseline(
+    private func incrementalRescanBaseline(
         for target: ScanTarget,
         options: ScanOptions,
         currentSnapshot: ScanSnapshot?
@@ -1497,46 +1464,6 @@ final class AppModel: ObservableObject {
             return nil
         }
         return currentSnapshot
-    }
-
-    private func retainComparisonBaseline(for completedSnapshot: ScanSnapshot) {
-        defer { pendingScanComparisonBaseline = nil }
-        guard let pendingScanComparisonBaseline,
-              Self.canUseAsComparisonBaseline(pendingScanComparisonBaseline, for: completedSnapshot) else {
-            previousScanComparisonBaseline = nil
-            return
-        }
-
-        previousScanComparisonBaseline = pendingScanComparisonBaseline
-    }
-
-    nonisolated private static func canUseAsComparisonBaseline(
-        _ previousSnapshot: ScanSnapshot,
-        for currentSnapshot: ScanSnapshot
-    ) -> Bool {
-        guard previousSnapshot.id != currentSnapshot.id,
-              previousSnapshot.isComplete,
-              currentSnapshot.isComplete,
-              previousSnapshot.source.allowsFileMutation,
-              currentSnapshot.source.allowsFileMutation,
-              previousSnapshot.target.kind == currentSnapshot.target.kind,
-              normalizedTargetPath(previousSnapshot.target) == normalizedTargetPath(currentSnapshot.target),
-              let previousOptions = previousSnapshot.scanOptions,
-              let currentOptions = currentSnapshot.scanOptions,
-              previousOptions == currentOptions else {
-            return false
-        }
-
-        let previousDate = previousSnapshot.finishedAt ?? previousSnapshot.startedAt
-        let currentDate = currentSnapshot.finishedAt ?? currentSnapshot.startedAt
-        guard previousDate <= currentDate else { return false }
-
-        if let previousRootIdentity = previousSnapshot.root.fileIdentity,
-           let currentRootIdentity = currentSnapshot.root.fileIdentity,
-           previousRootIdentity != currentRootIdentity {
-            return false
-        }
-        return true
     }
 
     nonisolated private static func normalizedTargetPath(_ target: ScanTarget) -> String {
@@ -1568,7 +1495,6 @@ final class AppModel: ObservableObject {
         cancelDeferredNavigationContextUpdate()
         cancelPostTrashSnapshotRemoval()
         clearOptimisticTrashVisibility()
-        pendingScanComparisonBaseline = nil
         sidebarScanCacheController.cancelPendingSidebarTargetRestore()
         sidebarScanCacheController.clearActiveScanTracking()
         if resetState, scanCoordinator.snapshot == nil {
@@ -2776,9 +2702,6 @@ final class AppModel: ObservableObject {
         sidebarScanCacheController.cancelPendingSidebarTargetRestore()
         sidebarScanCacheController.clearActiveScanTracking()
         sidebarScanCacheController.clearDisplayedSnapshot()
-        previousScanComparisonBaseline = nil
-        pendingScanComparisonBaseline = nil
-
         deferredNavigationContextSnapshotID = snapshot.id
         scanCoordinator.restoreCompletedSnapshot(snapshot) {
             prepareForImportedSnapshot()
@@ -2797,8 +2720,6 @@ final class AppModel: ObservableObject {
         pendingTrashSelection = nil
         discardPile = DiscardPileState()
         clearOptimisticTrashVisibility()
-        previousScanComparisonBaseline = nil
-        pendingScanComparisonBaseline = nil
         sidebarModel.setActiveTargetID(nil)
         quickLookController.closePreview()
     }
@@ -2880,7 +2801,6 @@ final class AppModel: ObservableObject {
     private func observeScanCoordinator() {
         scanCoordinator.onScanFinished = { [weak self] snapshot in
             self?.recordCompletedScan(snapshot)
-            self?.retainComparisonBaseline(for: snapshot)
         }
 
         scanCoordinator.$snapshot

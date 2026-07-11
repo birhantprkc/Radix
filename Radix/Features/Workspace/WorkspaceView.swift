@@ -18,8 +18,8 @@ struct WorkspaceActions {
     let startScan: (ScanTarget) -> Void
     let stopScan: () -> Void
     let rescan: () -> Void
-    let compareWithPreviousScan: () -> Void
-    let canCompareWithPreviousScan: () -> Bool
+    let compareScans: () -> Void
+    let canCompareScans: () -> Bool
     let handleDroppedURLs: ([URL]) -> Bool
     let selectNodeImmediately: (String?) -> Void
     let selectNode: (String?) -> Void
@@ -148,11 +148,11 @@ struct WorkspaceView: View {
 
                     if scanState.snapshot?.isComplete == true {
                         Button {
-                            actions.compareWithPreviousScan()
+                            actions.compareScans()
                         } label: {
                             Label("Compare Scans", systemImage: "rectangle.split.2x1")
                         }
-                        .disabled(!actions.canCompareWithPreviousScan())
+                        .disabled(!actions.canCompareScans())
                         .help("Compare Scans")
                     }
                 }
