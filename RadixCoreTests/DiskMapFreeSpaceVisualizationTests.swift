@@ -2,7 +2,7 @@ import XCTest
 @testable import RadixCore
 
 @MainActor
-final class SunburstFreeSpaceVisualizationTests: XCTestCase {
+final class DiskMapFreeSpaceVisualizationTests: XCTestCase {
     func testVolumeRootAddsFreeSpaceUsingAvailableCapacityDenominator() throws {
         let used = makeTestFileNode(id: "/volume/used.bin", name: "used.bin", size: 60)
         let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [used])
@@ -13,20 +13,20 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
             store: store
         )
 
-        let input = SunburstFreeSpaceVisualization.input(
+        let input = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: true,
             availableCapacity: 40
         )
-        let largerFreeSpaceInput = SunburstFreeSpaceVisualization.input(
+        let largerFreeSpaceInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: true,
             availableCapacity: 80
         )
         let segments = SunburstLayout.segments(in: input.treeStore, rootID: input.rootNode.id, depthLimit: 1)
-        let freeSegment = try XCTUnwrap(segments.first { SunburstFreeSpaceVisualization.isFreeSpaceNodeID($0.nodeID) })
+        let freeSegment = try XCTUnwrap(segments.first { DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0.nodeID) })
         let usedSegment = try XCTUnwrap(segments.first { $0.nodeID == root.id })
         let largerFreeSpaceUsedSegment = try XCTUnwrap(
             SunburstLayout.segments(
@@ -59,7 +59,7 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
         let folderStore = FileTreeStore(root: folderRoot, childrenByID: [folderRoot.id: [file]])
         let folderSnapshot = makeTestSnapshot(root: folderRoot, store: folderStore)
 
-        let folderInput = SunburstFreeSpaceVisualization.input(
+        let folderInput = DiskMapFreeSpaceVisualization.input(
             snapshot: folderSnapshot,
             focusNode: folderRoot,
             showFreeSpace: true,
@@ -78,7 +78,7 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
             store: volumeStore
         )
 
-        let focusedChildInput = SunburstFreeSpaceVisualization.input(
+        let focusedChildInput = DiskMapFreeSpaceVisualization.input(
             snapshot: volumeSnapshot,
             focusNode: child,
             showFreeSpace: true,
@@ -87,9 +87,9 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
 
         XCTAssertEqual(focusedChildInput.rootNode.id, child.id)
         XCTAssertNil(focusedChildInput.treeStore.nodesByID.keys.first {
-            SunburstFreeSpaceVisualization.isFreeSpaceNodeID($0)
+            DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0)
         })
-        XCTAssertFalse(SunburstFreeSpaceVisualization.isFreeSpaceNodeID("/tmp/file#radix-free-space"))
+        XCTAssertFalse(DiskMapFreeSpaceVisualization.isFreeSpaceNodeID("/tmp/file#radix-free-space"))
     }
 
     func testVisualizationInputTracksBaseTreeContentID() {
@@ -102,13 +102,13 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
             store: store
         )
 
-        let firstInput = SunburstFreeSpaceVisualization.input(
+        let firstInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: true,
             availableCapacity: 40
         )
-        let repeatedInput = SunburstFreeSpaceVisualization.input(
+        let repeatedInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: true,
@@ -133,7 +133,7 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
             scanOptions: snapshot.scanOptions,
             source: snapshot.source
         )
-        let updatedInput = SunburstFreeSpaceVisualization.input(
+        let updatedInput = DiskMapFreeSpaceVisualization.input(
             snapshot: updatedSnapshot,
             focusNode: updatedRoot,
             showFreeSpace: true,
@@ -153,14 +153,14 @@ final class SunburstFreeSpaceVisualizationTests: XCTestCase {
             root: root,
             store: store
         )
-        let input = SunburstFreeSpaceVisualization.input(
+        let input = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: true,
             availableCapacity: 40
         )
         let freeNode = try XCTUnwrap(input.treeStore.nodesByID.values.first {
-            SunburstFreeSpaceVisualization.isFreeSpaceNodeID($0.id)
+            DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0.id)
         })
 
         XCTAssertFalse(freeNode.supportsFileActions)

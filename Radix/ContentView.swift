@@ -41,8 +41,9 @@ struct ContentView: View {
                 scanComparison: appModel.scanComparison,
                 isInspectorPresented: $showsInspector,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                visualizationMode: $appModel.scanVisualizationMode,
                 maxRenderedDepth: appModel.maxRenderedDepth,
-                showFreeSpaceInSunburst: appModel.showFreeSpaceInSunburst,
+                showFreeSpaceInDiskMaps: appModel.showFreeSpaceInDiskMaps,
                 discardPileHiddenNodeIDs: appModel.discardPileHiddenNodeIDs,
                 startupDiskTarget: appModel.startupDiskTarget,
                 fullDiskAccessStatus: appModel.fullDiskAccessStatus,
@@ -628,9 +629,10 @@ private struct WorkspaceDetailView: View {
     let scanComparison: ScanComparison?
     @Binding var isInspectorPresented: Bool
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
+    @Binding var visualizationMode: ScanVisualizationMode
 
     let maxRenderedDepth: Int
-    let showFreeSpaceInSunburst: Bool
+    let showFreeSpaceInDiskMaps: Bool
     let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
     let startupDiskTarget: ScanTarget?
     let fullDiskAccessStatus: FullDiskAccessStatus
@@ -653,8 +655,9 @@ private struct WorkspaceDetailView: View {
                 navigation: navigation,
                 isInspectorPresented: $isInspectorPresented,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
+                visualizationMode: $visualizationMode,
                 maxRenderedDepth: maxRenderedDepth,
-                showFreeSpaceInSunburst: showFreeSpaceInSunburst,
+                showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
                 discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
                 startupDiskTarget: startupDiskTarget,
                 fullDiskAccessStatus: fullDiskAccessStatus,

@@ -27,7 +27,7 @@ It's built from scratch in Swift and SwiftUI, designed to feel like a natural pa
 
 ### Visual Exploration
 
-- **Sunburst chart** — a radial treemap that shows your disk usage at a glance. Hover any segment to see what it is, double-click to drill down.
+- **Disk maps** — switch between a sunburst and treemap view to see your disk usage at a glance. Hover any segment to inspect it, and double-click folders to drill down.
 - **File browser** — a sortable table with informative columns.
 - **Smart search** — filter just the current folder, or search the entire scan tree.
 - **Breadcrumb navigation** with back/forward history so you don't lose your place.
@@ -122,7 +122,7 @@ Radix/
 - **ScanEngine** is an actor-based async scanner that uses iterative (not recursive) filesystem traversal for safety and performance.
 - **AppModel** is the single source of truth — a `@MainActor` observable object that drives the entire UI.
 - **ScanSnapshot** and **FileTreeStore** provide immutable scan results with O(1) path lookups, flat tree storage, and efficient subtree updates.
-- The **sunburst chart** is rendered using SwiftUI's Canvas API for performant drawing of hundreds of segments.
+- The **sunburst and treemap charts** are rendered using SwiftUI's Canvas API for performant drawing of hundreds of segments.
 - **RadixCore** has no external Swift package dependencies; the Xcode app target adds Sparkle for automatic updates.
 
 ## Contributing

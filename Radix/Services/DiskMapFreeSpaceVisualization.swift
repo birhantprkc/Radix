@@ -1,18 +1,18 @@
 //
-//  SunburstFreeSpaceVisualization.swift
+//  DiskMapFreeSpaceVisualization.swift
 //  Radix
 //
 
 import Foundation
 
-struct SunburstVisualizationInput: Sendable {
+struct DiskMapVisualizationInput: Sendable {
     let rootNode: FileNodeRecord
     let treeStore: FileTreeStore
     let treeContentID: UUID
     let layoutIDComponent: String
 }
 
-enum SunburstFreeSpaceVisualization {
+enum DiskMapFreeSpaceVisualization {
     private nonisolated static let visualRootSuffix = "\u{0}radix-volume-capacity"
     private nonisolated static let freeSpaceSuffix = "\u{0}radix-free-space"
     private nonisolated static let disabledLayoutComponent = "free-space:0"
@@ -22,13 +22,13 @@ enum SunburstFreeSpaceVisualization {
         focusNode: FileNodeRecord,
         showFreeSpace: Bool,
         availableCapacity: Int64?
-    ) -> SunburstVisualizationInput {
+    ) -> DiskMapVisualizationInput {
         guard showFreeSpace,
               snapshot.target.kind == .volume,
               focusNode.id == snapshot.root.id,
               let availableCapacity,
               availableCapacity > 0 else {
-            return SunburstVisualizationInput(
+            return DiskMapVisualizationInput(
                 rootNode: focusNode,
                 treeStore: snapshot.treeStore,
                 treeContentID: snapshot.treeStore.contentID,
@@ -85,7 +85,7 @@ enum SunburstFreeSpaceVisualization {
             parentIDByID: parentIDByID
         )
 
-        return SunburstVisualizationInput(
+        return DiskMapVisualizationInput(
             rootNode: treeStore.root,
             treeStore: treeStore,
             treeContentID: snapshot.treeStore.contentID,

@@ -66,11 +66,11 @@ private struct GeneralSettingsPane: View {
             }
 
             Section("Visualization") {
-                Toggle("Show free space in sunburst", isOn: $appModel.showFreeSpaceInSunburst)
+                Toggle("Show free space in disk maps", isOn: $appModel.showFreeSpaceInDiskMaps)
 
-                Picker("Sunburst depth", selection: $appModel.maxRenderedDepth) {
+                Picker("Disk map depth", selection: $appModel.maxRenderedDepth) {
                     ForEach(3...10, id: \.self) { depth in
-                        Text("\(depth) rings")
+                        Text("\(depth) levels")
                             .tag(depth)
                     }
                 }

@@ -2,15 +2,15 @@ import XCTest
 @testable import RadixCore
 
 @MainActor
-final class SunburstVisualizationFilterModelTests: XCTestCase {
+final class DiskMapVisualizationFilterModelTests: XCTestCase {
     func testDiscardPileFilterReturnsBaseInputUntilCachedFilterCompletes() async throws {
         let hidden = makeTestFileNode(id: "/root/hidden.bin", name: "hidden.bin", size: 20)
         let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 30)
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [hidden, visible])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [hidden, visible]])
         let snapshot = makeTestSnapshot(root: root, store: store)
-        let model = SunburstVisualizationFilterModel()
-        let baseInput = SunburstFreeSpaceVisualization.input(
+        let model = DiskMapVisualizationFilterModel()
+        let baseInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: false,
@@ -64,8 +64,8 @@ final class SunburstVisualizationFilterModelTests: XCTestCase {
             childrenByID: [root.id: [firstHidden, secondHidden, visible]]
         )
         let snapshot = makeTestSnapshot(root: root, store: store)
-        let model = SunburstVisualizationFilterModel()
-        let baseInput = SunburstFreeSpaceVisualization.input(
+        let model = DiskMapVisualizationFilterModel()
+        let baseInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: false,
@@ -129,8 +129,8 @@ final class SunburstVisualizationFilterModelTests: XCTestCase {
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [hidden, visible])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [hidden, visible]])
         let snapshot = makeTestSnapshot(root: root, store: store)
-        let model = SunburstVisualizationFilterModel()
-        let baseInput = SunburstFreeSpaceVisualization.input(
+        let model = DiskMapVisualizationFilterModel()
+        let baseInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: false,
@@ -171,7 +171,7 @@ final class SunburstVisualizationFilterModelTests: XCTestCase {
             scanOptions: snapshot.scanOptions,
             source: snapshot.source
         )
-        let updatedBaseInput = SunburstFreeSpaceVisualization.input(
+        let updatedBaseInput = DiskMapFreeSpaceVisualization.input(
             snapshot: updatedSnapshot,
             focusNode: updatedRoot,
             showFreeSpace: false,
@@ -212,8 +212,8 @@ final class SunburstVisualizationFilterModelTests: XCTestCase {
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [hidden, visible])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [hidden, visible]])
         let snapshot = makeTestSnapshot(root: root, store: store)
-        let model = SunburstVisualizationFilterModel()
-        let baseInput = SunburstFreeSpaceVisualization.input(
+        let model = DiskMapVisualizationFilterModel()
+        let baseInput = DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: root,
             showFreeSpace: false,
@@ -252,15 +252,15 @@ final class SunburstVisualizationFilterModelTests: XCTestCase {
     }
 
     private func waitForFilteredInput(
-        model: SunburstVisualizationFilterModel,
-        baseInput: SunburstVisualizationInput,
+        model: DiskMapVisualizationFilterModel,
+        baseInput: DiskMapVisualizationInput,
         snapshotID: UUID,
         focusNodeID: FileNodeRecord.ID,
         hiddenNodeIDs: Set<FileNodeRecord.ID>,
         removedNodeID: FileNodeRecord.ID,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) async throws -> SunburstVisualizationInput {
+    ) async throws -> DiskMapVisualizationInput {
         for _ in 0..<100 {
             let input = model.input(
                 baseInput: baseInput,

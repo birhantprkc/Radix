@@ -5,6 +5,10 @@ struct ChartSummary {
     let title: String
     let value: String
     let detail: String
+
+    var accessibilityDescription: String {
+        [title, value, status, detail].joined(separator: ", ")
+    }
 }
 
 struct FloatingSummaryCard: View {

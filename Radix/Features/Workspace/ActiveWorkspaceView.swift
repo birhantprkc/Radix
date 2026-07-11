@@ -7,8 +7,9 @@ struct ActiveWorkspaceView: View {
     let snapshot: ScanSnapshot
     let focusNode: FileNodeRecord
     @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
+    let visualizationMode: ScanVisualizationMode
     let maxRenderedDepth: Int
-    let showFreeSpaceInSunburst: Bool
+    let showFreeSpaceInDiskMaps: Bool
     let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
@@ -16,7 +17,7 @@ struct ActiveWorkspaceView: View {
 
     // Dismissal is scoped to a single target scan: transformed snapshots keep it hidden.
     @State private var dismissedWarningsScanScope: WarningDismissalScope?
-    @StateObject private var visualizationFilter = SunburstVisualizationFilterModel()
+    @StateObject private var visualizationFilter = DiskMapVisualizationFilterModel()
 
     private var shouldSuggestFullDiskAccess: Bool {
         PermissionAdvisor.shouldSuggestFullDiskAccess(
@@ -49,14 +50,13 @@ struct ActiveWorkspaceView: View {
     }
 
     private var visualizationPane: some View {
-        VStack(spacing: 0) {
-            chartContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        chartContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
     private var chartContent: some View {
-        let baseVisualizationInput = sunburstVisualizationInput
+        let baseVisualizationInput = diskMapVisualizationInput
         let visualizationInput = visualizationFilter.input(
             baseInput: baseVisualizationInput,
             snapshotID: snapshot.id,
@@ -70,31 +70,53 @@ struct ActiveWorkspaceView: View {
             hiddenNodeIDs: discardPileHiddenNodeIDs
         )
 
-        return SunburstChartView(
-            rootNode: visualizationInput.rootNode,
-            parentNode: visualizationParentNode(for: visualizationInput),
-            treeStore: visualizationInput.treeStore,
-            snapshotID: snapshot.id,
-            activeTarget: scanState.selectedTarget,
-            trashSafetyPolicy: scanState.trashSafetyPolicy,
-            snapshotSource: scanState.snapshotSource,
-            selectedNodeID: navigation.selectedNodeID,
-            selectedAncestorIDs: navigation.selectedAncestorIDs,
-            depthLimit: maxRenderedDepth,
-            layoutID: [
-                snapshot.id.uuidString,
-                focusNode.id,
-                visualizationInput.rootNode.id,
-                visualizationInput.treeContentID.uuidString,
-                String(maxRenderedDepth),
-                visualizationInput.layoutIDComponent
-            ].joined(separator: "|"),
-            onSelect: actions.selectNode,
-            onZoom: actions.selectAndFocusNode,
-            onSegmentClick: actions.recordSunburstSegmentClick,
-            onNavigateToParent: actions.navigateToParent,
-            onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
-        )
+        let layoutID = [
+            snapshot.id.uuidString,
+            focusNode.id,
+            visualizationInput.rootNode.id,
+            visualizationInput.treeContentID.uuidString,
+            String(maxRenderedDepth),
+            visualizationInput.layoutIDComponent
+        ].joined(separator: "|")
+
+        Group {
+            switch visualizationMode {
+            case .sunburst:
+                SunburstChartView(
+                    rootNode: visualizationInput.rootNode,
+                    parentNode: visualizationParentNode(for: visualizationInput),
+                    treeStore: visualizationInput.treeStore,
+                    snapshotID: snapshot.id,
+                    activeTarget: scanState.selectedTarget,
+                    trashSafetyPolicy: scanState.trashSafetyPolicy,
+                    snapshotSource: scanState.snapshotSource,
+                    selectedNodeID: navigation.selectedNodeID,
+                    selectedAncestorIDs: navigation.selectedAncestorIDs,
+                    depthLimit: maxRenderedDepth,
+                    layoutID: layoutID,
+                    onSelect: actions.selectNode,
+                    onZoom: actions.selectAndFocusNode,
+                    onSegmentClick: actions.recordSunburstSegmentClick,
+                    onNavigateToParent: actions.navigateToParent,
+                    onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
+                )
+            case .treemap:
+                TreemapChartView(
+                    rootNode: visualizationInput.rootNode,
+                    treeStore: visualizationInput.treeStore,
+                    snapshotID: snapshot.id,
+                    activeTarget: scanState.selectedTarget,
+                    trashSafetyPolicy: scanState.trashSafetyPolicy,
+                    snapshotSource: scanState.snapshotSource,
+                    selectedNodeID: navigation.selectedNodeID,
+                    depthLimit: maxRenderedDepth,
+                    layoutID: layoutID,
+                    onSelect: actions.selectNode,
+                    onZoom: actions.selectAndFocusNode,
+                    onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
+                )
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .focusable()
         .focusEffectDisabled()
@@ -140,16 +162,16 @@ struct ActiveWorkspaceView: View {
         WarningDismissalScope(targetID: snapshot.target.id, startedAt: snapshot.startedAt)
     }
 
-    private var sunburstVisualizationInput: SunburstVisualizationInput {
-        SunburstFreeSpaceVisualization.input(
+    private var diskMapVisualizationInput: DiskMapVisualizationInput {
+        DiskMapFreeSpaceVisualization.input(
             snapshot: snapshot,
             focusNode: focusNode,
-            showFreeSpace: showFreeSpaceInSunburst,
+            showFreeSpace: showFreeSpaceInDiskMaps,
             availableCapacity: freeSpaceAvailableCapacity(snapshot, focusNode)
         )
     }
 
-    private func visualizationParentNode(for input: SunburstVisualizationInput) -> FileNodeRecord? {
+    private func visualizationParentNode(for input: DiskMapVisualizationInput) -> FileNodeRecord? {
         guard input.rootNode.id == focusNode.id else { return nil }
         return input.treeStore.parent(of: input.rootNode.id)
     }
@@ -183,7 +205,7 @@ private struct VisualizationFilterUpdateToken: Equatable {
     let hiddenNodeIDs: [FileNodeRecord.ID]
 
     init(
-        baseInput: SunburstVisualizationInput,
+        baseInput: DiskMapVisualizationInput,
         snapshotID: UUID,
         focusNodeID: FileNodeRecord.ID,
         hiddenNodeIDs: Set<FileNodeRecord.ID>

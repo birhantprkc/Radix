@@ -263,7 +263,7 @@ enum SunburstLayout {
         if entry.isAggregate {
             return .aggregate
         }
-        if SunburstFreeSpaceVisualization.isFreeSpaceNodeID(entry.nodeID) {
+        if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(entry.nodeID) {
             return .freeSpace
         }
         return .normal
@@ -290,7 +290,7 @@ enum SunburstLayout {
     private nonisolated static func rootColorBranchIDs(in treeStore: FileTreeStore) -> [String] {
         treeStore.children(of: treeStore.rootID)
             .map(\.id)
-            .filter { !SunburstFreeSpaceVisualization.isFreeSpaceNodeID($0) }
+            .filter { !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0) }
     }
 
     private nonisolated static func topLevelBranchID(
