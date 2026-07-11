@@ -149,6 +149,24 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.aggregateStats.directoryCount, stats.directoryCount)
     }
 
+    func testWideTreeChildMapDoesNotReserveOneEntryPerChild() {
+        let children = (0..<1_024).map { index in
+            makeFileNode(
+                id: "/root/item-\(index).txt",
+                name: "item-\(index).txt",
+                size: 1
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+
+        let childMap = store.childIDsByID
+
+        XCTAssertEqual(childMap[root.id], children.map(\.id))
+        XCTAssertEqual(childMap.count, 1)
+        XCTAssertLessThan(childMap.capacity, children.count)
+    }
+
     func testEmptyStoreFallsBackToRootPath() {
         let root = makeDirectoryNode(id: "/root", name: "root", children: [])
         let store = FileTreeStore(root: root)

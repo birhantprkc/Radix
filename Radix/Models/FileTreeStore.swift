@@ -155,7 +155,6 @@ struct FileTreeStore: Sendable {
 
     nonisolated var childIDsByID: [String: [String]] {
         var result: [String: [String]] = [:]
-        result.reserveCapacity(topologyArena.childIndices.count)
         for parentIndex in topologyArena.orderedNodeIndices {
             let children = topologyArena.children(of: parentIndex)
             guard !children.isEmpty,
