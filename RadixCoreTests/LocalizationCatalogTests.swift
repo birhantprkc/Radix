@@ -28,14 +28,18 @@ final class LocalizationCatalogTests: XCTestCase {
 
             for locale in supportedLocales {
                 let localization = try XCTUnwrap(localizations[locale] as? [String: Any])
-                let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any])
-                XCTAssertEqual(stringUnit["state"] as? String, "translated", "Untranslated \(locale) value for \(key)")
-                let value = try XCTUnwrap(stringUnit["value"] as? String, "Missing \(locale) value for \(key)")
-                XCTAssertEqual(
-                    formatSpecifiers(in: value),
-                    formatSpecifiers(in: key),
-                    "Format specifiers changed in the \(locale) translation for \(key)"
-                )
+                if let stringUnit = localization["stringUnit"] as? [String: Any] {
+                    try assertTranslated(stringUnit, locale: locale, key: key)
+                } else {
+                    let variations = try XCTUnwrap(localization["variations"] as? [String: Any])
+                    let plurals = try XCTUnwrap(variations["plural"] as? [String: Any])
+                    XCTAssertFalse(plurals.isEmpty, "Missing plural variants for \(locale) key \(key)")
+                    for (category, value) in plurals {
+                        let variant = try XCTUnwrap(value as? [String: Any])
+                        let stringUnit = try XCTUnwrap(variant["stringUnit"] as? [String: Any])
+                        try assertTranslated(stringUnit, locale: locale, key: "\(key) [\(category)]")
+                    }
+                }
             }
         }
     }
@@ -64,6 +68,21 @@ final class LocalizationCatalogTests: XCTestCase {
             XCTAssertEqual(stringUnit["state"] as? String, "translated", "Untranslated German metadata value for \(key)")
             XCTAssertNotNil(stringUnit["value"] as? String, "Missing German metadata value for \(key)")
         }
+    }
+
+    private func assertTranslated(
+        _ stringUnit: [String: Any],
+        locale: String,
+        key: String
+    ) throws {
+        XCTAssertEqual(stringUnit["state"] as? String, "translated", "Untranslated \(locale) value for \(key)")
+        let value = try XCTUnwrap(stringUnit["value"] as? String, "Missing \(locale) value for \(key)")
+        let sourceKey = key.components(separatedBy: " [").first ?? key
+        XCTAssertEqual(
+            formatSpecifiers(in: value),
+            formatSpecifiers(in: sourceKey),
+            "Format specifiers changed in the \(locale) translation for \(key)"
+        )
     }
 
     private func formatSpecifiers(in value: String) -> [String: Int] {

@@ -277,22 +277,22 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
     ) throws -> FileNodeRecord {
         let modelID = resolvedID ?? id
         guard !modelID.isEmpty else {
-            throw ScanArchiveError.nodes("node has empty ID")
+            throw ScanArchiveError.nodes(localized: "node has empty ID")
         }
         let modelPath = resolvedPath ?? path ?? modelID
         guard !modelPath.isEmpty else {
-            throw ScanArchiveError.nodes("node \(modelID) has empty path")
+            throw ScanArchiveError.nodes(localized: "node \(modelID) has empty path")
         }
         guard allocatedSize >= 0, unduplicatedAllocatedSize >= 0, logicalSize >= 0 else {
-            throw ScanArchiveError.nodes("node \(modelID) has negative size")
+            throw ScanArchiveError.nodes(localized: "node \(modelID) has negative size")
         }
         guard descendantFileCount >= 0 else {
-            throw ScanArchiveError.nodes("node \(modelID) has negative descendant count")
+            throw ScanArchiveError.nodes(localized: "node \(modelID) has negative descendant count")
         }
 
         let nodeURL = URL(filePath: modelPath, directoryHint: isDirectory ? .isDirectory : .notDirectory)
         guard isSynthetic || modelID == nodeURL.path else {
-            throw ScanArchiveError.nodes("node \(modelID) path does not match ID")
+            throw ScanArchiveError.nodes(localized: "node \(modelID) path does not match ID")
         }
 
         return FileNodeRecord(
@@ -406,12 +406,12 @@ nonisolated struct ScanArchiveFileIdentity: Codable, Sendable {
         case .resourceIdentifier:
             guard let resourceIdentifier,
                   let data = Data(base64Encoded: resourceIdentifier) else {
-                throw ScanArchiveError.nodes("file identity has invalid resource identifier")
+                throw ScanArchiveError.nodes(localized: "file identity has invalid resource identifier")
             }
             return FileIdentity(resourceIdentifier: data)
         case .fileSystem:
             guard let device, let inode else {
-                throw ScanArchiveError.nodes("file identity has incomplete file system identity")
+                throw ScanArchiveError.nodes(localized: "file identity has incomplete file system identity")
             }
             return FileIdentity(device: device, inode: inode)
         }
@@ -442,7 +442,7 @@ nonisolated struct ScanArchiveTopology: Codable, Sendable {
         }
 
         guard let rootOrdinal = ordinalByID[treeStore.rootID] else {
-            throw ScanArchiveError.topology("root node is missing from node order")
+            throw ScanArchiveError.topology(localized: "root node is missing from node order")
         }
 
         var childOrdinalsByOrdinal: [String: [Int]] = [:]
@@ -454,14 +454,14 @@ nonisolated struct ScanArchiveTopology: Codable, Sendable {
                 continue
             }
             guard let parentOrdinal = ordinalByID[parentID] else {
-                throw ScanArchiveError.topology("parent \(parentID) is missing from node order")
+                throw ScanArchiveError.topology(localized: "parent \(parentID) is missing from node order")
             }
 
             var childOrdinals: [Int] = []
             childOrdinals.reserveCapacity(childIDs.count)
             for childID in childIDs {
                 guard let childOrdinal = ordinalByID[childID] else {
-                    throw ScanArchiveError.topology("child \(childID) is missing from node order")
+                    throw ScanArchiveError.topology(localized: "child \(childID) is missing from node order")
                 }
                 childOrdinals.append(childOrdinal)
             }
@@ -474,7 +474,7 @@ nonisolated struct ScanArchiveTopology: Codable, Sendable {
 
     func resolvedTopology(orderedNodeIDs: [String]) throws -> ScanArchiveResolvedTopology {
         guard orderedNodeIDs.indices.contains(rootOrdinal) else {
-            throw ScanArchiveError.topology("root ordinal \(rootOrdinal) is out of range")
+            throw ScanArchiveError.topology(localized: "root ordinal \(rootOrdinal) is out of range")
         }
 
         var childIDsByID: [String: [String]] = [:]
@@ -483,17 +483,17 @@ nonisolated struct ScanArchiveTopology: Codable, Sendable {
         for (parentOrdinalKey, childOrdinals) in childOrdinalsByOrdinal {
             guard let parentOrdinal = Int(parentOrdinalKey),
                   String(parentOrdinal) == parentOrdinalKey else {
-                throw ScanArchiveError.topology("parent ordinal \(parentOrdinalKey) is invalid")
+                throw ScanArchiveError.topology(localized: "parent ordinal \(parentOrdinalKey) is invalid")
             }
             guard orderedNodeIDs.indices.contains(parentOrdinal) else {
-                throw ScanArchiveError.topology("parent ordinal \(parentOrdinal) is out of range")
+                throw ScanArchiveError.topology(localized: "parent ordinal \(parentOrdinal) is out of range")
             }
 
             var childIDs: [String] = []
             childIDs.reserveCapacity(childOrdinals.count)
             for childOrdinal in childOrdinals {
                 guard orderedNodeIDs.indices.contains(childOrdinal) else {
-                    throw ScanArchiveError.topology("child ordinal \(childOrdinal) is out of range")
+                    throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) is out of range")
                 }
                 childIDs.append(orderedNodeIDs[childOrdinal])
             }
@@ -520,7 +520,7 @@ nonisolated struct ScanArchiveWarningV1: Codable, Sendable {
 
     func modelWarning() throws -> ScanWarning {
         guard let category = ScanWarningCategory(rawValue: category) else {
-            throw ScanArchiveError.manifest("unknown warning category \(category)")
+            throw ScanArchiveError.manifest(localized: "unknown warning category \(category)")
         }
         return ScanWarning(path: path, message: message, category: category)
     }

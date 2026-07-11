@@ -258,12 +258,8 @@ private struct DiscardPileSidebarButton: View {
             return String(localized: "No items marked", comment: "Discard Pile subtitle when it is empty.")
         }
 
-        let count = summary.itemCount.formatted()
         let size = RadixFormatters.size(summary.totalAllocatedSize)
-        if summary.itemCount == 1 {
-            return String(localized: "\(count) item • \(size)", comment: "Discard Pile subtitle showing one marked item and its total allocated size.")
-        }
-        return String(localized: "\(count) items • \(size)", comment: "Discard Pile subtitle showing multiple marked items and their total allocated size.")
+        return String(localized: "\(summary.itemCount) items • \(size)", comment: "Discard Pile subtitle showing the marked item count and total allocated size. The item count controls pluralization.")
     }
 }
 

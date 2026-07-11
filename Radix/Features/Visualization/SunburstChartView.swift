@@ -201,13 +201,13 @@ struct SunburstChartView: View {
             .accessibilityLabel("Disk usage chart")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(accessibilityHint)
-            .accessibilityAction(named: "Zoom In") {
+            .accessibilityAction(named: String(localized: "Zoom In", comment: "Accessibility action for zooming into the disk map.")) {
                 zoomViewport(by: 1.25, anchor: nil, in: baseChartFrame, animated: true)
             }
-            .accessibilityAction(named: "Zoom Out") {
+            .accessibilityAction(named: String(localized: "Zoom Out", comment: "Accessibility action for zooming out of the disk map.")) {
                 zoomViewport(by: 0.8, anchor: nil, in: baseChartFrame, animated: true)
             }
-            .accessibilityAction(named: "Reset Zoom") {
+            .accessibilityAction(named: String(localized: "Reset Zoom", comment: "Accessibility action for resetting the disk map zoom.")) {
                 resetViewport(animated: true)
             }
             .overlay(alignment: .topLeading) {

@@ -34,7 +34,7 @@ extension ScanArchiveService {
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> String {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
-            throw ScanArchiveError.nodes("could not create nodes section")
+            throw ScanArchiveError.nodes(localized: "could not create nodes section")
         }
 
         let fileHandle = try FileHandle(forWritingTo: url)
@@ -49,7 +49,7 @@ extension ScanArchiveService {
         for nodeID in orderedNodeIDs {
             try Task.checkCancellation()
             guard let node = treeStore.node(id: nodeID) else {
-                throw ScanArchiveError.nodes("node \(nodeID) disappeared while exporting")
+                throw ScanArchiveError.nodes(localized: "node \(nodeID) disappeared while exporting")
             }
             var lineData = try encoder.encode(
                 ScanArchiveCompactNode(
@@ -96,7 +96,7 @@ extension ScanArchiveService {
             for record in records {
                 let node = try record.modelNode()
                 guard nodesByID[node.id] == nil else {
-                    throw ScanArchiveError.nodes("duplicate node ID \(node.id)")
+                    throw ScanArchiveError.nodes(localized: "duplicate node ID \(node.id)")
                 }
                 nodesByID[node.id] = node
                 orderedNodeIDs.append(node.id)
@@ -122,7 +122,7 @@ extension ScanArchiveService {
         expectedRootID: String
     ) throws -> ScanArchiveNodePayload {
         guard records.indices.contains(topology.rootOrdinal) else {
-            throw ScanArchiveError.topology("root ordinal \(topology.rootOrdinal) is out of range")
+            throw ScanArchiveError.topology(localized: "root ordinal \(topology.rootOrdinal) is out of range")
         }
 
         var topologyParentByOrdinal: [Int: Int] = [:]
@@ -130,28 +130,28 @@ extension ScanArchiveService {
         for (parentKey, childOrdinals) in topology.childOrdinalsByOrdinal {
             guard let parentOrdinal = Int(parentKey), String(parentOrdinal) == parentKey,
                   records.indices.contains(parentOrdinal) else {
-                throw ScanArchiveError.topology("parent ordinal \(parentKey) is invalid")
+                throw ScanArchiveError.topology(localized: "parent ordinal \(parentKey) is invalid")
             }
             for childOrdinal in childOrdinals {
                 guard records.indices.contains(childOrdinal) else {
-                    throw ScanArchiveError.topology("child ordinal \(childOrdinal) is out of range")
+                    throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) is out of range")
                 }
                 if let existingParent = topologyParentByOrdinal.updateValue(parentOrdinal, forKey: childOrdinal) {
                     let detail = existingParent == parentOrdinal ? "is duplicated" : "has multiple parents"
-                    throw ScanArchiveError.topology("child ordinal \(childOrdinal) \(detail)")
+                    throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) \(detail)")
                 }
             }
         }
 
         if let rootParent = topologyParentByOrdinal[topology.rootOrdinal] {
             if rootParent == topology.rootOrdinal {
-                throw ScanArchiveError.topology("root node references itself as a child")
+                throw ScanArchiveError.topology(localized: "root node references itself as a child")
             }
-            throw ScanArchiveError.topology("root node is referenced as a child")
+            throw ScanArchiveError.topology(localized: "root node is referenced as a child")
         }
         for ordinal in records.indices where ordinal != topology.rootOrdinal {
             guard topologyParentByOrdinal[ordinal] != nil else {
-                throw ScanArchiveError.topology("node ordinal \(ordinal) is not reachable")
+                throw ScanArchiveError.topology(localized: "node ordinal \(ordinal) is not reachable")
             }
         }
 
@@ -166,12 +166,12 @@ extension ScanArchiveService {
             var cursor = ordinal
             while locations[cursor] == nil {
                 guard chainOrdinals.insert(cursor).inserted else {
-                    throw ScanArchiveError.topology("cycle detected at node ordinal \(cursor)")
+                    throw ScanArchiveError.topology(localized: "cycle detected at node ordinal \(cursor)")
                 }
                 chain.append(cursor)
                 guard cursor != topology.rootOrdinal else { break }
                 guard let parentOrdinal = topologyParentByOrdinal[cursor] else {
-                    throw ScanArchiveError.topology("node ordinal \(cursor) has an invalid parent")
+                    throw ScanArchiveError.topology(localized: "node ordinal \(cursor) has an invalid parent")
                 }
                 cursor = parentOrdinal
             }
@@ -182,7 +182,7 @@ extension ScanArchiveService {
                 if pendingOrdinal == topology.rootOrdinal {
                     let id = record.explicitID ?? expectedRootID
                     guard id == expectedRootID else {
-                        throw ScanArchiveError.topology("root ID does not match manifest")
+                        throw ScanArchiveError.topology(localized: "root ID does not match manifest")
                     }
                     location = ScanArchiveNodeLocation(
                         id: id,
@@ -191,7 +191,7 @@ extension ScanArchiveService {
                 } else {
                     guard let parentOrdinal = topologyParentByOrdinal[pendingOrdinal],
                           let parent = locations[parentOrdinal] else {
-                        throw ScanArchiveError.topology("node ordinal \(pendingOrdinal) has an unresolved parent")
+                        throw ScanArchiveError.topology(localized: "node ordinal \(pendingOrdinal) has an unresolved parent")
                     }
                     if let explicitID = record.explicitID {
                         location = ScanArchiveNodeLocation(
@@ -204,7 +204,7 @@ extension ScanArchiveService {
                               component != ".",
                               component != "..",
                               !component.contains("/") else {
-                            throw ScanArchiveError.nodes(
+                            throw ScanArchiveError.nodes(localized:
                                 "node ordinal \(pendingOrdinal) has an invalid relative path"
                             )
                         }
@@ -224,7 +224,7 @@ extension ScanArchiveService {
             }
 
             guard let location = locations[ordinal] else {
-                throw ScanArchiveError.topology("node ordinal \(ordinal) could not be resolved")
+                throw ScanArchiveError.topology(localized: "node ordinal \(ordinal) could not be resolved")
             }
             return location
         }
@@ -243,7 +243,7 @@ extension ScanArchiveService {
                     : nil
             )
             guard nodesByID[node.id] == nil else {
-                throw ScanArchiveError.nodes("duplicate node ID \(node.id)")
+                throw ScanArchiveError.nodes(localized: "duplicate node ID \(node.id)")
             }
             nodesByID[node.id] = node
             orderedNodeIDs.append(node.id)
@@ -331,7 +331,7 @@ extension ScanArchiveService {
 
         let actualChecksum = Data(hasher.finalize()).base64EncodedString()
         guard actualChecksum == expectedChecksum else {
-            throw ScanArchiveError.integrity("nodes checksum mismatch")
+            throw ScanArchiveError.integrity(localized: "nodes checksum mismatch")
         }
 
         return records
@@ -339,13 +339,13 @@ extension ScanArchiveService {
 
     private func validateNodeLineSize(_ lineData: Data) throws {
         guard lineData.count <= ScanArchiveNodeIOConstants.maxNodeLineByteCount else {
-            throw ScanArchiveError.nodes("node record is too large")
+            throw ScanArchiveError.nodes(localized: "node record is too large")
         }
     }
 
     private func validateDecodedNodeCount(_ decodedNodeCount: Int, expectedNodeCount: Int) throws {
         guard decodedNodeCount <= expectedNodeCount else {
-            throw ScanArchiveError.nodes("node payload contains more nodes than manifest expected")
+            throw ScanArchiveError.nodes(localized: "node payload contains more nodes than manifest expected")
         }
     }
 
@@ -359,7 +359,7 @@ extension ScanArchiveService {
         } catch let error as ScanArchiveError {
             throw error
         } catch {
-            throw ScanArchiveError.nodes("invalid JSONL node: \(error.localizedDescription)")
+            throw ScanArchiveError.nodes(localized: "invalid JSONL node: \(error.localizedDescription)")
         }
     }
 }

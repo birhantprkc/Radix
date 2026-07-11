@@ -176,6 +176,30 @@ nonisolated enum ScanArchiveError: LocalizedError, Equatable {
     case integrity(String)
     case stats(String)
 
+    static func invalidArchivePackage(localized detail: LocalizedStringResource) -> Self {
+        .invalidArchivePackage(String(localized: detail))
+    }
+
+    static func manifest(localized detail: LocalizedStringResource) -> Self {
+        .manifest(String(localized: detail))
+    }
+
+    static func nodes(localized detail: LocalizedStringResource) -> Self {
+        .nodes(String(localized: detail))
+    }
+
+    static func topology(localized detail: LocalizedStringResource) -> Self {
+        .topology(String(localized: detail))
+    }
+
+    static func integrity(localized detail: LocalizedStringResource) -> Self {
+        .integrity(String(localized: detail))
+    }
+
+    static func stats(localized detail: LocalizedStringResource) -> Self {
+        .stats(String(localized: detail))
+    }
+
     var errorDescription: String? {
         switch self {
         case .incompleteSnapshot:
@@ -377,7 +401,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             message: String(localized: "Reading metadata", comment: "Progress message while reading scan metadata.")
         ))
         let warnings: [ScanArchiveWarningV1] = try readJSON([ScanArchiveWarningV1].self, from: warningsURL) { detail in
-            ScanArchiveError.manifest("warnings section failed: \(detail)")
+            ScanArchiveError.manifest(localized: "warnings section failed: \(detail)")
         }
         let archivedStats: ScanArchiveStatsV1 = try readJSON(ScanArchiveStatsV1.self, from: statsURL) { detail in
             ScanArchiveError.stats(detail)
@@ -451,13 +475,13 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         var isDirectory = ObjCBool(false)
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
-            throw ScanArchiveError.invalidArchivePackage("expected a .\(Self.fileExtension) package directory")
+            throw ScanArchiveError.invalidArchivePackage(localized: "expected a .\(Self.fileExtension) package directory")
         }
     }
 
     private func validateArchiveExtension(_ url: URL) throws {
         guard url.pathExtension.lowercased() == Self.fileExtension else {
-            throw ScanArchiveError.invalidArchivePackage("expected a .\(Self.fileExtension) package")
+            throw ScanArchiveError.invalidArchivePackage(localized: "expected a .\(Self.fileExtension) package")
         }
     }
 
@@ -466,7 +490,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         do {
             relativePaths = try fileManager.subpathsOfDirectory(atPath: archiveURL.path)
         } catch {
-            throw ScanArchiveError.invalidArchivePackage(
+            throw ScanArchiveError.invalidArchivePackage(localized:
                 "could not calculate snapshot size: \(error.localizedDescription)"
             )
         }
@@ -479,7 +503,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             do {
                 values = try itemURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             } catch {
-                throw ScanArchiveError.invalidArchivePackage(
+                throw ScanArchiveError.invalidArchivePackage(localized:
                     "could not calculate snapshot size: \(error.localizedDescription)"
                 )
             }
@@ -490,7 +514,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
             let (newTotalSize, overflow) = totalSize.addingReportingOverflow(Int64(values.fileSize ?? 0))
             guard !overflow else {
-                throw ScanArchiveError.invalidArchivePackage("snapshot size exceeds supported range")
+                throw ScanArchiveError.invalidArchivePackage(localized: "snapshot size exceeds supported range")
             }
             totalSize = newTotalSize
         }
@@ -500,23 +524,23 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private func validateManifest(_ manifest: ScanArchiveDocument) throws {
         try validateManifestHeader(format: manifest.format, formatVersion: manifest.formatVersion)
         guard manifest.snapshot.isComplete else {
-            throw ScanArchiveError.manifest("snapshot is not complete")
+            throw ScanArchiveError.manifest(localized: "snapshot is not complete")
         }
         guard manifest.snapshot.nodeCount > 0 else {
-            throw ScanArchiveError.manifest("snapshot has no nodes")
+            throw ScanArchiveError.manifest(localized: "snapshot has no nodes")
         }
         guard !manifest.snapshot.rootID.isEmpty,
               manifest.snapshot.rootID == manifest.snapshot.target.path else {
-            throw ScanArchiveError.manifest("snapshot root does not match target path")
+            throw ScanArchiveError.manifest(localized: "snapshot root does not match target path")
         }
         if let scanOptions = manifest.snapshot.scanOptions {
             let fingerprint = try Self.scanOptionsFingerprint(scanOptions)
             guard fingerprint == manifest.snapshot.scanOptionsFingerprint else {
-                throw ScanArchiveError.integrity("scan options fingerprint mismatch")
+                throw ScanArchiveError.integrity(localized: "scan options fingerprint mismatch")
             }
         }
         guard manifest.integrity.algorithm == "sha256" else {
-            throw ScanArchiveError.integrity("unsupported integrity algorithm \(manifest.integrity.algorithm)")
+            throw ScanArchiveError.integrity(localized: "unsupported integrity algorithm \(manifest.integrity.algorithm)")
         }
     }
 
@@ -535,10 +559,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         warnings: [ScanArchiveWarningV1]
     ) throws {
         guard nodesByID.count == manifest.snapshot.nodeCount else {
-            throw ScanArchiveError.nodes("manifest expected \(manifest.snapshot.nodeCount) nodes, found \(nodesByID.count)")
+            throw ScanArchiveError.nodes(localized: "manifest expected \(manifest.snapshot.nodeCount) nodes, found \(nodesByID.count)")
         }
         guard warnings.count == manifest.snapshot.warningCount else {
-            throw ScanArchiveError.manifest("manifest expected \(manifest.snapshot.warningCount) warnings, found \(warnings.count)")
+            throw ScanArchiveError.manifest(localized: "manifest expected \(manifest.snapshot.warningCount) warnings, found \(warnings.count)")
         }
     }
 
@@ -546,7 +570,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard !sectionName.isEmpty,
               !sectionName.contains("/"),
               !sectionName.contains("\\") else {
-            throw ScanArchiveError.manifest("invalid \(sectionDescription) section path")
+            throw ScanArchiveError.manifest(localized: "invalid \(sectionDescription) section path")
         }
         return archiveURL.appending(path: sectionName, directoryHint: .notDirectory)
     }
