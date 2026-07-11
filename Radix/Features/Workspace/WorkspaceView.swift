@@ -185,7 +185,7 @@ private extension WorkspaceView {
             Label("Sunburst", systemImage: "chart.pie")
                 .labelStyle(.iconOnly)
                 .tag(ScanVisualizationMode.sunburst)
-            Label("Treemap", systemImage: "rectangle.3.group")
+            Label("Treemap", systemImage: "rectangle.split.3x3")
                 .labelStyle(.iconOnly)
                 .tag(ScanVisualizationMode.treemap)
         }
