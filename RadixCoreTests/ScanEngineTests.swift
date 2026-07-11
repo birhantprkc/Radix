@@ -1833,6 +1833,13 @@ final class ScanEngineTests: XCTestCase {
         )
         XCTAssertFalse(
             ScanEngine.includedChildURL(
+                URL(filePath: "/.resolve", directoryHint: .isDirectory),
+                under: URL(filePath: "/", directoryHint: .isDirectory),
+                behavior: standardBehavior
+            )
+        )
+        XCTAssertFalse(
+            ScanEngine.includedChildURL(
                 URL(filePath: "/dev", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: startupBehavior
