@@ -85,6 +85,7 @@ let package = Package(
                 "Services/SystemIntegration.swift",
                 "ViewModels/AppQuickLookController.swift",
                 "ViewModels/AppModel.swift",
+                "ViewModels/ScanComparisonSetup.swift",
                 "ViewModels/SidebarScanCacheController.swift",
                 "ViewModels/SidebarModel.swift",
                 "ViewModels/WorkspaceNavigationModel.swift"
