@@ -63,7 +63,7 @@ actor FileSearchService: FileSearching {
             index = cachedIndex
         } else {
             index = try await makeIndex(treeStore: treeStore)
-            indexes = [indexKey: index]
+            indexes[indexKey] = index
         }
 
         var matchedNodes: [FileNodeRecord] = []
