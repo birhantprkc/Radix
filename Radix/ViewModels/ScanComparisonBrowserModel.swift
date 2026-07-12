@@ -118,6 +118,9 @@ final class ScanComparisonBrowserModel: ObservableObject {
         refreshTask?.cancel()
         refreshTask = nil
         generation &+= 1
+        latestComparisonID = nil
+        latestQuery = nil
+        latestChangeKinds = nil
         isRefreshing = false
     }
 
