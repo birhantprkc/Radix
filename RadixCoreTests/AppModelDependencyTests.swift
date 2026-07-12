@@ -994,7 +994,7 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
-    func testConfirmPendingTrashBatchRevalidatesAndMovesEachItemInOrder() {
+    func testConfirmPendingTrashBatchReconcilesMovedPrefixAfterLaterFailure() async throws {
         let recorder = AppModelActionRecorder()
         let first = makeTestFileNode(
             id: "/selection/first.txt",
@@ -1019,6 +1019,7 @@ final class AppModelDependencyTests: XCTestCase {
         let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second]])
         let snapshot = makeTestSnapshot(root: root, store: store)
         model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
         model.navigation.reconcileAfterSnapshotApplied(snapshot)
 
         model.pendingTrashSelection = AppModel.PendingTrashSelection(nodes: [first, second])
@@ -1031,6 +1032,11 @@ final class AppModelDependencyTests: XCTestCase {
             model.lastErrorMessage,
             "The item at \(second.url.path) changed since this scan. Rescan before moving it to Trash."
         )
+        try await waitUntil("partially successful trash batch reconciled", timeout: 2) {
+            model.scanState.snapshot?.treeStore.node(id: first.id) == nil
+        }
+        XCTAssertNotNil(model.scanState.snapshot?.treeStore.node(id: second.id))
+        XCTAssertFalse(model.discardPileHiddenNodeIDs.contains(second.id))
     }
 
     @MainActor
