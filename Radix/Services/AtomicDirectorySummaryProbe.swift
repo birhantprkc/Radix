@@ -209,7 +209,7 @@ extension AtomicDirectorySummarizer {
                 }
                 guard !isSymbolicLink else { continue }
 
-                profile.totalSampledLogicalSize += Int64(values.fileSize ?? 0)
+                profile.totalSampledLogicalSize += Int64(values.totalFileSize ?? values.fileSize ?? 0)
                 profile.observedFileCount += 1
 
                 if profile.suggestsAtomicDirectory(

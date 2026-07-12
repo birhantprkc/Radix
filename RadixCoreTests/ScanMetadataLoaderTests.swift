@@ -1,7 +1,42 @@
+import Darwin
 import XCTest
 @testable import RadixCore
 
 final class ScanMetadataLoaderTests: XCTestCase {
+    func testLogicalSizeIncludesResourceForkData() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let fileURL = rootURL.appending(path: "resource-fork.bin")
+        try Data(repeating: 0xA5, count: 4_096).write(to: fileURL)
+        try setExtendedAttribute(
+            named: "com.apple.ResourceFork",
+            data: Data(repeating: 0x5A, count: 10),
+            at: fileURL
+        )
+        let values = try fileURL.resourceValues(forKeys: [.fileSizeKey, .totalFileSizeKey])
+        let totalFileSize = try XCTUnwrap(values.totalFileSize)
+
+        let metadata = try ScanMetadataLoader().metadata(for: fileURL)
+
+        XCTAssertGreaterThan(totalFileSize, values.fileSize ?? 0)
+        XCTAssertEqual(metadata.logicalSize, Int64(totalFileSize))
+    }
+
+    func testMissingAllocatedSizeUsesFileSystemBlockFallback() {
+        let url = URL(filePath: "/virtual/sparse.bin")
+        let loader = ScanMetadataLoader(
+            fileAllocatedSizeProvider: { requestedURL in
+                XCTAssertEqual(requestedURL, url)
+                return 8_192
+            }
+        )
+
+        let metadata = loader.metadata(for: url, prefetchedResourceValues: URLResourceValues())
+
+        XCTAssertEqual(metadata.allocatedSize, 8_192)
+    }
+
     func testMissingLinkCountMetadataUsesLstatFallback() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -251,6 +286,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
             .fileAllocatedSizeKey,
             .totalFileAllocatedSizeKey,
             .fileSizeKey,
+            .totalFileSizeKey,
             .contentModificationDateKey,
             .isReadableKey
         ])
@@ -261,6 +297,18 @@ final class ScanMetadataLoaderTests: XCTestCase {
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func setExtendedAttribute(named name: String, data: Data, at url: URL) throws {
+        let result = data.withUnsafeBytes { bytes in
+            url.withUnsafeFileSystemRepresentation { path in
+                guard let path else { return Int32(-1) }
+                return setxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
+            }
+        }
+        guard result == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
     }
 
 }

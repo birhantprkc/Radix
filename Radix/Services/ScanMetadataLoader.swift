@@ -166,6 +166,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         URL,
         ScanDiagnosticsContext?
     ) -> (identity: FileIdentity?, linkCount: UInt64)
+    typealias FileAllocatedSizeProvider = @Sendable (URL) -> Int64?
 
     static let scanResourceKeys: Set<URLResourceKey> = [
         .isDirectoryKey,
@@ -174,6 +175,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         .fileAllocatedSizeKey,
         .totalFileAllocatedSizeKey,
         .fileSizeKey,
+        .totalFileSizeKey,
         .contentModificationDateKey,
         .isReadableKey,
         .linkCountKey,
@@ -186,6 +188,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         .fileAllocatedSizeKey,
         .totalFileAllocatedSizeKey,
         .fileSizeKey,
+        .totalFileSizeKey,
         .contentModificationDateKey,
         .isReadableKey,
         .linkCountKey,
@@ -200,6 +203,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         .fileAllocatedSizeKey,
         .totalFileAllocatedSizeKey,
         .fileSizeKey,
+        .totalFileSizeKey,
         .isReadableKey,
         .linkCountKey,
         .fileResourceIdentifierKey
@@ -209,24 +213,28 @@ nonisolated struct ScanMetadataLoader: Sendable {
         .isDirectoryKey,
         .isPackageKey,
         .isSymbolicLinkKey,
-        .fileSizeKey
+        .fileSizeKey,
+        .totalFileSizeKey
     ]
     static let atomicProbeResourceKeySet = Set(atomicProbeResourceKeys)
 
     let diagnostics: ScanDiagnosticsContext?
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let fileSystemInfoProvider: FileSystemInfoProvider
+    private let fileAllocatedSizeProvider: FileAllocatedSizeProvider
     private let packageClassifier: PackageClassifier
 
     init(
         diagnostics: ScanDiagnosticsContext? = nil,
         linkCountCapabilityCache: LinkCountCapabilityCache = LinkCountCapabilityCache(),
         fileSystemInfoProvider: @escaping FileSystemInfoProvider = ScanMetadataLoader.defaultFileSystemInfo,
+        fileAllocatedSizeProvider: @escaping FileAllocatedSizeProvider = ScanMetadataLoader.defaultFileAllocatedSize,
         packageClassifier: PackageClassifier = PackageClassifier()
     ) {
         self.diagnostics = diagnostics
         self.linkCountCapabilityCache = linkCountCapabilityCache
         self.fileSystemInfoProvider = fileSystemInfoProvider
+        self.fileAllocatedSizeProvider = fileAllocatedSizeProvider
         self.packageClassifier = packageClassifier
     }
 
@@ -318,7 +326,8 @@ nonisolated struct ScanMetadataLoader: Sendable {
             loadsSymbolicLinkFileSystemInfo: loadsSymbolicLinkFileSystemInfo,
             diagnostics: diagnostics,
             linkCountCapabilityCache: linkCountCapabilityCache,
-            fileSystemInfoProvider: fileSystemInfoProvider
+            fileSystemInfoProvider: fileSystemInfoProvider,
+            fileAllocatedSizeProvider: fileAllocatedSizeProvider
         )
     }
 
@@ -340,13 +349,17 @@ nonisolated struct ScanMetadataLoader: Sendable {
         loadsSymbolicLinkFileSystemInfo: Bool,
         diagnostics: ScanDiagnosticsContext? = nil,
         linkCountCapabilityCache: LinkCountCapabilityCache,
-        fileSystemInfoProvider: FileSystemInfoProvider
+        fileSystemInfoProvider: FileSystemInfoProvider,
+        fileAllocatedSizeProvider: FileAllocatedSizeProvider
     ) -> NodeMetadata {
         let isDirectory = values.isDirectory ?? false
         let isPackage = values.isPackage ?? false
         let isSymbolicLink = values.isSymbolicLink ?? false
-        let logicalSize = Int64(values.fileSize ?? 0)
-        let allocatedSize = Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? values.fileSize ?? 0)
+        let logicalSize = Int64(values.totalFileSize ?? values.fileSize ?? 0)
+        let allocatedSize = values.totalFileAllocatedSize.map(Int64.init)
+            ?? values.fileAllocatedSize.map(Int64.init)
+            ?? fileAllocatedSizeProvider(url)
+            ?? 0
         let isReadable = values.isReadable ?? false
         var fileIdentity = Self.fileIdentity(from: values.fileResourceIdentifier)
         var linkCount = values.linkCount.map(UInt64.init) ?? 1
@@ -435,6 +448,19 @@ nonisolated struct ScanMetadataLoader: Sendable {
             FileIdentity(device: UInt64(fileStat.st_dev), inode: UInt64(fileStat.st_ino)),
             max(UInt64(fileStat.st_nlink), 1)
         )
+    }
+
+    private nonisolated static func defaultFileAllocatedSize(for url: URL) -> Int64? {
+        var fileStat = stat()
+        let result = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return -1 }
+            return Int(lstat(path, &fileStat))
+        }
+        guard result == 0 else { return nil }
+
+        let blocks = max(Int64(fileStat.st_blocks), 0)
+        let (allocatedSize, overflow) = blocks.multipliedReportingOverflow(by: 512)
+        return overflow ? Int64.max : allocatedSize
     }
 
     private nonisolated static func fileIdentity(
