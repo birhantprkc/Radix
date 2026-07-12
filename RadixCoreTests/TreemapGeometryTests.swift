@@ -183,7 +183,11 @@ final class TreemapGeometryTests: XCTestCase {
                 let expected = segments.last { segment in
                     TreemapRenderer.displayRect(for: segment, in: size).contains(point)
                 }
-                XCTAssertEqual(index.segment(at: point, in: size)?.id, expected?.id)
+                XCTAssertEqual(
+                    index.segment(at: point, in: size)?.id,
+                    expected?.id,
+                    "Hit-test mismatch at (\(point.x), \(point.y))"
+                )
             }
         }
     }
