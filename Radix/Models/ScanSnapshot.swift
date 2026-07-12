@@ -268,25 +268,10 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         additionalWarnings: [ScanWarning] = [],
         cancellationCheck: () throws -> Void
     ) throws -> ScanSnapshot? {
-        try cancellationCheck()
-        guard let updatedStore = try treeStore.replacingSubtree(
-            id: targetID,
-            with: replacement,
+        try replacingSubtrees(
+            [targetID: replacement],
+            additionalWarnings: additionalWarnings,
             cancellationCheck: cancellationCheck
-        ) else { return nil }
-
-        return ScanSnapshot(
-            target: target,
-            treeStore: updatedStore,
-            startedAt: startedAt,
-            finishedAt: finishedAt,
-            scanWarnings: Self.mergedWarnings(existing: scanWarnings, additional: additionalWarnings),
-            aggregateStats: updatedStore.aggregateStats,
-            isComplete: isComplete,
-            scanOptions: scanOptions,
-            volumeCapacity: volumeCapacity,
-            source: source,
-            incrementalCheckpoint: incrementalCheckpoint
         )
     }
 

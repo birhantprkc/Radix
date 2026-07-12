@@ -247,7 +247,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertFalse(directory.isAutoSummarized)
     }
 
-    func testSnapshotReplacingNodeRebuildsAncestorsAndPreservesWarnings() throws {
+    func testSnapshotReplacingNodeRebuildsAncestorsAndReplacesStaleWarnings() throws {
         let staleLeaf = makeNode(id: "/root/folder/stale.txt", isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 5)
         let summarizedFolder = makeNode(
             id: "/root/folder",
@@ -317,8 +317,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertFalse(updatedFolder.isAccessible)
         XCTAssertEqual(updatedSnapshot.aggregateStats.fileCount, 3)
         XCTAssertFalse(updatedSnapshot.root.isAccessible)
-        XCTAssertEqual(updatedSnapshot.scanWarnings.count, 2)
-        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [originalWarning.path, expansionWarning.path])
+        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [expansionWarning.path])
         XCTAssertNotEqual(staleLeaf.id, updatedChildren.first?.id)
     }
 
@@ -552,11 +551,11 @@ final class ScanModelTests: XCTestCase {
 
         XCTAssertEqual(updatedSnapshot.scanWarnings.count, 2)
         XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [
-            existingWarning.path,
+            duplicateWarning.path,
             distinctWarning.path
         ])
         XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.message), [
-            existingWarning.message,
+            duplicateWarning.message,
             distinctWarning.message
         ])
     }
