@@ -68,6 +68,7 @@ nonisolated struct ScanArchiveSnapshotSummary: Codable, Sendable {
     let pathMode: ScanArchivePathMode
     let scanOptions: ScanOptions?
     let scanOptionsFingerprint: String?
+    let volumeCapacity: VolumeCapacitySnapshot?
 
     init(_ snapshot: ScanSnapshot, pathMode: ScanArchivePathMode) throws {
         self.id = snapshot.id
@@ -81,6 +82,7 @@ nonisolated struct ScanArchiveSnapshotSummary: Codable, Sendable {
         self.pathMode = pathMode
         self.scanOptions = snapshot.scanOptions
         self.scanOptionsFingerprint = try ScanArchiveService.scanOptionsFingerprint(snapshot.scanOptions)
+        self.volumeCapacity = snapshot.volumeCapacity
     }
 }
 

@@ -1941,6 +1941,7 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(syntheticNode.isAccessible)
         XCTAssertTrue(snapshot.root.isAccessible)
         XCTAssertFalse(syntheticNode.supportsFileActions)
+        XCTAssertEqual(syntheticNode.logicalSize, 0)
         XCTAssertEqual(snapshot.aggregateStats.totalAllocatedSize, snapshot.root.allocatedSize)
         XCTAssertGreaterThanOrEqual(snapshot.aggregateStats.totalAllocatedSize, rootChildren(in: snapshot).filter { !$0.isSynthetic }.reduce(0) { $0 + $1.allocatedSize })
     }
@@ -1968,6 +1969,29 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertNotNil(snapshot.volumeCapacity)
         XCTAssertGreaterThanOrEqual(snapshot.root.allocatedSize, snapshot.volumeCapacity?.usedCapacity ?? 0)
         XCTAssertNil(snapshot.treeStore.node(id: cloudFileURL.path))
+    }
+
+    func testRemovingVolumeNodeTransfersItsAllocationToUnattributedStorage() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let fileURL = rootURL.appending(path: "payload.bin")
+        try Data(repeating: 0x5A, count: 1_024).write(to: fileURL)
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL, kind: .volume),
+            options: ScanOptions(),
+            engine: ScanEngine(volumeFileSystemTypeProvider: { _ in "hfs" })
+        )
+        let originalUsedSize = snapshot.root.allocatedSize
+        let originalRemainder = try XCTUnwrap(rootChildren(in: snapshot).first(where: \.isSynthetic))
+        let fileNode = try XCTUnwrap(snapshot.treeStore.node(id: fileURL.path))
+
+        let updated = try XCTUnwrap(snapshot.removingNode(id: fileURL.path))
+        let updatedRemainder = try XCTUnwrap(rootChildren(in: updated).first(where: \.isSynthetic))
+
+        XCTAssertEqual(updated.root.allocatedSize, originalUsedSize)
+        XCTAssertEqual(updatedRemainder.allocatedSize, originalRemainder.allocatedSize + fileNode.allocatedSize)
+        XCTAssertEqual(updatedRemainder.logicalSize, 0)
     }
 
     func testCapacityReconciliationPolicyIncludesStartupAPFSOnly() {

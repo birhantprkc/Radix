@@ -28,7 +28,7 @@ nonisolated struct ScanAggregateStats: Sendable {
     let inaccessibleItemCount: Int
 }
 
-nonisolated struct VolumeCapacitySnapshot: Hashable, Sendable {
+nonisolated struct VolumeCapacitySnapshot: Codable, Hashable, Sendable {
     let totalCapacity: Int64
     let availableCapacity: Int64
 
@@ -171,7 +171,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             cancellationCheck: cancellationCheck
         ) else { return nil }
 
-        return ScanSnapshot(
+        let updatedSnapshot = ScanSnapshot(
             id: id,
             target: target,
             treeStore: updatedStore,
@@ -185,6 +185,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             source: source,
             incrementalCheckpoint: incrementalCheckpoint
         )
+        return updatedSnapshot.reconcilingVolumeCapacity()
     }
 
     nonisolated func replacingNode(
@@ -344,5 +345,29 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
     private nonisolated static func path(_ path: String, isContainedIn rootPath: String) -> Bool {
         guard rootPath != "/" else { return true }
         return path == rootPath || path.hasPrefix(rootPath + "/")
+    }
+
+    private nonisolated func reconcilingVolumeCapacity() -> ScanSnapshot {
+        guard target.kind == .volume, volumeCapacity != nil else { return self }
+        let reconciledStore = VolumeCapacityAccounting.reconciledStore(
+            treeStore,
+            target: target,
+            capacity: volumeCapacity,
+            hasActiveExclusions: VolumeCapacityAccounting.hasActiveExclusions(in: treeStore)
+        )
+        return ScanSnapshot(
+            id: id,
+            target: target,
+            treeStore: reconciledStore,
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            scanWarnings: scanWarnings,
+            aggregateStats: reconciledStore.aggregateStats,
+            isComplete: isComplete,
+            scanOptions: scanOptions,
+            volumeCapacity: volumeCapacity,
+            source: source,
+            incrementalCheckpoint: incrementalCheckpoint
+        )
     }
 }

@@ -442,6 +442,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             aggregateStats: computedStats,
             isComplete: manifest.snapshot.isComplete,
             scanOptions: manifest.snapshot.scanOptions,
+            volumeCapacity: manifest.snapshot.volumeCapacity,
             source: .imported(ImportedSnapshotContext(
                 sourceURL: sourceURL,
                 pathMode: manifest.snapshot.pathMode,

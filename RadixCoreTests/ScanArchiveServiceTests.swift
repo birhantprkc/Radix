@@ -25,6 +25,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(importedSnapshot.aggregateStats.totalAllocatedSize, snapshot.aggregateStats.totalAllocatedSize)
         XCTAssertEqual(importedSnapshot.scanWarnings.map(\.path), snapshot.scanWarnings.map(\.path))
         XCTAssertEqual(importedSnapshot.scanOptions, snapshot.scanOptions)
+        XCTAssertEqual(importedSnapshot.volumeCapacity, snapshot.volumeCapacity)
         XCTAssertEqual(importResult.manifest.formatVersion, 4)
         XCTAssertEqual(importResult.manifest.createdBy.swiftSchema, "ScanArchiveV4")
         XCTAssertEqual(importResult.manifest.snapshot.scanOptions, snapshot.scanOptions)
@@ -841,7 +842,8 @@ final class ScanArchiveServiceTests: XCTestCase {
             ],
             aggregateStats: store.aggregateStats,
             isComplete: true,
-            scanOptions: scanOptions
+            scanOptions: scanOptions,
+            volumeCapacity: VolumeCapacitySnapshot(totalCapacity: 1_000, availableCapacity: 400)
         )
     }
 

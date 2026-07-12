@@ -637,7 +637,6 @@ actor ScanEngine {
             warnings: warnings,
             isComplete: true,
             scanOptions: options,
-            expectedTotalBytes: metrics.estimatedTotalBytes,
             volumeCapacity: metrics.volumeCapacity,
             hasActiveExclusions: !exclusionMatcher.isEmpty
         )
@@ -2135,14 +2134,13 @@ actor ScanEngine {
         warnings: [ScanWarning],
         isComplete: Bool,
         scanOptions: ScanOptions?,
-        expectedTotalBytes: Int64 = 0,
         volumeCapacity: VolumeCapacitySnapshot? = nil,
         hasActiveExclusions: Bool = false
     ) -> ScanSnapshot {
-        let reconciledStore = reconcileVolumeRoot(
+        let reconciledStore = VolumeCapacityAccounting.reconciledStore(
             treeStore,
-            for: target,
-            expectedTotalBytes: expectedTotalBytes,
+            target: target,
+            capacity: volumeCapacity,
             hasActiveExclusions: hasActiveExclusions
         )
 
@@ -2156,83 +2154,6 @@ actor ScanEngine {
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: volumeCapacity
-        )
-    }
-
-    private nonisolated func reconcileVolumeRoot(
-        _ treeStore: FileTreeStore,
-        for target: ScanTarget,
-        expectedTotalBytes: Int64,
-        hasActiveExclusions: Bool
-    ) -> FileTreeStore {
-        let root = treeStore.root
-        guard target.kind == .volume, expectedTotalBytes > root.allocatedSize else {
-            return treeStore
-        }
-
-        let missingBytes = expectedTotalBytes - root.allocatedSize
-        guard missingBytes >= 64 * 1_024 * 1_024 else {
-            return treeStore
-        }
-
-        let unattributedNode = FileNodeRecord(
-            id: "\(root.id)#system-unattributed",
-            url: target.url,
-            name: hasActiveExclusions ? "Excluded & Unattributed" : "System & Unattributed",
-            isDirectory: false,
-            isSymbolicLink: false,
-            allocatedSize: missingBytes,
-            logicalSize: missingBytes,
-            descendantFileCount: 0,
-            lastModified: nil,
-            isPackage: false,
-            isAccessible: true,
-            isSelfAccessible: true,
-            isSynthetic: true,
-            isAutoSummarized: false
-        )
-
-        let rootChildren = treeStore.children(of: root.id) + [unattributedNode]
-        let sortedRootChildren = FileTreeStore.sortedChildren(rootChildren)
-        let reconciledRoot = FileNodeRecord.directory(
-            id: root.id,
-            url: root.url,
-            name: root.name,
-            children: sortedRootChildren,
-            lastModified: root.lastModified,
-            fileIdentity: root.fileIdentity,
-            linkCount: root.linkCount,
-            isPackage: root.isPackage,
-            isAccessible: root.isSelfAccessible,
-            childrenAreSorted: true
-        )
-
-        var nodesByID = treeStore.nodesByID
-        nodesByID[reconciledRoot.id] = reconciledRoot
-        nodesByID[unattributedNode.id] = unattributedNode
-
-        var childIDsByID = treeStore.childIDsByID
-        childIDsByID[root.id] = sortedRootChildren.map(\.id)
-
-        var parentIDByID = treeStore.parentIDByID
-        parentIDByID[unattributedNode.id] = root.id
-
-        let baseStats = treeStore.aggregateStats
-        let reconciledStats = ScanAggregateStats(
-            totalAllocatedSize: reconciledRoot.allocatedSize,
-            totalLogicalSize: reconciledRoot.logicalSize,
-            fileCount: baseStats.fileCount,
-            directoryCount: baseStats.directoryCount,
-            accessibleItemCount: baseStats.accessibleItemCount + 1,
-            inaccessibleItemCount: baseStats.inaccessibleItemCount
-        )
-
-        return FileTreeStore(
-            rootID: treeStore.rootID,
-            nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID,
-            aggregateStats: reconciledStats
         )
     }
 
