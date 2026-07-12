@@ -236,6 +236,92 @@ final class ScanArchiveServiceTests: XCTestCase {
         }
     }
 
+    func testPreviewAndImportRejectOversizedStatsBeforeDecoding() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
+        try Data(repeating: 0x20, count: (256 * 1_024) + 1).write(to: statsURL, options: [.atomic])
+
+        do {
+            _ = try await service.previewSnapshot(from: archiveURL)
+            XCTFail("Preview should reject an oversized stats section.")
+        } catch ScanArchiveError.stats(let detail) {
+            XCTAssertTrue(detail.contains("supported size"))
+        }
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject an oversized stats section.")
+        } catch ScanArchiveError.stats(let detail) {
+            XCTAssertTrue(detail.contains("supported size"))
+        }
+    }
+
+    func testImportRejectsOversizedTopologyBeforeDecoding() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let topologyURL = archiveURL.appending(path: "topology.json", directoryHint: .notDirectory)
+        try Data(repeating: 0x20, count: 128 * 1_024).write(to: topologyURL, options: [.atomic])
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject an oversized topology section.")
+        } catch ScanArchiveError.topology(let detail) {
+            XCTAssertTrue(detail.contains("supported size"))
+        }
+    }
+
+    func testImportRejectsOversizedWarningsBeforeDecoding() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let warningsURL = archiveURL.appending(path: "warnings.json", directoryHint: .notDirectory)
+        try Data(repeating: 0x20, count: 192 * 1_024).write(to: warningsURL, options: [.atomic])
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject an oversized warnings section.")
+        } catch ScanArchiveError.manifest(let detail) {
+            XCTAssertTrue(detail.contains("supported size"))
+        }
+    }
+
+    func testPreviewRejectsOversizedManifestBeforeDecoding() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let manifestURL = archiveURL.appending(path: "manifest.json", directoryHint: .notDirectory)
+        try Data(repeating: 0x20, count: (1 * 1_024 * 1_024) + 1).write(
+            to: manifestURL,
+            options: [.atomic]
+        )
+
+        do {
+            _ = try await service.previewSnapshot(from: archiveURL)
+            XCTFail("Preview should reject an oversized manifest.")
+        } catch ScanArchiveError.manifest(let detail) {
+            XCTAssertTrue(detail.contains("supported size"))
+        }
+    }
+
     func testImportHandlesUntrustedHugeManifestNodeCountWithoutPreallocatingIt() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()

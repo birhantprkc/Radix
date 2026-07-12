@@ -236,6 +236,12 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private nonisolated static let warningsFileName = "warnings.json"
     private nonisolated static let statsFileName = "stats.json"
 
+    private nonisolated static let maximumManifestByteCount = 1 * 1_024 * 1_024
+    private nonisolated static let maximumStatsByteCount = 256 * 1_024
+    private nonisolated static let maximumTopologyByteCount = 512 * 1_024 * 1_024
+    private nonisolated static let maximumWarningsByteCount = 64 * 1_024 * 1_024
+    private nonisolated static let sectionReadChunkByteCount = 64 * 1_024
+
     init(fileManager: FileManager = .default) {
         _ = fileManager
     }
@@ -324,7 +330,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             in: sourceURL,
             sectionDescription: "stats"
         )
-        let stats: ScanArchiveStatsV1 = try readJSON(ScanArchiveStatsV1.self, from: statsURL) { detail in
+        let stats: ScanArchiveStatsV1 = try readJSON(
+            ScanArchiveStatsV1.self,
+            from: statsURL,
+            maximumByteCount: Self.maximumStatsByteCount
+        ) { detail in
             ScanArchiveError.stats(detail)
         }
         try stats.validate()
@@ -370,7 +380,8 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         )
         let archivedStats: ScanArchiveStatsV1 = try readJSON(
             ScanArchiveStatsV1.self,
-            from: statsURL
+            from: statsURL,
+            maximumByteCount: Self.maximumStatsByteCount
         ) { detail in
             ScanArchiveError.stats(detail)
         }
@@ -388,7 +399,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             phase: .readingTopology,
             message: String(localized: "Reading topology", comment: "Progress message while reading scan tree topology.")
         ))
-        let archivedTopology: ScanArchiveTopology = try readJSON(ScanArchiveTopology.self, from: topologyURL) { detail in
+        let archivedTopology: ScanArchiveTopology = try readJSON(
+            ScanArchiveTopology.self,
+            from: topologyURL,
+            maximumByteCount: Self.maximumTopologySize(for: manifest.snapshot.nodeCount)
+        ) { detail in
             ScanArchiveError.topology(detail)
         }
         let nodePayload: ScanArchiveNodePayload
@@ -408,7 +423,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             phase: .readingMetadata,
             message: String(localized: "Reading metadata", comment: "Progress message while reading scan metadata.")
         ))
-        let warnings: [ScanArchiveWarningV1] = try readJSON([ScanArchiveWarningV1].self, from: warningsURL) { detail in
+        let warnings: [ScanArchiveWarningV1] = try readJSON(
+            [ScanArchiveWarningV1].self,
+            from: warningsURL,
+            maximumByteCount: Self.maximumWarningsSize(for: manifest.snapshot.warningCount)
+        ) { detail in
             ScanArchiveError.manifest(localized: "warnings section failed: \(detail)")
         }
         try Task.checkCancellation()
@@ -461,7 +480,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         try validatePackage(at: sourceURL)
 
         let manifestURL = sourceURL.appending(path: Self.manifestFileName, directoryHint: .notDirectory)
-        let manifestData = try readData(from: manifestURL) { detail in
+        let manifestData = try readData(
+            from: manifestURL,
+            maximumByteCount: Self.maximumManifestByteCount
+        ) { detail in
             ScanArchiveError.manifest(detail)
         }
         let header: ScanArchiveHeader = try decodeJSON(ScanArchiveHeader.self, from: manifestData) { detail in
@@ -611,23 +633,82 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private func readJSON<T: Decodable>(
         _ type: T.Type,
         from url: URL,
+        maximumByteCount: Int,
         mapError: (String) -> ScanArchiveError
     ) throws -> T {
-        let data = try readData(from: url, mapError: mapError)
+        let data = try readData(
+            from: url,
+            maximumByteCount: maximumByteCount,
+            mapError: mapError
+        )
         return try decodeJSON(type, from: data, mapError: mapError)
     }
 
     private func readData(
         from url: URL,
+        maximumByteCount: Int,
         mapError: (String) -> ScanArchiveError
     ) throws -> Data {
         do {
-            return try Data(contentsOf: url)
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+
+            var data = Data()
+            data.reserveCapacity(min(maximumByteCount, Self.sectionReadChunkByteCount))
+            while true {
+                let remainingByteCount = maximumByteCount - data.count
+                let nextReadByteCount = min(
+                    Self.sectionReadChunkByteCount,
+                    remainingByteCount + 1
+                )
+                guard let chunk = try handle.read(upToCount: nextReadByteCount),
+                      !chunk.isEmpty else {
+                    return data
+                }
+                data.append(chunk)
+                guard data.count <= maximumByteCount else {
+                    throw mapError("section exceeds supported size")
+                }
+            }
         } catch let error as ScanArchiveError {
             throw error
         } catch {
             throw mapError(error.localizedDescription)
         }
+    }
+
+    private nonisolated static func maximumTopologySize(for nodeCount: Int) -> Int {
+        boundedSectionSize(
+            itemCount: nodeCount,
+            baseByteCount: 64 * 1_024,
+            byteCountPerItem: 96,
+            absoluteMaximum: maximumTopologyByteCount
+        )
+    }
+
+    private nonisolated static func maximumWarningsSize(for warningCount: Int) -> Int {
+        boundedSectionSize(
+            itemCount: warningCount,
+            baseByteCount: 64 * 1_024,
+            byteCountPerItem: 64 * 1_024,
+            absoluteMaximum: maximumWarningsByteCount
+        )
+    }
+
+    private nonisolated static func boundedSectionSize(
+        itemCount: Int,
+        baseByteCount: Int,
+        byteCountPerItem: Int,
+        absoluteMaximum: Int
+    ) -> Int {
+        guard itemCount > 0 else { return min(baseByteCount, absoluteMaximum) }
+        let (itemBytes, multiplicationOverflow) = itemCount.multipliedReportingOverflow(
+            by: byteCountPerItem
+        )
+        guard !multiplicationOverflow else { return absoluteMaximum }
+        let (totalBytes, additionOverflow) = baseByteCount.addingReportingOverflow(itemBytes)
+        guard !additionOverflow else { return absoluteMaximum }
+        return min(totalBytes, absoluteMaximum)
     }
 
     private func decodeJSON<T: Decodable>(
