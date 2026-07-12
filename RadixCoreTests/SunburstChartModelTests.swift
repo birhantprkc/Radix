@@ -158,6 +158,166 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertEqual(model.renderedSegments.map(\.id), [newSegment.id])
     }
 
+    func testLayoutFailurePreservesLastRenderAndPublishesError() async {
+        let service = ControllableSunburstLayoutService()
+        let model = SunburstChartModel(layoutService: service)
+        let store = makeStore()
+
+        let initialTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "initial"
+            )
+        }
+        await service.waitForIssuedRequestCount(1)
+        let initialSegment = makeSegment(id: "initial")
+        let didCompleteInitialRequest = await service.completeRequest(id: 0, with: [initialSegment])
+        XCTAssertTrue(didCompleteInitialRequest)
+        let didApplyInitialLayout = await initialTask.value
+        XCTAssertTrue(didApplyInitialLayout)
+        let initialVersion = model.renderedLayoutVersion
+
+        let failingTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 2,
+                layoutID: "failing"
+            )
+        }
+        await service.waitForIssuedRequestCount(2)
+        let didFailRequest = await service.failRequest(id: 1, with: TestChartLayoutError.failed)
+        XCTAssertTrue(didFailRequest)
+
+        let didApplyFailingLayout = await failingTask.value
+        XCTAssertFalse(didApplyFailingLayout)
+        XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
+        XCTAssertEqual(model.renderedLayoutVersion, initialVersion)
+        XCTAssertEqual(model.layoutError?.message, TestChartLayoutError.failed.localizedDescription)
+        XCTAssertFalse(model.isLayoutPending)
+    }
+
+    func testStaleLayoutFailureDoesNotReplaceNewerSuccessOrPublishError() async {
+        let service = ControllableSunburstLayoutService()
+        let model = SunburstChartModel(layoutService: service)
+        let store = makeStore()
+
+        let staleTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "stale"
+            )
+        }
+        await service.waitForIssuedRequestCount(1)
+        let currentTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "current"
+            )
+        }
+        await service.waitForIssuedRequestCount(2)
+
+        let currentSegment = makeSegment(id: "current")
+        let didCompleteCurrentRequest = await service.completeRequest(id: 1, with: [currentSegment])
+        XCTAssertTrue(didCompleteCurrentRequest)
+        let didApplyCurrentLayout = await currentTask.value
+        XCTAssertTrue(didApplyCurrentLayout)
+        let didFailStaleRequest = await service.failRequest(id: 0, with: TestChartLayoutError.failed)
+        XCTAssertTrue(didFailStaleRequest)
+
+        let didApplyStaleLayout = await staleTask.value
+        XCTAssertFalse(didApplyStaleLayout)
+        XCTAssertEqual(model.renderedSegments.map(\.id), [currentSegment.id])
+        XCTAssertNil(model.layoutError)
+        XCTAssertFalse(model.isLayoutPending)
+    }
+
+    func testRetryClearsFailureAndAppliesSuccessfulLayout() async {
+        let service = ControllableSunburstLayoutService()
+        let model = SunburstChartModel(layoutService: service)
+        let store = makeStore()
+
+        let failingTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "unchanged-layout"
+            )
+        }
+        await service.waitForIssuedRequestCount(1)
+        let didFailRequest = await service.failRequest(id: 0, with: TestChartLayoutError.failed)
+        XCTAssertTrue(didFailRequest)
+        let didApplyFailingLayout = await failingTask.value
+        XCTAssertFalse(didApplyFailingLayout)
+        XCTAssertNotNil(model.layoutError)
+
+        let retryTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "unchanged-layout"
+            )
+        }
+        await service.waitForIssuedRequestCount(2)
+        XCTAssertNil(model.layoutError)
+        XCTAssertTrue(model.isLayoutPending)
+
+        let retrySegment = makeSegment(id: "retry")
+        let didCompleteRetryRequest = await service.completeRequest(id: 1, with: [retrySegment])
+        XCTAssertTrue(didCompleteRetryRequest)
+        let didApplyRetryLayout = await retryTask.value
+        XCTAssertTrue(didApplyRetryLayout)
+        XCTAssertEqual(model.renderedSegments.map(\.id), [retrySegment.id])
+        XCTAssertNil(model.layoutError)
+    }
+
+    func testCancellationPreservesLastRenderWithoutPublishingError() async {
+        let service = ControllableSunburstLayoutService(resumesOnCancellation: true)
+        let model = SunburstChartModel(layoutService: service)
+        let store = makeStore()
+
+        let initialTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "initial"
+            )
+        }
+        await service.waitForIssuedRequestCount(1)
+        let initialSegment = makeSegment(id: "initial")
+        let didCompleteInitialRequest = await service.completeRequest(id: 0, with: [initialSegment])
+        XCTAssertTrue(didCompleteInitialRequest)
+        let didApplyInitialLayout = await initialTask.value
+        XCTAssertTrue(didApplyInitialLayout)
+
+        let cancelledTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 2,
+                layoutID: "cancelled"
+            )
+        }
+        await service.waitForIssuedRequestCount(2)
+        cancelledTask.cancel()
+        await service.waitForCancelledRequest(id: 1)
+
+        let didApplyCancelledLayout = await cancelledTask.value
+        XCTAssertFalse(didApplyCancelledLayout)
+        XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
+        XCTAssertNil(model.layoutError)
+        XCTAssertFalse(model.isLayoutPending)
+    }
+
     func testSelectionOverlaySegmentsIncludeAncestorsAndSelectedLast() async {
         let ancestor = makeSegment(id: "ancestor", depth: 0)
         let selected = makeSegment(id: "selected", depth: 1)
@@ -268,6 +428,12 @@ private actor ControllableSunburstLayoutService: SunburstLayouting {
         return true
     }
 
+    func failRequest(id: Int, with error: any Error) -> Bool {
+        guard let continuation = continuations.removeValue(forKey: id) else { return false }
+        continuation.resume(throwing: error)
+        return true
+    }
+
     private func resumeSatisfiedWaiters() {
         var waiting: [RequestWaiter] = []
         for waiter in waiters {
@@ -299,6 +465,14 @@ private actor ControllableSunburstLayoutService: SunburstLayouting {
             }
         }
         cancellationWaiters = waiting
+    }
+}
+
+private enum TestChartLayoutError: LocalizedError {
+    case failed
+
+    var errorDescription: String? {
+        "Test layout failure"
     }
 }
 

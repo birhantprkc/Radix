@@ -34,19 +34,14 @@ actor SunburstLayoutService: SunburstLayouting {
 final class SunburstChartModel: ObservableObject {
     @Published private var renderState = SunburstChartRenderState()
     @Published private(set) var isLayoutPending = false
+    @Published private(set) var layoutError: ChartLayoutFailure?
 
     private let layoutService: any SunburstLayouting
-    private var layoutGeneration = 0
-    private var activeLayoutID: String?
-    private var layoutTask: Task<[SunburstSegment], Error>?
+    private let layoutRequests = ChartLayoutRequestCoordinator<[SunburstSegment]>()
     private var selectionOverlayCache = SunburstSelectionOverlayCache(capacity: 8)
 
     init(layoutService: any SunburstLayouting = SunburstLayoutService()) {
         self.layoutService = layoutService
-    }
-
-    deinit {
-        layoutTask?.cancel()
     }
 
     var renderedSegments: [SunburstSegment] {
@@ -100,57 +95,32 @@ final class SunburstChartModel: ObservableObject {
         depthLimit: Int,
         layoutID: String
     ) async -> Bool {
-        layoutGeneration += 1
-        let generation = layoutGeneration
-        activeLayoutID = layoutID
-        layoutTask?.cancel()
-        clearHover()
-        setIsLayoutPending(true)
-
-        let task = Task(priority: .userInitiated) { [layoutService] in
+        let request = layoutRequests.start(layoutID: layoutID) { [layoutService] in
             try await layoutService.segments(
                 in: treeStore,
                 rootID: rootID,
                 depthLimit: depthLimit
             )
         }
-        layoutTask = task
+        clearHover()
+        setLayoutError(nil)
+        setIsLayoutPending(true)
 
-        do {
-            let segments = try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: {
-                task.cancel()
-            }
-            try Task.checkCancellation()
-            guard isCurrentLayout(generation: generation, layoutID: layoutID) else {
-                return false
-            }
-
-            layoutTask = nil
+        switch await layoutRequests.outcome(for: request) {
+        case let .success(segments):
             apply(segments)
             setIsLayoutPending(false)
             return true
-        } catch is CancellationError {
-            guard isCurrentLayout(generation: generation, layoutID: layoutID) else {
-                return false
-            }
-            layoutTask = nil
+        case let .failure(error):
+            setLayoutError(error)
             setIsLayoutPending(false)
             return false
-        } catch {
-            guard isCurrentLayout(generation: generation, layoutID: layoutID) else {
-                return false
-            }
-            layoutTask = nil
-            apply([])
+        case .cancelled:
             setIsLayoutPending(false)
-            return true
+            return false
+        case .superseded:
+            return false
         }
-    }
-
-    private func isCurrentLayout(generation: Int, layoutID: String) -> Bool {
-        layoutGeneration == generation && activeLayoutID == layoutID
     }
 
     private func apply(_ segments: [SunburstSegment]) {
@@ -171,6 +141,11 @@ final class SunburstChartModel: ObservableObject {
     private func setIsLayoutPending(_ isPending: Bool) {
         guard isLayoutPending != isPending else { return }
         isLayoutPending = isPending
+    }
+
+    private func setLayoutError(_ error: ChartLayoutFailure?) {
+        guard layoutError != error else { return }
+        layoutError = error
     }
 }
 

@@ -27,6 +27,7 @@ struct SunburstChartView: View {
     @State private var isHoveringCenter = false
     @State private var showsLoadingDiskMapProgress = false
     @State private var viewportTransform = SunburstViewportTransform.identity
+    @State private var layoutRetryGeneration = 0
 
     init(
         rootNode: FileNodeRecord,
@@ -158,7 +159,8 @@ struct SunburstChartView: View {
                             .controlSize(.small)
                             .transition(.opacity)
                     }
-                } else if chartModel.renderedSegments.isEmpty {
+                } else if chartModel.layoutError == nil,
+                          chartModel.renderedSegments.isEmpty {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -240,6 +242,16 @@ struct SunburstChartView: View {
                     .padding(.trailing, 18)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let layoutError = chartModel.layoutError,
+                   !chartModel.isLayoutPending {
+                    ChartLayoutFailureBanner(failure: layoutError) {
+                        layoutRetryGeneration += 1
+                    }
+                    .padding(18)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(centerHoverAnimation, value: isHoveringCenter)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
@@ -255,7 +267,7 @@ struct SunburstChartView: View {
             .task(id: loadingDiskMapProgressTaskID) {
                 await updateLoadingDiskMapProgress(isPending: chartModel.isLayoutPending)
             }
-            .task(id: layoutID) {
+            .task(id: SunburstLayoutTaskID(layoutID: layoutID, retryGeneration: layoutRetryGeneration)) {
                 await chartModel.loadLayout(
                     treeStore: treeStore,
                     rootID: rootNode.id,
@@ -614,6 +626,11 @@ private struct SunburstViewportControls: View {
         .accessibilityLabel(accessibilityLabel)
         .help(accessibilityLabel)
     }
+}
+
+private struct SunburstLayoutTaskID: Hashable {
+    let layoutID: String
+    let retryGeneration: Int
 }
 
 private struct SunburstRenderedChartLayer: View {

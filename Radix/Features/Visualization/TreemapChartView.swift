@@ -24,6 +24,7 @@ struct TreemapChartView: View {
     @StateObject private var chartModel: TreemapChartModel
     @State private var showsLoadingDiskMapProgress = false
     @State private var tooltipAnchor: CGPoint?
+    @State private var layoutRetryGeneration = 0
 
     init(
         rootNode: FileNodeRecord,
@@ -83,7 +84,11 @@ struct TreemapChartView: View {
     var body: some View {
         GeometryReader { geometry in
             let chartFrame = chartFrame(in: geometry.size)
-            let layoutTaskID = TreemapLayoutTaskID(layoutID: layoutID, size: chartFrame.size)
+            let layoutTaskID = TreemapLayoutTaskID(
+                layoutID: layoutID,
+                size: chartFrame.size,
+                retryGeneration: layoutRetryGeneration
+            )
 
             ZStack {
                 TreemapRenderedChartLayer(
@@ -107,7 +112,8 @@ struct TreemapChartView: View {
                             .controlSize(.small)
                             .transition(.opacity)
                     }
-                } else if chartModel.renderedSegments.isEmpty {
+                } else if chartModel.layoutError == nil,
+                          chartModel.renderedSegments.isEmpty {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -144,6 +150,16 @@ struct TreemapChartView: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                         .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let layoutError = chartModel.layoutError,
+                   !chartModel.isLayoutPending {
+                    ChartLayoutFailureBanner(failure: layoutError) {
+                        layoutRetryGeneration += 1
+                    }
+                    .padding(18)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
@@ -358,11 +374,13 @@ private struct TreemapLayoutTaskID: Hashable {
     let layoutID: String
     let widthBucket: Int
     let heightBucket: Int
+    let retryGeneration: Int
 
-    init(layoutID: String, size: CGSize) {
+    init(layoutID: String, size: CGSize, retryGeneration: Int) {
         self.layoutID = layoutID
         widthBucket = Int((size.width / Self.sizeBucket).rounded())
         heightBucket = Int((size.height / Self.sizeBucket).rounded())
+        self.retryGeneration = retryGeneration
     }
 
     var cacheID: String {
