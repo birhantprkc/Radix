@@ -47,7 +47,7 @@ struct ContentView: View {
                 startupDiskTarget: appModel.startupDiskTarget,
                 fullDiskAccessStatus: appModel.fullDiskAccessStatus,
                 freeSpaceAvailableCapacity: { snapshot, focusNode in
-                    appModel.sunburstFreeSpaceAvailableCapacity(for: snapshot, focusNode: focusNode)
+                    appModel.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: focusNode)
                 },
                 closeScanComparison: {
                     closeScanComparison()

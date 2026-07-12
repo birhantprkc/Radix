@@ -79,6 +79,7 @@ struct AppSystemActions {
     var defaultTargets: () -> [ScanTarget]
     var targetCapacityDescriptions: () -> [String: String]
     var volumeAvailableCapacityForImportantUsage: (URL) -> Int64?
+    var asyncVolumeAvailableCapacityForImportantUsage: (@Sendable (URL) async -> Int64?)?
     var trashSafetyPolicy: () -> TrashSafetyPolicy
     var asyncFullDiskAccessStatus: (@Sendable () async -> FullDiskAccessStatus)?
     var asyncTargetCapacityDescriptions: (@Sendable () async -> [String: String])?
@@ -120,6 +121,11 @@ struct AppSystemActions {
         },
         volumeAvailableCapacityForImportantUsage: {
             SystemIntegration.volumeAvailableCapacityForImportantUsage(for: $0)
+        },
+        asyncVolumeAvailableCapacityForImportantUsage: { url in
+            await Task.detached(priority: .utility) {
+                SystemIntegration.volumeAvailableCapacityForImportantUsage(for: url)
+            }.value
         },
         trashSafetyPolicy: {
             TrashSafetyPolicy.live()
@@ -192,6 +198,7 @@ struct AppSystemActions {
         defaultTargets: { [] },
         targetCapacityDescriptions: { [:] },
         volumeAvailableCapacityForImportantUsage: { _ in nil },
+        asyncVolumeAvailableCapacityForImportantUsage: nil,
         trashSafetyPolicy: {
             TrashSafetyPolicy.live()
         },
@@ -250,6 +257,10 @@ extension AppSystemActions {
         asyncTargetCapacityDescriptions != nil
     }
 
+    var usesAsyncVolumeAvailableCapacity: Bool {
+        asyncVolumeAvailableCapacityForImportantUsage != nil
+    }
+
     func currentFullDiskAccessStatus() -> FullDiskAccessStatus {
         fullDiskAccessStatus()
     }
@@ -270,5 +281,12 @@ extension AppSystemActions {
             return await asyncTargetCapacityDescriptions()
         }
         return currentTargetCapacityDescriptions()
+    }
+
+    func loadVolumeAvailableCapacity(for url: URL) async -> Int64? {
+        if let asyncVolumeAvailableCapacityForImportantUsage {
+            return await asyncVolumeAvailableCapacityForImportantUsage(url)
+        }
+        return volumeAvailableCapacityForImportantUsage(url)
     }
 }

@@ -161,7 +161,7 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
-    func testSunburstFreeSpaceCapacityRequiresEnabledVolumeRoot() {
+    func testCachedFreeSpaceCapacityRequiresEnabledActiveVolumeRootAndDoesNotRequery() async throws {
         var requestedURLs: [URL] = []
         var actions = AppSystemActions.inert
         actions.volumeAvailableCapacityForImportantUsage = { url in
@@ -178,16 +178,120 @@ final class AppModelDependencyTests: XCTestCase {
             store: store
         )
 
-        XCTAssertNil(model.sunburstFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot))
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot))
 
+        model.scanState.replaceCurrentSnapshot(volumeSnapshot)
         model.showFreeSpaceInDiskMaps = true
+        try await waitForAppModelCondition("free-space capacity fallback applies") {
+            model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot) == 123
+        }
 
-        XCTAssertEqual(model.sunburstFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot), 123)
-        XCTAssertNil(model.sunburstFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: child))
+        XCTAssertEqual(model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot), 123)
+        XCTAssertEqual(model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot), 123)
+        XCTAssertEqual(model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot), 123)
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: child))
 
         let folderSnapshot = makeTestSnapshot(root: volumeRoot, store: store)
-        XCTAssertNil(model.sunburstFreeSpaceAvailableCapacity(for: folderSnapshot, focusNode: volumeRoot))
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: folderSnapshot, focusNode: volumeRoot))
         XCTAssertEqual(requestedURLs, [volumeRoot.url])
+    }
+
+    @MainActor
+    func testAsyncFreeSpaceCapacityLoadDoesNotBlockMainActor() async throws {
+        let probe = ControlledCapacityLoader()
+        var actions = AppSystemActions.inert
+        actions.asyncVolumeAvailableCapacityForImportantUsage = { url in
+            await probe.load(url)
+        }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [])
+        let snapshot = makeTestSnapshot(
+            target: ScanTarget(url: root.url, kind: .volume),
+            root: root,
+            store: FileTreeStore(root: root)
+        )
+
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.showFreeSpaceInDiskMaps = true
+        try await probe.waitForIssuedRequestCount(1)
+
+        model.showHiddenFiles = false
+        XCTAssertFalse(model.showHiddenFiles)
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root))
+
+        let didCompleteRequest = await probe.completeRequest(id: 0, with: 456)
+        XCTAssertTrue(didCompleteRequest)
+        try await waitForAppModelCondition("async free-space capacity applies") {
+            model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root) == 456
+        }
+    }
+
+    @MainActor
+    func testStaleFreeSpaceCapacityResultCannotOverwriteNewSnapshot() async throws {
+        let probe = ControlledCapacityLoader()
+        var actions = AppSystemActions.inert
+        actions.asyncVolumeAvailableCapacityForImportantUsage = { url in
+            await probe.load(url)
+        }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let firstRoot = makeTestDirectoryNode(id: "/first", name: "First", children: [])
+        let firstSnapshot = makeTestSnapshot(
+            target: ScanTarget(url: firstRoot.url, kind: .volume),
+            root: firstRoot,
+            store: FileTreeStore(root: firstRoot)
+        )
+        let secondRoot = makeTestDirectoryNode(id: "/second", name: "Second", children: [])
+        let secondSnapshot = makeTestSnapshot(
+            target: ScanTarget(url: secondRoot.url, kind: .volume),
+            root: secondRoot,
+            store: FileTreeStore(root: secondRoot)
+        )
+
+        model.showFreeSpaceInDiskMaps = true
+        model.scanState.replaceCurrentSnapshot(firstSnapshot)
+        try await probe.waitForIssuedRequestCount(1)
+        model.scanState.replaceCurrentSnapshot(secondSnapshot)
+        try await probe.waitForIssuedRequestCount(2)
+
+        let didCompleteCurrentRequest = await probe.completeRequest(id: 1, with: 222)
+        XCTAssertTrue(didCompleteCurrentRequest)
+        try await waitForAppModelCondition("current free-space capacity applies") {
+            model.cachedFreeSpaceAvailableCapacity(for: secondSnapshot, focusNode: secondRoot) == 222
+        }
+        let didCompleteStaleRequest = await probe.completeRequest(id: 0, with: 111)
+        XCTAssertTrue(didCompleteStaleRequest)
+        await Task.yield()
+
+        XCTAssertEqual(model.cachedFreeSpaceAvailableCapacity(for: secondSnapshot, focusNode: secondRoot), 222)
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: firstSnapshot, focusNode: firstRoot))
+    }
+
+    @MainActor
+    func testCleanupCancelsFreeSpaceCapacityLoadAndClearsCache() async throws {
+        let probe = ControlledCapacityLoader()
+        var actions = AppSystemActions.inert
+        actions.asyncVolumeAvailableCapacityForImportantUsage = { url in
+            await probe.load(url)
+        }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [])
+        let snapshot = makeTestSnapshot(
+            target: ScanTarget(url: root.url, kind: .volume),
+            root: root,
+            store: FileTreeStore(root: root)
+        )
+
+        model.showFreeSpaceInDiskMaps = true
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        try await probe.waitForIssuedRequestCount(1)
+        model.cleanup()
+        try await probe.waitForCancelledRequest(id: 0)
+
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root))
+        let didCompleteCancelledRequest = await probe.completeRequest(id: 0, with: 999)
+        XCTAssertTrue(didCompleteCancelledRequest)
+        await Task.yield()
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root))
     }
 
     @MainActor
@@ -2671,6 +2775,85 @@ private actor AsyncValueProbe<Value: Sendable> {
     func resume(returning value: Value) {
         continuation?.resume(returning: value)
         continuation = nil
+    }
+}
+
+private actor ControlledCapacityLoader {
+    private struct RequestCountWaiter {
+        let count: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private struct CancellationWaiter {
+        let requestID: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private var issuedURLs: [URL] = []
+    private var continuations: [Int: CheckedContinuation<Int64?, Never>] = [:]
+    private var cancelledRequestIDs: Set<Int> = []
+    private var requestCountWaiters: [RequestCountWaiter] = []
+    private var cancellationWaiters: [CancellationWaiter] = []
+
+    func load(_ url: URL) async -> Int64? {
+        let requestID = issuedURLs.count
+        issuedURLs.append(url)
+        resumeRequestCountWaiters()
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                continuations[requestID] = continuation
+            }
+        } onCancel: {
+            Task {
+                await self.recordCancellation(id: requestID)
+            }
+        }
+    }
+
+    func waitForIssuedRequestCount(_ count: Int) async throws {
+        if issuedURLs.count >= count { return }
+        await withCheckedContinuation { continuation in
+            requestCountWaiters.append(RequestCountWaiter(count: count, continuation: continuation))
+        }
+    }
+
+    func waitForCancelledRequest(id requestID: Int) async throws {
+        if cancelledRequestIDs.contains(requestID) { return }
+        await withCheckedContinuation { continuation in
+            cancellationWaiters.append(CancellationWaiter(requestID: requestID, continuation: continuation))
+        }
+    }
+
+    func completeRequest(id requestID: Int, with value: Int64?) -> Bool {
+        guard let continuation = continuations.removeValue(forKey: requestID) else { return false }
+        continuation.resume(returning: value)
+        return true
+    }
+
+    private func recordCancellation(id requestID: Int) {
+        cancelledRequestIDs.insert(requestID)
+        var pending: [CancellationWaiter] = []
+        for waiter in cancellationWaiters {
+            if waiter.requestID == requestID {
+                waiter.continuation.resume()
+            } else {
+                pending.append(waiter)
+            }
+        }
+        cancellationWaiters = pending
+    }
+
+    private func resumeRequestCountWaiters() {
+        var pending: [RequestCountWaiter] = []
+        for waiter in requestCountWaiters {
+            if issuedURLs.count >= waiter.count {
+                waiter.continuation.resume()
+            } else {
+                pending.append(waiter)
+            }
+        }
+        requestCountWaiters = pending
     }
 }
 
