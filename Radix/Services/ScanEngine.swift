@@ -629,6 +629,19 @@ actor ScanEngine {
         metrics.isFinalizing = true
         continuation.yield(.progress(metrics))
 
+        if let overlappingBytes = VolumeCapacityAccounting.overlappingAllocatedBytes(
+            in: treeStore,
+            capacity: metrics.volumeCapacity
+        ) {
+            let warning = ScanWarning(
+                path: target.url.path,
+                message: "File allocations overlap by \(overlappingBytes) bytes; APFS clones or files changed during the scan may share physical storage.",
+                category: .fileSystem
+            )
+            warnings.append(warning)
+            continuation.yield(.warning(warning))
+        }
+
         let snapshot = makeSnapshot(
             target: target,
             treeStore: treeStore,
@@ -638,6 +651,7 @@ actor ScanEngine {
             isComplete: true,
             scanOptions: options,
             volumeCapacity: metrics.volumeCapacity,
+            reconcilesVolumeCapacity: metrics.estimatedTotalBytes > 0,
             hasActiveExclusions: !exclusionMatcher.isEmpty
         )
 
@@ -2135,12 +2149,13 @@ actor ScanEngine {
         isComplete: Bool,
         scanOptions: ScanOptions?,
         volumeCapacity: VolumeCapacitySnapshot? = nil,
+        reconcilesVolumeCapacity: Bool = false,
         hasActiveExclusions: Bool = false
     ) -> ScanSnapshot {
         let reconciledStore = VolumeCapacityAccounting.reconciledStore(
             treeStore,
             target: target,
-            capacity: volumeCapacity,
+            capacity: reconcilesVolumeCapacity ? volumeCapacity : nil,
             hasActiveExclusions: hasActiveExclusions
         )
 

@@ -1528,6 +1528,7 @@ final class AppModel: ObservableObject {
     func cachedFreeSpaceAvailableCapacity(for snapshot: ScanSnapshot, focusNode: FileNodeRecord) -> Int64? {
         guard showFreeSpaceInDiskMaps,
               snapshot.target.kind == .volume,
+              snapshot.overlappingAllocatedBytes == nil,
               focusNode.id == snapshot.root.id,
               diskFreeSpaceCapacityCache?.key == diskFreeSpaceCapacityKey(for: snapshot) else {
             return nil
@@ -2926,7 +2927,8 @@ final class AppModel: ObservableObject {
     ) {
         guard showFreeSpaceInDiskMaps,
               let snapshot,
-              snapshot.target.kind == .volume else {
+              snapshot.target.kind == .volume,
+              snapshot.overlappingAllocatedBytes == nil else {
             cancelDiskFreeSpaceCapacityRefresh(clearCache: true)
             return
         }

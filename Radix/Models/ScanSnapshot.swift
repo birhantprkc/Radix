@@ -157,6 +157,13 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         treeStore.root
     }
 
+    nonisolated var overlappingAllocatedBytes: Int64? {
+        VolumeCapacityAccounting.overlappingAllocatedBytes(
+            in: treeStore,
+            capacity: volumeCapacity
+        )
+    }
+
     nonisolated func removingNode(id targetID: String) -> ScanSnapshot? {
         try? removingNode(id: targetID, cancellationCheck: {})
     }
@@ -348,7 +355,11 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
     }
 
     private nonisolated func reconcilingVolumeCapacity() -> ScanSnapshot {
-        guard target.kind == .volume, volumeCapacity != nil else { return self }
+        guard target.kind == .volume,
+              volumeCapacity != nil,
+              VolumeCapacityAccounting.hasUnattributedRemainder(in: treeStore) else {
+            return self
+        }
         let reconciledStore = VolumeCapacityAccounting.reconciledStore(
             treeStore,
             target: target,

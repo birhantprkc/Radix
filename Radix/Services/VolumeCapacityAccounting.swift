@@ -9,6 +9,15 @@ nonisolated enum VolumeCapacityAccounting {
     private static let unattributedSuffix = "#system-unattributed"
     private static let minimumNewRemainder: Int64 = 64 * 1_024 * 1_024
 
+    static func overlappingAllocatedBytes(
+        in treeStore: FileTreeStore,
+        capacity: VolumeCapacitySnapshot?
+    ) -> Int64? {
+        guard let capacity else { return nil }
+        let overlap = treeStore.root.allocatedSize - capacity.usedCapacity
+        return overlap >= minimumNewRemainder ? overlap : nil
+    }
+
     static func reconciledStore(
         _ treeStore: FileTreeStore,
         target: ScanTarget,
@@ -82,6 +91,12 @@ nonisolated enum VolumeCapacityAccounting {
     static func hasActiveExclusions(in treeStore: FileTreeStore) -> Bool {
         treeStore.children(of: treeStore.rootID).contains {
             isUnattributedNodeID($0.id) && $0.name == "Excluded & Unattributed"
+        }
+    }
+
+    static func hasUnattributedRemainder(in treeStore: FileTreeStore) -> Bool {
+        treeStore.children(of: treeStore.rootID).contains {
+            isUnattributedNodeID($0.id)
         }
     }
 

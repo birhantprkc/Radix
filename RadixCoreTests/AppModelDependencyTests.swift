@@ -226,6 +226,44 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testOverlappingVolumeAllocationsSuppressFreeSpaceComposition() {
+        var requestedURLs: [URL] = []
+        var actions = AppSystemActions.inert
+        actions.volumeAvailableCapacityForImportantUsage = { url in
+            requestedURLs.append(url)
+            return 1
+        }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let file = makeTestFileNode(
+            id: "/volume/clone.bin",
+            name: "clone.bin",
+            size: 200 * 1_024 * 1_024
+        )
+        let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [file])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
+        let snapshot = ScanSnapshot(
+            target: ScanTarget(url: root.url, kind: .volume),
+            treeStore: store,
+            startedAt: Date(),
+            finishedAt: Date(),
+            scanWarnings: [],
+            aggregateStats: store.aggregateStats,
+            isComplete: true,
+            volumeCapacity: VolumeCapacitySnapshot(
+                totalCapacity: 500 * 1_024 * 1_024,
+                availableCapacity: 400 * 1_024 * 1_024
+            )
+        )
+
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.showFreeSpaceInDiskMaps = true
+
+        XCTAssertEqual(snapshot.overlappingAllocatedBytes, 100 * 1_024 * 1_024)
+        XCTAssertNil(model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root))
+        XCTAssertTrue(requestedURLs.isEmpty)
+    }
+
+    @MainActor
     func testAsyncFreeSpaceCapacityLoadDoesNotBlockMainActor() async throws {
         let probe = ControlledCapacityLoader()
         var actions = AppSystemActions.inert
