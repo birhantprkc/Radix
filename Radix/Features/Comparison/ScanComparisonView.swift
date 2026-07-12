@@ -538,10 +538,19 @@ struct ScanComparisonView: View {
                   selectedChangeKinds.contains(row.kind) {
             Label(row.kind.title, systemImage: row.kind.systemImageName)
                 .foregroundStyle(row.kind.tintColor)
+        } else if node.allocatedDelta > 0 {
+            Label(ScanComparisonChangeKind.grew.title, systemImage: ScanComparisonChangeKind.grew.systemImageName)
+                .foregroundStyle(ScanComparisonChangeKind.grew.tintColor)
+                .help("\(node.affectedCount.formatted()) changes summarized")
+        } else if node.allocatedDelta < 0 {
+            Label(ScanComparisonChangeKind.shrank.title, systemImage: ScanComparisonChangeKind.shrank.systemImageName)
+                .foregroundStyle(ScanComparisonChangeKind.shrank.tintColor)
+                .help("\(node.affectedCount.formatted()) changes summarized")
         } else {
-            Label("Summary", systemImage: "list.bullet.indent")
+            Text("–")
                 .foregroundStyle(.secondary)
                 .help("\(node.affectedCount.formatted()) changes summarized")
+                .accessibilityLabel("No net change")
         }
     }
 
