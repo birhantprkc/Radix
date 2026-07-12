@@ -2085,6 +2085,31 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testDocumentOpenWaitsUntilOnboardingDismissesBeforeReadingArchive() async throws {
+        let archiveURL = URL(filePath: "/tmp/onboarding-open.radixscan", directoryHint: .isDirectory)
+        let previewProbe = AsyncValueProbe<Void>()
+        let archiveService = SpyScanArchiveService(previewWaitProbe: previewProbe)
+        let model = AppModel(dependencies: makeDependencies(scanArchiveService: archiveService))
+
+        XCTAssertTrue(model.showsOnboarding)
+        XCTAssertEqual(model.presentationCoordinator.activeSheet, .onboarding)
+
+        model.openScanSnapshotArchive(archiveURL)
+
+        let previewStartedDuringOnboarding = await previewProbe.isWaiting
+        XCTAssertFalse(previewStartedDuringOnboarding)
+        XCTAssertEqual(model.presentationCoordinator.activeSheet, .onboarding)
+
+        model.dismissOnboarding()
+        try await waitForAsyncCondition("queued document open starts after onboarding") {
+            await previewProbe.isWaiting
+        }
+
+        model.cancelArchiveOperation()
+        await previewProbe.resume(returning: ())
+    }
+
+    @MainActor
     func testCancelArchiveOperationCancelsImportWork() async throws {
         let archiveURL = URL(filePath: "/tmp/import-cancelled.radixscan", directoryHint: .isDirectory)
         let file = makeTestFileNode(id: "/import-cancelled/file.txt", name: "file.txt")

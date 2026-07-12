@@ -252,6 +252,7 @@ final class AppModel: ObservableObject {
     private var comparisonPanelTask: Task<Void, Never>?
     private var snapshotArchiveTask: Task<Void, Never>?
     private var snapshotArchiveProgressTask: Task<Void, Never>?
+    private var readyDeferredArchiveImportURL: URL?
     private var exportConfirmationDismissTask: Task<Void, Never>?
     private var postTrashRemovalRequests: [PostTrashRemovalRequest] = []
     private var fullDiskAccessRefreshTask: Task<Void, Never>?
@@ -338,6 +339,7 @@ final class AppModel: ObservableObject {
         comparisonPanelTask?.cancel()
         comparisonPanelTask = nil
         isExportPanelPresented = false
+        readyDeferredArchiveImportURL = nil
         cancelArchiveOperation()
         dismissExportConfirmation()
         presentationCoordinator.reset()
@@ -472,6 +474,86 @@ final class AppModel: ObservableObject {
 
     func dismissErrorPresentation() {
         lastErrorMessage = nil
+    }
+
+    private func synchronizeOnboardingPresentation() {
+        if showsOnboarding {
+            presentationCoordinator.present(.sheet(.onboarding))
+        } else {
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.sheet(.onboarding))
+            )
+        }
+    }
+
+    private func synchronizeDiscardPileReviewPresentation() {
+        if showsDiscardPileReview {
+            presentationCoordinator.present(.sheet(.discardPileReview))
+        } else {
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.sheet(.discardPileReview))
+            )
+        }
+    }
+
+    private func synchronizeImportPreviewPresentation() {
+        if let pendingImportPreview {
+            presentationCoordinator.present(.sheet(.importPreview(pendingImportPreview.id)))
+        } else {
+            // The payload identity is irrelevant when cancelling; cancellation
+            // matches presentation kinds and removes a queued stale preview too.
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.sheet(.importPreview(URL(filePath: "/"))))
+            )
+        }
+    }
+
+    private func synchronizeComparisonSetupPresentation() {
+        if let pendingComparisonSetup {
+            presentationCoordinator.present(.sheet(.comparisonSetup(pendingComparisonSetup.id)))
+        } else {
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.sheet(.comparisonSetup(UUID())))
+            )
+        }
+    }
+
+    private func synchronizeErrorPresentation() {
+        if lastErrorMessage != nil {
+            presentationCoordinator.present(.dialog(.error))
+        } else {
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.dialog(.error))
+            )
+        }
+    }
+
+    private func synchronizeTrashConfirmationPresentation() {
+        if pendingTrashSelection != nil || pendingTrashNode != nil {
+            presentationCoordinator.present(.dialog(.trashConfirmation))
+        } else {
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.dialog(.trashConfirmation))
+            )
+        }
+    }
+
+    private func resumeDeferredArchiveImport(_ sourceURL: URL?) {
+        guard let sourceURL else { return }
+        guard !isArchiveOperationInProgress else {
+            readyDeferredArchiveImportURL = sourceURL
+            return
+        }
+        beginImportScanSnapshot(from: sourceURL)
+    }
+
+    private func resumeReadyDeferredArchiveImportIfPossible() {
+        guard !isArchiveOperationInProgress,
+              let sourceURL = readyDeferredArchiveImportURL else {
+            return
+        }
+        readyDeferredArchiveImportURL = nil
+        beginImportScanSnapshot(from: sourceURL)
     }
 
     func refreshFullDiskAccessStatus() {
@@ -719,6 +801,20 @@ final class AppModel: ObservableObject {
     }
 
     func importScanSnapshot(from sourceURL: URL) {
+        beginImportScanSnapshot(from: sourceURL)
+    }
+
+    /// Handles a document-open event. Unlike an explicit in-app import command,
+    /// macOS can deliver this while another modal flow (notably onboarding) is
+    /// active, so document opens are serialized instead of rejected or overlaid.
+    func openScanSnapshotArchive(_ sourceURL: URL) {
+        guard presentationCoordinator.requestArchiveImport(sourceURL) == .startNow else {
+            return
+        }
+        beginImportScanSnapshot(from: sourceURL)
+    }
+
+    private func beginImportScanSnapshot(from sourceURL: URL) {
         guard canImportScanSnapshot else {
             presentErrorMessage(importUnavailableMessage)
             return
@@ -983,8 +1079,8 @@ final class AppModel: ObservableObject {
             return
         }
 
-        pendingComparisonSetup = nil
         startComparison(setup)
+        pendingComparisonSetup = nil
     }
 
     func chooseComparisonSnapshot(for slot: ScanComparisonSlot) {
@@ -1204,8 +1300,8 @@ final class AppModel: ObservableObject {
             return
         }
 
-        pendingImportPreview = nil
         importApprovedScanSnapshot(from: preview.archiveURL)
+        pendingImportPreview = nil
     }
 
     func cancelImportPreview() {
@@ -1219,6 +1315,7 @@ final class AppModel: ObservableObject {
         snapshotArchiveProgressTask?.cancel()
         snapshotArchiveProgressTask = nil
         archiveOperation = nil
+        resumeReadyDeferredArchiveImportIfPossible()
     }
 
     private func previewImportScanSnapshot(from sourceURL: URL) {
@@ -1353,6 +1450,7 @@ final class AppModel: ObservableObject {
         }
         snapshotArchiveProgressTask?.cancel()
         snapshotArchiveProgressTask = nil
+        resumeReadyDeferredArchiveImportIfPossible()
     }
 
     private func isCurrentArchiveOperation(id operationID: UUID) -> Bool {

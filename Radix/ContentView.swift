@@ -18,7 +18,6 @@ struct ContentView: View {
     @State private var sidebarWasAutoHiddenForComparison = false
     @State private var showsInspector = true
     @State private var inspectorPresentationBeforeComparison: Bool?
-    @State private var showsDiscardPileReview = false
     @State private var discardPileDragIsActive = false
     @State private var discardPileDragMonitorTask: Task<Void, Never>?
     @FocusState private var focusedWorkspaceTarget: WorkspaceFocusTarget?
@@ -118,87 +117,85 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .sheet(isPresented: $appModel.showsOnboarding) {
-            OnboardingView()
-        }
-        .sheet(isPresented: $showsDiscardPileReview) {
-            DiscardPileReviewSheet(
-                nodes: appModel.discardPileNodes,
-                actions: DiscardPileReviewActions(
-                    removeNode: { nodeID in
-                        appModel.removeDiscardPileNode(id: nodeID)
-                    },
-                    clear: {
-                        appModel.clearDiscardPile()
-                    },
-                    cancel: {
-                        showsDiscardPileReview = false
-                    },
-                    moveToTrash: {
-                        if appModel.requestMoveDiscardPileToTrash() {
-                            showsDiscardPileReview = false
+        .sheet(item: activeSheetBinding) { sheet in
+            switch sheet {
+            case .onboarding:
+                OnboardingView()
+            case .discardPileReview:
+                DiscardPileReviewSheet(
+                    nodes: appModel.discardPileNodes,
+                    actions: DiscardPileReviewActions(
+                        removeNode: { nodeID in
+                            appModel.removeDiscardPileNode(id: nodeID)
+                        },
+                        clear: {
+                            appModel.clearDiscardPile()
+                        },
+                        cancel: {
+                            appModel.dismissDiscardPileReview()
+                        },
+                        moveToTrash: {
+                            if appModel.requestMoveDiscardPileToTrash() {
+                                appModel.dismissDiscardPileReview()
+                            }
                         }
-                    }
+                    )
                 )
-            )
-        }
-        .sheet(item: $appModel.pendingImportPreview) { preview in
-            ImportSnapshotPreviewSheet(
-                preview: preview,
-                onCancel: {
-                    appModel.cancelImportPreview()
-                },
-                onImport: {
-                    appModel.confirmImportPreview()
+            case .importPreview:
+                if let preview = appModel.pendingImportPreview {
+                    ImportSnapshotPreviewSheet(
+                        preview: preview,
+                        onCancel: {
+                            appModel.cancelImportPreview()
+                        },
+                        onImport: {
+                            appModel.confirmImportPreview()
+                        }
+                    )
+                    .interactiveDismissDisabled()
                 }
-            )
-            .interactiveDismissDisabled()
-        }
-        .sheet(isPresented: Binding(
-            get: { appModel.pendingComparisonSetup != nil },
-            set: { isPresented in
-                if !isPresented {
-                    cancelComparisonSetup()
+            case .comparisonSetup:
+                if let setup = appModel.pendingComparisonSetup {
+                    ScanComparisonSetupSheet(
+                        setup: setup,
+                        canUseCurrentScan: appModel.canUseCurrentScanInComparisonSetup,
+                        onChooseSnapshot: { slot in
+                            appModel.chooseComparisonSnapshot(for: slot)
+                        },
+                        onDropSnapshot: { url, slot in
+                            appModel.dropComparisonSnapshot(url, for: slot)
+                        },
+                        onUseCurrentScan: { slot in
+                            appModel.useCurrentScanForComparisonSlot(slot)
+                        },
+                        onClear: { slot in
+                            appModel.clearComparisonSlot(slot)
+                        },
+                        onSwap: {
+                            appModel.swapPendingComparisonSetup()
+                        },
+                        onCancel: {
+                            cancelComparisonSetup()
+                        },
+                        onCompare: {
+                            confirmComparisonSetup()
+                        }
+                    )
+                    .onAppear(perform: comparisonSetupDidAppear)
+                    .interactiveDismissDisabled()
                 }
-            }
-        )) {
-            if let setup = appModel.pendingComparisonSetup {
-                ScanComparisonSetupSheet(
-                    setup: setup,
-                    canUseCurrentScan: appModel.canUseCurrentScanInComparisonSetup,
-                    onChooseSnapshot: { slot in
-                        appModel.chooseComparisonSnapshot(for: slot)
-                    },
-                    onDropSnapshot: { url, slot in
-                        appModel.dropComparisonSnapshot(url, for: slot)
-                    },
-                    onUseCurrentScan: { slot in
-                        appModel.useCurrentScanForComparisonSlot(slot)
-                    },
-                    onClear: { slot in
-                        appModel.clearComparisonSlot(slot)
-                    },
-                    onSwap: {
-                        appModel.swapPendingComparisonSetup()
-                    },
-                    onCancel: {
-                        cancelComparisonSetup()
-                    },
-                    onCompare: {
-                        confirmComparisonSetup()
-                    }
-                )
-                .onAppear(perform: comparisonSetupDidAppear)
-                .interactiveDismissDisabled()
             }
         }
         .alert(
             appModel.errorAlertTitle,
             isPresented: Binding(
-                get: { appModel.lastErrorMessage != nil },
+                get: {
+                    appModel.presentationCoordinator.activeDialog == .error &&
+                        appModel.lastErrorMessage != nil
+                },
                 set: { newValue in
                     if !newValue {
-                        appModel.lastErrorMessage = nil
+                        appModel.dismissErrorPresentation()
                     }
                 }
             )
@@ -215,7 +212,10 @@ struct ContentView: View {
         .confirmationDialog(
             "Move to Trash?",
             isPresented: Binding(
-                get: { appModel.pendingTrashSelection != nil || appModel.pendingTrashNode != nil },
+                get: {
+                    appModel.presentationCoordinator.activeDialog == .trashConfirmation &&
+                        (appModel.pendingTrashSelection != nil || appModel.pendingTrashNode != nil)
+                },
                 set: { newValue in
                     if !newValue {
                         appModel.cancelPendingTrash()
@@ -241,7 +241,7 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             guard url.pathExtension.lowercased() == ScanArchiveService.fileExtension else { return }
-            appModel.importScanSnapshot(from: url)
+            appModel.openScanSnapshotArchive(url)
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
@@ -496,12 +496,23 @@ private struct ImportSnapshotStatCard: View {
 }
 
 private extension ContentView {
+    var activeSheetBinding: Binding<AppPresentationCoordinator.Sheet?> {
+        Binding(
+            get: { appModel.presentationCoordinator.activeSheet },
+            set: { newValue in
+                if newValue == nil {
+                    appModel.dismissActiveSheet()
+                }
+            }
+        )
+    }
+
     var sidebarActions: SidebarActions {
         SidebarActions(
             selectTargetAfterViewUpdate: { appModel.selectSidebarTargetAfterViewUpdate(id: $0) },
             revealInFinder: { appModel.revealTargetInFinder($0) },
             removeRecentTarget: { appModel.removeRecentTarget($0) },
-            reviewDiscardPile: { showsDiscardPileReview = true },
+            reviewDiscardPile: { appModel.presentDiscardPileReview() },
             addDroppedNodesToDiscardPile: { nodeIDs, snapshotID in
                 defer { discardPileDragDidEnd() }
                 return appModel.addNodeIDsToDiscardPile(nodeIDs, snapshotID: snapshotID)
