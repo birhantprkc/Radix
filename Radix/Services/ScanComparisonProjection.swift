@@ -156,11 +156,20 @@ nonisolated struct ScanComparisonChangeTree: Equatable, Sendable {
             } else {
                 hidden.append(entry.node.relativePath)
             }
-            totalImpact += entry.impact
-            totalChangeCount += entry.changeCount
+            totalImpact = ScanComparisonIntegerMath.addingClamped(totalImpact, entry.impact)
+            totalChangeCount = ScanComparisonIntegerMath.addingClamped(
+                totalChangeCount,
+                entry.changeCount
+            )
             if isSelected {
-                representedImpact += entry.impact
-                representedChangeCount += entry.changeCount
+                representedImpact = ScanComparisonIntegerMath.addingClamped(
+                    representedImpact,
+                    entry.impact
+                )
+                representedChangeCount = ScanComparisonIntegerMath.addingClamped(
+                    representedChangeCount,
+                    entry.changeCount
+                )
             }
         }
         if totalImpact == 0 {
@@ -293,10 +302,16 @@ nonisolated struct ScanComparisonChangeTreeNode: Identifiable, Equatable, Sendab
             relativePath: parentPath ?? "",
             name: "Other smaller changes",
             increasedAllocatedSize: hiddenNodes.reduce(0) {
-                $0 + $1.increasedAllocatedSize(for: changeKinds)
+                ScanComparisonIntegerMath.addingClamped(
+                    $0,
+                    $1.increasedAllocatedSize(for: changeKinds)
+                )
             },
             reclaimedAllocatedSize: hiddenNodes.reduce(0) {
-                $0 + $1.reclaimedAllocatedSize(for: changeKinds)
+                ScanComparisonIntegerMath.addingClamped(
+                    $0,
+                    $1.reclaimedAllocatedSize(for: changeKinds)
+                )
             },
             affectedCount: affectedCount,
             movedCount: changeKinds.contains(.moved)
@@ -340,4 +355,3 @@ nonisolated struct ScanComparisonChangeTreeProjection: Equatable, Sendable {
         return nil
     }
 }
-
