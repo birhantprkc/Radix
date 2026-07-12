@@ -8,13 +8,6 @@
 import Combine
 import Foundation
 
-enum ArchiveOperationKind: String, Equatable, Sendable {
-    case export
-    case importPreview
-    case `import`
-    case compare
-}
-
 private nonisolated struct DiskFreeSpaceCapacityKey: Equatable, Sendable {
     let snapshotID: UUID
     let volumePath: String
@@ -23,15 +16,6 @@ private nonisolated struct DiskFreeSpaceCapacityKey: Equatable, Sendable {
 private nonisolated struct DiskFreeSpaceCapacityCache: Equatable, Sendable {
     let key: DiskFreeSpaceCapacityKey
     let availableCapacity: Int64?
-}
-
-struct ArchiveOperationState: Identifiable, Equatable, Sendable {
-    let id: UUID
-    let kind: ArchiveOperationKind
-    let title: String
-    var message: String
-    var progressFraction: Double?
-
 }
 
 struct ExportConfirmationState: Identifiable, Equatable, Sendable {
@@ -211,7 +195,6 @@ final class AppModel: ObservableObject {
             synchronizeErrorPresentation()
         }
     }
-    @Published private(set) var archiveOperation: ArchiveOperationState?
     @Published private(set) var exportConfirmation: ExportConfirmationState?
     @Published private(set) var scanComparison: ScanComparison?
     @Published var pendingComparisonSetup: ScanComparisonSetup? {
@@ -244,6 +227,7 @@ final class AppModel: ObservableObject {
     private let scanCoordinator: ScanCoordinator
     private let sidebarModel: SidebarModel
     private let quickLookController: AppQuickLookController
+    private let archiveWorkflow: ArchiveWorkflowCoordinator
     private let navigationModel = WorkspaceNavigationModel()
     private var lastActionErrorTitle: String?
     private let sidebarScanCacheController: SidebarScanCacheController
@@ -266,8 +250,6 @@ final class AppModel: ObservableObject {
     private var postTrashRemovalTask: Task<Void, Never>?
     private var exportPanelTask: Task<Void, Never>?
     private var comparisonPanelTask: Task<Void, Never>?
-    private var snapshotArchiveTask: Task<Void, Never>?
-    private var snapshotArchiveProgressTask: Task<Void, Never>?
     private var readyDeferredArchiveImportURL: URL?
     private var exportConfirmationDismissTask: Task<Void, Never>?
     private var postTrashRemovalRequests: [PostTrashRemovalRequest] = []
@@ -288,6 +270,7 @@ final class AppModel: ObservableObject {
             preferredSmartTargetIDs: dependencies.systemActions.preferredSmartTargetIDs
         )
         self.quickLookController = AppQuickLookController(systemActions: dependencies.systemActions)
+        self.archiveWorkflow = ArchiveWorkflowCoordinator()
         self.sidebarScanCacheController = SidebarScanCacheController(
             minimumRetainedSnapshotCount: completedScanCacheMinimumRetainedSnapshotCount,
             maxTotalNodeCount: completedScanCacheMaxTotalNodeCount
@@ -326,6 +309,12 @@ final class AppModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+        archiveWorkflow.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        archiveWorkflow.onBecameIdle = { [weak self] in
+            self?.resumeReadyDeferredArchiveImportIfPossible()
+        }
         observeNavigationModel()
         observeScanCoordinator()
         observeMountedVolumes()
@@ -456,6 +445,10 @@ final class AppModel: ObservableObject {
 
     var isArchiveOperationInProgress: Bool {
         archiveOperation != nil
+    }
+
+    var archiveOperation: ArchiveOperationState? {
+        archiveWorkflow.operation
     }
 
     func dismissOnboarding() {
@@ -741,45 +734,37 @@ final class AppModel: ObservableObject {
     }
 
     private func startArchiveExport(snapshot: ScanSnapshot, destinationURL: URL) {
-        cancelArchiveOperation()
+        dismissExportConfirmation()
         let progressReporter = ScanArchiveProgressReporter()
-        let operationID = beginArchiveOperation(
+        let archiveService = dependencies.scanArchiveService
+        let exportOptions = ScanArchiveExportOptions(
+            appVersion: Self.currentAppVersion(),
+            progressReporter: progressReporter
+        )
+        archiveWorkflow.start(
             kind: .export,
             title: String(localized: "Exporting Snapshot", comment: "Progress banner title while exporting a scan snapshot."),
             message: String(localized: "Preparing archive", comment: "Progress banner message while preparing an exported snapshot."),
-            progressReporter: progressReporter
-        )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                progressReporter.finish()
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let exportOptions = ScanArchiveExportOptions(
-                    appVersion: Self.currentAppVersion(),
-                    progressReporter: progressReporter
+            progressReporter: progressReporter,
+            work: {
+                try await archiveService.export(
+                    snapshot: snapshot,
+                    to: destinationURL,
+                    options: exportOptions
                 )
-                let exportTask = Task.detached(priority: .utility) {
-                    try await archiveService.export(
-                        snapshot: snapshot,
-                        to: destinationURL,
-                        options: exportOptions
-                    )
-                }
-                let result = try await Self.value(cancelling: exportTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID) else { return }
-                self.lastErrorMessage = nil
-                self.presentExportConfirmation(for: result.archiveURL)
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error, title: String(localized: "Export Failed", comment: "Alert title shown when exporting a snapshot fails."))
+            },
+            onSuccess: { [weak self] result in
+                guard let self else { return }
+                lastErrorMessage = nil
+                presentExportConfirmation(for: result.archiveURL)
+            },
+            onFailure: { [weak self] error in
+                self?.presentError(error, title: String(localized: "Export Failed", comment: "Alert title shown when exporting a snapshot fails."))
+            },
+            onCleanup: {
+                progressReporter.finish()
             }
-        }
+        )
     }
 
     func revealExportedSnapshotInFinder() {
@@ -1166,27 +1151,20 @@ final class AppModel: ObservableObject {
             return
         }
 
-        cancelArchiveOperation()
         setup.loadingSlot = slot
         setup.errorMessage = nil
         setup.setCandidate(nil, for: slot)
         pendingComparisonSetup = setup
         let setupID = setup.id
 
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                self.clearComparisonSetupLoadingSlot(setupID: setupID, slot: slot)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let previewTask = Task.detached(priority: .utility) {
-                    try await archiveService.previewSnapshot(from: sourceURL)
-                }
-                let preview = try await Self.value(cancelling: previewTask)
-                guard !Task.isCancelled,
-                      var currentSetup = self.pendingComparisonSetup,
+        let archiveService = dependencies.scanArchiveService
+        archiveWorkflow.start(
+            work: {
+                try await archiveService.previewSnapshot(from: sourceURL)
+            },
+            onSuccess: { [weak self] preview in
+                guard let self,
+                      var currentSetup = pendingComparisonSetup,
                       currentSetup.id == setupID,
                       currentSetup.loadingSlot == slot else {
                     return
@@ -1194,20 +1172,23 @@ final class AppModel: ObservableObject {
                 currentSetup.setCandidate(ScanComparisonCandidate(preview: preview), for: slot)
                 currentSetup.loadingSlot = nil
                 currentSetup.errorMessage = currentSetup.validationMessage
-                self.pendingComparisonSetup = currentSetup
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                guard var currentSetup = self.pendingComparisonSetup,
+                pendingComparisonSetup = currentSetup
+                lastErrorMessage = nil
+            },
+            onFailure: { [weak self] error in
+                guard let self,
+                      var currentSetup = pendingComparisonSetup,
                       currentSetup.id == setupID else {
                     return
                 }
                 currentSetup.loadingSlot = nil
                 currentSetup.errorMessage = error.localizedDescription
-                self.pendingComparisonSetup = currentSetup
+                pendingComparisonSetup = currentSetup
+            },
+            onFinish: { [weak self] in
+                self?.clearComparisonSetupLoadingSlot(setupID: setupID, slot: slot)
             }
-        }
+        )
     }
 
     private func clearComparisonSetupLoadingSlot(setupID: UUID, slot: ScanComparisonSlot) {
@@ -1221,96 +1202,73 @@ final class AppModel: ObservableObject {
     }
 
     private func previewArchiveSnapshotComparison(sourceURLs: [URL]) {
-        cancelArchiveOperation()
+        dismissExportConfirmation()
         pendingComparisonSetup = nil
-        let operationID = beginArchiveOperation(
+        let archiveService = dependencies.scanArchiveService
+        archiveWorkflow.start(
             kind: .compare,
             title: String(localized: "Preparing Comparison", comment: "Progress banner title while preparing a comparison."),
             message: String(localized: "Reading snapshots", comment: "Progress banner message while loading snapshots for comparison."),
-            progressReporter: nil
+            work: {
+                let first = try await archiveService.previewSnapshot(from: sourceURLs[0])
+                try Task.checkCancellation()
+                let second = try await archiveService.previewSnapshot(from: sourceURLs[1])
+                try Task.checkCancellation()
+                let candidates = Self.orderedComparisonCandidates(
+                    ScanComparisonCandidate(preview: first),
+                    ScanComparisonCandidate(preview: second)
+                )
+                return ScanComparisonSetup(before: candidates.before, after: candidates.after)
+            },
+            onSuccess: { [weak self] setup in
+                self?.pendingComparisonSetup = setup
+                self?.lastErrorMessage = nil
+            },
+            onFailure: { [weak self] error in
+                self?.presentError(error, title: String(localized: "Comparison Failed", comment: "Alert title shown when preparing a comparison fails."))
+            }
         )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let setupTask = Task.detached(priority: .utility) {
-                    let first = try await archiveService.previewSnapshot(from: sourceURLs[0])
-                    try Task.checkCancellation()
-                    let second = try await archiveService.previewSnapshot(from: sourceURLs[1])
-                    try Task.checkCancellation()
-                    let candidates = Self.orderedComparisonCandidates(
-                        ScanComparisonCandidate(preview: first),
-                        ScanComparisonCandidate(preview: second)
-                    )
-                    return ScanComparisonSetup(before: candidates.before, after: candidates.after)
-                }
-                let setup = try await Self.value(cancelling: setupTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID) else { return }
-                self.pendingComparisonSetup = setup
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error, title: String(localized: "Comparison Failed", comment: "Alert title shown when preparing a comparison fails."))
-            }
-        }
     }
 
     private func startComparison(_ setup: ScanComparisonSetup) {
         guard let candidates = setup.resolvedCandidates else { return }
-        cancelArchiveOperation()
         scanComparison = nil
+        dismissExportConfirmation()
         let currentSnapshot = scanCoordinator.snapshot
-        let operationID = beginArchiveOperation(
+        let archiveService = dependencies.scanArchiveService
+        archiveWorkflow.start(
             kind: .compare,
             title: String(localized: "Comparing Snapshots", comment: "Progress banner title while comparing snapshots."),
             message: String(localized: "Reading archives", comment: "Progress banner message while reading archives for comparison."),
-            progressReporter: nil
-        )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let comparisonTask = Task.detached(priority: .utility) {
-                    let before = try await Self.snapshot(
-                        for: candidates.before.source,
-                        archiveService: archiveService,
-                        currentSnapshot: currentSnapshot
-                    )
-                    try Task.checkCancellation()
-                    let after = try await Self.snapshot(
-                        for: candidates.after.source,
-                        archiveService: archiveService,
-                        currentSnapshot: currentSnapshot
-                    )
-                    try Task.checkCancellation()
-                    return try await ScanComparisonService().compare(before: before, after: after)
-                }
-                let comparison = try await Self.value(cancelling: comparisonTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID) else { return }
+            work: {
+                let before = try await Self.snapshot(
+                    for: candidates.before.source,
+                    archiveService: archiveService,
+                    currentSnapshot: currentSnapshot
+                )
+                try Task.checkCancellation()
+                let after = try await Self.snapshot(
+                    for: candidates.after.source,
+                    archiveService: archiveService,
+                    currentSnapshot: currentSnapshot
+                )
+                try Task.checkCancellation()
+                return try await ScanComparisonService().compare(before: before, after: after)
+            },
+            onSuccess: { [weak self] comparison in
+                guard let self else { return }
                 if let currentSnapshotID = setup.currentSnapshotID,
-                   self.scanCoordinator.snapshot?.id != currentSnapshotID {
+                   scanCoordinator.snapshot?.id != currentSnapshotID {
                     return
                 }
-                self.quickLookController.closePreview()
-                self.scanComparison = comparison
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error, title: String(localized: "Comparison Failed", comment: "Alert title shown when comparing snapshots fails."))
+                quickLookController.closePreview()
+                scanComparison = comparison
+                lastErrorMessage = nil
+            },
+            onFailure: { [weak self] error in
+                self?.presentError(error, title: String(localized: "Comparison Failed", comment: "Alert title shown when comparing snapshots fails."))
             }
-        }
+        )
     }
 
     func confirmImportPreview() {
@@ -1329,159 +1287,66 @@ final class AppModel: ObservableObject {
     }
 
     func cancelArchiveOperation() {
-        snapshotArchiveTask?.cancel()
-        snapshotArchiveTask = nil
-        snapshotArchiveProgressTask?.cancel()
-        snapshotArchiveProgressTask = nil
-        archiveOperation = nil
-        resumeReadyDeferredArchiveImportIfPossible()
+        archiveWorkflow.cancel()
     }
 
     private func previewImportScanSnapshot(from sourceURL: URL) {
         pendingImportPreview = nil
-        cancelArchiveOperation()
-        let operationID = beginArchiveOperation(
+        dismissExportConfirmation()
+        let archiveService = dependencies.scanArchiveService
+        archiveWorkflow.start(
             kind: .importPreview,
             title: String(localized: "Reading Snapshot", comment: "Progress banner title while reading an imported snapshot."),
             message: String(localized: "Reading manifest", comment: "Progress banner message while reading an imported snapshot manifest."),
-            progressReporter: nil
+            work: {
+                try await archiveService.previewSnapshot(from: sourceURL)
+            },
+            onSuccess: { [weak self] preview in
+                self?.pendingImportPreview = preview
+                self?.lastErrorMessage = nil
+            },
+            onFailure: { [weak self] error in
+                self?.presentError(error)
+            }
         )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let previewTask = Task.detached(priority: .utility) {
-                    try await archiveService.previewSnapshot(from: sourceURL)
-                }
-                let preview = try await Self.value(cancelling: previewTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID) else { return }
-                self.pendingImportPreview = preview
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error)
-            }
-        }
     }
 
     private func importApprovedScanSnapshot(from sourceURL: URL) {
-        cancelArchiveOperation()
+        dismissExportConfirmation()
         let progressReporter = ScanArchiveProgressReporter()
-        let operationID = beginArchiveOperation(
+        let archiveService = dependencies.scanArchiveService
+        archiveWorkflow.start(
             kind: .import,
             title: String(localized: "Importing Snapshot", comment: "Progress banner title while importing a scan snapshot."),
             message: String(localized: "Reading archive", comment: "Progress banner message while reading an imported archive."),
-            progressReporter: progressReporter
-        )
-        snapshotArchiveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer {
-                progressReporter.finish()
-                self.finishArchiveOperation(id: operationID)
-            }
-
-            do {
-                let archiveService = self.dependencies.scanArchiveService
-                let importTask = Task.detached(priority: .utility) {
-                    try await archiveService.importSnapshot(
-                        from: sourceURL,
-                        progressReporter: progressReporter
-                    )
-                }
-                let result = try await Self.value(cancelling: importTask)
-                guard !Task.isCancelled,
-                      self.isCurrentArchiveOperation(id: operationID) else { return }
+            progressReporter: progressReporter,
+            work: {
+                try await archiveService.importSnapshot(
+                    from: sourceURL,
+                    progressReporter: progressReporter
+                )
+            },
+            onSuccess: { [weak self] result in
+                guard let self else { return }
                 progressReporter.report(ScanArchiveProgress(
                     phase: .openingSnapshot,
                     message: String(localized: "Opening snapshot", comment: "Progress message while opening an imported snapshot." )
                 ))
-                self.updateArchiveOperation(id: operationID, message: String(localized: "Opening snapshot", comment: "Progress message while opening an imported snapshot."), progressFraction: nil)
+                archiveWorkflow.updateCurrentOperation(
+                    message: String(localized: "Opening snapshot", comment: "Progress message while opening an imported snapshot."),
+                    progressFraction: nil
+                )
                 try await Task.sleep(for: .milliseconds(1))
-                self.restoreImportedSnapshot(result.snapshot)
-                self.lastErrorMessage = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self.presentError(error)
+                restoreImportedSnapshot(result.snapshot)
+                lastErrorMessage = nil
+            },
+            onFailure: { [weak self] error in
+                self?.presentError(error)
+            },
+            onCleanup: {
+                progressReporter.finish()
             }
-        }
-    }
-
-    private func beginArchiveOperation(
-        kind: ArchiveOperationKind,
-        title: String,
-        message: String,
-        progressReporter: ScanArchiveProgressReporter?
-    ) -> UUID {
-        dismissExportConfirmation()
-        let operationID = UUID()
-        archiveOperation = ArchiveOperationState(
-            id: operationID,
-            kind: kind,
-            title: title,
-            message: message,
-            progressFraction: nil
         )
-
-        if let progressReporter {
-            snapshotArchiveProgressTask = Task { @MainActor [weak self] in
-                for await progress in progressReporter.updates {
-                    guard let self else { return }
-                    updateArchiveOperation(
-                        id: operationID,
-                        message: progress.message,
-                        progressFraction: progress.fractionCompleted
-                    )
-                }
-            }
-        }
-
-        return operationID
-    }
-
-    private func updateArchiveOperation(
-        id operationID: UUID,
-        message: String,
-        progressFraction: Double?
-    ) {
-        guard var operation = archiveOperation,
-              operation.id == operationID else {
-            return
-        }
-        operation.message = message
-        operation.progressFraction = progressFraction
-        archiveOperation = operation
-    }
-
-    private func finishArchiveOperation(id operationID: UUID) {
-        guard archiveOperation?.id == operationID || archiveOperation == nil else {
-            return
-        }
-        snapshotArchiveTask = nil
-        if archiveOperation?.id == operationID {
-            archiveOperation = nil
-        }
-        snapshotArchiveProgressTask?.cancel()
-        snapshotArchiveProgressTask = nil
-        resumeReadyDeferredArchiveImportIfPossible()
-    }
-
-    private func isCurrentArchiveOperation(id operationID: UUID) -> Bool {
-        archiveOperation?.id == operationID
-    }
-
-    nonisolated private static func value<T: Sendable>(cancelling task: Task<T, Error>) async throws -> T {
-        try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
-        }
     }
 
     nonisolated private static func orderedComparisonCandidates(

@@ -94,6 +94,7 @@ let package = Package(
                 "Services/TreemapTooltipContent.swift",
                 "Services/TreemapTooltipPlacement.swift",
                 "ViewModels/AppQuickLookController.swift",
+                "ViewModels/ArchiveWorkflowCoordinator.swift",
                 "ViewModels/AppModel.swift",
                 "ViewModels/AppPresentationCoordinator.swift",
                 "ViewModels/ScanComparisonBrowserModel.swift",
