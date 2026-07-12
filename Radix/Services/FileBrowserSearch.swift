@@ -43,7 +43,7 @@ actor CurrentContentsSearchService {
 }
 
 actor FileSearchService: FileSearching {
-    private var indexes: [UUID: FileSearchIndex] = [:]
+    private var indexes: [FileSearchIndexKey: FileSearchIndex] = [:]
 
     func search(
         snapshotID: UUID,
@@ -54,12 +54,16 @@ actor FileSearchService: FileSearching {
     ) async throws -> [FileNodeRecord] {
         guard !normalizedQuery.isEmpty else { return [] }
 
+        let indexKey = FileSearchIndexKey(
+            snapshotID: snapshotID,
+            treeContentID: treeStore.contentID
+        )
         var index: FileSearchIndex
-        if let cachedIndex = indexes[snapshotID] {
+        if let cachedIndex = indexes[indexKey] {
             index = cachedIndex
         } else {
             index = try await makeIndex(treeStore: treeStore)
-            indexes = [snapshotID: index]
+            indexes = [indexKey: index]
         }
 
         var matchedNodes: [FileNodeRecord] = []
@@ -95,7 +99,7 @@ actor FileSearchService: FileSearching {
         }
 
         if includesPath {
-            indexes[snapshotID] = index
+            indexes[indexKey] = index
         }
 
         try Task.checkCancellation()
@@ -117,7 +121,7 @@ actor FileSearchService: FileSearching {
             return
         }
 
-        indexes = indexes.filter { $0.key == snapshotID }
+        indexes = indexes.filter { $0.key.snapshotID == snapshotID }
     }
 
     private func makeIndex(treeStore: FileTreeStore) async throws -> FileSearchIndex {
@@ -177,6 +181,11 @@ enum SearchNormalizer {
 private struct FileSearchIndex {
     let entries: [FileSearchEntry]
     var normalizedPathsByID: [FileNodeRecord.ID: String]
+}
+
+private nonisolated struct FileSearchIndexKey: Hashable, Sendable {
+    let snapshotID: UUID
+    let treeContentID: UUID
 }
 
 private struct FileSearchEntry {

@@ -600,6 +600,55 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(pathMatches.map(\.id), [cache.id])
     }
 
+    func testSearchServiceDoesNotReuseIndexForDifferentTreeWithSameSnapshotID() async throws {
+        let snapshotID = UUID()
+        let originalFile = makeTestFileNode(
+            id: "/root/file.txt",
+            name: "alpha.txt"
+        )
+        let originalRoot = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [originalFile]
+        )
+        let originalStore = FileTreeStore(
+            root: originalRoot,
+            childrenByID: [originalRoot.id: [originalFile]]
+        )
+        let replacementFile = makeTestFileNode(
+            id: originalFile.id,
+            name: "beta.txt"
+        )
+        let replacementRoot = makeTestDirectoryNode(
+            id: originalRoot.id,
+            name: originalRoot.name,
+            children: [replacementFile]
+        )
+        let replacementStore = FileTreeStore(
+            root: replacementRoot,
+            childrenByID: [replacementRoot.id: [replacementFile]]
+        )
+        let service = await FileSearchService()
+
+        let originalMatches = try await service.search(
+            snapshotID: snapshotID,
+            treeStore: originalStore,
+            normalizedQuery: "alpha",
+            includesPath: false,
+            sortOrder: []
+        )
+        let replacementMatches = try await service.search(
+            snapshotID: snapshotID,
+            treeStore: replacementStore,
+            normalizedQuery: "beta",
+            includesPath: false,
+            sortOrder: []
+        )
+
+        XCTAssertEqual(originalMatches.map(\.name), ["alpha.txt"])
+        XCTAssertEqual(replacementMatches.map(\.name), ["beta.txt"])
+    }
+
     @MainActor
     func testModelRunsEntireScanSearchThroughService() async throws {
         let smallTarget = makeTestFileNode(id: "/root/target-small.txt", name: "target-small.txt", size: 5)
