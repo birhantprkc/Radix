@@ -2122,6 +2122,59 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testSupersededExportPanelCannotClearOrOutliveRestartedRequest() async throws {
+        let staleURL = URL(filePath: "/tmp/stale-export.radixscan", directoryHint: .isDirectory)
+        let currentURL = URL(filePath: "/tmp/current-export.radixscan", directoryHint: .isDirectory)
+        let firstPanel = AsyncValueProbe<URL?>()
+        let secondPanel = AsyncValueProbe<URL?>()
+        let archiveService = SpyScanArchiveService()
+        var panelRequestCount = 0
+        var actions = AppSystemActions.inert
+        actions.presentExportScanPanel = { _ in
+            panelRequestCount += 1
+            return await (panelRequestCount == 1 ? firstPanel : secondPanel).wait()
+        }
+        let model = AppModel(dependencies: makeDependencies(
+            systemActions: actions,
+            scanArchiveService: archiveService
+        ))
+        let file = makeTestFileNode(id: "/export-race/file.txt", name: "file.txt")
+        let root = makeTestDirectoryNode(id: "/export-race", name: "Export Race", children: [file])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
+        model.scanState.restoreCompletedSnapshot(ScanSnapshot(
+            target: ScanTarget(id: root.id, url: root.url, displayName: "Export Race", kind: .folder),
+            treeStore: store,
+            startedAt: Date(timeIntervalSince1970: 1),
+            finishedAt: Date(timeIntervalSince1970: 2),
+            scanWarnings: [],
+            aggregateStats: store.aggregateStats,
+            isComplete: true
+        ))
+
+        model.exportCurrentScan()
+        try await waitForAsyncCondition("first export panel") {
+            await firstPanel.isWaiting
+        }
+        model.cleanup()
+        model.exportCurrentScan()
+        try await waitForAsyncCondition("second export panel") {
+            await secondPanel.isWaiting
+        }
+
+        await firstPanel.resume(returning: staleURL)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(model.isExportPanelPresented)
+
+        model.cleanup()
+        await secondPanel.resume(returning: currentURL)
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertFalse(model.isExportPanelPresented)
+        let exportRequests = await archiveService.exportRequestsSnapshot()
+        XCTAssertTrue(exportRequests.isEmpty)
+    }
+
+    @MainActor
     func testExportFailureUsesExportSpecificAlertTitle() async throws {
         let archiveURL = URL(filePath: "/tmp/export.invalid", directoryHint: .isDirectory)
         var actions = AppSystemActions.inert

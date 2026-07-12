@@ -550,10 +550,11 @@ final class ScanModelTests: XCTestCase {
             snapshot.replacingNode(
                 id: child.id,
                 with: FileTreeStore(root: replacement),
-                additionalWarnings: [duplicateWarning, distinctWarning]
+                additionalWarnings: [duplicateWarning, duplicateWarning, distinctWarning]
             )
         )
 
+        XCTAssertEqual(updatedSnapshot.id, snapshot.id)
         XCTAssertEqual(updatedSnapshot.scanWarnings.count, 2)
         XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [
             duplicateWarning.path,

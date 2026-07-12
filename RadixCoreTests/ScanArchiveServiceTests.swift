@@ -199,29 +199,40 @@ final class ScanArchiveServiceTests: XCTestCase {
 
     func testPreviewAndImportRejectNegativeStats() async throws {
         let service = ScanArchiveService()
-        let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(
-            snapshot: makeArchiveSnapshot(),
-            to: archiveURL,
-            options: ScanArchiveExportOptions()
-        )
-        let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
-        try rewriteJSONObject(at: statsURL) { object in
-            object["totalAllocatedSize"] = -1
-        }
+        let fields = [
+            "totalAllocatedSize",
+            "totalLogicalSize",
+            "fileCount",
+            "directoryCount",
+            "accessibleItemCount",
+            "inaccessibleItemCount",
+        ]
 
-        do {
-            _ = try await service.previewSnapshot(from: archiveURL)
-            XCTFail("Preview should reject negative archive stats.")
-        } catch ScanArchiveError.stats(let detail) {
-            XCTAssertTrue(detail.contains("negative"))
-        }
+        for field in fields {
+            let archiveURL = try makeTemporaryArchiveURL()
+            _ = try await service.export(
+                snapshot: makeArchiveSnapshot(),
+                to: archiveURL,
+                options: ScanArchiveExportOptions()
+            )
+            let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
+            try rewriteJSONObject(at: statsURL) { object in
+                object[field] = -1
+            }
 
-        do {
-            _ = try await service.importSnapshot(from: archiveURL)
-            XCTFail("Import should reject negative archive stats.")
-        } catch ScanArchiveError.stats(let detail) {
-            XCTAssertTrue(detail.contains("negative"))
+            do {
+                _ = try await service.previewSnapshot(from: archiveURL)
+                XCTFail("Preview should reject negative \(field).")
+            } catch ScanArchiveError.stats(let detail) {
+                XCTAssertTrue(detail.contains("negative"), "Unexpected detail for \(field): \(detail)")
+            }
+
+            do {
+                _ = try await service.importSnapshot(from: archiveURL)
+                XCTFail("Import should reject negative \(field).")
+            } catch ScanArchiveError.stats(let detail) {
+                XCTAssertTrue(detail.contains("negative"), "Unexpected detail for \(field): \(detail)")
+            }
         }
     }
 

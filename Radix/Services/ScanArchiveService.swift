@@ -368,6 +368,13 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             in: sourceURL,
             sectionDescription: "stats"
         )
+        let archivedStats: ScanArchiveStatsV1 = try readJSON(
+            ScanArchiveStatsV1.self,
+            from: statsURL
+        ) { detail in
+            ScanArchiveError.stats(detail)
+        }
+        try archivedStats.validate()
 
         let encodedNodePayload = try await readNodes(
             from: nodesURL,
@@ -404,11 +411,6 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         let warnings: [ScanArchiveWarningV1] = try readJSON([ScanArchiveWarningV1].self, from: warningsURL) { detail in
             ScanArchiveError.manifest(localized: "warnings section failed: \(detail)")
         }
-        let archivedStats: ScanArchiveStatsV1 = try readJSON(ScanArchiveStatsV1.self, from: statsURL) { detail in
-            ScanArchiveError.stats(detail)
-        }
-        try archivedStats.validate()
-
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(
             phase: .rebuildingSnapshot,

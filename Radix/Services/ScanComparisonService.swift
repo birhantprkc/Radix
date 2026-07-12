@@ -9,7 +9,7 @@ nonisolated enum ScanComparisonIntegerMath {
     static func addingClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
         let (sum, overflow) = lhs.addingReportingOverflow(rhs)
         guard overflow else { return sum }
-        return rhs >= 0 ? .max : .min
+        return rhs >= 0 ? .max : -.max
     }
 }
 
@@ -993,7 +993,10 @@ nonisolated struct ScanComparisonService: Sendable {
             var reclaimedAllocatedSize: Int64 = 0
             for row in locationRows {
                 counts[row.kind, default: 0] += 1
-                allocatedDelta += row.allocatedDelta
+                allocatedDelta = ScanComparisonIntegerMath.addingClamped(
+                    allocatedDelta,
+                    row.allocatedDelta
+                )
                 if row.allocatedDelta > 0 {
                     increasedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
                         increasedAllocatedSize,

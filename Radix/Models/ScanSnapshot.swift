@@ -257,6 +257,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         }
 
         return ScanSnapshot(
+            id: id,
             target: target,
             treeStore: updatedStore,
             startedAt: startedAt,
