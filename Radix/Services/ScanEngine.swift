@@ -1430,13 +1430,16 @@ actor ScanEngine {
                         try Task.checkCancellation()
                     }
                     guard let child = resolvedNodeByKey[childKey] else { continue }
-                    allocatedSize += child.allocatedSize
-                    logicalSize += child.logicalSize
+                    allocatedSize = ScanIntegerMath.addingClamped(allocatedSize, child.allocatedSize)
+                    logicalSize = ScanIntegerMath.addingClamped(logicalSize, child.logicalSize)
                     childrenAreAccessible = childrenAreAccessible && child.isAccessible
                     if child.isDirectory {
-                        descendantFileCount += child.descendantFileCount
+                        descendantFileCount = ScanIntegerMath.addingClamped(
+                            descendantFileCount,
+                            child.descendantFileCount
+                        )
                     } else if !child.isSymbolicLink && !child.isSynthetic {
-                        descendantFileCount += 1
+                        descendantFileCount = ScanIntegerMath.addingClamped(descendantFileCount, 1)
                     }
                     let childIndex = FileTreeNodeIndex(rawValue: UInt32(childKey))
                     sortedChildIndices.append(childIndex)
