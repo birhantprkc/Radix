@@ -131,11 +131,11 @@ private struct FullDiskAccessSetupCard: View {
     private var statusMessage: String {
         switch status {
         case .granted:
-            return "Radix can currently read protected locations. You can start a complete scan now."
+            return String(localized: "Radix can currently read protected locations. You can start a complete scan now.", comment: "Onboarding status shown when Full Disk Access is granted.")
         case .notGranted:
-            return "Radix does not currently have Full Disk Access. Normal scans still work; protected folders may be skipped."
+            return String(localized: "Radix does not currently have Full Disk Access. Normal scans still work; protected folders may be skipped.", comment: "Onboarding status shown when Full Disk Access is not granted.")
         case .unknown:
-            return "Radix could not verify Full Disk Access on this Mac. You can still scan ordinary folders."
+            return String(localized: "Radix could not verify Full Disk Access on this Mac. You can still scan ordinary folders.", comment: "Onboarding status shown when Full Disk Access cannot be determined.")
         }
     }
 

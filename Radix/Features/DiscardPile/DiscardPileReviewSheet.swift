@@ -135,14 +135,23 @@ struct DiscardPileReviewSheet: View {
 
     private var summaryText: String {
         guard !summary.isEmpty else {
-            return "No items marked"
+            return String(localized: "No items marked", comment: "Discard Pile summary when no items are marked.")
         }
 
-        return "\(summary.itemCount.formatted()) \(summary.itemCount == 1 ? "item" : "items") • \(RadixFormatters.size(summary.totalAllocatedSize))"
+        let count = summary.itemCount.formatted()
+        let size = RadixFormatters.size(summary.totalAllocatedSize)
+        if summary.itemCount == 1 {
+            return String(localized: "\(count) item • \(size)", comment: "Discard Pile summary showing one marked item and its total allocated size.")
+        }
+        return String(localized: "\(count) items • \(size)", comment: "Discard Pile summary showing multiple marked items and their total allocated size.")
     }
 
     private var moveButtonTitle: String {
-        "Move \(summary.itemCount.formatted()) \(summary.itemCount == 1 ? "Item" : "Items") to Trash"
+        let count = summary.itemCount.formatted()
+        if summary.itemCount == 1 {
+            return String(localized: "Move \(count) Item to Trash", comment: "Destructive action for moving one marked item to the Trash.")
+        }
+        return String(localized: "Move \(count) Items to Trash", comment: "Destructive action for moving multiple marked items to the Trash.")
     }
 }
 

@@ -43,15 +43,15 @@ nonisolated enum ScanComparisonChangeKind: String, CaseIterable, Hashable, Ident
     var title: String {
         switch self {
         case .added:
-            return "Added"
+            return String(localized: "Added", comment: "Comparison change type for an item present only in the later scan.")
         case .removed:
-            return "Removed"
+            return String(localized: "Removed", comment: "Comparison change type for an item present only in the earlier scan.")
         case .grew:
-            return "Grew"
+            return String(localized: "Grew", comment: "Comparison change type for an item whose size increased.")
         case .shrank:
-            return "Shrank"
+            return String(localized: "Shrank", comment: "Comparison change type for an item whose size decreased.")
         case .moved:
-            return "Moved"
+            return String(localized: "Moved", comment: "Comparison change type for an item whose location changed.")
         }
     }
 

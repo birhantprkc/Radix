@@ -118,7 +118,7 @@ final class AppModel: ObservableObject {
         var alertTitle: String? {
             switch self {
             case .packageContentsHidden:
-                return "Package Contents Hidden"
+                return String(localized: "Package Contents Hidden", comment: "Alert title explaining that a package's contents were not expanded.")
             default:
                 return nil
             }
@@ -127,32 +127,32 @@ final class AppModel: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .noSelection:
-                return "Select an item first."
+                return String(localized: "Select an item first.", comment: "Error shown when a file action is requested without a selection.")
             case .unavailable(let path):
-                return "The item at \(path) is no longer available."
+                return String(localized: "The item at \(path) is no longer available.", comment: "Error shown when a selected item has disappeared.")
             case .changedSinceScan(let path):
-                return "The item at \(path) changed since this scan. Rescan before moving it to Trash."
+                return String(localized: "The item at \(path) changed since this scan. Rescan before moving it to Trash.", comment: "Safety error shown when a selected item changed after scanning.")
             case .missingScannedIdentity(let path):
-                return "Radix could not verify the scanned identity for \(path). Rescan before moving it to Trash."
+                return String(localized: "Radix could not verify the scanned identity for \(path). Rescan before moving it to Trash.", comment: "Safety error shown when a scanned file identity cannot be verified.")
             case .currentIdentityUnavailable(let path, let reason):
-                return "Radix could not verify the current identity for \(path): \(reason)"
+                return String(localized: "Radix could not verify the current identity for \(path): \(reason)", comment: "Safety error shown when the current file identity cannot be verified.")
             case .unsupported:
-                return "This item does not support that action."
+                return String(localized: "This item does not support that action.", comment: "Error shown when a selected item cannot perform the requested action.")
             case .directoryRequired:
-                return "Choose a folder with contents to zoom in."
+                return String(localized: "Choose a folder with contents to zoom in.", comment: "Error shown when zooming requires a directory.")
             case .packageContentsHidden(let settingEnabled):
                 if settingEnabled {
-                    return "Radix scanned this package before package contents were expanded. Rescan this location to zoom into it."
+                    return String(localized: "Radix scanned this package before package contents were expanded. Rescan this location to zoom into it.", comment: "Error shown when a package needs to be rescanned after enabling package expansion.")
                 }
-                return "Radix scanned this package as a single item. To zoom into it, turn on “Treat app bundles and packages as folders” in Settings, then rescan this location."
+                return String(localized: "Radix scanned this package as a single item. To zoom into it, turn on “Treat app bundles and packages as folders” in Settings, then rescan this location.", comment: "Error explaining how to enable package expansion before zooming into a package.")
             case .folderRequiredForDrop:
-                return "Drop a folder or mounted volume to start a scan."
+                return String(localized: "Drop a folder or mounted volume to start a scan.", comment: "Error shown when a dropped item is not a folder or volume.")
             case .fullDiskAccessSettingsUnavailable:
-                return "Radix could not open Full Disk Access settings."
+                return String(localized: "Radix could not open Full Disk Access settings.", comment: "Error shown when System Settings cannot open Full Disk Access.")
             case .readOnlySnapshot:
-                return "Imported snapshots are read-only."
+                return String(localized: "Imported snapshots are read-only.", comment: "Error shown when a file action is attempted on an imported snapshot.")
             case .currentComparisonSnapshotUnavailable:
-                return "Current scan changed. Start the comparison again."
+                return String(localized: "Current scan changed. Start the comparison again.", comment: "Error shown when the live scan changed during comparison setup.")
             }
         }
     }
@@ -386,9 +386,9 @@ final class AppModel: ObservableObject {
 
     var errorAlertTitle: String {
         if scanCoordinator.phase == .failed {
-            return "Scan Failed"
+            return String(localized: "Scan Failed", comment: "Alert title shown when a scan fails.")
         }
-        return lastActionErrorTitle ?? "Action Failed"
+        return lastActionErrorTitle ?? String(localized: "Action Failed", comment: "Fallback alert title shown when a file action fails.")
     }
 
     var canRescanFromErrorAlert: Bool {
@@ -578,8 +578,8 @@ final class AppModel: ObservableObject {
         let progressReporter = ScanArchiveProgressReporter()
         let operationID = beginArchiveOperation(
             kind: .export,
-            title: "Exporting Snapshot",
-            message: "Preparing archive",
+            title: String(localized: "Exporting Snapshot", comment: "Progress banner title while exporting a scan snapshot."),
+            message: String(localized: "Preparing archive", comment: "Progress banner message while preparing an exported snapshot."),
             progressReporter: progressReporter
         )
         snapshotArchiveTask = Task { @MainActor [weak self] in
@@ -610,7 +610,7 @@ final class AppModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                self.presentError(error, title: "Export Failed")
+                self.presentError(error, title: String(localized: "Export Failed", comment: "Alert title shown when exporting a snapshot fails."))
             }
         }
     }
@@ -663,40 +663,40 @@ final class AppModel: ObservableObject {
 
     private var importUnavailableMessage: String {
         if scanCoordinator.isScanning {
-            return "Stop the current scan before importing a snapshot."
+            return String(localized: "Stop the current scan before importing a snapshot.", comment: "Error shown when importing is attempted during a scan.")
         }
         if isExportPanelPresented {
-            return "Finish choosing an export location before importing a snapshot."
+            return String(localized: "Finish choosing an export location before importing a snapshot.", comment: "Error shown when importing is attempted while the export panel is open.")
         }
         if isArchiveOperationInProgress {
-            return "Cancel the current archive operation before importing a snapshot."
+            return String(localized: "Cancel the current archive operation before importing a snapshot.", comment: "Error shown when importing is attempted during another archive operation.")
         }
         if pendingComparisonSetup != nil {
-            return "Finish or cancel the current comparison setup before importing a snapshot."
+            return String(localized: "Finish or cancel the current comparison setup before importing a snapshot.", comment: "Error shown when importing is attempted during comparison setup.")
         }
         if pendingImportPreview != nil {
-            return "Finish or cancel the current import preview before importing another snapshot."
+            return String(localized: "Finish or cancel the current import preview before importing another snapshot.", comment: "Error shown when a second import is attempted during import preview.")
         }
-        return "Radix cannot import a snapshot right now."
+        return String(localized: "Radix cannot import a snapshot right now.", comment: "Fallback error shown when importing is unavailable.")
     }
 
     private var comparisonUnavailableMessage: String {
         if scanCoordinator.isScanning {
-            return "Stop the current scan before comparing snapshots."
+            return String(localized: "Stop the current scan before comparing snapshots.", comment: "Error shown when comparison is attempted during a scan.")
         }
         if isExportPanelPresented {
-            return "Finish choosing an export location before comparing snapshots."
+            return String(localized: "Finish choosing an export location before comparing snapshots.", comment: "Error shown when comparison is attempted while the export panel is open.")
         }
         if isArchiveOperationInProgress {
-            return "Cancel the current archive operation before comparing snapshots."
+            return String(localized: "Cancel the current archive operation before comparing snapshots.", comment: "Error shown when comparison is attempted during another archive operation.")
         }
         if pendingComparisonSetup != nil {
-            return "Finish or cancel the current comparison setup before comparing snapshots."
+            return String(localized: "Finish or cancel the current comparison setup before comparing snapshots.", comment: "Error shown when comparison is attempted during comparison setup.")
         }
         if pendingImportPreview != nil {
-            return "Finish or cancel the current import preview before comparing snapshots."
+            return String(localized: "Finish or cancel the current import preview before comparing snapshots.", comment: "Error shown when comparison is attempted during import preview.")
         }
-        return "Radix cannot compare snapshots right now."
+        return String(localized: "Radix cannot compare snapshots right now.", comment: "Fallback error shown when comparison is unavailable.")
     }
 
     func compareScanSnapshots() {
@@ -713,7 +713,7 @@ final class AppModel: ObservableObject {
             return
         }
         guard sourceURLs.count == 2 else {
-            presentErrorMessage("Choose exactly two Radix scan snapshots to compare.")
+            presentErrorMessage(String(localized: "Choose exactly two Radix scan snapshots to compare.", comment: "Error shown when comparison is given the wrong number of snapshots."))
             return
         }
 
@@ -733,7 +733,7 @@ final class AppModel: ObservableObject {
         if !canCompareScanSnapshots {
             return comparisonUnavailableMessage
         }
-        return "Complete a live scan before comparing it with a snapshot."
+        return String(localized: "Complete a live scan before comparing it with a snapshot.", comment: "Error shown when comparing a live scan before it is complete.")
     }
 
     func closeScanComparison() {
@@ -1044,8 +1044,8 @@ final class AppModel: ObservableObject {
         pendingComparisonSetup = nil
         let operationID = beginArchiveOperation(
             kind: .compare,
-            title: "Preparing Comparison",
-            message: "Reading snapshots",
+            title: String(localized: "Preparing Comparison", comment: "Progress banner title while preparing a comparison."),
+            message: String(localized: "Reading snapshots", comment: "Progress banner message while loading snapshots for comparison."),
             progressReporter: nil
         )
         snapshotArchiveTask = Task { @MainActor [weak self] in
@@ -1075,7 +1075,7 @@ final class AppModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                self.presentError(error, title: "Comparison Failed")
+                self.presentError(error, title: String(localized: "Comparison Failed", comment: "Alert title shown when preparing a comparison fails."))
             }
         }
     }
@@ -1087,8 +1087,8 @@ final class AppModel: ObservableObject {
         let currentSnapshot = scanCoordinator.snapshot
         let operationID = beginArchiveOperation(
             kind: .compare,
-            title: "Comparing Snapshots",
-            message: "Reading archives",
+            title: String(localized: "Comparing Snapshots", comment: "Progress banner title while comparing snapshots."),
+            message: String(localized: "Reading archives", comment: "Progress banner message while reading archives for comparison."),
             progressReporter: nil
         )
         snapshotArchiveTask = Task { @MainActor [weak self] in
@@ -1127,7 +1127,7 @@ final class AppModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                self.presentError(error, title: "Comparison Failed")
+                self.presentError(error, title: String(localized: "Comparison Failed", comment: "Alert title shown when comparing snapshots fails."))
             }
         }
     }
@@ -1160,8 +1160,8 @@ final class AppModel: ObservableObject {
         cancelArchiveOperation()
         let operationID = beginArchiveOperation(
             kind: .importPreview,
-            title: "Reading Snapshot",
-            message: "Reading manifest",
+            title: String(localized: "Reading Snapshot", comment: "Progress banner title while reading an imported snapshot."),
+            message: String(localized: "Reading manifest", comment: "Progress banner message while reading an imported snapshot manifest."),
             progressReporter: nil
         )
         snapshotArchiveTask = Task { @MainActor [weak self] in
@@ -1193,8 +1193,8 @@ final class AppModel: ObservableObject {
         let progressReporter = ScanArchiveProgressReporter()
         let operationID = beginArchiveOperation(
             kind: .import,
-            title: "Importing Snapshot",
-            message: "Reading archive",
+            title: String(localized: "Importing Snapshot", comment: "Progress banner title while importing a scan snapshot."),
+            message: String(localized: "Reading archive", comment: "Progress banner message while reading an imported archive."),
             progressReporter: progressReporter
         )
         snapshotArchiveTask = Task { @MainActor [weak self] in
@@ -1217,9 +1217,9 @@ final class AppModel: ObservableObject {
                       self.isCurrentArchiveOperation(id: operationID) else { return }
                 progressReporter.report(ScanArchiveProgress(
                     phase: .openingSnapshot,
-                    message: "Opening snapshot"
+                    message: String(localized: "Opening snapshot", comment: "Progress message while opening an imported snapshot." )
                 ))
-                self.updateArchiveOperation(id: operationID, message: "Opening snapshot", progressFraction: nil)
+                self.updateArchiveOperation(id: operationID, message: String(localized: "Opening snapshot", comment: "Progress message while opening an imported snapshot."), progressFraction: nil)
                 try await Task.sleep(for: .milliseconds(1))
                 self.restoreImportedSnapshot(result.snapshot)
                 self.lastErrorMessage = nil

@@ -181,7 +181,7 @@ struct TreemapChartView: View {
             return tooltipContent.accessibilityDescription
         }
 
-        return "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(summaryStatus(for: displayedNode))"
+        return String(localized: "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(summaryStatus(for: displayedNode))", comment: "Accessibility value describing the selected treemap tile.")
     }
 
     private func chartFrame(in size: CGSize) -> CGRect {
@@ -270,7 +270,7 @@ struct TreemapChartView: View {
 
     private func summaryStatus(for node: FileNodeRecord) -> String {
         DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id)
-            ? "Available Space"
+            ? String(localized: "Available Space", comment: "Chart status for free capacity on a volume.")
             : node.itemKind
     }
 

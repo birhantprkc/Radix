@@ -176,26 +176,50 @@ nonisolated enum ScanArchiveError: LocalizedError, Equatable {
     case integrity(String)
     case stats(String)
 
+    static func invalidArchivePackage(localized detail: LocalizedStringResource) -> Self {
+        .invalidArchivePackage(String(localized: detail))
+    }
+
+    static func manifest(localized detail: LocalizedStringResource) -> Self {
+        .manifest(String(localized: detail))
+    }
+
+    static func nodes(localized detail: LocalizedStringResource) -> Self {
+        .nodes(String(localized: detail))
+    }
+
+    static func topology(localized detail: LocalizedStringResource) -> Self {
+        .topology(String(localized: detail))
+    }
+
+    static func integrity(localized detail: LocalizedStringResource) -> Self {
+        .integrity(String(localized: detail))
+    }
+
+    static func stats(localized detail: LocalizedStringResource) -> Self {
+        .stats(String(localized: detail))
+    }
+
     var errorDescription: String? {
         switch self {
         case .incompleteSnapshot:
-            return "Only complete scans can be exported."
+            return String(localized: "Only complete scans can be exported.", comment: "Error shown when exporting a scan that is still in progress.")
         case .invalidArchivePackage(let detail):
-            return "The Radix scan snapshot package is invalid: \(detail)"
+            return String(localized: "The Radix scan snapshot package is invalid: \(detail)", comment: "Error shown when an imported snapshot package is malformed.")
         case .unsupportedFormat(let format):
-            return "Unsupported Radix scan snapshot format: \(format)."
+            return String(localized: "Unsupported Radix scan snapshot format: \(format).", comment: "Error shown when an imported snapshot uses an unknown format.")
         case .unsupportedVersion(let version):
-            return "Unsupported Radix scan snapshot version: \(version)."
+            return String(localized: "Unsupported Radix scan snapshot version: \(version).", comment: "Error shown when an imported snapshot uses an unsupported version.")
         case .manifest(let detail):
-            return "Radix could not read the scan snapshot manifest: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot manifest: \(detail)", comment: "Error shown when an imported snapshot manifest cannot be read.")
         case .nodes(let detail):
-            return "Radix could not read the scan snapshot node payload: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot node payload: \(detail)", comment: "Error shown when imported snapshot node data cannot be read.")
         case .topology(let detail):
-            return "Radix could not read the scan snapshot topology: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot topology: \(detail)", comment: "Error shown when imported snapshot tree topology cannot be read.")
         case .integrity(let detail):
-            return "Radix scan snapshot integrity check failed: \(detail)"
+            return String(localized: "Radix scan snapshot integrity check failed: \(detail)", comment: "Error shown when an imported snapshot fails its integrity check.")
         case .stats(let detail):
-            return "Radix could not read the scan snapshot stats: \(detail)"
+            return String(localized: "Radix could not read the scan snapshot stats: \(detail)", comment: "Error shown when imported snapshot statistics cannot be read.")
         }
     }
 }
@@ -253,7 +277,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .preparing,
-            message: "Preparing archive"
+            message: String(localized: "Preparing archive", comment: "Progress message while preparing a scan archive.")
         ))
         let nodeChecksum = try await writeNodes(
             snapshot.treeStore,
@@ -264,13 +288,13 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .writingTopology,
-            message: "Writing topology"
+            message: String(localized: "Writing topology", comment: "Progress message while writing scan tree topology.")
         ))
         try writeJSON(ScanArchiveTopology(snapshot.treeStore), to: topologyURL)
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .writingMetadata,
-            message: "Writing metadata"
+            message: String(localized: "Writing metadata", comment: "Progress message while writing scan metadata.")
         ))
         try writeJSON(snapshot.scanWarnings.map(ScanArchiveWarningV1.init), to: warningsURL)
         try writeJSON(ScanArchiveStatsV1(snapshot.aggregateStats), to: statsURL)
@@ -319,7 +343,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingManifest,
-            message: "Reading manifest"
+            message: String(localized: "Reading manifest", comment: "Progress message while reading a scan archive manifest.")
         ))
         let manifest = try readValidatedManifest(from: sourceURL)
 
@@ -354,7 +378,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingTopology,
-            message: "Reading topology"
+            message: String(localized: "Reading topology", comment: "Progress message while reading scan tree topology.")
         ))
         let archivedTopology: ScanArchiveTopology = try readJSON(ScanArchiveTopology.self, from: topologyURL) { detail in
             ScanArchiveError.topology(detail)
@@ -374,10 +398,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingMetadata,
-            message: "Reading metadata"
+            message: String(localized: "Reading metadata", comment: "Progress message while reading scan metadata.")
         ))
         let warnings: [ScanArchiveWarningV1] = try readJSON([ScanArchiveWarningV1].self, from: warningsURL) { detail in
-            ScanArchiveError.manifest("warnings section failed: \(detail)")
+            ScanArchiveError.manifest(localized: "warnings section failed: \(detail)")
         }
         let archivedStats: ScanArchiveStatsV1 = try readJSON(ScanArchiveStatsV1.self, from: statsURL) { detail in
             ScanArchiveError.stats(detail)
@@ -386,7 +410,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(
             phase: .rebuildingSnapshot,
-            message: "Rebuilding snapshot"
+            message: String(localized: "Rebuilding snapshot", comment: "Progress message while rebuilding an imported snapshot.")
         ))
         try validateCounts(manifest: manifest, nodesByID: nodePayload.nodesByID, warnings: warnings)
         let rebuiltParentIDs = try await validateTopology(
@@ -451,13 +475,13 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         var isDirectory = ObjCBool(false)
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
-            throw ScanArchiveError.invalidArchivePackage("expected a .\(Self.fileExtension) package directory")
+            throw ScanArchiveError.invalidArchivePackage(localized: "expected a .\(Self.fileExtension) package directory")
         }
     }
 
     private func validateArchiveExtension(_ url: URL) throws {
         guard url.pathExtension.lowercased() == Self.fileExtension else {
-            throw ScanArchiveError.invalidArchivePackage("expected a .\(Self.fileExtension) package")
+            throw ScanArchiveError.invalidArchivePackage(localized: "expected a .\(Self.fileExtension) package")
         }
     }
 
@@ -466,7 +490,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         do {
             relativePaths = try fileManager.subpathsOfDirectory(atPath: archiveURL.path)
         } catch {
-            throw ScanArchiveError.invalidArchivePackage(
+            throw ScanArchiveError.invalidArchivePackage(localized:
                 "could not calculate snapshot size: \(error.localizedDescription)"
             )
         }
@@ -479,7 +503,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             do {
                 values = try itemURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             } catch {
-                throw ScanArchiveError.invalidArchivePackage(
+                throw ScanArchiveError.invalidArchivePackage(localized:
                     "could not calculate snapshot size: \(error.localizedDescription)"
                 )
             }
@@ -490,7 +514,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
             let (newTotalSize, overflow) = totalSize.addingReportingOverflow(Int64(values.fileSize ?? 0))
             guard !overflow else {
-                throw ScanArchiveError.invalidArchivePackage("snapshot size exceeds supported range")
+                throw ScanArchiveError.invalidArchivePackage(localized: "snapshot size exceeds supported range")
             }
             totalSize = newTotalSize
         }
@@ -500,23 +524,23 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private func validateManifest(_ manifest: ScanArchiveDocument) throws {
         try validateManifestHeader(format: manifest.format, formatVersion: manifest.formatVersion)
         guard manifest.snapshot.isComplete else {
-            throw ScanArchiveError.manifest("snapshot is not complete")
+            throw ScanArchiveError.manifest(localized: "snapshot is not complete")
         }
         guard manifest.snapshot.nodeCount > 0 else {
-            throw ScanArchiveError.manifest("snapshot has no nodes")
+            throw ScanArchiveError.manifest(localized: "snapshot has no nodes")
         }
         guard !manifest.snapshot.rootID.isEmpty,
               manifest.snapshot.rootID == manifest.snapshot.target.path else {
-            throw ScanArchiveError.manifest("snapshot root does not match target path")
+            throw ScanArchiveError.manifest(localized: "snapshot root does not match target path")
         }
         if let scanOptions = manifest.snapshot.scanOptions {
             let fingerprint = try Self.scanOptionsFingerprint(scanOptions)
             guard fingerprint == manifest.snapshot.scanOptionsFingerprint else {
-                throw ScanArchiveError.integrity("scan options fingerprint mismatch")
+                throw ScanArchiveError.integrity(localized: "scan options fingerprint mismatch")
             }
         }
         guard manifest.integrity.algorithm == "sha256" else {
-            throw ScanArchiveError.integrity("unsupported integrity algorithm \(manifest.integrity.algorithm)")
+            throw ScanArchiveError.integrity(localized: "unsupported integrity algorithm \(manifest.integrity.algorithm)")
         }
     }
 
@@ -535,10 +559,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         warnings: [ScanArchiveWarningV1]
     ) throws {
         guard nodesByID.count == manifest.snapshot.nodeCount else {
-            throw ScanArchiveError.nodes("manifest expected \(manifest.snapshot.nodeCount) nodes, found \(nodesByID.count)")
+            throw ScanArchiveError.nodes(localized: "manifest expected \(manifest.snapshot.nodeCount) nodes, found \(nodesByID.count)")
         }
         guard warnings.count == manifest.snapshot.warningCount else {
-            throw ScanArchiveError.manifest("manifest expected \(manifest.snapshot.warningCount) warnings, found \(warnings.count)")
+            throw ScanArchiveError.manifest(localized: "manifest expected \(manifest.snapshot.warningCount) warnings, found \(warnings.count)")
         }
     }
 
@@ -546,7 +570,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard !sectionName.isEmpty,
               !sectionName.contains("/"),
               !sectionName.contains("\\") else {
-            throw ScanArchiveError.manifest("invalid \(sectionDescription) section path")
+            throw ScanArchiveError.manifest(localized: "invalid \(sectionDescription) section path")
         }
         return archiveURL.appending(path: sectionName, directoryHint: .notDirectory)
     }
@@ -655,7 +679,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private static func repairedStatsWarning(rootID: String) -> ScanWarning {
         ScanWarning(
             path: rootID,
-            message: "Archive stats did not match node payload. Radix repaired totals during import.",
+            message: String(localized: "Archive stats did not match node payload. Radix repaired totals during import.", comment: "Warning shown when imported archive statistics are repaired."),
             category: .fileSystem
         )
     }

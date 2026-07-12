@@ -14,16 +14,16 @@ extension ScanArchiveService {
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> [String: String] {
         guard topology.rootID == expectedRootID else {
-            throw ScanArchiveError.topology("root ID does not match manifest")
+            throw ScanArchiveError.topology(localized: "root ID does not match manifest")
         }
         guard let rootNode = nodesByID[topology.rootID] else {
-            throw ScanArchiveError.topology("root node is missing")
+            throw ScanArchiveError.topology(localized: "root node is missing")
         }
         guard rootNode.url.path == expectedTargetPath else {
-            throw ScanArchiveError.topology("root path does not match target path")
+            throw ScanArchiveError.topology(localized: "root path does not match target path")
         }
         for parentID in topology.childIDsByID.keys where nodesByID[parentID] == nil {
-            throw ScanArchiveError.topology("child map parent \(parentID) is missing from node payload")
+            throw ScanArchiveError.topology(localized: "child map parent \(parentID) is missing from node payload")
         }
 
         var parentIDByID: [String: String] = [:]
@@ -38,10 +38,10 @@ extension ScanArchiveService {
 
         func enter(_ nodeID: String) throws {
             guard nodesByID[nodeID] != nil else {
-                throw ScanArchiveError.topology("node \(nodeID) is missing from node payload")
+                throw ScanArchiveError.topology(localized: "node \(nodeID) is missing from node payload")
             }
             if visiting.contains(nodeID) {
-                throw ScanArchiveError.topology("cycle detected at node \(nodeID)")
+                throw ScanArchiveError.topology(localized: "cycle detected at node \(nodeID)")
             }
             if visited.contains(nodeID) {
                 return
@@ -50,7 +50,7 @@ extension ScanArchiveService {
             visiting.insert(nodeID)
             let childIDs = topology.childIDsByID[nodeID] ?? []
             if !childIDs.isEmpty && nodesByID[nodeID]?.isDirectory != true {
-                throw ScanArchiveError.topology("non-directory node \(nodeID) has children")
+                throw ScanArchiveError.topology(localized: "non-directory node \(nodeID) has children")
             }
 
             stack.append((
@@ -84,24 +84,24 @@ extension ScanArchiveService {
             let childID = frame.childIDs[frame.nextChildIndex]
             frame.nextChildIndex += 1
             guard frame.seenChildIDs.insert(childID).inserted else {
-                throw ScanArchiveError.topology("node \(frame.nodeID) contains duplicate child \(childID)")
+                throw ScanArchiveError.topology(localized: "node \(frame.nodeID) contains duplicate child \(childID)")
             }
             stack.append(frame)
 
             guard childID != frame.nodeID else {
-                throw ScanArchiveError.topology("node \(frame.nodeID) references itself as a child")
+                throw ScanArchiveError.topology(localized: "node \(frame.nodeID) references itself as a child")
             }
             guard nodesByID[childID] != nil else {
-                throw ScanArchiveError.topology("child \(childID) is missing from node payload")
+                throw ScanArchiveError.topology(localized: "child \(childID) is missing from node payload")
             }
             if let parentNode = nodesByID[frame.nodeID],
                let childNode = nodesByID[childID],
                !childNode.isSynthetic,
                !Self.path(childNode.url.path, isContainedIn: expectedTargetPath) {
-                throw ScanArchiveError.topology("child \(childID) path is outside target \(parentNode.id)")
+                throw ScanArchiveError.topology(localized: "child \(childID) path is outside target \(parentNode.id)")
             }
             if let existingParentID = parentIDByID[childID], existingParentID != frame.nodeID {
-                throw ScanArchiveError.topology("child \(childID) has multiple parents")
+                throw ScanArchiveError.topology(localized: "child \(childID) has multiple parents")
             }
             parentIDByID[childID] = frame.nodeID
             try enter(childID)
@@ -109,7 +109,7 @@ extension ScanArchiveService {
 
         guard visited.count == nodesByID.count else {
             let missingCount = nodesByID.count - visited.count
-            throw ScanArchiveError.topology("\(missingCount) node(s) are not reachable from root")
+            throw ScanArchiveError.topology(localized: "\(missingCount) node(s) are not reachable from root")
         }
 
         return parentIDByID

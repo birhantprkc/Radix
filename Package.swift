@@ -23,7 +23,9 @@ let package = Package(
                 "Assets.xcassets",
                 "ContentView.swift",
                 "Features",
+                "InfoPlist.xcstrings",
                 "Info.plist",
+                "Localizable.xcstrings",
                 "RadixApp.swift",
                 "Shared"
             ],

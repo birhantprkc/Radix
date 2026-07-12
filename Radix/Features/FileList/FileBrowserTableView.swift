@@ -155,19 +155,19 @@ struct FileBrowserTableView: View {
 
     private var noResultsDescription: String {
         if model.isShowingEntireScanResults {
-            return "No items anywhere in this scan match your search."
+            return String(localized: "No items anywhere in this scan match your search.", comment: "Empty state shown when an entire-scan search has no results.")
         }
-        return "Try a different filter or clear the current contents filter."
+        return String(localized: "Try a different filter or clear the current contents filter.", comment: "Empty state guidance shown when the current contents filter has no results.")
     }
 
     @ViewBuilder
     private var tableContent: some View {
         if model.isRefreshingCurrentContents && !model.isDisplayingCurrentResults {
-            loadingContent("Loading Contents…")
+            loadingContent(String(localized: "Loading Contents…", comment: "Progress message while the current directory contents load."))
         } else if model.isShowingEntireScanResults &&
             model.isSearchingEntireScan &&
             !model.isDisplayingCurrentResults {
-            loadingContent("Searching Entire Scan…")
+            loadingContent(String(localized: "Searching Entire Scan…", comment: "Progress message while the entire scan is searched."))
         } else if model.displayedNodes.isEmpty {
             ContentUnavailableView(
                 "No Matching Items",

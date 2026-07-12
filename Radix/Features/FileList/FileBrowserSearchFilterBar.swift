@@ -9,18 +9,18 @@ struct FileBrowserSearchFilterBar: View {
     private var scopeLabel: String {
         switch scope {
         case .currentContents:
-            "Current Contents"
+            String(localized: "Current Contents", comment: "Search scope label for the currently visible directory contents.")
         case .entireScan:
-            "Entire Scan"
+            String(localized: "Entire Scan", comment: "Search scope label for all items in the scan.")
         }
     }
 
     private var prompt: String {
         switch scope {
         case .currentContents:
-            "Filter current contents"
+            String(localized: "Filter current contents", comment: "Search field placeholder for filtering the current directory contents.")
         case .entireScan:
-            "Search entire scan"
+            String(localized: "Search entire scan", comment: "Search field placeholder for searching all scanned items.")
         }
     }
 

@@ -113,27 +113,27 @@ nonisolated enum FileSystemEventHistoryError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .targetUnavailable(let path):
-            return "The incremental scan target is unavailable: \(path)."
+            return String(localized: "The incremental scan target is unavailable: \(path).", comment: "Error shown when an incremental scan target is unavailable.")
         case .targetIsNotDirectory(let path):
-            return "The incremental scan target is not a directory: \(path)."
+            return String(localized: "The incremental scan target is not a directory: \(path).", comment: "Error shown when an incremental scan target is not a directory.")
         case .nonLocalVolume(let path):
-            return "Incremental scans are unavailable for the non-local volume containing \(path)."
+            return String(localized: "Incremental scans are unavailable for the non-local volume containing \(path).", comment: "Error shown when incremental scanning is unavailable on a non-local volume.")
         case .volumeUUIDUnavailable(let path):
-            return "The volume containing \(path) does not expose an FSEvents UUID."
+            return String(localized: "The volume containing \(path) does not expose an FSEvents UUID.", comment: "Error shown when a volume has no FSEvents UUID.")
         case .eventIDUnavailable(let path):
-            return "The volume containing \(path) does not expose an FSEvents checkpoint."
+            return String(localized: "The volume containing \(path) does not expose an FSEvents checkpoint.", comment: "Error shown when a volume has no FSEvents checkpoint.")
         case .volumeChanged:
-            return "The scan target is now on a different volume."
+            return String(localized: "The scan target is now on a different volume.", comment: "Error shown when an incremental scan target moved volumes.")
         case .eventIDRolledBack:
-            return "The volume's FSEvents history is older than the saved checkpoint."
+            return String(localized: "The volume's FSEvents history is older than the saved checkpoint.", comment: "Error shown when an incremental scan checkpoint is too old.")
         case .invalidCheckpointRange:
-            return "The requested FSEvents checkpoint range is invalid."
+            return String(localized: "The requested FSEvents checkpoint range is invalid.", comment: "Error shown when an incremental scan checkpoint range is invalid.")
         case .streamCreationFailed:
-            return "Radix could not create an FSEvents history stream."
+            return String(localized: "Radix could not create an FSEvents history stream.", comment: "Error shown when an FSEvents history stream cannot be created.")
         case .streamStartFailed:
-            return "Radix could not start the FSEvents history stream."
+            return String(localized: "Radix could not start the FSEvents history stream.", comment: "Error shown when an FSEvents history stream cannot be started.")
         case .historyEndedWithoutSentinel:
-            return "The FSEvents history stream ended before reporting HistoryDone."
+            return String(localized: "The FSEvents history stream ended before reporting HistoryDone.", comment: "Error shown when an FSEvents history stream ends unexpectedly.")
         }
     }
 }

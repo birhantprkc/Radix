@@ -90,10 +90,10 @@ struct SunburstChartView: View {
         }
 
         return ChartSummary(
-            status: "Grouped Items",
+            status: String(localized: "Grouped Items", comment: "Chart status for several small items grouped into one segment."),
             title: hoveredSegment.label,
             value: RadixFormatters.size(hoveredSegment.totalSize),
-            detail: "Too small to show individually"
+            detail: String(localized: "Too small to show individually", comment: "Chart detail explaining why grouped items are combined.")
         )
     }
 
@@ -201,13 +201,13 @@ struct SunburstChartView: View {
             .accessibilityLabel("Disk usage chart")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(accessibilityHint)
-            .accessibilityAction(named: "Zoom In") {
+            .accessibilityAction(named: String(localized: "Zoom In", comment: "Accessibility action for zooming into the disk map.")) {
                 zoomViewport(by: 1.25, anchor: nil, in: baseChartFrame, animated: true)
             }
-            .accessibilityAction(named: "Zoom Out") {
+            .accessibilityAction(named: String(localized: "Zoom Out", comment: "Accessibility action for zooming out of the disk map.")) {
                 zoomViewport(by: 0.8, anchor: nil, in: baseChartFrame, animated: true)
             }
-            .accessibilityAction(named: "Reset Zoom") {
+            .accessibilityAction(named: String(localized: "Reset Zoom", comment: "Accessibility action for resetting the disk map zoom.")) {
                 resetViewport(animated: true)
             }
             .overlay(alignment: .topLeading) {
@@ -348,15 +348,15 @@ struct SunburstChartView: View {
         }
 
         let node = displayedNode ?? rootNode
-        return "\(node.name), \(RadixFormatters.size(node.allocatedSize)), \(summaryStatus(for: node))"
+        return String(localized: "\(node.name), \(RadixFormatters.size(node.allocatedSize)), \(summaryStatus(for: node))", comment: "Accessibility value describing the selected sunburst segment.")
     }
 
     private var accessibilityHint: String {
         if parentNode != nil {
-            return "Select a segment to inspect it. Double-click a folder segment to zoom in. Click the center to go up."
+            return String(localized: "Select a segment to inspect it. Double-click a folder segment to zoom in. Click the center to go up.", comment: "Accessibility hint for the sunburst chart when navigating upward is available.")
         }
 
-        return "Select a segment to inspect it. Double-click a folder segment to zoom in."
+        return String(localized: "Select a segment to inspect it. Double-click a folder segment to zoom in.", comment: "Accessibility hint for the sunburst chart.")
     }
 
     private func chartFrame(in size: CGSize) -> CGRect {
@@ -429,7 +429,7 @@ struct SunburstChartView: View {
 
     private func help(at location: CGPoint, in frame: CGRect) -> String? {
         guard let parentNode, isCenterHit(at: location, in: frame) else { return nil }
-        return "Go up to \(parentNode.name)"
+        return String(localized: "Go up to \(parentNode.name)", comment: "Tooltip for the sunburst chart center navigation affordance.")
     }
 
     private func summary(for node: FileNodeRecord) -> ChartSummary {
@@ -438,14 +438,14 @@ struct SunburstChartView: View {
                 status: summaryStatus(for: node),
                 title: node.name,
                 value: RadixFormatters.size(node.allocatedSize),
-                detail: "APFS available capacity"
+                detail: String(localized: "APFS available capacity", comment: "Chart detail describing free space on an APFS volume.")
             )
         }
 
         let detail: String
         if node.id != rootNode.id,
            let percentText = RadixFormatters.percentage(part: node.allocatedSize, total: rootNode.allocatedSize) {
-            detail = percentText + " of current focus"
+            detail = String(localized: "\(percentText) of current focus", comment: "Chart detail showing an item's percentage of the current focus.")
         } else {
             detail = node.itemKind
         }
@@ -460,7 +460,7 @@ struct SunburstChartView: View {
 
     private func summaryStatus(for node: FileNodeRecord) -> String {
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
-            return "Available Space"
+            return String(localized: "Available Space", comment: "Chart status for free capacity on a volume.")
         }
         return node.itemKind
     }
@@ -567,7 +567,7 @@ private struct SunburstViewportControls: View {
         HStack(spacing: 6) {
             controlButton(
                 systemName: "minus.magnifyingglass",
-                accessibilityLabel: "Zoom Out",
+                accessibilityLabel: String(localized: "Zoom Out", comment: "Accessibility label for zooming out of the disk map."),
                 action: zoomOut
             )
             .disabled(!canZoomOut)
@@ -579,7 +579,7 @@ private struct SunburstViewportControls: View {
 
             controlButton(
                 systemName: "plus.magnifyingglass",
-                accessibilityLabel: "Zoom In",
+                accessibilityLabel: String(localized: "Zoom In", comment: "Accessibility label for zooming into the disk map."),
                 action: zoomIn
             )
             .disabled(!canZoomIn)
@@ -589,7 +589,7 @@ private struct SunburstViewportControls: View {
 
             controlButton(
                 systemName: "arrow.counterclockwise",
-                accessibilityLabel: "Reset Zoom",
+                accessibilityLabel: String(localized: "Reset Zoom", comment: "Accessibility label for resetting the disk map zoom."),
                 action: reset
             )
             .disabled(!canZoomOut)

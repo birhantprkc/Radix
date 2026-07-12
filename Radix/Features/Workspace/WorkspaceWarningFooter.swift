@@ -67,8 +67,8 @@ struct WarningFooter: View {
         // locations macOS protects regardless of Full Disk Access, so avoid
         // implying the user can resolve them.
         if fullDiskAccessStatus == .granted {
-            return "\(warnings.count) system locations are protected by macOS and were skipped."
+            return String(localized: "\(warnings.count) system locations are protected by macOS and were skipped.", comment: "Warning summary for macOS-protected locations skipped despite Full Disk Access. The location count controls pluralization.")
         }
-        return "\(warnings.count) locations had limited access or scan warnings."
+        return String(localized: "\(warnings.count) locations had limited access or scan warnings.", comment: "Warning summary for locations with limited access or scan warnings. The location count controls pluralization.")
     }
 }

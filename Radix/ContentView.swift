@@ -210,7 +210,7 @@ struct ContentView: View {
             }
             Button("OK", role: .cancel) {}
         } message: {
-            Text(appModel.lastErrorMessage ?? "Unknown error")
+            Text(appModel.lastErrorMessage ?? String(localized: "Unknown error", comment: "Fallback error message when no specific error is available."))
         }
         .confirmationDialog(
             "Move to Trash?",
@@ -841,11 +841,11 @@ private extension ContentView {
     var pendingTrashMessage: String {
         let nodes = appModel.pendingTrashSelection?.nodes ?? appModel.pendingTrashNode.map { [$0] } ?? []
         guard nodes.count != 1 else {
-            return "Radix will ask macOS to move \(nodes[0].url.path) to the Trash."
+            return String(localized: "Radix will ask macOS to move \(nodes[0].url.path) to the Trash.", comment: "Confirmation message for moving one selected item to the Trash.")
         }
         let shownPaths = nodes.prefix(3).map(\.url.path).joined(separator: "\n")
         let remainingCount = nodes.count - 3
         let remainingText = remainingCount > 0 ? "\n+\(remainingCount) more" : ""
-        return "Radix will ask macOS to move \(nodes.count) selected items to the Trash:\n\(shownPaths)\(remainingText)"
+        return String(localized: "Radix will ask macOS to move \(nodes.count) selected items to the Trash:\n\(shownPaths)\(remainingText)", comment: "Confirmation message listing multiple selected items that will be moved to the Trash.")
     }
 }

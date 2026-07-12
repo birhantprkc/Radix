@@ -318,7 +318,7 @@ final class ScanCoordinator: ObservableObject {
         } catch {
             completeExpansion(
                 id: expansionID,
-                result: .failed(message: "Failed to expand '\(node.name)': \(error.localizedDescription)")
+                result: .failed(message: String(localized: "Failed to expand '\(node.name)': \(error.localizedDescription)", comment: "Error shown when expanding a summarized folder fails."))
             )
         }
     }

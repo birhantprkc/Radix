@@ -33,7 +33,7 @@ nonisolated enum ScanWarningFactory {
     nonisolated static func makeDuplicateNodeWarning(for url: URL) -> ScanWarning {
         ScanWarning(
             path: url.path,
-            message: "A duplicate filesystem path was collapsed in the scan results.",
+            message: String(localized: "A duplicate filesystem path was collapsed in the scan results.", comment: "Warning shown when duplicate filesystem paths are collapsed.") ,
             category: .fileSystem
         )
     }

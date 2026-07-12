@@ -247,18 +247,19 @@ private struct DiscardPileSidebarButton: View {
 
     private var subtitle: String {
         if isDropTargeted {
-            return "Release to add"
+            return String(localized: "Release to add", comment: "Drop target hint shown while files are dragged over the Discard Pile.")
         }
 
         if isDropHintActive {
-            return "Drop here to add"
+            return String(localized: "Drop here to add", comment: "Drop target hint shown while a file drag is active.")
         }
 
         guard !summary.isEmpty else {
-            return "No items marked"
+            return String(localized: "No items marked", comment: "Discard Pile subtitle when it is empty.")
         }
 
-        return "\(summary.itemCount.formatted()) \(summary.itemCount == 1 ? "item" : "items") • \(RadixFormatters.size(summary.totalAllocatedSize))"
+        let size = RadixFormatters.size(summary.totalAllocatedSize)
+        return String(localized: "\(summary.itemCount) items • \(size)", comment: "Discard Pile subtitle showing the marked item count and total allocated size. The item count controls pluralization.")
     }
 }
 

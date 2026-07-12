@@ -122,7 +122,7 @@ private struct ScanItemCounts: Equatable {
 }
 
 private struct ScanCurrentPathText: View {
-    private static let finalizingSummary = "Summarizing results…"
+    private static let finalizingSummary = String(localized: "Summarizing results…", comment: "Progress text shown while a scan is finalizing.")
 
     let path: String
     let isFinalizing: Bool

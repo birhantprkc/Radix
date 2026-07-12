@@ -254,8 +254,8 @@ private struct ScanComparisonCandidateGroup: View {
 
     private var emptyStateMessage: String {
         canUseCurrentScan
-            ? "Choose a saved scan or use the current scan."
-            : "Choose a saved scan."
+            ? String(localized: "Choose a saved scan or use the current scan.", comment: "Empty comparison slot guidance when the current scan is available.")
+            : String(localized: "Choose a saved scan.", comment: "Empty comparison slot guidance when only saved scans are available.")
     }
 
     private var sourceActions: some View {

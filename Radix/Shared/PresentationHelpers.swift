@@ -9,17 +9,17 @@ extension ScanTarget {
         case "/":
             return displayName
         case cachedHomePath:
-            return "Home"
+            return String(localized: "Home", comment: "Sidebar name for the user's home folder.")
         case cachedHomePath + "/Desktop":
-            return "Desktop"
+            return String(localized: "Desktop", comment: "Sidebar name for the user's Desktop folder.")
         case cachedHomePath + "/Documents":
-            return "Documents"
+            return String(localized: "Documents", comment: "Sidebar name for the user's Documents folder.")
         case cachedHomePath + "/Downloads":
-            return "Downloads"
+            return String(localized: "Downloads", comment: "Sidebar name for the user's Downloads folder.")
         case cachedHomePath + "/Library":
-            return "Library"
+            return String(localized: "Library", comment: "Sidebar name for the user's Library folder.")
         case "/Applications":
-            return "Applications"
+            return String(localized: "Applications", comment: "Sidebar name for the system Applications folder.")
         default:
             return displayName
         }
@@ -77,22 +77,22 @@ extension FullDiskAccessStatus {
     var fullDiskAccessBadgeTitle: String {
         switch self {
         case .granted:
-            return "Enabled"
+            return String(localized: "Enabled", comment: "Full Disk Access status badge when permission is granted.")
         case .notGranted:
-            return "Not Enabled"
+            return String(localized: "Not Enabled", comment: "Full Disk Access status badge when permission is not granted.")
         case .unknown:
-            return "Unknown"
+            return String(localized: "Unknown", comment: "Full Disk Access status badge when permission cannot be determined.")
         }
     }
 
     var fullDiskAccessSettingsSummary: String {
         switch self {
         case .granted:
-            return "Full Disk Access is enabled."
+            return String(localized: "Full Disk Access is enabled.", comment: "Full Disk Access settings summary when permission is granted.")
         case .notGranted:
-            return "Full Disk Access is not enabled."
+            return String(localized: "Full Disk Access is not enabled.", comment: "Full Disk Access settings summary when permission is not granted.")
         case .unknown:
-            return "Full Disk Access could not be verified."
+            return String(localized: "Full Disk Access could not be verified.", comment: "Full Disk Access settings summary when permission cannot be determined.")
         }
     }
 
