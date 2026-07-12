@@ -100,7 +100,9 @@ struct ScanComparisonView: View {
     @ViewBuilder
     private var comparisonContent: some View {
         if browserModel.isRefreshing && displayedRows.isEmpty && projection.roots.isEmpty {
-            ProgressView("Loading changes…")
+            ProgressView {
+                Text("Loading changes…", tableName: "Interface")
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if effectiveDisplayMode == .significant, !projection.roots.isEmpty {
             significantTable
@@ -373,7 +375,7 @@ struct ScanComparisonView: View {
             if browserModel.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel("Refreshing comparison")
+                    .accessibilityLabel(Text("Refreshing comparison", tableName: "Interface"))
             }
 
             if let focusedLocationPath {
@@ -549,10 +551,10 @@ struct ScanComparisonView: View {
                 .foregroundStyle(ScanComparisonChangeKind.shrank.tintColor)
                 .help("\(node.affectedCount.formatted()) changes summarized")
         } else {
-            Text("–")
+            Text("–", tableName: "Interface")
                 .foregroundStyle(.secondary)
                 .help("\(node.affectedCount.formatted()) changes summarized")
-                .accessibilityLabel("No net change")
+                .accessibilityLabel(Text("No net change", tableName: "Interface"))
         }
     }
 

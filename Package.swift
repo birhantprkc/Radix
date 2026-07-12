@@ -25,6 +25,7 @@ let package = Package(
                 "Features",
                 "InfoPlist.xcstrings",
                 "Info.plist",
+                "Interface.xcstrings",
                 "Localizable.xcstrings",
                 "RadixApp.swift",
                 "Shared"

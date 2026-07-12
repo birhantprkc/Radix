@@ -16,7 +16,7 @@ struct ChartLayoutFailureBanner: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Couldn’t Load Disk Map")
+                Text("Couldn’t Load Disk Map", tableName: "Interface")
                     .font(.headline)
                 Text(failure.message)
                     .font(.caption)
@@ -25,10 +25,14 @@ struct ChartLayoutFailureBanner: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button("Retry", action: retry)
+            Button(action: retry) {
+                Text("Retry", tableName: "Interface")
+            }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .accessibilityHint("Attempts to load the disk map again.")
+                .accessibilityHint(
+                    Text("Attempts to load the disk map again.", tableName: "Interface")
+                )
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -40,6 +44,6 @@ struct ChartLayoutFailureBanner: View {
         }
         .shadow(color: .black.opacity(0.16), radius: 8, y: 2)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Disk map layout failed")
+        .accessibilityLabel(Text("Disk map layout failed", tableName: "Interface"))
     }
 }
