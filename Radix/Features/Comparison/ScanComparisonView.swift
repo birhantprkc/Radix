@@ -28,10 +28,7 @@ struct ScanComparisonView: View {
     @State private var searchText = ""
     @State private var focusedLocationPath: String?
     @State private var sortOrder: [ScanComparisonRowComparator]
-    @State private var selection = Set<ScanComparisonRow.ID>()
-    @State private var aggregateSelection = Set<ScanComparisonChangeTreeNode.ID>()
-    @State private var displayedRows: [ScanComparisonRow]
-    @State private var projection: ScanComparisonChangeTreeProjection
+    @StateObject private var browserModel: ScanComparisonBrowserModel
 
     init(
         comparison: ScanComparison,
@@ -46,15 +43,7 @@ struct ScanComparisonView: View {
         let selectedChangeKinds = Self.allChangeKinds
         self._selectedChangeKinds = State(initialValue: selectedChangeKinds)
         self._sortOrder = State(initialValue: sortOrder)
-        self._displayedRows = State(initialValue: ScanComparisonRowQuery(
-            changeKinds: selectedChangeKinds,
-            searchText: "",
-            sortOrder: sortOrder,
-            pathPrefix: nil
-        ).applying(to: comparison.rows))
-        self._projection = State(initialValue: comparison.changeTree.significantProjection(
-            changeKinds: selectedChangeKinds
-        ))
+        self._browserModel = StateObject(wrappedValue: ScanComparisonBrowserModel())
     }
 
     var body: some View {
@@ -84,29 +73,36 @@ struct ScanComparisonView: View {
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search Changes")
         .onChange(of: rowQuery) { _, query in
-            refreshDisplayedRows(using: query)
+            refreshBrowser(using: query)
         }
-        .onChange(of: selectedChangeKinds) { _, changeKinds in
-            projection = comparison.changeTree.significantProjection(changeKinds: changeKinds)
-            aggregateSelection.removeAll()
+        .onChange(of: selectedChangeKinds) { _, _ in
+            browserModel.aggregateSelection.removeAll()
         }
         .onChange(of: displayMode) { _, mode in
             if mode == .significant {
                 focusedLocationPath = nil
-                selection.removeAll()
+                browserModel.selection.removeAll()
             } else {
-                aggregateSelection.removeAll()
+                browserModel.aggregateSelection.removeAll()
             }
         }
         .onChange(of: comparison.id) { _, _ in
-            refreshDisplayedRows(using: rowQuery)
-            projection = comparison.changeTree.significantProjection(changeKinds: selectedChangeKinds)
+            refreshBrowser(using: rowQuery)
+        }
+        .task(id: comparison.id) {
+            refreshBrowser(using: rowQuery)
+        }
+        .onDisappear {
+            browserModel.cancel()
         }
     }
 
     @ViewBuilder
     private var comparisonContent: some View {
-        if effectiveDisplayMode == .significant, !projection.roots.isEmpty {
+        if browserModel.isRefreshing && displayedRows.isEmpty && projection.roots.isEmpty {
+            ProgressView("Loading changes…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if effectiveDisplayMode == .significant, !projection.roots.isEmpty {
             significantTable
         } else if displayedRows.isEmpty {
             emptyState
@@ -374,6 +370,12 @@ struct ScanComparisonView: View {
 
     private var comparisonStatus: some View {
         HStack(spacing: 6) {
+            if browserModel.isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Refreshing comparison")
+            }
+
             if let focusedLocationPath {
                 Button {
                     self.focusedLocationPath = nil
@@ -420,7 +422,7 @@ struct ScanComparisonView: View {
         Table(
             projection.roots,
             children: \.children,
-            selection: $aggregateSelection
+            selection: $browserModel.aggregateSelection
         ) {
             TableColumn("Item") { node in
                 comparisonItemLabel(
@@ -475,7 +477,7 @@ struct ScanComparisonView: View {
     }
 
     private var comparisonTable: some View {
-        Table(of: ScanComparisonRow.self, selection: $selection, sortOrder: $sortOrder) {
+        Table(of: ScanComparisonRow.self, selection: $browserModel.selection, sortOrder: $sortOrder) {
             TableColumn("Item", sortUsing: ScanComparisonRowComparator(field: .relativePath)) { row in
                 comparisonItemLabel(
                     name: row.name,
@@ -555,11 +557,11 @@ struct ScanComparisonView: View {
     }
 
     private var selectedRow: ScanComparisonRow? {
-        singleRow(in: selection)
+        singleRow(in: browserModel.selection)
     }
 
     private var selectedAggregateNode: ScanComparisonChangeTreeNode? {
-        singleAggregateNode(in: aggregateSelection)
+        singleAggregateNode(in: browserModel.aggregateSelection)
     }
 
     private func aggregateSelectionActions(for node: ScanComparisonChangeTreeNode) -> some View {
@@ -718,7 +720,7 @@ struct ScanComparisonView: View {
     private func showAllChanges(for node: ScanComparisonChangeTreeNode) {
         displayMode = .allChanges
         focusedLocationPath = node.relativePath.isEmpty ? nil : node.relativePath
-        aggregateSelection.removeAll()
+        browserModel.aggregateSelection.removeAll()
     }
 
     private func singleRow(in ids: Set<ScanComparisonRow.ID>) -> ScanComparisonRow? {
@@ -763,10 +765,22 @@ struct ScanComparisonView: View {
         )
     }
 
-    private func refreshDisplayedRows(using query: ScanComparisonRowQuery) {
-        let rows = query.applying(to: comparison.rows)
-        displayedRows = rows
-        selection.formIntersection(rows.lazy.map(\.id))
+    private var displayedRows: [ScanComparisonRow] {
+        browserModel.displayedRows
+    }
+
+    private var projection: ScanComparisonChangeTreeProjection {
+        browserModel.projection
+    }
+
+    private func refreshBrowser(using query: ScanComparisonRowQuery) {
+        browserModel.refresh(
+            comparisonID: comparison.id,
+            rows: comparison.rows,
+            changeTree: comparison.changeTree,
+            query: query,
+            changeKinds: selectedChangeKinds
+        )
     }
 
     private func positiveChangeAccessibilityLabel(for row: ScanComparisonRow) -> String {
