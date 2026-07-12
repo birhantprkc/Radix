@@ -386,10 +386,37 @@ enum SystemIntegration {
         }
     }
 
-    nonisolated static func moveToTrash(_ url: URL) throws {
-        try validateCanMoveToTrash(url)
-        var resultingItemURL: NSURL?
-        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingItemURL)
+    /// Revalidates the scanned identity and then immediately delegates to the
+    /// native Trash operation. `FileManager` only accepts a path, so another
+    /// process can still replace that path in the tiny interval between `lstat`
+    /// and `trashItem`; keeping both steps in one operation is the narrowest
+    /// practical window while preserving native per-volume Trash behavior.
+    nonisolated static func moveToTrash(
+        _ node: FileNodeRecord
+    ) throws -> TrashIdentityVerificationResult {
+        try moveToTrash(
+            node,
+            identityVerifier: verifyTrashIdentity,
+            trashItem: { url in
+                var resultingItemURL: NSURL?
+                try FileManager.default.trashItem(at: url, resultingItemURL: &resultingItemURL)
+            }
+        )
+    }
+
+    nonisolated static func moveToTrash(
+        _ node: FileNodeRecord,
+        identityVerifier: (FileNodeRecord) -> TrashIdentityVerificationResult,
+        trashItem: (URL) throws -> Void
+    ) throws -> TrashIdentityVerificationResult {
+        try validateCanMoveToTrash(node.url)
+        let verificationResult = identityVerifier(node)
+        guard verificationResult == .matches else {
+            return verificationResult
+        }
+
+        try trashItem(node.url)
+        return .matches
     }
 
     nonisolated static func verifyTrashIdentity(_ node: FileNodeRecord) -> TrashIdentityVerificationResult {

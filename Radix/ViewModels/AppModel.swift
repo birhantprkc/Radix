@@ -176,7 +176,16 @@ final class AppModel: ObservableObject {
             refreshSidebarTargetSections()
         }
     }
-    @Published var showsOnboarding: Bool
+    @Published var showsOnboarding: Bool {
+        didSet {
+            synchronizeOnboardingPresentation()
+        }
+    }
+    @Published private(set) var showsDiscardPileReview = false {
+        didSet {
+            synchronizeDiscardPileReviewPresentation()
+        }
+    }
     @Published private(set) var fullDiskAccessStatus: FullDiskAccessStatus
     @Published private(set) var isExportPanelPresented = false
     @Published var lastErrorMessage: String? {
@@ -184,20 +193,38 @@ final class AppModel: ObservableObject {
             if lastErrorMessage == nil {
                 lastActionErrorTitle = nil
             }
+            synchronizeErrorPresentation()
         }
     }
     @Published private(set) var archiveOperation: ArchiveOperationState?
     @Published private(set) var exportConfirmation: ExportConfirmationState?
     @Published private(set) var scanComparison: ScanComparison?
-    @Published var pendingComparisonSetup: ScanComparisonSetup?
-    @Published var pendingImportPreview: ScanArchivePreview?
-    @Published var pendingTrashNode: FileNodeRecord?
-    @Published var pendingTrashSelection: PendingTrashSelection?
+    @Published var pendingComparisonSetup: ScanComparisonSetup? {
+        didSet {
+            synchronizeComparisonSetupPresentation()
+        }
+    }
+    @Published var pendingImportPreview: ScanArchivePreview? {
+        didSet {
+            synchronizeImportPreviewPresentation()
+        }
+    }
+    @Published var pendingTrashNode: FileNodeRecord? {
+        didSet {
+            synchronizeTrashConfirmationPresentation()
+        }
+    }
+    @Published var pendingTrashSelection: PendingTrashSelection? {
+        didSet {
+            synchronizeTrashConfirmationPresentation()
+        }
+    }
     @Published private(set) var discardPile = DiscardPileState()
     @Published private(set) var usageStats = AppUsageStats.empty
     @Published private var optimisticTrashVisibility = OptimisticTrashVisibilityState()
 
     private let dependencies: AppDependencies
+    let presentationCoordinator: AppPresentationCoordinator
     private let scanCoordinator: ScanCoordinator
     private let sidebarModel: SidebarModel
     private let quickLookController: AppQuickLookController
@@ -258,7 +285,11 @@ final class AppModel: ObservableObject {
         useScanExclusions = preferences.scan.useScanExclusions
         exclusionPatterns = preferences.scan.exclusionPatterns
         lastPersistedScanPreferences = preferences.scan
-        showsOnboarding = !preferences.didCompleteOnboarding
+        let shouldShowOnboarding = !preferences.didCompleteOnboarding
+        presentationCoordinator = AppPresentationCoordinator(
+            initialDestination: shouldShowOnboarding ? .sheet(.onboarding) : nil
+        )
+        showsOnboarding = shouldShowOnboarding
         usageStats = dependencies.usageStats.loadUsageStats()
         fullDiskAccessStatus = dependencies.systemActions.usesAsyncFullDiskAccessStatus
             ? .unknown
@@ -271,6 +302,11 @@ final class AppModel: ObservableObject {
             refreshFullDiskAccessStatus()
         }
         quickLookController.delegate = self
+        presentationCoordinator.objectWillChange
+            .sink { [weak self] in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
         observeNavigationModel()
         observeScanCoordinator()
         observeMountedVolumes()
@@ -304,6 +340,8 @@ final class AppModel: ObservableObject {
         isExportPanelPresented = false
         cancelArchiveOperation()
         dismissExportConfirmation()
+        presentationCoordinator.reset()
+        showsDiscardPileReview = false
         pendingComparisonSetup = nil
         pendingImportPreview = nil
         quickLookController.setWorkspaceWindowNumber(nil)
@@ -406,6 +444,34 @@ final class AppModel: ObservableObject {
 
     func presentOnboarding() {
         showsOnboarding = true
+    }
+
+    func presentDiscardPileReview() {
+        guard !discardPile.isEmpty else { return }
+        showsDiscardPileReview = true
+    }
+
+    func dismissDiscardPileReview() {
+        showsDiscardPileReview = false
+    }
+
+    func dismissActiveSheet() {
+        switch presentationCoordinator.activeSheet {
+        case .onboarding:
+            dismissOnboarding()
+        case .discardPileReview:
+            dismissDiscardPileReview()
+        case .importPreview:
+            cancelImportPreview()
+        case .comparisonSetup:
+            cancelComparisonSetup()
+        case nil:
+            break
+        }
+    }
+
+    func dismissErrorPresentation() {
+        lastErrorMessage = nil
     }
 
     func refreshFullDiskAccessStatus() {
@@ -2014,8 +2080,7 @@ final class AppModel: ObservableObject {
     }
 
     private var usesAsyncTrashActions: Bool {
-        dependencies.systemActions.asyncMoveToTrash != nil ||
-            dependencies.systemActions.asyncVerifyTrashIdentity != nil
+        dependencies.systemActions.asyncMoveToTrash != nil
     }
 
     private func performConfirmedTrashMoveSynchronously(
@@ -2025,17 +2090,16 @@ final class AppModel: ObservableObject {
     ) {
         var movedNodes: [FileNodeRecord] = []
 
-        if let actionError = trashIdentityError(for: nodes) {
-            presentError(actionError)
-            return
-        }
-
         hideTrashNodesDuringMove(nodes, snapshotID: originalSnapshotID)
 
         var actionError: Error?
         for node in nodes {
             do {
-                try dependencies.systemActions.moveToTrash(node.url)
+                let verificationResult = try dependencies.systemActions.moveToTrash(node)
+                if let identityError = fileActionError(for: verificationResult, node: node) {
+                    actionError = identityError
+                    break
+                }
                 movedNodes.append(node)
             } catch {
                 actionError = error
@@ -2059,17 +2123,16 @@ final class AppModel: ObservableObject {
     ) async {
         var movedNodes: [FileNodeRecord] = []
 
-        if let actionError = await asyncTrashIdentityError(for: nodes) {
-            presentError(actionError)
-            return
-        }
-
         hideTrashNodesDuringMove(nodes, snapshotID: originalSnapshotID)
 
         var actionError: Error?
         for node in nodes {
             do {
-                try await moveToTrash(node.url)
+                let verificationResult = try await moveToTrash(node)
+                if let identityError = fileActionError(for: verificationResult, node: node) {
+                    actionError = identityError
+                    break
+                }
                 movedNodes.append(node)
             } catch {
                 actionError = error
@@ -2084,34 +2147,6 @@ final class AppModel: ObservableObject {
             originalSnapshotID: originalSnapshotID,
             statsFileTreeStore: statsFileTreeStore
         )
-    }
-
-    private func trashIdentityError(for nodes: [FileNodeRecord]) -> Error? {
-        for node in nodes {
-            if let error = fileActionError(
-                for: dependencies.systemActions.verifyTrashIdentity(node),
-                node: node
-            ) {
-                return error
-            }
-        }
-        return nil
-    }
-
-    private func asyncTrashIdentityError(for nodes: [FileNodeRecord]) async -> Error? {
-        for node in nodes {
-            let result: TrashIdentityVerificationResult
-            if let asyncVerifyTrashIdentity = dependencies.systemActions.asyncVerifyTrashIdentity {
-                result = await asyncVerifyTrashIdentity(node)
-            } else {
-                result = dependencies.systemActions.verifyTrashIdentity(node)
-            }
-
-            if let error = fileActionError(for: result, node: node) {
-                return error
-            }
-        }
-        return nil
     }
 
     private func fileActionError(
@@ -2132,11 +2167,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func moveToTrash(_ url: URL) async throws {
+    private func moveToTrash(
+        _ node: FileNodeRecord
+    ) async throws -> TrashIdentityVerificationResult {
         if let asyncMoveToTrash = dependencies.systemActions.asyncMoveToTrash {
-            try await asyncMoveToTrash(url)
+            return try await asyncMoveToTrash(node)
         } else {
-            try dependencies.systemActions.moveToTrash(url)
+            return try dependencies.systemActions.moveToTrash(node)
         }
     }
 

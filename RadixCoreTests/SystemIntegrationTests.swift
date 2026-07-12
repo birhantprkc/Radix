@@ -274,6 +274,67 @@ final class SystemIntegrationTests: XCTestCase {
         )
     }
 
+    func testIdentityBoundTrashMoveDoesNotMutateReplacementAtScannedPath() throws {
+        let node = trashTestNode()
+        var operationOrder: [String] = []
+
+        let result = try SystemIntegration.moveToTrash(
+            node,
+            identityVerifier: { verifiedNode in
+                operationOrder.append("verify:\(verifiedNode.id)")
+                // Models the path having been replaced after the user confirmed
+                // the request but before the consolidated mutation begins.
+                return .mismatch
+            },
+            trashItem: { _ in
+                operationOrder.append("trash")
+            }
+        )
+
+        XCTAssertEqual(result, .mismatch)
+        XCTAssertEqual(operationOrder, ["verify:\(node.id)"])
+    }
+
+    func testIdentityBoundTrashMoveVerifiesImmediatelyBeforeNativeMutation() throws {
+        let node = trashTestNode()
+        var operationOrder: [String] = []
+
+        let result = try SystemIntegration.moveToTrash(
+            node,
+            identityVerifier: { _ in
+                operationOrder.append("verify")
+                return .matches
+            },
+            trashItem: { url in
+                operationOrder.append("trash:\(url.path)")
+            }
+        )
+
+        XCTAssertEqual(result, .matches)
+        XCTAssertEqual(operationOrder, ["verify", "trash:\(node.url.path)"])
+    }
+
+    private func trashTestNode() -> FileNodeRecord {
+        let url = URL(filePath: "/tmp/radix-trash-test.txt", directoryHint: .notDirectory)
+        return FileNodeRecord(
+            id: url.path,
+            url: url,
+            name: url.lastPathComponent,
+            isDirectory: false,
+            isSymbolicLink: false,
+            allocatedSize: 1,
+            logicalSize: 1,
+            descendantFileCount: 1,
+            lastModified: nil,
+            fileIdentity: FileIdentity(device: 1, inode: 2),
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+    }
+
     private var successfulProbe: SystemIntegration.FullDiskAccessProbe {
         {}
     }

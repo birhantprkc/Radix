@@ -35,7 +35,7 @@ struct AppQuickLookActions {
     )
 }
 
-enum TrashIdentityVerificationResult: Equatable, Sendable {
+nonisolated enum TrashIdentityVerificationResult: Equatable, Sendable {
     case matches
     case missingScannedIdentity
     case missingCurrentItem
@@ -71,8 +71,8 @@ struct AppSystemActions {
     var revealMany: ([URL]) -> Void
     var copyPath: (URL) throws -> Void
     var copyPaths: ([URL]) throws -> Void
-    var moveToTrash: (URL) throws -> Void
-    var asyncMoveToTrash: (@Sendable (URL) async throws -> Void)?
+    var moveToTrash: (FileNodeRecord) throws -> TrashIdentityVerificationResult
+    var asyncMoveToTrash: (@Sendable (FileNodeRecord) async throws -> TrashIdentityVerificationResult)?
     var quickLook: AppQuickLookActions
     var prepareAndOpenFullDiskAccessSettings: () -> Bool
     var fullDiskAccessStatus: () -> FullDiskAccessStatus
@@ -88,7 +88,6 @@ struct AppSystemActions {
     var presentComparisonSnapshotPanel: () async -> URL?
     var fileExists: (URL) -> Bool
     var verifyTrashIdentity: (FileNodeRecord) -> TrashIdentityVerificationResult
-    var asyncVerifyTrashIdentity: (@Sendable (FileNodeRecord) async -> TrashIdentityVerificationResult)?
     var isExistingDirectory: (URL) -> Bool
     var preferredSmartTargetIDs: () -> [String]
     var mountedVolumeEvents: () -> AnyPublisher<Void, Never>
@@ -101,9 +100,9 @@ struct AppSystemActions {
         copyPath: { try SystemIntegration.copyPath($0) },
         copyPaths: { try SystemIntegration.copyPaths($0) },
         moveToTrash: { try SystemIntegration.moveToTrash($0) },
-        asyncMoveToTrash: { url in
+        asyncMoveToTrash: { node in
             try await Task.detached(priority: .userInitiated) {
-                try SystemIntegration.moveToTrash(url)
+                try SystemIntegration.moveToTrash(node)
             }.value
         },
         quickLook: .live,
@@ -153,11 +152,6 @@ struct AppSystemActions {
         verifyTrashIdentity: { node in
             SystemIntegration.verifyTrashIdentity(node)
         },
-        asyncVerifyTrashIdentity: { node in
-            await Task.detached(priority: .userInitiated) {
-                SystemIntegration.verifyTrashIdentity(node)
-            }.value
-        },
         isExistingDirectory: { url in
             Self.isExistingDirectoryURL(url)
         },
@@ -190,7 +184,7 @@ struct AppSystemActions {
         revealMany: { _ in },
         copyPath: { _ in },
         copyPaths: { _ in },
-        moveToTrash: { _ in },
+        moveToTrash: { _ in .matches },
         asyncMoveToTrash: nil,
         quickLook: .disabled,
         prepareAndOpenFullDiskAccessSettings: { true },
@@ -209,7 +203,6 @@ struct AppSystemActions {
         presentComparisonSnapshotPanel: { nil },
         fileExists: { _ in false },
         verifyTrashIdentity: { _ in .matches },
-        asyncVerifyTrashIdentity: nil,
         isExistingDirectory: { _ in false },
         preferredSmartTargetIDs: { [] },
         mountedVolumeEvents: { Empty().eraseToAnyPublisher() },

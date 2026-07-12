@@ -591,7 +591,7 @@ final class AppModelDependencyTests: XCTestCase {
         recorder.defaultTargets = [refreshedTarget]
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         actions.defaultTargets = {
             recorder.defaultTargetsCallCount += 1
             return recorder.defaultTargets
@@ -613,9 +613,9 @@ final class AppModelDependencyTests: XCTestCase {
         let probe = AsyncTrashActionProbe()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.asyncVerifyTrashIdentity = { _ in .matches }
-        actions.asyncMoveToTrash = { url in
-            await probe.move(url)
+        actions.asyncMoveToTrash = { node in
+            await probe.move(node.url)
+            return .matches
         }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let file = installSelection(on: model)
@@ -651,9 +651,8 @@ final class AppModelDependencyTests: XCTestCase {
         let probe = AsyncTrashActionProbe()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.asyncVerifyTrashIdentity = { _ in .matches }
-        actions.asyncMoveToTrash = { url in
-            await probe.move(url)
+        actions.asyncMoveToTrash = { node in
+            await probe.move(node.url)
             throw NSError(domain: "RadixTrashTest", code: 1)
         }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
@@ -680,9 +679,9 @@ final class AppModelDependencyTests: XCTestCase {
         let probe = AsyncTrashActionProbe()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.asyncVerifyTrashIdentity = { _ in .matches }
-        actions.asyncMoveToTrash = { url in
-            await probe.move(url)
+        actions.asyncMoveToTrash = { node in
+            await probe.move(node.url)
+            return .matches
         }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
 
@@ -732,7 +731,7 @@ final class AppModelDependencyTests: XCTestCase {
             folder.id: [first, second]
         ])
         var actions = AppSystemActions.inert
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(
             systemActions: actions,
             usageStats: usageStats
@@ -765,11 +764,11 @@ final class AppModelDependencyTests: XCTestCase {
         )
         var verifiedNodeIDs: [String] = []
         var actions = AppSystemActions.inert
-        actions.verifyTrashIdentity = { node in
+        actions.moveToTrash = { node in
             verifiedNodeIDs.append(node.id)
+            recorder.movedToTrashURLs.append(node.url)
             return .matches
         }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         installSelection(on: model, file: file)
 
@@ -790,8 +789,7 @@ final class AppModelDependencyTests: XCTestCase {
             fileIdentity: FileIdentity(device: 1, inode: 2)
         )
         var actions = AppSystemActions.inert
-        actions.verifyTrashIdentity = { _ in .mismatch }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { _ in .mismatch }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         installSelection(on: model, file: file)
 
@@ -810,8 +808,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         let file = makeTestFileNode(id: "/selection/unverified.txt", name: "unverified.txt")
         var actions = AppSystemActions.inert
-        actions.verifyTrashIdentity = { _ in .missingScannedIdentity }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { _ in .missingScannedIdentity }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         installSelection(on: model, file: file)
 
@@ -826,7 +823,7 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
-    func testConfirmPendingTrashBatchMismatchBlocksAllMoves() {
+    func testConfirmPendingTrashBatchRevalidatesAndMovesEachItemInOrder() {
         let recorder = AppModelActionRecorder()
         let first = makeTestFileNode(
             id: "/selection/first.txt",
@@ -840,11 +837,12 @@ final class AppModelDependencyTests: XCTestCase {
         )
         var verifiedNodeIDs: [String] = []
         var actions = AppSystemActions.inert
-        actions.verifyTrashIdentity = { node in
+        actions.moveToTrash = { node in
             verifiedNodeIDs.append(node.id)
-            return node.id == second.id ? .mismatch : .matches
+            guard node.id != second.id else { return .mismatch }
+            recorder.movedToTrashURLs.append(node.url)
+            return .matches
         }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let root = makeTestDirectoryNode(id: "/selection", name: "selection", children: [first, second])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second]])
@@ -857,7 +855,7 @@ final class AppModelDependencyTests: XCTestCase {
         model.confirmMovePendingNodeToTrash()
 
         XCTAssertEqual(verifiedNodeIDs, [first.id, second.id])
-        XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
+        XCTAssertEqual(recorder.movedToTrashURLs, [first.url])
         XCTAssertEqual(
             model.lastErrorMessage,
             "The item at \(second.url.path) changed since this scan. Rescan before moving it to Trash."
@@ -869,7 +867,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let protectedRoot = makeTestDirectoryNode(
             id: "/Applications",
@@ -916,7 +914,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let queued = makeTestFileNode(id: "/selection/queued.txt", name: "queued.txt", size: 40)
         let visible = makeTestFileNode(id: "/selection/visible.txt", name: "visible.txt", size: 80)
@@ -946,7 +944,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let firstQueued = makeTestFileNode(id: "/selection/firstQueued.txt", name: "firstQueued.txt", size: 40)
         let secondQueued = makeTestFileNode(id: "/selection/secondQueued.txt", name: "secondQueued.txt", size: 60)
@@ -981,7 +979,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let queued = makeTestFileNode(id: "/selection/folder/queued.txt", name: "queued.txt", size: 40)
         let sibling = makeTestFileNode(id: "/selection/folder/sibling.txt", name: "sibling.txt", size: 80)
@@ -1011,7 +1009,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let queued = makeTestFileNode(id: "/selection/folder/queued.txt", name: "queued.txt", size: 40)
         let sibling = makeTestFileNode(id: "/selection/folder/sibling.txt", name: "sibling.txt", size: 80)
@@ -1042,7 +1040,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let queued = makeTestFileNode(id: "/selection/folder/queued.txt", name: "queued.txt", size: 40)
         let sibling = makeTestFileNode(id: "/selection/folder/sibling.txt", name: "sibling.txt", size: 80)
@@ -1073,7 +1071,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let queued = makeTestFileNode(id: "/selection/queued.txt", name: "queued.txt", size: 40)
         let visible = makeTestFileNode(id: "/selection/visible.txt", name: "visible.txt", size: 80)
@@ -1472,7 +1470,7 @@ final class AppModelDependencyTests: XCTestCase {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { recorder.movedToTrashURLs.append($0) }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let child = makeTestFileNode(id: "/selection/folder/child.txt", name: "child.txt")
         let folder = makeTestDirectoryNode(id: "/selection/folder", name: "folder", children: [child])

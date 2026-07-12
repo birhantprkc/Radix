@@ -243,19 +243,19 @@ struct FileTreeStore: Sendable {
             if node.isDirectory {
                 directoryCount += 1
                 if node.isPackage && !containsChildren(id: node.id) {
-                    fileCount += node.descendantFileCount
+                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
                 }
                 if node.isAutoSummarized {
-                    fileCount += node.descendantFileCount
+                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
                 }
             } else if !node.isSymbolicLink && !node.isSynthetic {
-                fileCount += 1
+                fileCount = Self.saturatingAdd(fileCount, 1)
             }
 
             if node.isAccessible {
-                accessibleItemCount += 1
+                accessibleItemCount = Self.saturatingAdd(accessibleItemCount, 1)
             } else {
-                inaccessibleItemCount += 1
+                inaccessibleItemCount = Self.saturatingAdd(inaccessibleItemCount, 1)
             }
         }
 
@@ -1115,19 +1115,19 @@ struct FileTreeStore: Sendable {
             if node.isDirectory {
                 directoryCount += 1
                 if node.isPackage && childIDsByID[node.id]?.isEmpty != false {
-                    fileCount += node.descendantFileCount
+                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
                 }
                 if node.isAutoSummarized {
-                    fileCount += node.descendantFileCount
+                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
                 }
             } else if !node.isSymbolicLink && !node.isSynthetic {
-                fileCount += 1
+                fileCount = Self.saturatingAdd(fileCount, 1)
             }
 
             if node.isAccessible {
-                accessibleItemCount += 1
+                accessibleItemCount = Self.saturatingAdd(accessibleItemCount, 1)
             } else {
-                inaccessibleItemCount += 1
+                inaccessibleItemCount = Self.saturatingAdd(inaccessibleItemCount, 1)
             }
         }
 
@@ -1314,16 +1314,16 @@ struct FileTreeStore: Sendable {
         children: [FileNodeRecord]
     ) -> FileNodeRecord {
         let allocatedSize = children.reduce(into: Int64(0)) { result, child in
-            result += child.allocatedSize
+            result = saturatingAdd(result, child.allocatedSize)
         }
         let logicalSize = children.reduce(into: Int64(0)) { result, child in
-            result += child.logicalSize
+            result = saturatingAdd(result, child.logicalSize)
         }
         let descendantFileCount = children.reduce(into: 0) { result, child in
             if child.isDirectory {
-                result += child.descendantFileCount
+                result = saturatingAdd(result, child.descendantFileCount)
             } else if !child.isSymbolicLink && !child.isSynthetic {
-                result += 1
+                result = saturatingAdd(result, 1)
             }
         }
 
@@ -1345,5 +1345,18 @@ struct FileTreeStore: Sendable {
             isSynthetic: node.isSynthetic,
             isAutoSummarized: node.isAutoSummarized
         )
+    }
+
+    /// Tree totals originate from filesystem metadata and imported archives. A
+    /// malformed archive can contain individually valid nonnegative values whose
+    /// sum exceeds the integer representation; clamp instead of trapping while
+    /// rebuilding a safe in-memory tree.
+    private nonisolated static func saturatingAdd<Value: FixedWidthInteger>(
+        _ lhs: Value,
+        _ rhs: Value
+    ) -> Value {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        guard overflow else { return sum }
+        return rhs >= .zero ? .max : .min
     }
 }

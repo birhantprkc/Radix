@@ -2,6 +2,51 @@ import XCTest
 @testable import RadixCore
 
 final class FileTreeStoreTests: XCTestCase {
+    func testRepairingMaterializedDirectoryTotalsSaturatesOverflow() {
+        let first = makeFileNode(id: "/root/first.bin", name: "first.bin", size: .max)
+        let second = makeFileNode(id: "/root/second.bin", name: "second.bin", size: 1)
+        let staleRoot = makeDirectoryNode(id: "/root", name: "root", children: [])
+
+        let store = FileTreeStore(
+            rootID: staleRoot.id,
+            nodesByID: [
+                staleRoot.id: staleRoot,
+                first.id: first,
+                second.id: second,
+            ],
+            childIDsByID: [staleRoot.id: [first.id, second.id]],
+            parentIDByID: [first.id: staleRoot.id, second.id: staleRoot.id]
+        )
+
+        XCTAssertEqual(store.root.allocatedSize, Int64.max)
+        XCTAssertEqual(store.root.logicalSize, Int64.max)
+        XCTAssertEqual(store.root.descendantFileCount, 2)
+    }
+
+    func testComputedAggregateFileCountSaturatesOverflow() {
+        let summarized = FileNodeRecord(
+            id: "/root/summarized",
+            url: URL(filePath: "/root/summarized", directoryHint: .isDirectory),
+            name: "summarized",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: 0,
+            logicalSize: 0,
+            descendantFileCount: .max,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: true
+        )
+        let file = makeFileNode(id: "/root/file.bin", name: "file.bin", size: 1)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [summarized, file]])
+
+        XCTAssertEqual(store.aggregateStats.fileCount, Int.max)
+    }
+
     func testPathAndAncestorLookup() {
         let leaf = makeFileNode(id: "/root/folder/file.txt", name: "file.txt", size: 12)
         let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])

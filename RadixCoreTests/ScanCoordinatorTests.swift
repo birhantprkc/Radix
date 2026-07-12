@@ -703,7 +703,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let service = ControlledScanService()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { _ in }
+        actions.moveToTrash = { _ in .matches }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
                 scanService: service,
@@ -747,7 +747,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let service = ControlledScanService()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { _ in }
+        actions.moveToTrash = { _ in .matches }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
                 scanService: service,
@@ -789,7 +789,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let service = ControlledScanService()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { _ in }
+        actions.moveToTrash = { _ in .matches }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
                 scanService: service,
@@ -826,7 +826,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let service = ControlledScanService()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { _ in }
+        actions.moveToTrash = { _ in .matches }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
                 scanService: service,
@@ -859,7 +859,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let secondTarget = makeCoordinatorTarget("/app/sidebar/stale-second")
         var actions = makeCoordinatorSidebarActions(targets: [firstTarget, secondTarget])
         actions.fileExists = { _ in true }
-        actions.moveToTrash = { _ in }
+        actions.moveToTrash = { _ in .matches }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
                 scanService: service,
