@@ -5,14 +5,14 @@
 
 import Foundation
 
-enum ScanVisualizationMode: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum ScanVisualizationMode: String, CaseIterable, Identifiable, Sendable {
     case sunburst
     case treemap
 
     var id: Self { self }
 }
 
-struct AppScanPreferences: Equatable {
+nonisolated struct AppScanPreferences: Equatable {
     var showHiddenFiles: Bool
     var treatPackagesAsDirectories: Bool
     var maxRenderedDepth: Int
@@ -36,7 +36,7 @@ struct AppScanPreferences: Equatable {
     )
 }
 
-struct AppPreferences: Equatable {
+nonisolated struct AppPreferences: Equatable {
     var scan: AppScanPreferences
     var didCompleteOnboarding: Bool
 

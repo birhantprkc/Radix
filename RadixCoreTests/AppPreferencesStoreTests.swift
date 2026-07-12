@@ -1,6 +1,7 @@
 import XCTest
 @testable import RadixCore
 
+@MainActor
 final class AppPreferencesStoreTests: XCTestCase {
     func testLoadPreferencesUsesAppDefaultsWhenValuesAreMissing() {
         let defaults = makeIsolatedDefaults()

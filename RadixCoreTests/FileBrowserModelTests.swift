@@ -119,7 +119,7 @@ final class FileBrowserModelTests: XCTestCase {
         let nodes = [resume, report, cache, ignored]
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: nodes)
         let store = FileTreeStore(root: root, childrenByID: [root.id: nodes])
-        let service = FileSearchService()
+        let service = await FileSearchService()
         let snapshotID = UUID()
         let sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         let cases: [(query: String, expectedIDs: [String])] = [
@@ -229,7 +229,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [beta, alphaB, alphaA])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [beta, alphaB, alphaA]])
-        let service = FileSearchService()
+        let service = await FileSearchService()
         let searchResults = try await service.search(
             snapshotID: UUID(),
             treeStore: store,
@@ -569,7 +569,7 @@ final class FileBrowserModelTests: XCTestCase {
             photos.id: [photo],
             library.id: [cache],
         ])
-        let service = FileSearchService()
+        let service = await FileSearchService()
         let snapshotID = UUID()
 
         let photoMatches = try await service.search(

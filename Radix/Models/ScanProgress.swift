@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct ScanMetrics: Sendable {
+nonisolated struct ScanMetrics: Sendable {
     var filesVisited = 0
     var directoriesVisited = 0
     var bytesDiscovered: Int64 = 0
@@ -123,7 +123,7 @@ struct ScanMetrics: Sendable {
     }
 }
 
-enum ScanProgressEvent: Sendable {
+nonisolated enum ScanProgressEvent: Sendable {
     case progress(ScanMetrics)
     case warning(ScanWarning)
     case finished(ScanSnapshot)

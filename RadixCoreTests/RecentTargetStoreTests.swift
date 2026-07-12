@@ -1,6 +1,7 @@
 import XCTest
 @testable import RadixCore
 
+@MainActor
 final class RecentTargetStoreTests: XCTestCase {
     func testLoadPrunesUnavailableTargetsAndPersistsAvailableSubset() {
         let available = makeRecentTarget("/recent/available")

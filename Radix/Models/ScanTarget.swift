@@ -7,12 +7,12 @@
 
 import Foundation
 
-enum ScanTargetKind: String, Hashable, Codable, Sendable {
+nonisolated enum ScanTargetKind: String, Hashable, Codable, Sendable {
     case folder
     case volume
 }
 
-struct ScanTarget: Identifiable, Hashable, Sendable {
+nonisolated struct ScanTarget: Identifiable, Hashable, Sendable {
     let id: String
     let url: URL
     let displayName: String

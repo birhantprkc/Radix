@@ -128,6 +128,7 @@ final class SidebarModelTests: XCTestCase {
     }
 }
 
+@MainActor
 private func makeSidebarRecentTargetStore(
     isAvailable: @escaping (ScanTarget) -> Bool = { _ in true }
 ) -> RecentTargetStore {

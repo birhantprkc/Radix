@@ -1,6 +1,6 @@
 import CoreGraphics
 
-struct SunburstViewportTransform: Equatable {
+nonisolated struct SunburstViewportTransform: Equatable {
     static let identity = SunburstViewportTransform()
     static let minimumScale: CGFloat = 1
     static let maximumScale: CGFloat = 4
@@ -117,7 +117,7 @@ struct SunburstViewportTransform: Equatable {
 }
 
 private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
+    nonisolated func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }

@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct AppUsageStats: Codable, Equatable, Sendable {
+nonisolated struct AppUsageStats: Codable, Equatable, Sendable {
     var totalScansRun = 0
     var totalBytesScanned: Int64 = 0
     var largestScanBytes: Int64 = 0
@@ -198,18 +198,18 @@ final class InMemoryAppUsageStatsStore: AppUsageStatsPersisting {
 }
 
 private extension Int {
-    func addingClamped(_ value: Int) -> Int {
+    nonisolated func addingClamped(_ value: Int) -> Int {
         let (sum, overflow) = addingReportingOverflow(value)
         return overflow ? Int.max : sum
     }
 
-    func incrementedClampingToMax() -> Int {
+    nonisolated func incrementedClampingToMax() -> Int {
         addingClamped(1)
     }
 }
 
 private extension Int64 {
-    func addingClamped(_ value: Int64) -> Int64 {
+    nonisolated func addingClamped(_ value: Int64) -> Int64 {
         let (sum, overflow) = addingReportingOverflow(value)
         return overflow ? Int64.max : sum
     }

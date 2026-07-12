@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum TrashSafetyBlockReason: Equatable, Sendable {
+nonisolated enum TrashSafetyBlockReason: Equatable, Sendable {
     case protectedRoot(path: String)
 
     nonisolated var path: String {
@@ -18,8 +18,8 @@ enum TrashSafetyBlockReason: Equatable, Sendable {
     }
 }
 
-struct TrashSafetyPolicy: Sendable {
-    struct FirmlinkEntry: Equatable, Sendable {
+nonisolated struct TrashSafetyPolicy: Sendable {
+    nonisolated struct FirmlinkEntry: Equatable, Sendable {
         let visiblePath: String
         let dataRelativePath: String
 

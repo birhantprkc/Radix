@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable {
+nonisolated enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable {
     case quickLook
     case revealInFinder
     case open
@@ -71,7 +71,7 @@ enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable {
     }
 }
 
-struct FileNodeActionAvailability: Equatable, Sendable {
+nonisolated struct FileNodeActionAvailability: Equatable, Sendable {
     let canOpen: Bool
     let canPreviewWithQuickLook: Bool
     let canRevealInFinder: Bool
@@ -153,7 +153,7 @@ struct FileNodeActionAvailability: Equatable, Sendable {
     }
 }
 
-enum ScanPostTrashAction: Equatable {
+nonisolated enum ScanPostTrashAction: Equatable {
     case clearActiveScan
     case removeFromActiveScan
     case none
@@ -165,15 +165,15 @@ enum ScanPostTrashAction: Equatable {
 }
 
 extension FileNodeRecord {
-    var supportsMoveToTrash: Bool {
+    nonisolated var supportsMoveToTrash: Bool {
         supportsMoveToTrash(trashSafetyPolicy: .live())
     }
 
-    func supportsMoveToTrash(trashSafetyPolicy: TrashSafetyPolicy) -> Bool {
+    nonisolated func supportsMoveToTrash(trashSafetyPolicy: TrashSafetyPolicy) -> Bool {
         supportsFileActions && trashSafetyPolicy.blockReason(for: url) == nil
     }
 
-    func supportsMoveToTrash(
+    nonisolated func supportsMoveToTrash(
         activeTarget: ScanTarget?,
         trashSafetyPolicy: TrashSafetyPolicy = .live()
     ) -> Bool {
@@ -182,7 +182,7 @@ extension FileNodeRecord {
         return !(activeTarget.kind == .volume && activeTarget.id == id)
     }
 
-    func actionAvailability(
+    nonisolated func actionAvailability(
         activeTarget: ScanTarget?,
         trashSafetyPolicy: TrashSafetyPolicy = .live(),
         snapshotSource: ScanSnapshotSource = .live

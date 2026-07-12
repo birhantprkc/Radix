@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct ScanCacheKey: Hashable {
+nonisolated struct ScanCacheKey: Hashable {
     let targetID: String
     let options: ScanOptions
 
@@ -15,7 +15,7 @@ struct ScanCacheKey: Hashable {
     }
 }
 
-struct CompletedScanCache {
+nonisolated struct CompletedScanCache {
     private let minimumRetainedSnapshotCount: Int
     private let maxTotalNodeCount: Int
     private var snapshotsByKey: [ScanCacheKey: ScanSnapshot] = [:]

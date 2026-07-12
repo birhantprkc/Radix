@@ -10,7 +10,7 @@ import Darwin
 import Foundation
 import UniformTypeIdentifiers
 
-enum FullDiskAccessStatus: Equatable, Sendable {
+nonisolated enum FullDiskAccessStatus: Equatable, Sendable {
     case granted
     case notGranted
     case unknown
@@ -771,7 +771,7 @@ private struct ProtectedPathProbe {
     }
 }
 
-enum PermissionAdvisor {
+nonisolated enum PermissionAdvisor {
     // Fragments whose contents Full Disk Access actually unlocks. Note that the
     // TCC directory itself (/Library/Application Support/com.apple.TCC) is
     // root-owned/SIP-protected and stays unreadable even with FDA, so it must

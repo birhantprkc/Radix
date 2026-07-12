@@ -7,19 +7,19 @@
 
 import Foundation
 
-enum ScanWarningCategory: String, Hashable, Sendable {
+nonisolated enum ScanWarningCategory: String, Hashable, Sendable {
     case permissionDenied
     case fileSystem
 }
 
-struct ScanWarning: Identifiable, Hashable, Sendable {
+nonisolated struct ScanWarning: Identifiable, Hashable, Sendable {
     let id = UUID()
     let path: String
     let message: String
     let category: ScanWarningCategory
 }
 
-struct ScanAggregateStats: Sendable {
+nonisolated struct ScanAggregateStats: Sendable {
     let totalAllocatedSize: Int64
     let totalLogicalSize: Int64
     let fileCount: Int
@@ -102,7 +102,7 @@ nonisolated enum ScanSnapshotSource: Sendable {
     }
 }
 
-struct ScanSnapshot: Identifiable, Sendable {
+nonisolated struct ScanSnapshot: Identifiable, Sendable {
     let id: UUID
     let target: ScanTarget
     let treeStore: FileTreeStore

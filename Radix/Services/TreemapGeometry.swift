@@ -6,7 +6,7 @@
 import CoreGraphics
 import Foundation
 
-struct TreemapSegment: Identifiable, Hashable, Sendable {
+nonisolated struct TreemapSegment: Identifiable, Hashable, Sendable {
     let id: String
     let nodeID: String?
     let containerNodeID: String
@@ -22,7 +22,7 @@ struct TreemapSegment: Identifiable, Hashable, Sendable {
     let showsContainerHeader: Bool
 }
 
-enum TreemapLayout {
+nonisolated enum TreemapLayout {
     private nonisolated static let containerInset: CGFloat = 2
     private nonisolated static let containerHeaderHeight: CGFloat = 18
     private nonisolated static let minimumContainerWidth: CGFloat = 52
@@ -544,7 +544,7 @@ enum TreemapLayout {
     }
 }
 
-enum TreemapRenderer {
+nonisolated enum TreemapRenderer {
     private nonisolated static let displayInset: CGFloat = 0.75
 
     nonisolated static func rect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
@@ -583,7 +583,7 @@ enum TreemapRenderer {
     }
 }
 
-struct TreemapHitTestIndex: Sendable {
+nonisolated struct TreemapHitTestIndex: Sendable {
     private nonisolated static let columnCount = 32
     private nonisolated static let rowCount = 24
 

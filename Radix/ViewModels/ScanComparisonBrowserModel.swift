@@ -6,7 +6,7 @@ import Foundation
 /// only the latest completed request is allowed to publish.
 @MainActor
 final class ScanComparisonBrowserModel: ObservableObject {
-    struct WorkInput: Equatable, Sendable {
+    nonisolated struct WorkInput: Equatable, Sendable {
         let comparisonID: UUID
         let rows: [ScanComparisonRow]
         let changeTree: ScanComparisonChangeTree
@@ -14,7 +14,7 @@ final class ScanComparisonBrowserModel: ObservableObject {
         let changeKinds: Set<ScanComparisonChangeKind>
     }
 
-    struct WorkOutput: Equatable, Sendable {
+    nonisolated struct WorkOutput: Equatable, Sendable {
         let rows: [ScanComparisonRow]
         let projection: ScanComparisonChangeTreeProjection
     }

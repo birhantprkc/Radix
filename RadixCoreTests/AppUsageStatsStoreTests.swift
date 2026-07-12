@@ -1,6 +1,7 @@
 import XCTest
 @testable import RadixCore
 
+@MainActor
 final class AppUsageStatsStoreTests: XCTestCase {
     func testRecordsScanInteractionAndTrashStats() {
         let first = makeTestFileNode(id: "/stats/first.bin", name: "first.bin", size: 100)

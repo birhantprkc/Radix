@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -101,6 +101,11 @@ let package = Package(
                 "ViewModels/SidebarScanCacheController.swift",
                 "ViewModels/SidebarModel.swift",
                 "ViewModels/WorkspaceNavigationModel.swift"
+            ],
+            swiftSettings: [
+                .defaultIsolation(MainActor.self),
+                .enableUpcomingFeature("InferIsolatedConformances"),
+                .enableUpcomingFeature("NonisolatedNonsendingByDefault")
             ]
         ),
         .testTarget(

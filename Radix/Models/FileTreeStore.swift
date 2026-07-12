@@ -142,7 +142,7 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
     }
 }
 
-struct FileTreeStore: Sendable {
+nonisolated struct FileTreeStore: Sendable {
     let contentID: UUID
     let rootID: String
     private let nodeRecords: [FileNodeRecord]

@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 @testable import RadixCore
 
+@MainActor
 final class SystemIntegrationTests: XCTestCase {
     func testOpenThrowsWhenWorkspaceDeclinesURL() {
         let url = URL(filePath: "/tmp/missing.txt")

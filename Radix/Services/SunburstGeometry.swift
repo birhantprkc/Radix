@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct SunburstSegment: Identifiable, Hashable, Sendable {
+nonisolated struct SunburstSegment: Identifiable, Hashable, Sendable {
     let id: String
     let nodeID: String?
     let label: String
@@ -21,7 +21,7 @@ struct SunburstSegment: Identifiable, Hashable, Sendable {
     let isAggregate: Bool
 }
 
-enum SunburstLayout {
+nonisolated enum SunburstLayout {
     nonisolated static let centerRadius: CGFloat = 0.22
 
     typealias CancellationCheck = () throws -> Void
@@ -393,7 +393,7 @@ enum SunburstRenderer {
     }
 }
 
-enum SunburstHitTester {
+nonisolated enum SunburstHitTester {
     nonisolated static func segment(
         at point: CGPoint,
         in size: CGSize,
@@ -403,7 +403,7 @@ enum SunburstHitTester {
     }
 }
 
-enum SunburstCenterHitTester {
+nonisolated enum SunburstCenterHitTester {
     nonisolated static func contains(
         point: CGPoint,
         in size: CGSize,
@@ -420,7 +420,7 @@ enum SunburstCenterHitTester {
     }
 }
 
-struct SunburstHitTestIndex: Sendable {
+nonisolated struct SunburstHitTestIndex: Sendable {
     private let rings: [Ring]
 
     nonisolated init(segments: [SunburstSegment]) {
