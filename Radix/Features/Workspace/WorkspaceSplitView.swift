@@ -10,6 +10,7 @@ import SwiftUI
 struct WorkspaceSplitView<Top: View, Bottom: View>: View {
     private static var dividerHitHeight: CGFloat { 9 }
     private static var dividerLineHeight: CGFloat { 1 }
+    private static var keyboardResizeStep: CGFloat { 24 }
 
     let topMinHeight: CGFloat
     let bottomMinHeight: CGFloat
@@ -18,6 +19,7 @@ struct WorkspaceSplitView<Top: View, Bottom: View>: View {
 
     @State private var topFraction: CGFloat = 0.56
     @State private var dragStartFraction: CGFloat?
+    @FocusState private var isResizeHandleFocused: Bool
 
     init(
         topMinHeight: CGFloat,
@@ -77,7 +79,50 @@ struct WorkspaceSplitView<Top: View, Bottom: View>: View {
         )
         .frame(maxWidth: .infinity)
         .frame(height: Self.dividerHitHeight)
+        .contentShape(Rectangle())
+        .focusable()
+        .focused($isResizeHandleFocused)
+        .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+            let offset = press.key == .upArrow
+                ? -Self.keyboardResizeStep
+                : Self.keyboardResizeStep
+            adjustTopHeight(by: offset, contentHeight: contentHeight)
+            return .handled
+        }
+        .overlay {
+            if isResizeHandleFocused {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .accessibilityLabel("Resize panes")
+        .accessibilityValue(
+            Text(
+                contentHeight > 0 ? topHeight(forContentHeight: contentHeight) / contentHeight : 0,
+                format: .percent.precision(.fractionLength(0))
+            )
+        )
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                adjustTopHeight(by: Self.keyboardResizeStep, contentHeight: contentHeight)
+            case .decrement:
+                adjustTopHeight(by: -Self.keyboardResizeStep, contentHeight: contentHeight)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func adjustTopHeight(by offset: CGFloat, contentHeight: CGFloat) {
+        guard contentHeight > 0 else { return }
+        dragStartFraction = nil
+        topFraction = clampedFraction(
+            topFraction + (offset / contentHeight),
+            contentHeight: contentHeight
+        )
     }
 
     private func topHeight(forContentHeight contentHeight: CGFloat) -> CGFloat {

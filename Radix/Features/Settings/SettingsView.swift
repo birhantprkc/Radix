@@ -202,7 +202,17 @@ private struct ExclusionPatternsEditor: View {
         } set: { newValue in
             guard let index = rows.firstIndex(where: { $0.id == id }) else { return }
             rows[index].pattern = newValue
+            publishCommittedPatterns()
         }
+    }
+
+    /// Keeps scan configuration current while a field remains focused. Without
+    /// this, starting a scan from another window can use the value from before
+    /// editing began because `commitRows` only runs on submit or focus loss.
+    private func publishCommittedPatterns() {
+        let updatedPatterns = rows.committedPatterns
+        guard patterns != updatedPatterns else { return }
+        patterns = updatedPatterns
     }
 
     private func addPattern() {

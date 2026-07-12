@@ -155,6 +155,8 @@ private struct DiscardPileSidebarButton: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isDropHintActive)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isDropTargeted)
+        .accessibilityLabel("Discard Pile")
+        .accessibilityValue(subtitle)
         .help("Review Discard Pile")
     }
 
