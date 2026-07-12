@@ -327,6 +327,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         let stats: ScanArchiveStatsV1 = try readJSON(ScanArchiveStatsV1.self, from: statsURL) { detail in
             ScanArchiveError.stats(detail)
         }
+        try stats.validate()
         let archiveSize = try archiveLogicalSize(at: sourceURL)
         return ScanArchivePreview(
             archiveURL: sourceURL,
@@ -406,6 +407,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         let archivedStats: ScanArchiveStatsV1 = try readJSON(ScanArchiveStatsV1.self, from: statsURL) { detail in
             ScanArchiveError.stats(detail)
         }
+        try archivedStats.validate()
 
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(

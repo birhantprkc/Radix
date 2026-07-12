@@ -9,6 +9,7 @@ import Foundation
 private nonisolated enum ScanArchiveNodeIOConstants {
     static let readChunkSize = 1024 * 1024
     static let maxNodeLineByteCount = 1024 * 1024
+    static let maximumInitialRecordCapacity = 65_536
     static let newlineData = Data([0x0A])
 }
 
@@ -271,7 +272,10 @@ extension ScanArchiveService {
 
         let decoder = Self.makeJSONDecoder()
         var records: [Record] = []
-        records.reserveCapacity(expectedNodeCount)
+        records.reserveCapacity(min(
+            expectedNodeCount,
+            ScanArchiveNodeIOConstants.maximumInitialRecordCapacity
+        ))
         var buffer = Data()
         var hasher = SHA256()
         var decodedNodeCount = 0

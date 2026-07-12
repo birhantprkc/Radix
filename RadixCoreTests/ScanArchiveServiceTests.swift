@@ -197,6 +197,57 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(preview.scanOptions, snapshot.scanOptions)
     }
 
+    func testPreviewAndImportRejectNegativeStats() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
+        try rewriteJSONObject(at: statsURL) { object in
+            object["totalAllocatedSize"] = -1
+        }
+
+        do {
+            _ = try await service.previewSnapshot(from: archiveURL)
+            XCTFail("Preview should reject negative archive stats.")
+        } catch ScanArchiveError.stats(let detail) {
+            XCTAssertTrue(detail.contains("negative"))
+        }
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject negative archive stats.")
+        } catch ScanArchiveError.stats(let detail) {
+            XCTAssertTrue(detail.contains("negative"))
+        }
+    }
+
+    func testImportHandlesUntrustedHugeManifestNodeCountWithoutPreallocatingIt() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let manifestURL = archiveURL.appending(path: "manifest.json", directoryHint: .notDirectory)
+        try rewriteJSONObject(at: manifestURL) { object in
+            var snapshot = object["snapshot"] as? [String: Any] ?? [:]
+            snapshot["nodeCount"] = Int.max
+            object["snapshot"] = snapshot
+        }
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject a manifest node count that does not match its payload.")
+        } catch ScanArchiveError.nodes(let detail) {
+            XCTAssertTrue(detail.contains("manifest expected"))
+        }
+    }
+
     func testExportWritesOrdinalTopology() async throws {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()
