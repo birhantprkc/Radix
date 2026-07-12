@@ -5,6 +5,14 @@
 
 import Foundation
 
+nonisolated enum ScanComparisonIntegerMath {
+    static func addingClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        guard overflow else { return sum }
+        return rhs >= 0 ? .max : -.max
+    }
+}
+
 nonisolated struct ComparedSnapshotSummary: Equatable, Sendable {
     let id: UUID
     let displayName: String
@@ -110,9 +118,15 @@ nonisolated struct ScanComparisonSummary: Equatable, Sendable {
         for row in rows {
             counts[row.kind, default: 0] += 1
             if row.allocatedDelta > 0 {
-                grossIncreasedAllocatedSize += row.allocatedDelta
+                grossIncreasedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                    grossIncreasedAllocatedSize,
+                    row.allocatedDelta
+                )
             } else if row.allocatedDelta < 0 {
-                grossReclaimedAllocatedSize += -row.allocatedDelta
+                grossReclaimedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                    grossReclaimedAllocatedSize,
+                    -row.allocatedDelta
+                )
             }
         }
         self.addedCount = counts[.added, default: 0]
@@ -265,7 +279,7 @@ nonisolated struct ScanComparisonLocationChange: Identifiable, Equatable, Sendab
     }
 
     var grossChangedAllocatedSize: Int64 {
-        increasedAllocatedSize + reclaimedAllocatedSize
+        ScanComparisonIntegerMath.addingClamped(increasedAllocatedSize, reclaimedAllocatedSize)
     }
 
     /// Prefer the current node so an overview can navigate to the location in the active scan.
@@ -303,7 +317,7 @@ nonisolated struct ScanComparisonAggregateChange: Identifiable, Equatable, Senda
     }
 
     var grossChangedAllocatedSize: Int64 {
-        increasedAllocatedSize + reclaimedAllocatedSize
+        ScanComparisonIntegerMath.addingClamped(increasedAllocatedSize, reclaimedAllocatedSize)
     }
 
     var affectedCount: Int {
@@ -337,25 +351,39 @@ nonisolated struct ScanComparisonAggregateChange: Identifiable, Equatable, Senda
     }
 
     func increasedAllocatedSize(for changeKinds: Set<ScanComparisonChangeKind>) -> Int64 {
-        changeKinds.reduce(0) { $0 + increasedAllocatedSizeByKind[$1, default: 0] }
+        changeKinds.reduce(0) {
+            ScanComparisonIntegerMath.addingClamped(
+                $0,
+                increasedAllocatedSizeByKind[$1, default: 0]
+            )
+        }
     }
 
     func reclaimedAllocatedSize(for changeKinds: Set<ScanComparisonChangeKind>) -> Int64 {
-        changeKinds.reduce(0) { $0 + reclaimedAllocatedSizeByKind[$1, default: 0] }
+        changeKinds.reduce(0) {
+            ScanComparisonIntegerMath.addingClamped(
+                $0,
+                reclaimedAllocatedSizeByKind[$1, default: 0]
+            )
+        }
     }
 
     func impact(for kind: ScanComparisonChangeKind) -> Int64 {
         if kind == .moved {
             return Int64(movedCount)
         }
-        return increasedAllocatedSizeByKind[kind, default: 0]
-            + reclaimedAllocatedSizeByKind[kind, default: 0]
+        return ScanComparisonIntegerMath.addingClamped(
+            increasedAllocatedSizeByKind[kind, default: 0],
+            reclaimedAllocatedSizeByKind[kind, default: 0]
+        )
     }
 
     func impact(for changeKinds: Set<ScanComparisonChangeKind>) -> Int64 {
         let storageKinds = changeKinds.subtracting([.moved])
         if !storageKinds.isEmpty {
-            return storageKinds.reduce(0) { $0 + impact(for: $1) }
+            return storageKinds.reduce(0) {
+                ScanComparisonIntegerMath.addingClamped($0, impact(for: $1))
+            }
         }
         return changeKinds.contains(.moved) ? Int64(movedCount) : 0
     }
@@ -814,11 +842,25 @@ nonisolated struct ScanComparisonService: Sendable {
                 directRowID = row.id
             }
             if row.allocatedDelta > 0 {
-                increasedAllocatedSize += row.allocatedDelta
-                increasedAllocatedSizeByKind[row.kind, default: 0] += row.allocatedDelta
+                increasedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                    increasedAllocatedSize,
+                    row.allocatedDelta
+                )
+                increasedAllocatedSizeByKind[row.kind, default: 0] =
+                    ScanComparisonIntegerMath.addingClamped(
+                        increasedAllocatedSizeByKind[row.kind, default: 0],
+                        row.allocatedDelta
+                    )
             } else if row.allocatedDelta < 0 {
-                reclaimedAllocatedSize += -row.allocatedDelta
-                reclaimedAllocatedSizeByKind[row.kind, default: 0] += -row.allocatedDelta
+                reclaimedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                    reclaimedAllocatedSize,
+                    -row.allocatedDelta
+                )
+                reclaimedAllocatedSizeByKind[row.kind, default: 0] =
+                    ScanComparisonIntegerMath.addingClamped(
+                        reclaimedAllocatedSizeByKind[row.kind, default: 0],
+                        -row.allocatedDelta
+                    )
             }
             switch row.kind {
             case .added:
@@ -877,8 +919,14 @@ nonisolated struct ScanComparisonService: Sendable {
             guard let lhs = accumulators[lhsPath], let rhs = accumulators[rhsPath] else {
                 return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
             }
-            let lhsGross = lhs.increasedAllocatedSize + lhs.reclaimedAllocatedSize
-            let rhsGross = rhs.increasedAllocatedSize + rhs.reclaimedAllocatedSize
+            let lhsGross = ScanComparisonIntegerMath.addingClamped(
+                lhs.increasedAllocatedSize,
+                lhs.reclaimedAllocatedSize
+            )
+            let rhsGross = ScanComparisonIntegerMath.addingClamped(
+                rhs.increasedAllocatedSize,
+                rhs.reclaimedAllocatedSize
+            )
             if lhsGross != rhsGross { return lhsGross > rhsGross }
             return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
         }
@@ -945,11 +993,20 @@ nonisolated struct ScanComparisonService: Sendable {
             var reclaimedAllocatedSize: Int64 = 0
             for row in locationRows {
                 counts[row.kind, default: 0] += 1
-                allocatedDelta += row.allocatedDelta
+                allocatedDelta = ScanComparisonIntegerMath.addingClamped(
+                    allocatedDelta,
+                    row.allocatedDelta
+                )
                 if row.allocatedDelta > 0 {
-                    increasedAllocatedSize += row.allocatedDelta
+                    increasedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                        increasedAllocatedSize,
+                        row.allocatedDelta
+                    )
                 } else if row.allocatedDelta < 0 {
-                    reclaimedAllocatedSize += -row.allocatedDelta
+                    reclaimedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                        reclaimedAllocatedSize,
+                        -row.allocatedDelta
+                    )
                 }
             }
 

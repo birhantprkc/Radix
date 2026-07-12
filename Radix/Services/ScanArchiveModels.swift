@@ -553,4 +553,16 @@ nonisolated struct ScanArchiveStatsV1: Codable, Sendable {
             accessibleItemCount == stats.accessibleItemCount &&
             inaccessibleItemCount == stats.inaccessibleItemCount
     }
+
+    func validate() throws {
+        guard totalAllocatedSize >= 0, totalLogicalSize >= 0 else {
+            throw ScanArchiveError.stats(localized: "snapshot totals cannot be negative")
+        }
+        guard fileCount >= 0,
+              directoryCount >= 0,
+              accessibleItemCount >= 0,
+              inaccessibleItemCount >= 0 else {
+            throw ScanArchiveError.stats(localized: "snapshot item counts cannot be negative")
+        }
+    }
 }

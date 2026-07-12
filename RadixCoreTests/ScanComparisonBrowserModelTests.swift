@@ -84,6 +84,43 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         XCTAssertFalse(model.isRefreshing)
     }
 
+    func testCancelledRefreshCanRestartSameRequest() async throws {
+        let gate = ComparisonProcessorGate()
+        let model = ScanComparisonBrowserModel(
+            searchDebounceNanoseconds: 0,
+            processor: { input in
+                await gate.process(input)
+            }
+        )
+        let rows = [makeRow("first.txt")]
+        let comparisonID = UUID()
+        let query = query("first")
+
+        model.refresh(
+            comparisonID: comparisonID,
+            rows: rows,
+            changeTree: .empty,
+            query: query,
+            changeKinds: allKinds
+        )
+        try await waitUntil { await gate.requestCount == 1 }
+        model.cancel()
+
+        model.refresh(
+            comparisonID: comparisonID,
+            rows: rows,
+            changeTree: .empty,
+            query: query,
+            changeKinds: allKinds
+        )
+        try await waitUntil { await gate.requestCount == 2 }
+        await gate.resumeRequest(at: 1)
+        try await waitUntil { model.displayedRows.map(\.name) == ["first.txt"] }
+        await gate.resumeRequest(at: 0)
+
+        XCTAssertFalse(model.isRefreshing)
+    }
+
     func testDefaultProcessorFiltersRowsAndBuildsProjection() async throws {
         let model = ScanComparisonBrowserModel(searchDebounceNanoseconds: 0)
         let rows = [makeRow("first.txt"), makeRow("second.txt")]

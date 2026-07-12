@@ -178,13 +178,22 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             cancellationCheck: cancellationCheck
         ) else { return nil }
 
+        var retainedWarnings: [ScanWarning] = []
+        retainedWarnings.reserveCapacity(scanWarnings.count)
+        for warning in scanWarnings {
+            try cancellationCheck()
+            if !Self.path(warning.path, isContainedIn: targetID) {
+                retainedWarnings.append(warning)
+            }
+        }
+
         let updatedSnapshot = ScanSnapshot(
             id: id,
             target: target,
             treeStore: updatedStore,
             startedAt: startedAt,
             finishedAt: finishedAt,
-            scanWarnings: scanWarnings,
+            scanWarnings: retainedWarnings,
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
@@ -248,6 +257,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         }
 
         return ScanSnapshot(
+            id: id,
             target: target,
             treeStore: updatedStore,
             startedAt: startedAt,
@@ -268,25 +278,10 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         additionalWarnings: [ScanWarning] = [],
         cancellationCheck: () throws -> Void
     ) throws -> ScanSnapshot? {
-        try cancellationCheck()
-        guard let updatedStore = try treeStore.replacingSubtree(
-            id: targetID,
-            with: replacement,
+        try replacingSubtrees(
+            [targetID: replacement],
+            additionalWarnings: additionalWarnings,
             cancellationCheck: cancellationCheck
-        ) else { return nil }
-
-        return ScanSnapshot(
-            target: target,
-            treeStore: updatedStore,
-            startedAt: startedAt,
-            finishedAt: finishedAt,
-            scanWarnings: Self.mergedWarnings(existing: scanWarnings, additional: additionalWarnings),
-            aggregateStats: updatedStore.aggregateStats,
-            isComplete: isComplete,
-            scanOptions: scanOptions,
-            volumeCapacity: volumeCapacity,
-            source: source,
-            incrementalCheckpoint: incrementalCheckpoint
         )
     }
 

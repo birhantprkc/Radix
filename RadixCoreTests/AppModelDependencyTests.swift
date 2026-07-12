@@ -2122,6 +2122,59 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testSupersededExportPanelCannotClearOrOutliveRestartedRequest() async throws {
+        let staleURL = URL(filePath: "/tmp/stale-export.radixscan", directoryHint: .isDirectory)
+        let currentURL = URL(filePath: "/tmp/current-export.radixscan", directoryHint: .isDirectory)
+        let firstPanel = AsyncValueProbe<URL?>()
+        let secondPanel = AsyncValueProbe<URL?>()
+        let archiveService = SpyScanArchiveService()
+        var panelRequestCount = 0
+        var actions = AppSystemActions.inert
+        actions.presentExportScanPanel = { _ in
+            panelRequestCount += 1
+            return await (panelRequestCount == 1 ? firstPanel : secondPanel).wait()
+        }
+        let model = AppModel(dependencies: makeDependencies(
+            systemActions: actions,
+            scanArchiveService: archiveService
+        ))
+        let file = makeTestFileNode(id: "/export-race/file.txt", name: "file.txt")
+        let root = makeTestDirectoryNode(id: "/export-race", name: "Export Race", children: [file])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
+        model.scanState.restoreCompletedSnapshot(ScanSnapshot(
+            target: ScanTarget(id: root.id, url: root.url, displayName: "Export Race", kind: .folder),
+            treeStore: store,
+            startedAt: Date(timeIntervalSince1970: 1),
+            finishedAt: Date(timeIntervalSince1970: 2),
+            scanWarnings: [],
+            aggregateStats: store.aggregateStats,
+            isComplete: true
+        ))
+
+        model.exportCurrentScan()
+        try await waitForAsyncCondition("first export panel") {
+            await firstPanel.isWaiting
+        }
+        model.cleanup()
+        model.exportCurrentScan()
+        try await waitForAsyncCondition("second export panel") {
+            await secondPanel.isWaiting
+        }
+
+        await firstPanel.resume(returning: staleURL)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(model.isExportPanelPresented)
+
+        model.cleanup()
+        await secondPanel.resume(returning: currentURL)
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertFalse(model.isExportPanelPresented)
+        let exportRequests = await archiveService.exportRequestsSnapshot()
+        XCTAssertTrue(exportRequests.isEmpty)
+    }
+
+    @MainActor
     func testExportFailureUsesExportSpecificAlertTitle() async throws {
         let archiveURL = URL(filePath: "/tmp/export.invalid", directoryHint: .isDirectory)
         var actions = AppSystemActions.inert
@@ -2526,6 +2579,63 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertEqual(model.scanComparison?.id, activeComparisonID)
         XCTAssertNil(model.pendingComparisonSetup)
+    }
+
+    @MainActor
+    func testSupersededComparisonPanelCannotApplyLateSelection() async throws {
+        let oldURL = URL(filePath: "/tmp/superseded.radixscan", directoryHint: .isDirectory)
+        let newURL = URL(filePath: "/tmp/current.radixscan", directoryHint: .isDirectory)
+        let oldSnapshot = makeComparisonSnapshot(
+            rootPath: "/comparison-root",
+            fileSize: 10,
+            startedAt: Date(timeIntervalSince1970: 10),
+            finishedAt: Date(timeIntervalSince1970: 20),
+            sourceURL: oldURL
+        )
+        let newSnapshot = makeComparisonSnapshot(
+            rootPath: "/comparison-root",
+            fileSize: 20,
+            startedAt: Date(timeIntervalSince1970: 30),
+            finishedAt: Date(timeIntervalSince1970: 40),
+            sourceURL: newURL
+        )
+        let archiveService = SpyScanArchiveService(previewResultsByURL: [
+            oldURL: try makeArchivePreview(archiveURL: oldURL, snapshot: oldSnapshot),
+            newURL: try makeArchivePreview(archiveURL: newURL, snapshot: newSnapshot),
+        ])
+        let firstPanel = AsyncValueProbe<URL?>()
+        let secondPanel = AsyncValueProbe<URL?>()
+        var panelRequestCount = 0
+        var actions = AppSystemActions.inert
+        actions.presentComparisonSnapshotPanel = {
+            panelRequestCount += 1
+            return await (panelRequestCount == 1 ? firstPanel : secondPanel).wait()
+        }
+        let model = AppModel(dependencies: makeDependencies(
+            systemActions: actions,
+            scanArchiveService: archiveService
+        ))
+
+        model.compareScanSnapshots()
+        model.chooseComparisonSnapshot(for: .before)
+        try await waitForAsyncCondition("first comparison panel") {
+            await firstPanel.isWaiting
+        }
+        model.chooseComparisonSnapshot(for: .before)
+        try await waitForAsyncCondition("second comparison panel") {
+            await secondPanel.isWaiting
+        }
+
+        await secondPanel.resume(returning: newURL)
+        try await waitForAppModelCondition("current comparison selection") {
+            model.pendingComparisonSetup?.before?.displayName == newSnapshot.target.displayName
+        }
+        await firstPanel.resume(returning: oldURL)
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertEqual(model.pendingComparisonSetup?.before?.displayName, newSnapshot.target.displayName)
+        let previewedURLs = await archiveService.previewedURLsSnapshot()
+        XCTAssertEqual(previewedURLs, [newURL])
     }
 
     @MainActor

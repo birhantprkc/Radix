@@ -247,7 +247,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertFalse(directory.isAutoSummarized)
     }
 
-    func testSnapshotReplacingNodeRebuildsAncestorsAndPreservesWarnings() throws {
+    func testSnapshotReplacingNodeRebuildsAncestorsAndReplacesStaleWarnings() throws {
         let staleLeaf = makeNode(id: "/root/folder/stale.txt", isDirectory: false, isSynthetic: false, isAccessible: true, allocatedSize: 5)
         let summarizedFolder = makeNode(
             id: "/root/folder",
@@ -317,8 +317,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertFalse(updatedFolder.isAccessible)
         XCTAssertEqual(updatedSnapshot.aggregateStats.fileCount, 3)
         XCTAssertFalse(updatedSnapshot.root.isAccessible)
-        XCTAssertEqual(updatedSnapshot.scanWarnings.count, 2)
-        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [originalWarning.path, expansionWarning.path])
+        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [expansionWarning.path])
         XCTAssertNotEqual(staleLeaf.id, updatedChildren.first?.id)
     }
 
@@ -382,8 +381,13 @@ final class ScanModelTests: XCTestCase {
             root.id: [folder, sibling],
             folder.id: [removedLeaf, keptLeaf],
         ])
-        let warning = ScanWarning(path: removedLeaf.id, message: "kept", category: .fileSystem)
-        let snapshot = makeSnapshot(root: root, treeStore: treeStore, warnings: [warning])
+        let removedWarning = ScanWarning(path: removedLeaf.id, message: "removed", category: .fileSystem)
+        let retainedWarning = ScanWarning(path: keptLeaf.id, message: "kept", category: .fileSystem)
+        let snapshot = makeSnapshot(
+            root: root,
+            treeStore: treeStore,
+            warnings: [removedWarning, retainedWarning]
+        )
 
         let updatedSnapshot = try XCTUnwrap(snapshot.removingNode(id: removedLeaf.id))
 
@@ -400,7 +404,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertEqual(updatedSnapshot.aggregateStats.totalAllocatedSize, 25)
         XCTAssertEqual(updatedSnapshot.aggregateStats.fileCount, 2)
         XCTAssertEqual(updatedSnapshot.aggregateStats.directoryCount, 2)
-        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [warning.path])
+        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [retainedWarning.path])
     }
 
     func testSnapshotRemovingMissingOrRootNodeReturnsNil() {
@@ -546,17 +550,18 @@ final class ScanModelTests: XCTestCase {
             snapshot.replacingNode(
                 id: child.id,
                 with: FileTreeStore(root: replacement),
-                additionalWarnings: [duplicateWarning, distinctWarning]
+                additionalWarnings: [duplicateWarning, duplicateWarning, distinctWarning]
             )
         )
 
+        XCTAssertEqual(updatedSnapshot.id, snapshot.id)
         XCTAssertEqual(updatedSnapshot.scanWarnings.count, 2)
         XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [
-            existingWarning.path,
+            duplicateWarning.path,
             distinctWarning.path
         ])
         XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.message), [
-            existingWarning.message,
+            duplicateWarning.message,
             distinctWarning.message
         ])
     }

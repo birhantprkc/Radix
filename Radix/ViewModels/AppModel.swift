@@ -249,7 +249,9 @@ final class AppModel: ObservableObject {
     private var deferredNavigationContextSnapshotID: UUID?
     private var postTrashRemovalTask: Task<Void, Never>?
     private var exportPanelTask: Task<Void, Never>?
+    private var exportPanelRequestID: UUID?
     private var comparisonPanelTask: Task<Void, Never>?
+    private var comparisonPanelRequestID: UUID?
     private var readyDeferredArchiveImportURL: URL?
     private var exportConfirmationDismissTask: Task<Void, Never>?
     private var postTrashRemovalRequests: [PostTrashRemovalRequest] = []
@@ -344,8 +346,10 @@ final class AppModel: ObservableObject {
         cancelDiskFreeSpaceCapacityRefresh(clearCache: true)
         exportPanelTask?.cancel()
         exportPanelTask = nil
+        exportPanelRequestID = nil
         comparisonPanelTask?.cancel()
         comparisonPanelTask = nil
+        comparisonPanelRequestID = nil
         isExportPanelPresented = false
         readyDeferredArchiveImportURL = nil
         cancelArchiveOperation()
@@ -708,16 +712,22 @@ final class AppModel: ObservableObject {
         let snapshotID = snapshot.id
 
         exportPanelTask?.cancel()
+        let requestID = UUID()
+        exportPanelRequestID = requestID
         isExportPanelPresented = true
         exportPanelTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
-                self.isExportPanelPresented = false
-                self.exportPanelTask = nil
+                if self.exportPanelRequestID == requestID {
+                    self.isExportPanelPresented = false
+                    self.exportPanelTask = nil
+                    self.exportPanelRequestID = nil
+                }
             }
 
             guard let destinationURL = await self.dependencies.systemActions.presentExportScanPanel(defaultFileName),
                   !Task.isCancelled,
+                  self.exportPanelRequestID == requestID,
                   self.scanCoordinator.snapshot?.id == snapshotID,
                   self.canExportCurrentScanIgnoringPresentedPanel else {
                 return
@@ -1093,10 +1103,19 @@ final class AppModel: ObservableObject {
         let setupID = pendingComparisonSetup?.id
 
         comparisonPanelTask?.cancel()
+        let requestID = UUID()
+        comparisonPanelRequestID = requestID
         comparisonPanelTask = Task { @MainActor [weak self] in
-            defer { self?.comparisonPanelTask = nil }
-            guard let self,
-                  let sourceURL = await self.dependencies.systemActions.presentComparisonSnapshotPanel(),
+            guard let self else { return }
+            defer {
+                if self.comparisonPanelRequestID == requestID {
+                    self.comparisonPanelTask = nil
+                    self.comparisonPanelRequestID = nil
+                }
+            }
+            guard let sourceURL = await self.dependencies.systemActions.presentComparisonSnapshotPanel(),
+                  !Task.isCancelled,
+                  self.comparisonPanelRequestID == requestID,
                   self.pendingComparisonSetup?.id == setupID,
                   self.pendingComparisonSetup?.loadingSlot == nil else {
                 return

@@ -56,7 +56,7 @@ nonisolated enum SunburstLayout {
         let visibleChildren = rootChildren.isEmpty ? [root] : rootChildren
         let ringStart = centerRadius
         let ringWidth = (0.98 - ringStart) / CGFloat(max(depthLimit, 1))
-        let denominator = max(root.allocatedSize, Int64(visibleChildren.count))
+        let denominator = max(Double(root.allocatedSize), Double(visibleChildren.count))
         let colorBranchContext = ColorBranchContext(rootChildIDs: rootColorBranchIDs(in: treeStore))
 
         var result: [SunburstSegment] = []
@@ -82,7 +82,7 @@ nonisolated enum SunburstLayout {
     private nonisolated static func appendSegments(
         in treeStore: FileTreeStore,
         children: [FileNodeRecord],
-        parentDenominator: Int64,
+        parentDenominator: Double,
         startAngle: Double,
         endAngle: Double,
         depth: Int,
@@ -98,8 +98,8 @@ nonisolated enum SunburstLayout {
         guard depth < depthLimit else { return }
 
         try cancellationCheck()
-        let effectiveChildTotal = children.reduce(Int64(0)) { total, child in
-            total + max(child.allocatedSize, 1)
+        let effectiveChildTotal = children.reduce(0.0) { total, child in
+            total + Double(max(child.allocatedSize, 1))
         }
         let safeDenominator = max(parentDenominator, effectiveChildTotal)
         let totalAngle = endAngle - startAngle
@@ -116,7 +116,7 @@ nonisolated enum SunburstLayout {
         var cursor = startAngle
         for entry in grouped {
             try cancellationCheck()
-            let proportion = Double(entry.totalSize) / Double(safeDenominator)
+            let proportion = Double(entry.totalSize) / safeDenominator
             let segmentEnd = cursor + (totalAngle * proportion)
             let siblingIndex = siblingIndexes[entry.id] ?? 0
             let branch = branchContext ?? colorBranch(
@@ -164,7 +164,7 @@ nonisolated enum SunburstLayout {
                 try appendSegments(
                     in: treeStore,
                     children: childNodes,
-                    parentDenominator: node.allocatedSize,
+                    parentDenominator: Double(node.allocatedSize),
                     startAngle: cursor,
                     endAngle: segmentEnd,
                     depth: depth + 1,
@@ -185,7 +185,7 @@ nonisolated enum SunburstLayout {
 
     private nonisolated static func groupedChildren(
         _ children: [FileNodeRecord],
-        denominator: Int64,
+        denominator: Double,
         totalAngle: Double,
         minimumAngle: Double,
         cancellationCheck: CancellationCheck
@@ -211,10 +211,10 @@ nonisolated enum SunburstLayout {
         for child in children {
             try cancellationCheck()
             let size = max(child.allocatedSize, 1)
-            let angle = totalAngle * (Double(size) / Double(max(denominator, 1)))
+            let angle = totalAngle * (Double(size) / max(denominator, 1))
             if angle < minimumAngle {
                 groupedNodes.append(child)
-                groupedSize += size
+                groupedSize = addingClamped(groupedSize, size)
             } else {
                 visible.append(
                     GroupEntry(
@@ -257,6 +257,11 @@ nonisolated enum SunburstLayout {
         }
 
         return visible
+    }
+
+    private nonisolated static func addingClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? .max : sum
     }
 
     private nonisolated static func colorRole(for entry: GroupEntry) -> SunburstColorRole {

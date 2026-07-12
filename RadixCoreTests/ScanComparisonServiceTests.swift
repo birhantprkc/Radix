@@ -910,6 +910,111 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(Set(combinedProjection.roots.map(\.relativePath)), ["added.bin", "grew.bin"])
     }
 
+    func testComparisonClampsAggregateStorageOverflow() async throws {
+        let beforeRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [])
+        let beforeStore = FileTreeStore(root: beforeRoot)
+        let first = makeTestFileNode(
+            id: "/scan/first.bin",
+            name: "first.bin",
+            size: .max
+        )
+        let second = makeTestFileNode(
+            id: "/scan/second.bin",
+            name: "second.bin",
+            size: .max
+        )
+        let afterRoot = FileNodeRecord(
+            id: "/scan",
+            url: URL(filePath: "/scan", directoryHint: .isDirectory),
+            name: "scan",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: .max,
+            logicalSize: .max,
+            descendantFileCount: 2,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+        let afterStore = FileTreeStore(
+            root: afterRoot,
+            childrenByID: [afterRoot.id: [first, second]]
+        )
+
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: beforeRoot, store: beforeStore),
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+        let projection = comparison.changeTree.significantProjection(changeKinds: [.added])
+
+        XCTAssertEqual(comparison.rows.count, 2)
+        XCTAssertEqual(comparison.summary.grossIncreasedAllocatedSize, Int64.max)
+        XCTAssertEqual(projection.totalImpact, Int64.max)
+        XCTAssertEqual(projection.representedImpact, Int64.max)
+    }
+
+    func testTopLevelChangesClampLargeReclamationUnderOnePath() async throws {
+        let first = makeTestFileNode(id: "/scan/folder/first.bin", name: "first.bin", size: .max)
+        let second = makeTestFileNode(id: "/scan/folder/second.bin", name: "second.bin", size: .max)
+        let beforeFolder = FileNodeRecord(
+            id: "/scan/folder",
+            url: URL(filePath: "/scan/folder", directoryHint: .isDirectory),
+            name: "folder",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: .max,
+            logicalSize: .max,
+            descendantFileCount: 2,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+        let beforeRoot = FileNodeRecord(
+            id: "/scan",
+            url: URL(filePath: "/scan", directoryHint: .isDirectory),
+            name: "scan",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: .max,
+            logicalSize: .max,
+            descendantFileCount: 2,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeFolder],
+            beforeFolder.id: [first, second],
+        ])
+        let afterFolder = makeTestDirectoryNode(id: "/scan/folder", name: "folder", children: [])
+        let afterRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [afterFolder])
+        let afterStore = FileTreeStore(
+            root: afterRoot,
+            childrenByID: [afterRoot.id: [afterFolder]]
+        )
+
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: beforeRoot, store: beforeStore),
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+        let location = try XCTUnwrap(comparison.topLevelChanges.first)
+
+        XCTAssertEqual(comparison.rows.count, 2)
+        XCTAssertEqual(location.relativePath, "folder")
+        XCTAssertEqual(location.allocatedDelta, -Int64.max)
+        XCTAssertEqual(location.absoluteAllocatedDelta, Int64.max)
+        XCTAssertEqual(location.reclaimedAllocatedSize, Int64.max)
+    }
+
     func testRowQueryCombinesSelectedChangeKinds() {
         let movedBefore = makeTestFileNode(id: "/before/old.bin", name: "old.bin", size: 100)
         let movedAfter = makeTestFileNode(id: "/after/new.bin", name: "new.bin", size: 150)
