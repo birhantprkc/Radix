@@ -2940,6 +2940,14 @@ final class AppModel: ObservableObject {
         diskFreeSpaceCapacityRefreshGeneration += 1
         let generation = diskFreeSpaceCapacityRefreshGeneration
         diskFreeSpaceCapacityRefreshTask?.cancel()
+        if let availableCapacity = snapshot.volumeCapacity?.availableCapacity {
+            diskFreeSpaceCapacityCache = DiskFreeSpaceCapacityCache(
+                key: key,
+                availableCapacity: availableCapacity
+            )
+            diskFreeSpaceCapacityRefreshTask = nil
+            return
+        }
         diskFreeSpaceCapacityCache = DiskFreeSpaceCapacityCache(
             key: key,
             availableCapacity: nil

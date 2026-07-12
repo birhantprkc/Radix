@@ -195,6 +195,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             aggregateStats: spliced.treeStore.aggregateStats,
             isComplete: true,
             scanOptions: options,
+            volumeCapacity: baseline.volumeCapacity,
             source: .live,
             incrementalCheckpoint: cutoff
         )
@@ -243,8 +244,11 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         target: ScanTarget,
         options: ScanOptions
     ) -> Bool {
+        // Whole-volume accounting must capture capacity and rebuild its synthetic
+        // unattributed remainder as one consistent scan-time snapshot.
         guard baseline.isComplete,
               baseline.source.allowsFileMutation,
+              target.kind != .volume,
               baseline.target.kind == target.kind,
               baseline.target.url.standardizedFileURL.path == target.url.standardizedFileURL.path,
               baseline.scanOptions == options,
@@ -279,6 +283,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             aggregateStats: snapshot.aggregateStats,
             isComplete: snapshot.isComplete,
             scanOptions: snapshot.scanOptions,
+            volumeCapacity: snapshot.volumeCapacity,
             source: snapshot.source,
             incrementalCheckpoint: checkpoint
         )
@@ -298,6 +303,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             aggregateStats: snapshot.aggregateStats,
             isComplete: true,
             scanOptions: snapshot.scanOptions,
+            volumeCapacity: snapshot.volumeCapacity,
             source: .live,
             incrementalCheckpoint: checkpoint
         )

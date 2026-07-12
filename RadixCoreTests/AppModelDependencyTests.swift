@@ -197,6 +197,35 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testCapturedFreeSpaceCapacityAvoidsLiveRequery() async throws {
+        var requestedURLs: [URL] = []
+        var actions = AppSystemActions.inert
+        actions.volumeAvailableCapacityForImportantUsage = { url in
+            requestedURLs.append(url)
+            return 999
+        }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [])
+        let store = FileTreeStore(root: root)
+        let snapshot = ScanSnapshot(
+            target: ScanTarget(url: root.url, kind: .volume),
+            treeStore: store,
+            startedAt: Date(),
+            finishedAt: Date(),
+            scanWarnings: [],
+            aggregateStats: store.aggregateStats,
+            isComplete: true,
+            volumeCapacity: VolumeCapacitySnapshot(totalCapacity: 1_000, availableCapacity: 321)
+        )
+
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.showFreeSpaceInDiskMaps = true
+
+        XCTAssertEqual(model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root), 321)
+        XCTAssertTrue(requestedURLs.isEmpty)
+    }
+
+    @MainActor
     func testAsyncFreeSpaceCapacityLoadDoesNotBlockMainActor() async throws {
         let probe = ControlledCapacityLoader()
         var actions = AppSystemActions.inert

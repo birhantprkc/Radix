@@ -1945,6 +1945,52 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(snapshot.aggregateStats.totalAllocatedSize, rootChildren(in: snapshot).filter { !$0.isSynthetic }.reduce(0) { $0 + $1.allocatedSize })
     }
 
+    func testVolumeSnapshotReconcilesWhenCloudStorageIsExcluded() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let cloudStorageURL = rootURL.appending(path: "Library/CloudStorage", directoryHint: .isDirectory)
+        let cloudFileURL = cloudStorageURL.appending(path: "Dropbox/remote.bin")
+        try FileManager.default.createDirectory(at: cloudFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(repeating: 0x2, count: 512).write(to: cloudFileURL)
+
+        let engine = ScanEngine(volumeFileSystemTypeProvider: { _ in "hfs" })
+        var options = ScanOptions()
+        options.cloudStorageRootPath = cloudStorageURL.path
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL, kind: .volume),
+            options: options,
+            engine: engine
+        )
+        let syntheticNode = try XCTUnwrap(rootChildren(in: snapshot).first(where: \.isSynthetic))
+
+        XCTAssertEqual(syntheticNode.name, "Excluded & Unattributed")
+        XCTAssertNotNil(snapshot.volumeCapacity)
+        XCTAssertGreaterThanOrEqual(snapshot.root.allocatedSize, snapshot.volumeCapacity?.usedCapacity ?? 0)
+        XCTAssertNil(snapshot.treeStore.node(id: cloudFileURL.path))
+    }
+
+    func testCapacityReconciliationPolicyIncludesStartupAPFSOnly() {
+        XCTAssertTrue(
+            ScanEngine.shouldReconcileVolumeCapacity(
+                fileSystemType: " APFS ",
+                for: URL(filePath: "/", directoryHint: .isDirectory)
+            )
+        )
+        XCTAssertFalse(
+            ScanEngine.shouldReconcileVolumeCapacity(
+                fileSystemType: "apfs",
+                for: URL(filePath: "/Volumes/Data", directoryHint: .isDirectory)
+            )
+        )
+        XCTAssertTrue(
+            ScanEngine.shouldReconcileVolumeCapacity(
+                fileSystemType: "hfs",
+                for: URL(filePath: "/Volumes/Backup", directoryHint: .isDirectory)
+            )
+        )
+    }
+
     func testAPFSVolumeSnapshotKeepsScannedAllocatedTotal() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

@@ -367,13 +367,16 @@ nonisolated struct ScanMetadataLoader: Sendable {
             fileIdentity = fileIdentity ?? fileSystemInfo.identity
             linkCount = values.linkCount.map(UInt64.init) ?? fileSystemInfo.linkCount
         }
-        let volumeUsedCapacity: Int64?
+        let volumeCapacity: VolumeCapacitySnapshot?
         if includeVolumeDetails,
            let totalCapacity = values.volumeTotalCapacity,
            let availableCapacity = values.volumeAvailableCapacity {
-            volumeUsedCapacity = Int64(max(totalCapacity - availableCapacity, 0))
+            volumeCapacity = VolumeCapacitySnapshot(
+                totalCapacity: Int64(totalCapacity),
+                availableCapacity: Int64(availableCapacity)
+            )
         } else {
-            volumeUsedCapacity = nil
+            volumeCapacity = nil
         }
 
         return NodeMetadata(
@@ -384,7 +387,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
             allocatedSize: allocatedSize,
             lastModified: values.contentModificationDate,
             isReadable: isReadable,
-            volumeUsedCapacity: volumeUsedCapacity,
+            volumeCapacity: volumeCapacity,
             fileIdentity: fileIdentity,
             linkCount: linkCount
         )
@@ -450,7 +453,7 @@ nonisolated struct NodeMetadata: Sendable {
     let allocatedSize: Int64
     let lastModified: Date?
     let isReadable: Bool
-    let volumeUsedCapacity: Int64?
+    let volumeCapacity: VolumeCapacitySnapshot?
     let fileIdentity: FileIdentity?
     let linkCount: UInt64
 }

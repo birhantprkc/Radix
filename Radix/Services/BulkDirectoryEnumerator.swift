@@ -607,7 +607,7 @@ nonisolated enum BulkDirectoryEnumerator {
             allocatedSize: max(Int64(allocatedSize), 0),
             lastModified: lastModified,
             isReadable: (userAccess & UInt32(R_OK)) != 0,
-            volumeUsedCapacity: nil,
+            volumeCapacity: nil,
             fileIdentity: FileIdentity(
                 device: UInt64(truncatingIfNeeded: deviceID),
                 inode: fileID

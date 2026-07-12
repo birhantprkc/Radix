@@ -28,6 +28,15 @@ nonisolated struct ScanAggregateStats: Sendable {
     let inaccessibleItemCount: Int
 }
 
+nonisolated struct VolumeCapacitySnapshot: Hashable, Sendable {
+    let totalCapacity: Int64
+    let availableCapacity: Int64
+
+    nonisolated var usedCapacity: Int64 {
+        max(totalCapacity - availableCapacity, 0)
+    }
+}
+
 nonisolated enum ScanArchivePathMode: String, Codable, Sendable {
     case absolute
 
@@ -112,6 +121,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
     let aggregateStats: ScanAggregateStats
     let isComplete: Bool
     let scanOptions: ScanOptions?
+    let volumeCapacity: VolumeCapacitySnapshot?
     let source: ScanSnapshotSource
     let incrementalCheckpoint: ScanIncrementalCheckpoint?
 
@@ -125,6 +135,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         aggregateStats: ScanAggregateStats,
         isComplete: Bool,
         scanOptions: ScanOptions? = nil,
+        volumeCapacity: VolumeCapacitySnapshot? = nil,
         source: ScanSnapshotSource = .live,
         incrementalCheckpoint: ScanIncrementalCheckpoint? = nil
     ) {
@@ -137,6 +148,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         self.aggregateStats = aggregateStats
         self.isComplete = isComplete
         self.scanOptions = scanOptions
+        self.volumeCapacity = volumeCapacity
         self.source = source
         self.incrementalCheckpoint = source.allowsFileMutation ? incrementalCheckpoint : nil
     }
@@ -169,6 +181,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
+            volumeCapacity: volumeCapacity,
             source: source,
             incrementalCheckpoint: incrementalCheckpoint
         )
@@ -235,6 +248,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
+            volumeCapacity: volumeCapacity,
             source: source,
             incrementalCheckpoint: incrementalCheckpoint
         )
@@ -262,6 +276,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
+            volumeCapacity: volumeCapacity,
             source: source,
             incrementalCheckpoint: incrementalCheckpoint
         )
@@ -299,6 +314,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             aggregateStats: scopedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
+            volumeCapacity: volumeCapacity,
             source: source,
             incrementalCheckpoint: incrementalCheckpoint
         )

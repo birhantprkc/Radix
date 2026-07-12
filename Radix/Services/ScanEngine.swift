@@ -637,7 +637,9 @@ actor ScanEngine {
             warnings: warnings,
             isComplete: true,
             scanOptions: options,
-            expectedTotalBytes: exclusionMatcher.isEmpty ? metrics.estimatedTotalBytes : 0
+            expectedTotalBytes: metrics.estimatedTotalBytes,
+            volumeCapacity: metrics.volumeCapacity,
+            hasActiveExclusions: !exclusionMatcher.isEmpty
         )
 
         metrics.isFinalizing = false
@@ -674,6 +676,7 @@ actor ScanEngine {
         )
         let rootMetadata = try scanMetadataLoader.metadata(for: target.url, includeVolumeDetails: includeVolumeDetails)
         metrics.discoveredItems = 1
+        metrics.volumeCapacity = target.kind == .volume ? rootMetadata.volumeCapacity : nil
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
         metrics.currentPath = target.url.path
         metrics.recalculateProgress()
@@ -1678,7 +1681,7 @@ actor ScanEngine {
                 allocatedSize: 0,
                 lastModified: nil,
                 isReadable: false,
-                volumeUsedCapacity: nil,
+                volumeCapacity: nil,
                 fileIdentity: nil,
                 linkCount: 0
             ),
@@ -2132,9 +2135,16 @@ actor ScanEngine {
         warnings: [ScanWarning],
         isComplete: Bool,
         scanOptions: ScanOptions?,
-        expectedTotalBytes: Int64 = 0
+        expectedTotalBytes: Int64 = 0,
+        volumeCapacity: VolumeCapacitySnapshot? = nil,
+        hasActiveExclusions: Bool = false
     ) -> ScanSnapshot {
-        let reconciledStore = reconcileVolumeRoot(treeStore, for: target, expectedTotalBytes: expectedTotalBytes)
+        let reconciledStore = reconcileVolumeRoot(
+            treeStore,
+            for: target,
+            expectedTotalBytes: expectedTotalBytes,
+            hasActiveExclusions: hasActiveExclusions
+        )
 
         return ScanSnapshot(
             target: target,
@@ -2144,11 +2154,17 @@ actor ScanEngine {
             scanWarnings: warnings,
             aggregateStats: reconciledStore.aggregateStats,
             isComplete: isComplete,
-            scanOptions: scanOptions
+            scanOptions: scanOptions,
+            volumeCapacity: volumeCapacity
         )
     }
 
-    private nonisolated func reconcileVolumeRoot(_ treeStore: FileTreeStore, for target: ScanTarget, expectedTotalBytes: Int64) -> FileTreeStore {
+    private nonisolated func reconcileVolumeRoot(
+        _ treeStore: FileTreeStore,
+        for target: ScanTarget,
+        expectedTotalBytes: Int64,
+        hasActiveExclusions: Bool
+    ) -> FileTreeStore {
         let root = treeStore.root
         guard target.kind == .volume, expectedTotalBytes > root.allocatedSize else {
             return treeStore
@@ -2162,7 +2178,7 @@ actor ScanEngine {
         let unattributedNode = FileNodeRecord(
             id: "\(root.id)#system-unattributed",
             url: target.url,
-            name: "System & Unattributed",
+            name: hasActiveExclusions ? "Excluded & Unattributed" : "System & Unattributed",
             isDirectory: false,
             isSymbolicLink: false,
             allocatedSize: missingBytes,
@@ -2250,24 +2266,29 @@ actor ScanEngine {
         return !metadata.isPackage || options.treatPackagesAsDirectories
     }
 
-    /// Capacity reconciliation is useful on non-APFS volumes where per-file allocated
-    /// sizes can miss reserved filesystem space. APFS container capacity is shared,
-    /// so its free-space delta can overstate the scanned volume.
+    /// APFS capacity is container-wide, so only the startup-volume scan represents a
+    /// broad enough target to reconcile safely. Other whole mounted filesystems retain
+    /// the existing reconciliation behavior.
     private nonisolated func estimatedTotalBytes(for target: ScanTarget, metadata: NodeMetadata) -> Int64 {
         guard target.kind == .volume,
-              let volumeUsedCapacity = metadata.volumeUsedCapacity,
+              let volumeCapacity = metadata.volumeCapacity,
               shouldReconcileVolumeCapacity(for: target.url) else {
             return 0
         }
-        return max(volumeUsedCapacity, metadata.allocatedSize)
+        return max(volumeCapacity.usedCapacity, metadata.allocatedSize)
     }
 
     private nonisolated func shouldReconcileVolumeCapacity(for url: URL) -> Bool {
         guard let fileSystemType = volumeFileSystemTypeProvider(url) else {
             return false
         }
+        return Self.shouldReconcileVolumeCapacity(fileSystemType: fileSystemType, for: url)
+    }
+
+    nonisolated static func shouldReconcileVolumeCapacity(fileSystemType: String, for url: URL) -> Bool {
         let normalizedType = fileSystemType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !normalizedType.isEmpty && normalizedType != "apfs"
+        guard !normalizedType.isEmpty else { return false }
+        return normalizedType != "apfs" || url.standardizedFileURL.path == "/"
     }
 
 }

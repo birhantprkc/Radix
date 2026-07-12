@@ -15,6 +15,7 @@ nonisolated struct ScanMetrics: Sendable {
     var discoveredItems = 0
     var completedItems = 0
     var estimatedTotalBytes: Int64 = 0
+    var volumeCapacity: VolumeCapacitySnapshot?
     /// Fraction of the tree's total traversal weight that has finished scanning (0...1).
     /// The scanner assigns the root a weight of 1 and recursively splits each directory's
     /// weight among its children when the directory is enumerated, so the sum of completed
