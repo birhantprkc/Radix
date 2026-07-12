@@ -45,6 +45,43 @@ final class SunburstGeometryTests: XCTestCase {
         XCTAssertLessThanOrEqual(lastSegment.endAngle.radians, .pi * 2 + 0.0001)
     }
 
+    func testSaturatedChildrenStayWithinParentArc() throws {
+        let children = [
+            makeFileNode(id: "/root/a", name: "a", size: .max),
+            makeFileNode(id: "/root/b", name: "b", size: .max),
+        ]
+        let root = FileNodeRecord(
+            id: "/root",
+            url: URL(filePath: "/root", directoryHint: .isDirectory),
+            name: "root",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: .max,
+            logicalSize: .max,
+            descendantFileCount: children.count,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )
+        let store = makeStore(root: root, children: children)
+
+        let segments = SunburstLayout.segments(in: store, rootID: root.id, depthLimit: 1)
+        let totalRadians = segments.reduce(0.0) {
+            $0 + ($1.endAngle.radians - $1.startAngle.radians)
+        }
+        let lastSegment = try XCTUnwrap(segments.last)
+
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertEqual(totalRadians, .pi * 2, accuracy: 0.0001)
+        XCTAssertLessThanOrEqual(lastSegment.endAngle.radians, .pi * 2 + 0.0001)
+        XCTAssertTrue(segments.allSatisfy {
+            $0.startAngle.radians.isFinite && $0.endAngle.radians.isFinite
+        })
+    }
+
     func testSmallItemsCollapseIntoAggregateSegment() throws {
         let children = [
             makeFileNode(id: "/root/large", name: "large", size: 100),
