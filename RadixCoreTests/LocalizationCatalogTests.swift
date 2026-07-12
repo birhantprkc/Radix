@@ -160,11 +160,15 @@ final class LocalizationCatalogTests: XCTestCase {
                 "Missing app localization resource: \(resource)"
             )
         }
+        let knownRegionsBlock = try XCTUnwrap(
+            matches(in: projectSource, pattern: #"knownRegions\s*=\s*\(([\s\S]*?)\);"#).first?.value
+        )
+        let knownRegions = Set(knownRegionsBlock.split(separator: ",").map { region in
+            region.trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        })
         for locale in ["en", "es", "fr", "zh-Hans", "de"] {
-            XCTAssertTrue(
-                projectSource.contains(locale == "zh-Hans" ? "\"zh-Hans\"," : "\n\t\t\t\t\(locale),"),
-                "Xcode project is missing supported locale \(locale)."
-            )
+            XCTAssertTrue(knownRegions.contains(locale), "Xcode project is missing supported locale \(locale).")
         }
     }
 
