@@ -145,29 +145,50 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         for (index, nodeID) in nodeIDs.enumerated() {
             try Task.checkCancellation()
             guard let node = baseline.treeStore.node(id: nodeID) else {
-                throw FileSystemEventHistoryError.targetUnavailable(nodeID)
+                try await forwardFullScan(
+                    target: target,
+                    options: options,
+                    continuation: continuation
+                )
+                return
             }
             var replacementSnapshot: ScanSnapshot?
-            for try await event in engine.scan(
-                target: ScanTarget(url: node.url),
-                options: subtreeOptions
-            ) {
-                switch event {
-                case .progress(var metrics):
-                    let localFraction = min(max(metrics.progressFraction, 0), 1)
-                    metrics.progressFraction = min(
-                        (Double(index) + localFraction) / Double(max(nodeIDs.count, 1)) * 0.95,
-                        0.95
-                    )
-                    continuation.yield(.progress(metrics))
-                case .warning(let warning):
-                    continuation.yield(.warning(warning))
-                case .finished(let snapshot):
-                    replacementSnapshot = snapshot
+            do {
+                for try await event in engine.scan(
+                    target: ScanTarget(url: node.url),
+                    options: subtreeOptions
+                ) {
+                    switch event {
+                    case .progress(var metrics):
+                        let localFraction = min(max(metrics.progressFraction, 0), 1)
+                        metrics.progressFraction = min(
+                            (Double(index) + localFraction) / Double(max(nodeIDs.count, 1)) * 0.95,
+                            0.95
+                        )
+                        continuation.yield(.progress(metrics))
+                    case .warning(let warning):
+                        continuation.yield(.warning(warning))
+                    case .finished(let snapshot):
+                        replacementSnapshot = snapshot
+                    }
                 }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try await forwardFullScan(
+                    target: target,
+                    options: options,
+                    continuation: continuation
+                )
+                return
             }
             guard let replacement = replacementSnapshot else {
-                throw FileSystemEventHistoryError.targetUnavailable(nodeID)
+                try await forwardFullScan(
+                    target: target,
+                    options: options,
+                    continuation: continuation
+                )
+                return
             }
             replacements[nodeID] = replacement.treeStore
             replacementWarnings.append(contentsOf: replacement.scanWarnings)

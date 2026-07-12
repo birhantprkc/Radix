@@ -71,6 +71,42 @@ final class IncrementalScanServiceTests: XCTestCase {
         XCTAssertNotEqual(rescanned.id, baseline.id)
     }
 
+    func testSubtreeDisappearingAfterHistoryPlanningFallsBackToFullScan() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let changedURL = rootURL.appending(path: "Changed", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: changedURL, withIntermediateDirectories: true)
+        try Data([0x1]).write(to: changedURL.appending(path: "payload.dat"))
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20), checkpoint(30)],
+            events: [
+                FileSystemEventRecord(
+                    path: changedURL.path,
+                    eventID: 15,
+                    flags: [.itemModified, .itemIsDirectory]
+                )
+            ],
+            beforeReturningHistory: {
+                try FileManager.default.removeItem(at: changedURL)
+            }
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        let rescanned = try await finishedIncrementalSnapshot(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+
+        XCTAssertNil(rescanned.treeStore.node(id: changedURL.path))
+        XCTAssertEqual(rescanned.incrementalCheckpoint?.eventID, 30)
+        XCTAssertEqual(provider.historyRequestCount, 1)
+    }
+
     private func checkpoint(_ eventID: UInt64) -> ScanIncrementalCheckpoint {
         ScanIncrementalCheckpoint(volumeUUID: "test-volume", eventID: eventID)
     }
@@ -80,11 +116,17 @@ private final class IncrementalHistoryStub: FileSystemEventHistoryProviding, @un
     private let lock = NSLock()
     private var checkpoints: [ScanIncrementalCheckpoint]
     private let events: [FileSystemEventRecord]
+    private let beforeReturningHistory: @Sendable () throws -> Void
     private var historyRequests = 0
 
-    init(checkpoints: [ScanIncrementalCheckpoint], events: [FileSystemEventRecord]) {
+    init(
+        checkpoints: [ScanIncrementalCheckpoint],
+        events: [FileSystemEventRecord],
+        beforeReturningHistory: @escaping @Sendable () throws -> Void = {}
+    ) {
         self.checkpoints = checkpoints
         self.events = events
+        self.beforeReturningHistory = beforeReturningHistory
     }
 
     var historyRequestCount: Int {
@@ -112,6 +154,7 @@ private final class IncrementalHistoryStub: FileSystemEventHistoryProviding, @un
         lock.withLock {
             historyRequests += 1
         }
+        try beforeReturningHistory()
         return FileSystemEventHistory(since: since, through: through, events: events)
     }
 }
