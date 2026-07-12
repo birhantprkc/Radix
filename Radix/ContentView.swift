@@ -306,7 +306,7 @@ private struct ArchiveOperationBanner: View {
     }
 
     private var shouldShimmerMessage: Bool {
-        (operation.kind == .import || operation.kind == .export) && !reduceMotion
+        (operation.kind == .import || operation.kind == .importPreview || operation.kind == .export || operation.kind == .compare) && !reduceMotion
     }
 
     @ViewBuilder
