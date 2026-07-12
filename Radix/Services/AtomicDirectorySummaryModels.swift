@@ -63,10 +63,10 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
     }
 
     mutating func accumulateFile(_ metadata: NodeMetadata, url: URL, ownerNodeID: String) {
-        allocatedSize += metadata.allocatedSize
-        logicalSize += metadata.logicalSize
+        allocatedSize = ScanIntegerMath.addingClamped(allocatedSize, metadata.allocatedSize)
+        logicalSize = ScanIntegerMath.addingClamped(logicalSize, metadata.logicalSize)
         if !metadata.isSymbolicLink {
-            descendantFileCount += 1
+            descendantFileCount = ScanIntegerMath.addingClamped(descendantFileCount, 1)
         }
         if metadata.linkCount > 1,
            let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {

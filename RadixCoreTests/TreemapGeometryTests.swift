@@ -169,6 +169,29 @@ final class TreemapGeometryTests: XCTestCase {
         XCTAssertNil(index.segment(at: CGPoint(x: 300, y: 150), in: size))
     }
 
+    func testHitTestingMatchesRenderedRectsAcrossFractionalChartSize() {
+        let segments = [
+            makeTreemapSegment(id: "left", rect: CGRect(x: 0, y: 0, width: 0.6, height: 1)),
+            makeTreemapSegment(id: "right", rect: CGRect(x: 0.6, y: 0, width: 0.4, height: 1)),
+        ]
+        let size = CGSize(width: 617.5, height: 293.25)
+        let index = TreemapHitTestIndex(segments: segments)
+
+        for x in stride(from: CGFloat(0.25), to: size.width, by: 3.75) {
+            for y in stride(from: CGFloat(0.25), to: size.height, by: 4.5) {
+                let point = CGPoint(x: x, y: y)
+                let expected = segments.last { segment in
+                    TreemapRenderer.displayRect(for: segment, in: size).contains(point)
+                }
+                XCTAssertEqual(
+                    index.segment(at: point, in: size)?.id,
+                    expected?.id,
+                    "Hit-test mismatch at (\(point.x), \(point.y))"
+                )
+            }
+        }
+    }
+
     func testSmallTilesDoNotProduceAnOutOfBoundsSelectionStrokeRect() {
         let segment = makeTreemapSegment(
             id: "tiny",

@@ -124,9 +124,12 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
 
     func merge(_ partial: AtomicDirectorySummaryPartial) {
         lock.lock()
-        allocatedSize += partial.allocatedSize
-        logicalSize += partial.logicalSize
-        descendantFileCount += partial.descendantFileCount
+        allocatedSize = ScanIntegerMath.addingClamped(allocatedSize, partial.allocatedSize)
+        logicalSize = ScanIntegerMath.addingClamped(logicalSize, partial.logicalSize)
+        descendantFileCount = ScanIntegerMath.addingClamped(
+            descendantFileCount,
+            partial.descendantFileCount
+        )
         isAccessible = isAccessible && partial.isAccessible
         warnings.append(contentsOf: partial.warnings)
         hardLinkAccumulator.merge(partial.hardLinkAccumulator)

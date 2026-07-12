@@ -3,6 +3,47 @@ import XCTest
 @testable import RadixCore
 
 final class ScanEngineTests: XCTestCase {
+    func testAtomicSummarySizeAccumulationClampsInsteadOfOverflowing() {
+        var partial = AtomicDirectorySummaryPartial(
+            allocatedSize: Int64.max,
+            logicalSize: Int64.max,
+            descendantFileCount: Int.max
+        )
+        let metadata = NodeMetadata(
+            isDirectory: false,
+            isPackage: false,
+            isSymbolicLink: false,
+            logicalSize: 1,
+            allocatedSize: 1,
+            lastModified: nil,
+            isReadable: true,
+            volumeCapacity: nil,
+            fileIdentity: nil,
+            linkCount: 1
+        )
+
+        partial.accumulateFile(
+            metadata,
+            url: URL(filePath: "/overflow.bin"),
+            ownerNodeID: "/"
+        )
+
+        XCTAssertEqual(partial.allocatedSize, Int64.max)
+        XCTAssertEqual(partial.logicalSize, Int64.max)
+        XCTAssertEqual(partial.descendantFileCount, Int.max)
+
+        let accumulator = AtomicSummaryAccumulator(seed: partial)
+        accumulator.merge(AtomicDirectorySummaryPartial(
+            allocatedSize: 1,
+            logicalSize: 1,
+            descendantFileCount: 1
+        ))
+        let summary = accumulator.makeSummary()
+        XCTAssertEqual(summary.allocatedSize, Int64.max)
+        XCTAssertEqual(summary.logicalSize, Int64.max)
+        XCTAssertEqual(summary.descendantFileCount, Int.max)
+    }
+
     func testLowDescriptorBudgetMatchesNormalScanAndStaysWithinPeak() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

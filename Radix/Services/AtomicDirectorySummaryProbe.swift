@@ -209,7 +209,10 @@ extension AtomicDirectorySummarizer {
                 }
                 guard !isSymbolicLink else { continue }
 
-                profile.totalSampledLogicalSize += Int64(values.totalFileSize ?? values.fileSize ?? 0)
+                profile.totalSampledLogicalSize = ScanIntegerMath.addingClamped(
+                    profile.totalSampledLogicalSize,
+                    Int64(values.totalFileSize ?? values.fileSize ?? 0)
+                )
                 profile.observedFileCount += 1
 
                 if profile.suggestsAtomicDirectory(
@@ -405,7 +408,10 @@ extension AtomicDirectorySummarizer {
             partial.accumulateFile(metadata, url: entry.url, ownerNodeID: frames[frameIndex].ownerNodeID)
             guard !metadata.isSymbolicLink else { continue }
 
-            profile.totalSampledLogicalSize += metadata.logicalSize
+            profile.totalSampledLogicalSize = ScanIntegerMath.addingClamped(
+                profile.totalSampledLogicalSize,
+                metadata.logicalSize
+            )
             profile.observedFileCount += 1
             if profile.suggestsAtomicDirectory(
                 minFileCount: minFileCount,
