@@ -178,13 +178,22 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             cancellationCheck: cancellationCheck
         ) else { return nil }
 
+        var retainedWarnings: [ScanWarning] = []
+        retainedWarnings.reserveCapacity(scanWarnings.count)
+        for warning in scanWarnings {
+            try cancellationCheck()
+            if !Self.path(warning.path, isContainedIn: targetID) {
+                retainedWarnings.append(warning)
+            }
+        }
+
         let updatedSnapshot = ScanSnapshot(
             id: id,
             target: target,
             treeStore: updatedStore,
             startedAt: startedAt,
             finishedAt: finishedAt,
-            scanWarnings: scanWarnings,
+            scanWarnings: retainedWarnings,
             aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,

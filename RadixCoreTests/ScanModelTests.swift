@@ -381,8 +381,13 @@ final class ScanModelTests: XCTestCase {
             root.id: [folder, sibling],
             folder.id: [removedLeaf, keptLeaf],
         ])
-        let warning = ScanWarning(path: removedLeaf.id, message: "kept", category: .fileSystem)
-        let snapshot = makeSnapshot(root: root, treeStore: treeStore, warnings: [warning])
+        let removedWarning = ScanWarning(path: removedLeaf.id, message: "removed", category: .fileSystem)
+        let retainedWarning = ScanWarning(path: keptLeaf.id, message: "kept", category: .fileSystem)
+        let snapshot = makeSnapshot(
+            root: root,
+            treeStore: treeStore,
+            warnings: [removedWarning, retainedWarning]
+        )
 
         let updatedSnapshot = try XCTUnwrap(snapshot.removingNode(id: removedLeaf.id))
 
@@ -399,7 +404,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertEqual(updatedSnapshot.aggregateStats.totalAllocatedSize, 25)
         XCTAssertEqual(updatedSnapshot.aggregateStats.fileCount, 2)
         XCTAssertEqual(updatedSnapshot.aggregateStats.directoryCount, 2)
-        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [warning.path])
+        XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [retainedWarning.path])
     }
 
     func testSnapshotRemovingMissingOrRootNodeReturnsNil() {
