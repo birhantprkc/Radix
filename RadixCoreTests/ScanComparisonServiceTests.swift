@@ -228,6 +228,63 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.allocatedDelta, 0)
     }
 
+    func testMultipleHardLinkGroupsKeepSparseAncestorAdjustmentsBalanced() async throws {
+        let firstIdentity = FileIdentity(device: 1, inode: 101)
+        let secondIdentity = FileIdentity(device: 1, inode: 202)
+
+        func hardLink(
+            root: String,
+            name: String,
+            size: Int64,
+            unduplicatedSize: Int64,
+            identity: FileIdentity
+        ) -> FileNodeRecord {
+            makeTestFileNode(
+                id: "\(root)/folder/\(name)",
+                name: name,
+                size: size,
+                unduplicatedAllocatedSize: unduplicatedSize,
+                fileIdentity: identity,
+                linkCount: 2
+            )
+        }
+
+        let beforeFiles = [
+            hardLink(root: "/before", name: "a-one", size: 0, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/before", name: "z-one", size: 100, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/before", name: "a-two", size: 0, unduplicatedSize: 200, identity: secondIdentity),
+            hardLink(root: "/before", name: "z-two", size: 200, unduplicatedSize: 200, identity: secondIdentity),
+        ]
+        let beforeFolder = makeTestDirectoryNode(id: "/before/folder", name: "folder", children: beforeFiles)
+        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeFolder])
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeFolder],
+            beforeFolder.id: beforeFiles,
+        ])
+
+        let afterFiles = [
+            hardLink(root: "/after", name: "a-one", size: 100, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/after", name: "z-one", size: 0, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/after", name: "a-two", size: 200, unduplicatedSize: 200, identity: secondIdentity),
+            hardLink(root: "/after", name: "z-two", size: 0, unduplicatedSize: 200, identity: secondIdentity),
+        ]
+        let afterFolder = makeTestDirectoryNode(id: "/after/folder", name: "folder", children: afterFiles)
+        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterFolder])
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterFolder],
+            afterFolder.id: afterFiles,
+        ])
+
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: beforeRoot, store: beforeStore),
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+
+        XCTAssertTrue(comparison.rows.isEmpty)
+        XCTAssertEqual(comparison.summary.allocatedDelta, 0)
+        XCTAssertEqual(comparison.summary.attributedAllocatedDelta, 0)
+    }
+
     func testUnambiguousFileIdentityMoveIsReportedAtDestination() async throws {
         let identity = FileIdentity(device: 1, inode: 900)
         let beforeFile = makeTestFileNode(

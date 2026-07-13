@@ -1116,16 +1116,16 @@ nonisolated struct ScanComparisonService: Sendable {
     ) {
         let identities = hardLinkIdentities(in: beforeNodes).union(hardLinkIdentities(in: afterNodes))
         guard !identities.isEmpty else {
-            return (
-                beforeNodes.mapValues(\.allocatedSize),
-                afterNodes.mapValues(\.allocatedSize)
-            )
+            return ([:], [:])
         }
 
         let beforeGroups = hardLinkPathsByIdentity(in: beforeNodes, identities: identities)
         let afterGroups = hardLinkPathsByIdentity(in: afterNodes, identities: identities)
-        var beforeSizes = beforeNodes.mapValues(\.allocatedSize)
-        var afterSizes = afterNodes.mapValues(\.allocatedSize)
+        // Most scans contain few hard links compared with their total node count.
+        // Keep only sizes changed by normalization instead of duplicating every
+        // path and allocated-size value from both snapshots.
+        var beforeSizes: [String: Int64] = [:]
+        var afterSizes: [String: Int64] = [:]
 
         for identity in identities {
             let beforePaths = beforeGroups[identity] ?? []
@@ -1218,8 +1218,8 @@ nonisolated struct ScanComparisonService: Sendable {
             var cursor = path
             while let slashIndex = cursor.lastIndex(of: "/") {
                 cursor = String(cursor[..<slashIndex])
-                guard sizes[cursor] != nil else { continue }
-                sizes[cursor, default: 0] += adjustment
+                guard let ancestorNode = nodes[cursor] else { continue }
+                sizes[cursor] = (sizes[cursor] ?? ancestorNode.allocatedSize) + adjustment
             }
         }
     }
