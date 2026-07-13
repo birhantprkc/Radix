@@ -165,30 +165,33 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         }
 
         let service = ScanArchiveService()
-        let beforeImport = try await Self.measureMemoryAndTime {
-            try await service.importSnapshot(
-                from: URL(filePath: beforePath, directoryHint: .isDirectory)
-            )
-        }
-        let afterImport = try await Self.measureMemoryAndTime {
-            try await service.importSnapshot(
-                from: URL(filePath: afterPath, directoryHint: .isDirectory)
-            )
+        let beforeURL = URL(filePath: beforePath, directoryHint: .isDirectory)
+        let afterURL = URL(filePath: afterPath, directoryHint: .isDirectory)
+        let concurrentImports = environment["RADIX_BENCH_COMPARISON_CONCURRENT_IMPORTS"] == "1"
+        let imports = try await Self.measureMemoryAndTime {
+            if concurrentImports {
+                async let before = service.importSnapshot(from: beforeURL)
+                async let after = service.importSnapshot(from: afterURL)
+                return try await (before, after)
+            }
+            let before = try await service.importSnapshot(from: beforeURL)
+            let after = try await service.importSnapshot(from: afterURL)
+            return (before, after)
         }
         let comparison = try await Self.measureMemoryAndTime {
             try await ScanComparisonService().compare(
-                before: beforeImport.value.snapshot,
-                after: afterImport.value.snapshot
+                before: imports.value.0.snapshot,
+                after: imports.value.1.snapshot
             )
         }
 
         XCTAssertEqual(
             comparison.value.summary.beforeFileCount,
-            beforeImport.value.snapshot.aggregateStats.fileCount
+            imports.value.0.snapshot.aggregateStats.fileCount
         )
         XCTAssertEqual(
             comparison.value.summary.afterFileCount,
-            afterImport.value.snapshot.aggregateStats.fileCount
+            imports.value.1.snapshot.aggregateStats.fileCount
         )
         XCTAssertEqual(
             comparison.value.rows.count,
@@ -201,10 +204,11 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
 
         print(
             """
-            RADIX_COMPARISON_BENCH_RESULT before_nodes=\(beforeImport.value.snapshot.treeStore.nodeCount) \
-            after_nodes=\(afterImport.value.snapshot.treeStore.nodeCount) rows=\(comparison.value.rows.count) \
-            before_import_seconds=\(Self.secondsString(beforeImport.elapsedSeconds)) \
-            after_import_seconds=\(Self.secondsString(afterImport.elapsedSeconds)) \
+            RADIX_COMPARISON_BENCH_RESULT before_nodes=\(imports.value.0.snapshot.treeStore.nodeCount) \
+            after_nodes=\(imports.value.1.snapshot.treeStore.nodeCount) rows=\(comparison.value.rows.count) \
+            concurrent_imports=\(concurrentImports ? 1 : 0) \
+            import_seconds=\(Self.secondsString(imports.elapsedSeconds)) \
+            import_peak_rss_delta=\(imports.peakDeltaRSS) \
             comparison_seconds=\(Self.secondsString(comparison.elapsedSeconds)) \
             comparison_peak_rss_delta=\(comparison.peakDeltaRSS)
             """

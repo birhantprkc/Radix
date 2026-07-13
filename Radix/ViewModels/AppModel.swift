@@ -1260,19 +1260,16 @@ final class AppModel: ObservableObject {
             title: String(localized: "Comparing Snapshots", comment: "Progress banner title while comparing snapshots."),
             message: String(localized: "Reading archives", comment: "Progress banner message while reading archives for comparison."),
             work: {
-                let before = try await Self.snapshot(
-                    for: candidates.before.source,
+                let snapshots = try await Self.comparisonSnapshots(
+                    candidates: candidates,
                     archiveService: archiveService,
                     currentSnapshot: currentSnapshot
                 )
                 try Task.checkCancellation()
-                let after = try await Self.snapshot(
-                    for: candidates.after.source,
-                    archiveService: archiveService,
-                    currentSnapshot: currentSnapshot
+                return try await ScanComparisonService().compare(
+                    before: snapshots.before,
+                    after: snapshots.after
                 )
-                try Task.checkCancellation()
-                return try await ScanComparisonService().compare(before: before, after: after)
             },
             onSuccess: { [weak self] comparison in
                 guard let self else { return }
@@ -1397,6 +1394,73 @@ final class AppModel: ObservableObject {
             }
             return currentSnapshot
         }
+    }
+
+    nonisolated private static func comparisonSnapshots(
+        candidates: (before: ScanComparisonCandidate, after: ScanComparisonCandidate),
+        archiveService: any ScanArchiveServicing,
+        currentSnapshot: ScanSnapshot?
+    ) async throws -> (before: ScanSnapshot, after: ScanSnapshot) {
+        if shouldLoadComparisonSnapshotsConcurrently(
+            before: candidates.before,
+            after: candidates.after
+        ) {
+            async let before = snapshot(
+                for: candidates.before.source,
+                archiveService: archiveService,
+                currentSnapshot: currentSnapshot
+            )
+            async let after = snapshot(
+                for: candidates.after.source,
+                archiveService: archiveService,
+                currentSnapshot: currentSnapshot
+            )
+            return try await (before, after)
+        }
+
+        let before = try await snapshot(
+            for: candidates.before.source,
+            archiveService: archiveService,
+            currentSnapshot: currentSnapshot
+        )
+        try Task.checkCancellation()
+        let after = try await snapshot(
+            for: candidates.after.source,
+            archiveService: archiveService,
+            currentSnapshot: currentSnapshot
+        )
+        return (before, after)
+    }
+
+    /// Real Macintosh HD archive imports use about 2.1 KB of peak working set
+    /// per node when decoded concurrently. A 2.3 KB estimate plus a quarter-RAM
+    /// ceiling leaves room for the app, archive buffers, and comparison output.
+    nonisolated static func shouldLoadComparisonSnapshotsConcurrently(
+        before: ScanComparisonCandidate,
+        after: ScanComparisonCandidate,
+        physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
+    ) -> Bool {
+        guard case .archive = before.source,
+              case .archive = after.source else {
+            return false
+        }
+
+        func nodeCount(_ candidate: ScanComparisonCandidate) -> UInt64 {
+            let files = UInt64(max(candidate.fileCount, 0))
+            let directories = UInt64(max(candidate.directoryCount, 0))
+            let (subtotal, overflow) = files.addingReportingOverflow(directories)
+            guard !overflow else { return .max }
+            let (total, rootOverflow) = subtotal.addingReportingOverflow(1)
+            return rootOverflow ? .max : total
+        }
+
+        let (totalNodeCount, nodeCountOverflow) = nodeCount(before)
+            .addingReportingOverflow(nodeCount(after))
+        guard !nodeCountOverflow else { return false }
+        let (estimatedWorkingSet, sizeOverflow) = totalNodeCount
+            .multipliedReportingOverflow(by: 2_300)
+        guard !sizeOverflow else { return false }
+        return estimatedWorkingSet <= physicalMemory / 4
     }
 
     func startScan(_ target: ScanTarget) {
