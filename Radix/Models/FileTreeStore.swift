@@ -596,7 +596,15 @@ nonisolated struct FileTreeStore: Sendable {
 
     nonisolated func hasAncestor(in ancestorIDs: Set<String>, of nodeID: String) -> Bool {
         let ancestorIndices = Set(ancestorIDs.compactMap { topologyArena.indexByNodeID[$0] })
-        guard var cursor = nodeIndex(id: nodeID) else { return false }
+        guard let nodeIndex = nodeIndex(id: nodeID) else { return false }
+        return hasAncestor(in: ancestorIndices, of: nodeIndex)
+    }
+
+    nonisolated func hasAncestor(
+        in ancestorIndices: Set<FileTreeNodeIndex>,
+        of nodeIndex: FileTreeNodeIndex
+    ) -> Bool {
+        var cursor = nodeIndex
         while let parentIndex = topologyArena.parentIndex(of: cursor) {
             if ancestorIndices.contains(parentIndex) {
                 return true

@@ -527,23 +527,28 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeNodes: beforeNodes,
             afterNodes: afterNodes
         )
-        let visibleAddedPaths = Set(addedPaths.filter { relativePath in
-            !Self.hasAncestor(of: relativePath, in: addedPaths)
-                && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths)
-        })
-        let visibleRemovedPaths = Set(removedPaths.filter { relativePath in
-            !Self.hasAncestor(of: relativePath, in: removedPaths)
-                && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths)
-        })
+        let visibleAddedPaths = Self.visibleTopLevelPaths(
+            in: addedPaths,
+            excludingDescendantsOf: materializationBoundaryPaths,
+            nodes: afterNodes,
+            treeStore: after.treeStore
+        )
+        let visibleRemovedPaths = Self.visibleTopLevelPaths(
+            in: removedPaths,
+            excludingDescendantsOf: materializationBoundaryPaths,
+            nodes: beforeNodes,
+            treeStore: before.treeStore
+        )
         let warningBoundaries = Self.warningBoundaryPaths(in: before)
             .union(Self.warningBoundaryPaths(in: after))
+        let warningBoundaryIndex = RelativePathPrefixTree(paths: warningBoundaries)
         // A warning represents unknown coverage, never proof that a path was created or
         // deleted. Suppress a collapsed ancestor row too when it contains a warning boundary.
         let coveredAddedPaths = Set(visibleAddedPaths.filter { relativePath in
-            !Self.overlapsWarningBoundary(relativePath: relativePath, boundaries: warningBoundaries)
+            !warningBoundaryIndex.overlaps(relativePath)
         })
         let coveredRemovedPaths = Set(visibleRemovedPaths.filter { relativePath in
-            !Self.overlapsWarningBoundary(relativePath: relativePath, boundaries: warningBoundaries)
+            !warningBoundaryIndex.overlaps(relativePath)
         })
         let movedPathPairs = Self.movedPathPairs(
             beforeNodes: beforeNodes,
@@ -716,15 +721,34 @@ nonisolated struct ScanComparisonService: Sendable {
         return relativePath.isEmpty ? nil : relativePath
     }
 
-    private static func hasAncestor(of relativePath: String, in paths: Set<String>) -> Bool {
-        var cursor = relativePath
-        while let slashIndex = cursor.lastIndex(of: "/") {
-            cursor = String(cursor[..<slashIndex])
-            if paths.contains(cursor) {
-                return true
+    private static func visibleTopLevelPaths(
+        in paths: Set<String>,
+        excludingDescendantsOf boundaryPaths: Set<String>,
+        nodes: [String: FileNodeRecord],
+        treeStore: FileTreeStore
+    ) -> Set<String> {
+        var ancestorIndices = Set<FileTreeNodeIndex>()
+        ancestorIndices.reserveCapacity(paths.count + boundaryPaths.count)
+        for relativePath in paths {
+            if let node = nodes[relativePath],
+               let nodeIndex = treeStore.nodeIndex(id: node.id) {
+                ancestorIndices.insert(nodeIndex)
             }
         }
-        return false
+        for relativePath in boundaryPaths {
+            if let node = nodes[relativePath],
+               let nodeIndex = treeStore.nodeIndex(id: node.id) {
+                ancestorIndices.insert(nodeIndex)
+            }
+        }
+
+        return Set(paths.filter { relativePath in
+            guard let node = nodes[relativePath],
+                  let nodeIndex = treeStore.nodeIndex(id: node.id) else {
+                return false
+            }
+            return !treeStore.hasAncestor(in: ancestorIndices, of: nodeIndex)
+        })
     }
 
     private struct MovedPathPair: Sendable {
@@ -1095,15 +1119,61 @@ nonisolated struct ScanComparisonService: Sendable {
         return ""
     }
 
-    private static func overlapsWarningBoundary(
-        relativePath: String,
-        boundaries: Set<String>
-    ) -> Bool {
-        boundaries.contains { boundary in
-            guard !boundary.isEmpty else { return true }
-            return relativePath == boundary
-                || relativePath.hasPrefix(boundary + "/")
-                || boundary.hasPrefix(relativePath + "/")
+    private struct RelativePathPrefixTree {
+        private struct Node {
+            var isTerminal = false
+            var children: [Substring: Int] = [:]
+        }
+
+        private var nodes = [Node()]
+
+        init(paths: Set<String>) {
+            for path in paths {
+                insert(path)
+            }
+        }
+
+        func overlaps(_ path: String) -> Bool {
+            if nodes[0].isTerminal {
+                return true
+            }
+
+            var nodeIndex = 0
+            for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+                guard let childIndex = nodes[nodeIndex].children[component] else {
+                    return false
+                }
+                nodeIndex = childIndex
+                if nodes[nodeIndex].isTerminal {
+                    return true
+                }
+            }
+
+            // A child means `path` is a collapsed ancestor of at least one
+            // warning boundary, which is equally uncertain.
+            return !nodes[nodeIndex].children.isEmpty
+        }
+
+        private mutating func insert(_ path: String) {
+            let components = path.split(separator: "/", omittingEmptySubsequences: true)
+            guard !components.isEmpty else {
+                nodes[0].isTerminal = true
+                return
+            }
+
+            var nodeIndex = 0
+            for component in components {
+                if let childIndex = nodes[nodeIndex].children[component] {
+                    nodeIndex = childIndex
+                    continue
+                }
+
+                let childIndex = nodes.count
+                nodes.append(Node())
+                nodes[nodeIndex].children[component] = childIndex
+                nodeIndex = childIndex
+            }
+            nodes[nodeIndex].isTerminal = true
         }
     }
 

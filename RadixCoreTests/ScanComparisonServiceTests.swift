@@ -623,6 +623,100 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertTrue(additionComparison.coverage.issues.contains(.beforeWarnings(1)))
     }
 
+    func testWarningBoundaryIndexHandlesAncestorsDescendantsAndSiblingPrefixes() async throws {
+        let emptyRoot = makeTestDirectoryNode(id: "/scan", name: "scan", children: [])
+        let emptyStore = FileTreeStore(root: emptyRoot, childrenByID: [emptyRoot.id: []])
+        let descendantWarning = ScanWarning(
+            path: "/scan/Private/blocked",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let before = makeTestSnapshot(
+            root: emptyRoot,
+            store: emptyStore,
+            warnings: [descendantWarning]
+        )
+
+        let privateFile = makeTestFileNode(
+            id: "/scan/Private/new.bin",
+            name: "new.bin",
+            size: 100
+        )
+        let privateFolder = makeTestDirectoryNode(
+            id: "/scan/Private",
+            name: "Private",
+            children: [privateFile]
+        )
+        let siblingPrefix = makeTestFileNode(
+            id: "/scan/Privateer.bin",
+            name: "Privateer.bin",
+            size: 50
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [privateFolder, siblingPrefix]
+        )
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [privateFolder, siblingPrefix],
+            privateFolder.id: [privateFile],
+        ])
+
+        let descendantComparison = try await ScanComparisonService().compare(
+            before: before,
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+
+        XCTAssertEqual(descendantComparison.rows.map(\.relativePath), ["Privateer.bin"])
+
+        let beforePublic = makeTestDirectoryNode(id: "/scan/Public", name: "Public", children: [])
+        let beforePublicRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [beforePublic]
+        )
+        let beforePublicStore = FileTreeStore(root: beforePublicRoot, childrenByID: [
+            beforePublicRoot.id: [beforePublic],
+            beforePublic.id: [],
+        ])
+        let ancestorWarning = ScanWarning(
+            path: "/scan/Public",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let beforeWithAncestorWarning = makeTestSnapshot(
+            root: beforePublicRoot,
+            store: beforePublicStore,
+            warnings: [ancestorWarning]
+        )
+        let publicFile = makeTestFileNode(
+            id: "/scan/Public/new.bin",
+            name: "new.bin",
+            size: 100
+        )
+        let afterPublic = makeTestDirectoryNode(
+            id: "/scan/Public",
+            name: "Public",
+            children: [publicFile]
+        )
+        let afterPublicRoot = makeTestDirectoryNode(
+            id: "/scan",
+            name: "scan",
+            children: [afterPublic]
+        )
+        let afterPublicStore = FileTreeStore(root: afterPublicRoot, childrenByID: [
+            afterPublicRoot.id: [afterPublic],
+            afterPublic.id: [publicFile],
+        ])
+
+        let ancestorComparison = try await ScanComparisonService().compare(
+            before: beforeWithAncestorWarning,
+            after: makeTestSnapshot(root: afterPublicRoot, store: afterPublicStore)
+        )
+
+        XCTAssertTrue(ancestorComparison.rows.isEmpty)
+    }
+
     func testCoverageIsHighForCompleteEquivalentSnapshotsWithKnownOptions() async throws {
         let root = makeTestDirectoryNode(id: "/scan", name: "scan", children: [])
         let store = FileTreeStore(root: root, childrenByID: [root.id: []])
