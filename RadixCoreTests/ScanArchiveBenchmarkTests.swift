@@ -154,6 +154,63 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         )
     }
 
+    func testRealSnapshotComparisonBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let beforePath = environment["RADIX_BENCH_COMPARISON_BEFORE"],
+              let afterPath = environment["RADIX_BENCH_COMPARISON_AFTER"] else {
+            throw XCTSkip(
+                "Set RADIX_BENCH_COMPARISON_BEFORE and RADIX_BENCH_COMPARISON_AFTER "
+                    + "to benchmark real snapshot comparison."
+            )
+        }
+
+        let service = ScanArchiveService()
+        let beforeImport = try await Self.measureMemoryAndTime {
+            try await service.importSnapshot(
+                from: URL(filePath: beforePath, directoryHint: .isDirectory)
+            )
+        }
+        let afterImport = try await Self.measureMemoryAndTime {
+            try await service.importSnapshot(
+                from: URL(filePath: afterPath, directoryHint: .isDirectory)
+            )
+        }
+        let comparison = try await Self.measureMemoryAndTime {
+            try await ScanComparisonService().compare(
+                before: beforeImport.value.snapshot,
+                after: afterImport.value.snapshot
+            )
+        }
+
+        XCTAssertEqual(
+            comparison.value.summary.beforeFileCount,
+            beforeImport.value.snapshot.aggregateStats.fileCount
+        )
+        XCTAssertEqual(
+            comparison.value.summary.afterFileCount,
+            afterImport.value.snapshot.aggregateStats.fileCount
+        )
+        XCTAssertEqual(
+            comparison.value.rows.count,
+            comparison.value.summary.addedCount
+                + comparison.value.summary.removedCount
+                + comparison.value.summary.grewCount
+                + comparison.value.summary.shrankCount
+                + comparison.value.summary.movedCount
+        )
+
+        print(
+            """
+            RADIX_COMPARISON_BENCH_RESULT before_nodes=\(beforeImport.value.snapshot.treeStore.nodeCount) \
+            after_nodes=\(afterImport.value.snapshot.treeStore.nodeCount) rows=\(comparison.value.rows.count) \
+            before_import_seconds=\(Self.secondsString(beforeImport.elapsedSeconds)) \
+            after_import_seconds=\(Self.secondsString(afterImport.elapsedSeconds)) \
+            comparison_seconds=\(Self.secondsString(comparison.elapsedSeconds)) \
+            comparison_peak_rss_delta=\(comparison.peakDeltaRSS)
+            """
+        )
+    }
+
     private struct BenchmarkCase {
         let name: String
         let detail: String
