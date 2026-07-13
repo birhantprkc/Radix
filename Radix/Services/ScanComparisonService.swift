@@ -877,7 +877,6 @@ nonisolated struct ScanComparisonService: Sendable {
     private struct AggregateAccumulator {
         let relativePath: String
         let parentPath: String?
-        var childPaths = Set<String>()
         var directRowID: ScanComparisonRow.ID?
         var representativeRowID: ScanComparisonRow.ID?
         var increasedAllocatedSize: Int64 = 0
@@ -933,6 +932,46 @@ nonisolated struct ScanComparisonService: Sendable {
         }
     }
 
+    private struct RelativePathInterner {
+        private struct Node {
+            let path: String
+            var children: [Substring: Int] = [:]
+        }
+
+        private var nodes = [Node(path: "")]
+
+        var rootChildIndices: Dictionary<Substring, Int>.Values {
+            nodes[0].children.values
+        }
+
+        var nodeIndices: Range<Int> {
+            1..<nodes.count
+        }
+
+        func path(at index: Int) -> String {
+            nodes[index].path
+        }
+
+        func childIndices(of index: Int) -> Dictionary<Substring, Int>.Values {
+            nodes[index].children.values
+        }
+
+        mutating func intern(_ component: Substring, under parentIndex: Int) -> Int {
+            if let index = nodes[parentIndex].children[component] {
+                return index
+            }
+
+            let parentPath = nodes[parentIndex].path
+            let path = parentPath.isEmpty
+                ? String(component)
+                : parentPath + "/" + component
+            let index = nodes.count
+            nodes.append(Node(path: path))
+            nodes[parentIndex].children[component] = index
+            return index
+        }
+    }
+
     /// Builds inclusive path rollups from the final evidence partition. Using the finalized rows
     /// is essential: raw directory sizes would double-count materialized descendants and bypass
     /// warning-boundary and hard-link normalization.
@@ -944,14 +983,16 @@ nonisolated struct ScanComparisonService: Sendable {
         guard !rows.isEmpty else { return .empty }
         var accumulators: [String: AggregateAccumulator] = [:]
         accumulators.reserveCapacity(rows.count)
+        var pathInterner = RelativePathInterner()
 
         for row in rows {
             try Task.checkCancellation()
             let components = row.relativePath.split(separator: "/", omittingEmptySubsequences: true)
+            var parentIndex = 0
             var parentPath: String?
-            var path = ""
             for (index, component) in components.enumerated() {
-                path = path.isEmpty ? String(component) : path + "/" + component
+                let pathIndex = pathInterner.intern(component, under: parentIndex)
+                let path = pathInterner.path(at: pathIndex)
                 var accumulator = accumulators[path] ?? AggregateAccumulator(
                     relativePath: path,
                     parentPath: parentPath
@@ -959,15 +1000,8 @@ nonisolated struct ScanComparisonService: Sendable {
                 accumulator.include(row, isDirect: index == components.count - 1)
                 accumulators[path] = accumulator
 
-                if let parentPath {
-                    var parent = accumulators[parentPath] ?? AggregateAccumulator(
-                        relativePath: parentPath,
-                        parentPath: Self.parentPath(of: parentPath)
-                    )
-                    parent.childPaths.insert(path)
-                    accumulators[parentPath] = parent
-                }
                 parentPath = path
+                parentIndex = pathIndex
             }
         }
 
@@ -989,16 +1023,19 @@ nonisolated struct ScanComparisonService: Sendable {
 
         var nodesByPath: [String: ScanComparisonAggregateChange] = [:]
         nodesByPath.reserveCapacity(accumulators.count)
-        for (path, accumulator) in accumulators {
+        for nodeIndex in pathInterner.nodeIndices {
             try Task.checkCancellation()
+            let path = pathInterner.path(at: nodeIndex)
+            guard let accumulator = accumulators[path] else { continue }
             guard let representativeRowID = accumulator.representativeRowID else { continue }
             let displayNode = afterNodes[path] ?? beforeNodes[path]
+            let childPaths = pathInterner.childIndices(of: nodeIndex).map(pathInterner.path)
             nodesByPath[path] = ScanComparisonAggregateChange(
                 id: path,
                 relativePath: path,
                 name: displayNode?.name ?? URL(filePath: path).lastPathComponent,
                 parentPath: accumulator.parentPath,
-                childPaths: accumulator.childPaths.sorted(by: nodeSort),
+                childPaths: childPaths.sorted(by: nodeSort),
                 directRowID: accumulator.directRowID,
                 representativeRowID: representativeRowID,
                 beforeNode: beforeNodes[path],
@@ -1015,16 +1052,10 @@ nonisolated struct ScanComparisonService: Sendable {
             )
         }
 
-        let rootPaths = accumulators.values
-            .filter { $0.parentPath == nil }
-            .map(\.relativePath)
+        let rootPaths = pathInterner.rootChildIndices
+            .map(pathInterner.path)
             .sorted(by: nodeSort)
         return ScanComparisonChangeTree(rootPaths: rootPaths, nodesByPath: nodesByPath)
-    }
-
-    private static func parentPath(of relativePath: String) -> String? {
-        guard let slashIndex = relativePath.lastIndex(of: "/") else { return nil }
-        return String(relativePath[..<slashIndex])
     }
 
     private static func topLevelChanges(
