@@ -24,6 +24,7 @@ Radix is a native macOS disk space analyzer built in Swift and SwiftUI. When dev
 - macOS target: macOS 14.0+
 - App UI framework: SwiftUI (always preferred over UIKit/AppKit)
 - Tests: `RadixCoreTests/`
+- Supported locales: `en`, `de`, `es`, `fr`, `it`, `zh-Hans`
 
 ## Project Structure
 

@@ -20,7 +20,7 @@ final class LocalizationCatalogTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(strings.count, 400)
         XCTAssertEqual(catalogs["Interface"]?.count, 8)
 
-        let supportedLocales = Set(["es", "fr", "zh-Hans", "de"])
+        let supportedLocales = Set(["es", "fr", "zh-Hans", "de", "it"])
         for (key, value) in strings {
             let entry = try XCTUnwrap(value as? [String: Any], "Invalid catalog entry for \(key)")
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")

@@ -1,78 +1,286 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "Attempts to load the disk map again." : {
-      "comment" : "Accessibility hint for retrying a failed disk-map layout.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Versucht erneut, die Datenträgerkarte zu laden." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Intenta cargar de nuevo el mapa de disco." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Tente de charger à nouveau la carte du disque." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "再次尝试加载磁盘图。" } }
+  "sourceLanguage": "en",
+  "strings": {
+    "Attempts to load the disk map again.": {
+      "comment": "Accessibility hint for retrying a failed disk-map layout.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versucht erneut, die Datenträgerkarte zu laden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intenta cargar de nuevo el mapa de disco."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tente de charger à nouveau la carte du disque."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tenta di caricare nuovamente la mappa del disco."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次尝试加载磁盘图。"
+          }
+        }
       }
     },
-    "Couldn’t Load Disk Map" : {
-      "comment" : "Heading shown when a disk-map layout could not be generated.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Datenträgerkarte konnte nicht geladen werden" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudo cargar el mapa de disco" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Impossible de charger la carte du disque" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载磁盘图" } }
+    "Couldn’t Load Disk Map": {
+      "comment": "Heading shown when a disk-map layout could not be generated.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datenträgerkarte konnte nicht geladen werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cargar el mapa de disco"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de charger la carte du disque"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile caricare la mappa del disco"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载磁盘图"
+          }
+        }
       }
     },
-    "Disk map layout failed" : {
-      "comment" : "Accessibility label for a failed disk-map layout banner.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Layout der Datenträgerkarte fehlgeschlagen" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Error en el diseño del mapa de disco" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Échec de la disposition de la carte du disque" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "磁盘图布局失败" } }
+    "Disk map layout failed": {
+      "comment": "Accessibility label for a failed disk-map layout banner.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout der Datenträgerkarte fehlgeschlagen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error en el diseño del mapa de disco"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la disposition de la carte du disque"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout della mappa del disco non riuscito"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "磁盘图布局失败"
+          }
+        }
       }
     },
-    "Loading changes…" : {
-      "comment" : "Progress message shown while comparison changes are loading.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen werden geladen …" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cargando cambios…" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chargement des modifications…" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在加载更改…" } }
+    "Loading changes…": {
+      "comment": "Progress message shown while comparison changes are loading.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Änderungen werden geladen …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando cambios…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement des modifications…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caricamento delle modifiche…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载更改…"
+          }
+        }
       }
     },
-    "No net change" : {
-      "comment" : "Accessibility label for a comparison aggregate whose net size change is zero.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Nettoänderung" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sin cambio neto" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun changement net" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无净变化" } }
+    "No net change": {
+      "comment": "Accessibility label for a comparison aggregate whose net size change is zero.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Nettoänderung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin cambio neto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun changement net"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nessuna variazione netta"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无净变化"
+          }
+        }
       }
     },
-    "Refreshing comparison" : {
-      "comment" : "Accessibility label for the progress indicator shown while comparison results refresh.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Vergleich wird aktualisiert" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Actualizando comparación" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Actualisation de la comparaison" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在刷新比较" } }
+    "Refreshing comparison": {
+      "comment": "Accessibility label for the progress indicator shown while comparison results refresh.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleich wird aktualisiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizando comparación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualisation de la comparaison"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiornamento del confronto"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在刷新比较"
+          }
+        }
       }
     },
-    "Retry" : {
-      "comment" : "Button that retries a failed disk-map layout.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Erneut versuchen" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Reintentar" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réessayer" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试" } }
+    "Retry": {
+      "comment": "Button that retries a failed disk-map layout.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riprova"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        }
       }
     },
-    "–" : {
-      "comment" : "Placeholder shown when a comparison aggregate has no net size change.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "–" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "–" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "–" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "–" } }
+    "–": {
+      "comment": "Placeholder shown when a comparison aggregate has no net size change.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "–"
+          }
+        }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

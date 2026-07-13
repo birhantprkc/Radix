@@ -1,112 +1,142 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "CFBundleDisplayName" : {
-      "comment" : "The application name shown by macOS in Finder, menus, and system settings.",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Radix"
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "comment": "The application name shown by macOS in Finder, menus, and system settings.",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Radix"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Radix"
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Radix"
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Radix"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Radix"
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Radix"
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "needs_review",
-            "value" : "Radix"
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Radix"
           }
         }
       }
     },
-    "CFBundleName" : {
-      "comment" : "Bundle name",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Radix"
+    "CFBundleName": {
+      "comment": "Bundle name",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Radix"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Radix"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
           }
         }
       }
     },
-    "NSHumanReadableCopyright" : {
-      "comment" : "Copyright (human-readable)",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copyright © 2026 Colin Kim."
+    "NSHumanReadableCopyright": {
+      "comment": "Copyright (human-readable)",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright © 2026 Colin Kim."
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Copyright © 2026 Colin Kim."
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Copyright © 2026 Colin Kim."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright © 2026 Colin Kim."
           }
         }
       }
     },
-    "Radix Discard Pile Drag Payload" : {
-      "comment" : "Exported drag payload type description",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Radix-Ziehdaten der Löschliste"
+    "Radix Discard Pile Drag Payload": {
+      "comment": "Exported drag payload type description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix-Ziehdaten der Löschliste"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Radix Discard Pile Drag Payload"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Radix Discard Pile Drag Payload"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dati di trascinamento dell'elenco di eliminazione Radix"
           }
         }
       }
     },
-    "Radix Scan Snapshot" : {
-      "comment" : "Exported scan snapshot type description",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Radix-Scan-Snapshot"
+    "Radix Scan Snapshot": {
+      "comment": "Exported scan snapshot type description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix-Scan-Snapshot"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Radix Scan Snapshot"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Radix Scan Snapshot"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Istantanea di scansione Radix"
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }
