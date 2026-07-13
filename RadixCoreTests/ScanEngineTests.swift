@@ -2035,23 +2035,50 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(updatedRemainder.logicalSize, 0)
     }
 
-    func testCapacityReconciliationPolicyIncludesStartupAPFSOnly() {
-        XCTAssertTrue(
+    func testCapacityReconciliationPolicyExcludesAllAPFSVolumes() {
+        XCTAssertFalse(
             ScanEngine.shouldReconcileVolumeCapacity(
-                fileSystemType: " APFS ",
-                for: URL(filePath: "/", directoryHint: .isDirectory)
+                fileSystemType: " APFS "
             )
         )
         XCTAssertFalse(
             ScanEngine.shouldReconcileVolumeCapacity(
-                fileSystemType: "apfs",
-                for: URL(filePath: "/Volumes/Data", directoryHint: .isDirectory)
+                fileSystemType: "apfs"
             )
         )
         XCTAssertTrue(
             ScanEngine.shouldReconcileVolumeCapacity(
-                fileSystemType: "hfs",
-                for: URL(filePath: "/Volumes/Backup", directoryHint: .isDirectory)
+                fileSystemType: "hfs"
+            )
+        )
+    }
+
+    func testStartupVolumeFirmlinksSkipDescriptorIdentityVerification() {
+        let startupBehavior = ScanEngine.ScanBehavior(excludesStartupVolumeInternals: true)
+        let standardBehavior = ScanEngine.ScanBehavior.standard
+
+        XCTAssertFalse(
+            ScanEngine.verifiesDirectoryIdentity(
+                at: URL(filePath: "/Applications", directoryHint: .isDirectory),
+                behavior: startupBehavior
+            )
+        )
+        XCTAssertFalse(
+            ScanEngine.verifiesDirectoryIdentity(
+                at: URL(filePath: "/usr/local", directoryHint: .isDirectory),
+                behavior: startupBehavior
+            )
+        )
+        XCTAssertTrue(
+            ScanEngine.verifiesDirectoryIdentity(
+                at: URL(filePath: "/System", directoryHint: .isDirectory),
+                behavior: startupBehavior
+            )
+        )
+        XCTAssertTrue(
+            ScanEngine.verifiesDirectoryIdentity(
+                at: URL(filePath: "/Applications", directoryHint: .isDirectory),
+                behavior: standardBehavior
             )
         )
     }

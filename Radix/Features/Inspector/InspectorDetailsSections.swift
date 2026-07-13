@@ -5,6 +5,7 @@ struct InspectorDetailsSections: View {
     let parentName: String?
     let percentOfParent: String
     let percentOfScan: String
+    let activeTarget: ScanTarget?
 
     var body: some View {
         Section("Key Stats") {
@@ -17,7 +18,7 @@ struct InspectorDetailsSections: View {
 
         Section("Metadata") {
             LabeledContent("Kind") {
-                Text(node.itemKind)
+                Text(node.itemKind(activeTarget: activeTarget))
             }
 
             LabeledContent("Logical Size") {

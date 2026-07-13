@@ -546,6 +546,10 @@ nonisolated struct FileTreeStore: Sendable {
         }
     }
 
+    nonisolated func indexedNodeIndices() -> [FileTreeNodeIndex] {
+        topologyArena.orderedNodeIndices
+    }
+
     nonisolated func forEachIndexedNodeID(
         excludingRoot: Bool = false,
         _ body: (String) throws -> Void

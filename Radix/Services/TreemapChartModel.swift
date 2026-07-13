@@ -9,7 +9,7 @@ import Foundation
 
 protocol TreemapLayouting: Sendable {
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
@@ -18,7 +18,7 @@ protocol TreemapLayouting: Sendable {
 
 actor TreemapLayoutService: TreemapLayouting {
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
@@ -79,7 +79,7 @@ final class TreemapChartModel: ObservableObject {
 
     @discardableResult
     func loadLayout(
-        treeStore: FileTreeStore,
+        treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize,
@@ -112,6 +112,23 @@ final class TreemapChartModel: ObservableObject {
         case .superseded:
             return false
         }
+    }
+
+    @discardableResult
+    func loadLayout(
+        treeStore: FileTreeStore,
+        rootID: String,
+        depthLimit: Int,
+        size: CGSize,
+        layoutID: String
+    ) async -> Bool {
+        await loadLayout(
+            treeStore: DiskMapTreeStore(treeStore),
+            rootID: rootID,
+            depthLimit: depthLimit,
+            size: size,
+            layoutID: layoutID
+        )
     }
 
     private func apply(_ segments: [TreemapSegment]) {

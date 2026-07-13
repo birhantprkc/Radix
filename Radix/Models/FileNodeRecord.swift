@@ -82,6 +82,17 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
             : String(localized: "File", comment: "Kind label for a regular file.")
     }
 
+    func itemKind(activeTarget: ScanTarget?) -> String {
+        if let activeTarget,
+           activeTarget.kind == .volume,
+           isDirectory,
+           !isSynthetic,
+           url.standardizedFileURL.path == activeTarget.url.standardizedFileURL.path {
+            return String(localized: "Volume", comment: "Kind label for the root of a scanned disk volume.")
+        }
+        return itemKind
+    }
+
     var supportsFileActions: Bool {
         !isSynthetic
     }

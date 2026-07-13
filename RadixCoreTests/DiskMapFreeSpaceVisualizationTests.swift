@@ -86,8 +86,8 @@ final class DiskMapFreeSpaceVisualizationTests: XCTestCase {
         )
 
         XCTAssertEqual(focusedChildInput.rootNode.id, child.id)
-        XCTAssertNil(focusedChildInput.treeStore.nodesByID.keys.first {
-            DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0)
+        XCTAssertFalse(focusedChildInput.treeStore.children(of: focusedChildInput.rootNode.id).contains {
+            DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0.id)
         })
         XCTAssertFalse(DiskMapFreeSpaceVisualization.isFreeSpaceNodeID("/tmp/file#radix-free-space"))
     }
@@ -159,7 +159,7 @@ final class DiskMapFreeSpaceVisualizationTests: XCTestCase {
             showFreeSpace: true,
             availableCapacity: 40
         )
-        let freeNode = try XCTUnwrap(input.treeStore.nodesByID.values.first {
+        let freeNode = try XCTUnwrap(input.treeStore.children(of: input.rootNode.id).first {
             DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0.id)
         })
 

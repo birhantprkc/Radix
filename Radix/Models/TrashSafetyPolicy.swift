@@ -75,6 +75,10 @@ nonisolated struct TrashSafetyPolicy: Sendable {
             ?? fallbackFirmlinkEntries
     }()
 
+    private nonisolated static let defaultFirmlinkRootPaths = Set(
+        defaultFirmlinkEntries.map { standardizedPath(forPath: $0.visiblePath) }
+    )
+
     private let protectedRootPaths: Set<String>
 
     nonisolated init(
@@ -109,6 +113,14 @@ nonisolated struct TrashSafetyPolicy: Sendable {
 
     nonisolated static func live() -> TrashSafetyPolicy {
         TrashSafetyPolicy()
+    }
+
+    /// Whether `url` is an OS-declared boundary from the sealed startup volume
+    /// into its writable Data volume. Bulk enumeration reports the sealed-side
+    /// identity for these entries while opening them resolves to the Data-side
+    /// identity, so scanners cannot compare those identities directly.
+    nonisolated static func isStartupVolumeFirmlinkRoot(_ url: URL) -> Bool {
+        defaultFirmlinkRootPaths.contains(standardizedPath(for: url))
     }
 
     nonisolated static func blockReason(for url: URL) -> TrashSafetyBlockReason? {

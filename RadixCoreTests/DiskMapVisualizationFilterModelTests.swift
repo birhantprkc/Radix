@@ -251,6 +251,45 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         XCTAssertNotNil(inputAfterClear.treeStore.node(id: hidden.id))
     }
 
+    func testVolumeCapacityOverlaySurvivesBackgroundDiscardPileFiltering() async throws {
+        let hidden = makeTestFileNode(id: "/volume/hidden.bin", name: "hidden.bin", size: 20)
+        let visible = makeTestFileNode(id: "/volume/visible.bin", name: "visible.bin", size: 30)
+        let root = makeTestDirectoryNode(id: "/volume", name: "Volume", children: [hidden, visible])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [hidden, visible]])
+        let snapshot = makeTestSnapshot(
+            target: ScanTarget(url: root.url, kind: .volume),
+            root: root,
+            store: store
+        )
+        let model = DiskMapVisualizationFilterModel()
+        let baseInput = DiskMapFreeSpaceVisualization.input(
+            snapshot: snapshot,
+            focusNode: root,
+            showFreeSpace: true,
+            availableCapacity: 50
+        )
+
+        model.update(
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id]
+        )
+        let filteredInput = try await waitForFilteredInput(
+            model: model,
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [hidden.id],
+            removedNodeID: hidden.id
+        )
+
+        let children = filteredInput.treeStore.children(of: filteredInput.rootNode.id)
+        XCTAssertEqual(filteredInput.rootNode.allocatedSize, visible.allocatedSize + 50)
+        XCTAssertNotNil(children.first { $0.id == root.id })
+        XCTAssertNotNil(children.first { DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0.id) })
+    }
+
     private func waitForFilteredInput(
         model: DiskMapVisualizationFilterModel,
         baseInput: DiskMapVisualizationInput,

@@ -55,6 +55,125 @@ final class ScanBenchmarkTests: XCTestCase {
         )
     }
 
+    /// Release gate for the startup-volume namespace. It compares the optimized
+    /// bulk/descriptor scanner with the independent Foundation enumeration path
+    /// and verifies that macOS firmlink roots were actually traversed.
+    func testStartupVolumeScannerParityGate() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_STARTUP_SCAN_REGRESSION"] == "1" else {
+            throw XCTSkip(
+                "Set RADIX_STARTUP_SCAN_REGRESSION=1 to compare startup-volume scanner paths."
+            )
+        }
+
+        let rootURL = URL(filePath: "/", directoryHint: .isDirectory)
+        let target = ScanTarget(url: rootURL, kind: .volume)
+        var options = ScanOptions()
+        // macOS marks several startup-volume namespace roots (including
+        // /private) hidden even though they are essential to whole-disk parity.
+        options.includeHiddenFiles = true
+        // Keep the release gate bounded and machine-independent by excluding
+        // user homes and volatile per-user system caches. Both scanner paths
+        // receive identical rules; firmlink opening and aggregate parity across
+        // the startup-volume namespace remain covered.
+        options.exclusionPatterns = ScanExclusionMatcher.commonPresetPatterns + [
+            "Users/*/",
+            "private/var/",
+        ]
+        let optimizedSnapshot = try await finishedSnapshot(
+            target: target,
+            options: options,
+            engine: ScanEngine()
+        )
+        let foundationSnapshot = try await finishedSnapshot(
+            target: target,
+            options: options,
+            engine: ScanEngine(directoryContents: { url, keys, enumerationOptions, cancellationCheck in
+                try cancellationCheck()
+                let contents = try FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: keys,
+                    options: enumerationOptions
+                )
+                try cancellationCheck()
+                return contents
+            })
+        )
+
+        let firmlinkRoots = [
+            "/Applications",
+            "/Library",
+            "/Users",
+            "/private",
+        ]
+
+        let optimizedRootChildIDs = optimizedSnapshot.treeStore.childIDs(of: optimizedSnapshot.root.id)
+        let foundationRootChildIDs = foundationSnapshot.treeStore.childIDs(of: foundationSnapshot.root.id)
+
+        for path in firmlinkRoots where FileManager.default.fileExists(atPath: path) {
+            let optimizedNode = try XCTUnwrap(
+                optimizedSnapshot.treeStore.node(id: path),
+                "Optimized startup scan omitted firmlink root \(path). Root children: \(optimizedRootChildIDs)"
+            )
+            let foundationNode = try XCTUnwrap(
+                foundationSnapshot.treeStore.node(id: path),
+                "Foundation startup scan omitted firmlink root \(path). Root children: \(foundationRootChildIDs)"
+            )
+            XCTAssertTrue(optimizedNode.isSelfAccessible, "Optimized startup scan could not open \(path)")
+            XCTAssertTrue(foundationNode.isSelfAccessible, "Foundation startup scan could not open \(path)")
+            if path != "/Users" {
+                XCTAssertGreaterThan(optimizedNode.allocatedSize, 0, "Optimized startup scan found no data at \(path)")
+                XCTAssertGreaterThan(foundationNode.allocatedSize, 0, "Foundation startup scan found no data at \(path)")
+            }
+        }
+
+        let optimizedStaleWarnings = optimizedSnapshot.scanWarnings.filter {
+            $0.message.localizedCaseInsensitiveContains("stale")
+        }
+        let foundationStaleWarnings = foundationSnapshot.scanWarnings.filter {
+            $0.message.localizedCaseInsensitiveContains("stale")
+        }
+        XCTAssertTrue(optimizedStaleWarnings.isEmpty, "Optimized scan reported stale handles: \(optimizedStaleWarnings)")
+        XCTAssertTrue(foundationStaleWarnings.isEmpty, "Foundation scan reported stale handles: \(foundationStaleWarnings)")
+
+        assertWithinRelativeTolerance(
+            optimizedSnapshot.aggregateStats.totalAllocatedSize,
+            foundationSnapshot.aggregateStats.totalAllocatedSize,
+            // Live allocated-byte metadata is the noisiest signal: APFS clones,
+            // sparse files, and directories that become inaccessible between
+            // the sequential scans can shift it without changing traversal.
+            // The v1.5 regression was orders of magnitude larger.
+            tolerance: 0.15,
+            label: "allocated bytes"
+        )
+        assertWithinRelativeTolerance(
+            Int64(optimizedSnapshot.aggregateStats.fileCount),
+            Int64(foundationSnapshot.aggregateStats.fileCount),
+            tolerance: 0.05,
+            label: "file count"
+        )
+        assertWithinRelativeTolerance(
+            Int64(optimizedSnapshot.aggregateStats.directoryCount),
+            Int64(foundationSnapshot.aggregateStats.directoryCount),
+            tolerance: 0.05,
+            label: "directory count"
+        )
+
+        print(
+            """
+            RADIX_STARTUP_SCAN_REGRESSION_RESULT
+            optimized_bytes=\(optimizedSnapshot.aggregateStats.totalAllocatedSize)
+            foundation_bytes=\(foundationSnapshot.aggregateStats.totalAllocatedSize)
+            optimized_files=\(optimizedSnapshot.aggregateStats.fileCount)
+            foundation_files=\(foundationSnapshot.aggregateStats.fileCount)
+            optimized_folders=\(optimizedSnapshot.aggregateStats.directoryCount)
+            foundation_folders=\(foundationSnapshot.aggregateStats.directoryCount)
+            optimized_warnings=\(optimizedSnapshot.scanWarnings.count)
+            foundation_warnings=\(foundationSnapshot.scanWarnings.count)
+            """
+        )
+    }
+
     func testWideDirectoryClassificationBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_WIDE_DIRECTORY"] == "1" else {
@@ -876,6 +995,39 @@ final class ScanBenchmarkTests: XCTestCase {
         )
 
         return elapsedSeconds
+    }
+
+    private func finishedSnapshot(
+        target: ScanTarget,
+        options: ScanOptions,
+        engine: ScanEngine
+    ) async throws -> ScanSnapshot {
+        var finalSnapshot: ScanSnapshot?
+        for try await event in engine.scan(target: target, options: options) {
+            if case .finished(let snapshot) = event {
+                finalSnapshot = snapshot
+            }
+        }
+        return try XCTUnwrap(finalSnapshot)
+    }
+
+    private func assertWithinRelativeTolerance(
+        _ first: Int64,
+        _ second: Int64,
+        tolerance: Double,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let denominator = max(Double(max(abs(first), abs(second))), 1)
+        let relativeDifference = Double(abs(first - second)) / denominator
+        XCTAssertLessThanOrEqual(
+            relativeDifference,
+            tolerance,
+            "Startup scanner \(label) differed by \(relativeDifference * 100)%",
+            file: file,
+            line: line
+        )
     }
 }
 

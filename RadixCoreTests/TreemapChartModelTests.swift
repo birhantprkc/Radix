@@ -245,7 +245,7 @@ private actor ImmediateTreemapLayoutService: TreemapLayouting {
     }
 
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
@@ -277,7 +277,7 @@ private actor ControllableTreemapLayoutService: TreemapLayouting {
     }
 
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize

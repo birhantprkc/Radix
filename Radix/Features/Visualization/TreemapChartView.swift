@@ -8,7 +8,7 @@ struct TreemapChartView: View {
     private static let tooltipMaximumSize = CGSize(width: 272, height: 122)
 
     let rootNode: FileNodeRecord
-    let treeStore: FileTreeStore
+    let treeStore: DiskMapTreeStore
     let snapshotID: UUID
     let activeTarget: ScanTarget?
     let trashSafetyPolicy: TrashSafetyPolicy
@@ -28,7 +28,7 @@ struct TreemapChartView: View {
 
     init(
         rootNode: FileNodeRecord,
-        treeStore: FileTreeStore,
+        treeStore: DiskMapTreeStore,
         snapshotID: UUID,
         activeTarget: ScanTarget?,
         trashSafetyPolicy: TrashSafetyPolicy,
@@ -287,7 +287,7 @@ struct TreemapChartView: View {
     private func summaryStatus(for node: FileNodeRecord) -> String {
         DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id)
             ? String(localized: "Available Space", comment: "Chart status for free capacity on a volume.")
-            : node.itemKind
+            : node.itemKind(activeTarget: activeTarget)
     }
 
     private func updateLoadingDiskMapProgress(isPending: Bool) async {

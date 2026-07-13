@@ -31,7 +31,7 @@ nonisolated enum TreemapLayout {
     typealias CancellationCheck = () throws -> Void
 
     nonisolated static func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         rootID: String,
         depthLimit: Int,
         size: CGSize,
@@ -48,7 +48,7 @@ nonisolated enum TreemapLayout {
     }
 
     nonisolated static func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         rootID: String,
         depthLimit: Int,
         size: CGSize,
@@ -93,7 +93,7 @@ nonisolated enum TreemapLayout {
     }
 
     private nonisolated static func appendSegments(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         children: [FileNodeRecord],
         parentID: String,
         bounds: CGRect,
@@ -397,7 +397,7 @@ nonisolated enum TreemapLayout {
     }
 
     private nonisolated static func rootColorBranchIDs(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         layoutRootID: String,
         layoutRootChildren: [FileNodeRecord],
         cancellationCheck: CancellationCheck
@@ -419,7 +419,7 @@ nonisolated enum TreemapLayout {
 
     private nonisolated static func topLevelBranchID(
         for nodeID: String?,
-        in treeStore: FileTreeStore
+        in treeStore: some DiskMapTreeReading
     ) -> String? {
         guard let nodeID else { return nil }
         guard nodeID != treeStore.rootID else { return nodeID }
@@ -459,7 +459,7 @@ nonisolated enum TreemapLayout {
         nonisolated init(
             rootChildIDs: [String],
             rootEntries: [FileNodeRecord],
-            treeStore: FileTreeStore,
+            treeStore: some DiskMapTreeReading,
             cancellationCheck: CancellationCheck
         ) throws {
             var indexByID: [String: Int] = [:]

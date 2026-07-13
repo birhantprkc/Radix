@@ -27,7 +27,7 @@ nonisolated enum SunburstLayout {
     typealias CancellationCheck = () throws -> Void
 
     nonisolated static func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         rootID: String,
         depthLimit: Int,
         minimumAngle: Double = .pi / 90
@@ -42,7 +42,7 @@ nonisolated enum SunburstLayout {
     }
 
     nonisolated static func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         rootID: String,
         depthLimit: Int,
         minimumAngle: Double = .pi / 90,
@@ -80,7 +80,7 @@ nonisolated enum SunburstLayout {
     }
 
     private nonisolated static func appendSegments(
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         children: [FileNodeRecord],
         parentDenominator: Double,
         startAngle: Double,
@@ -276,7 +276,7 @@ nonisolated enum SunburstLayout {
 
     private nonisolated static func colorBranch(
         for entry: GroupEntry,
-        in treeStore: FileTreeStore,
+        in treeStore: some DiskMapTreeReading,
         context: ColorBranchContext,
         fallbackIndex: Int,
         fallbackCount: Int
@@ -292,7 +292,7 @@ nonisolated enum SunburstLayout {
         return branch
     }
 
-    private nonisolated static func rootColorBranchIDs(in treeStore: FileTreeStore) -> [String] {
+    private nonisolated static func rootColorBranchIDs(in treeStore: some DiskMapTreeReading) -> [String] {
         treeStore.children(of: treeStore.rootID)
             .map(\.id)
             .filter { !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0) }
@@ -300,7 +300,7 @@ nonisolated enum SunburstLayout {
 
     private nonisolated static func topLevelBranchID(
         for nodeID: String?,
-        in treeStore: FileTreeStore
+        in treeStore: some DiskMapTreeReading
     ) -> String? {
         guard let nodeID else { return nil }
         guard nodeID != treeStore.rootID else { return nodeID }

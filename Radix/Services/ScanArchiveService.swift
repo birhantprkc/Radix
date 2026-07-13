@@ -296,7 +296,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             phase: .writingTopology,
             message: String(localized: "Writing topology", comment: "Progress message while writing scan tree topology.")
         ))
-        try writeJSON(ScanArchiveTopology(snapshot.treeStore), to: topologyURL)
+        try await writeTopology(
+            snapshot.treeStore,
+            to: topologyURL,
+            progressReporter: options.progressReporter
+        )
 
         options.progressReporter?.report(ScanArchiveProgress(
             phase: .writingMetadata,
