@@ -509,11 +509,13 @@ nonisolated struct ScanComparisonService: Sendable {
         try Task.checkCancellation()
 
         var rows: [ScanComparisonRow] = []
-        let beforePaths = Set(beforeNodes.keys)
-        let afterPaths = Set(afterNodes.keys)
-        let addedPaths = afterPaths.subtracting(beforePaths)
-        let removedPaths = beforePaths.subtracting(afterPaths)
-        let sharedPaths = beforePaths.intersection(afterPaths)
+        let pathPartition = Self.partitionPaths(
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
+        let addedPaths = pathPartition.added
+        let removedPaths = pathPartition.removed
+        let sharedPaths = pathPartition.shared
         let materializationBoundaryPaths = Self.materializationBoundaryPaths(
             sharedPaths: sharedPaths,
             beforeNodes: beforeNodes,
@@ -652,6 +654,36 @@ nonisolated struct ScanComparisonService: Sendable {
             changeTree: changeTree,
             topLevelChanges: topLevelChanges
         )
+    }
+
+    private struct PathPartition {
+        var added: Set<String>
+        var removed: Set<String>
+        var shared: [String]
+    }
+
+    /// Partitions paths without first materializing complete key sets for both
+    /// snapshots. The after-path set becomes the final added set as matches are
+    /// removed, while only removed paths need a second set.
+    private static func partitionPaths(
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord]
+    ) -> PathPartition {
+        var added = Set(afterNodes.keys)
+        var removed = Set<String>()
+        removed.reserveCapacity(max(beforeNodes.count - afterNodes.count, 0))
+        var shared: [String] = []
+        shared.reserveCapacity(min(beforeNodes.count, afterNodes.count))
+
+        for relativePath in beforeNodes.keys {
+            if added.remove(relativePath) != nil {
+                shared.append(relativePath)
+            } else {
+                removed.insert(relativePath)
+            }
+        }
+
+        return PathPartition(added: added, removed: removed, shared: shared)
     }
 
     private static func indexedNodes(in snapshot: ScanSnapshot) throws -> [String: FileNodeRecord] {
@@ -1076,7 +1108,7 @@ nonisolated struct ScanComparisonService: Sendable {
     }
 
     private static func materializationBoundaryPaths(
-        sharedPaths: Set<String>,
+        sharedPaths: [String],
         beforeNodes: [String: FileNodeRecord],
         afterNodes: [String: FileNodeRecord],
         beforeStore: FileTreeStore,
