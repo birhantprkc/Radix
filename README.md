@@ -1,57 +1,61 @@
-<p align="center">
-    <img src="./icon.png" alt="Radix" width="220">
-</p>
+<div align="center">
+  <img src="./icon.png" alt="Radix" width="220">
+</div>
 
-# Radix
+<h1 align="center">Radix</h1>
 
-A fast, native macOS disk space analyzer that helps you find where your storage is going. Scan any folder or volume, explore results with an interactive sunburst chart and file browser, and clean up — all without leaving the app. Take a look at [Radix's beautiful website](https://radix.colinkim.dev)!
-
-![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)
-![Swift](https://img.shields.io/badge/Swift-6.0-orange)
-![License](https://img.shields.io/badge/license-MIT-lightgrey)
+A fast, native macOS disk space analyzer. Scan folders and volumes, explore where your storage is going, compare results over time, and safely clean up — all without leaving the app. Visit the [Radix website](https://radix.colinkim.dev) to learn more!
 
 ## Why Radix?
 
-Storage fills up quietly. Radix makes it obvious where it went — no Terminal commands, no waiting through recursive scans that crawl forever. Point it at a folder, sit back, and explore a visual breakdown of every directory and file.
+Storage fills up quietly. Radix makes it obvious where it went — no Terminal commands, no waiting through scans that crawl forever. Point it at a folder, sit back, and explore a clean visual breakdown of directories and files.
 
-It's built from scratch in Swift and SwiftUI, designed to feel like a natural part of macOS.
+It's built with Swift and SwiftUI, designed to feel like a natural part of macOS.
 
-## Features
+## Highlights
 
-### Scanning
+### Visualize Disk Usage
 
-- **Iterative file system traversal**
-- **Real-time progress** with smooth, blended metrics so you know how far along things are
-- **Auto-summarization** — directories with thousands of tiny files get collapsed into a single node
-- **Respects permissions** — works on ordinary folders without special privileges; warns you when protected paths (Mail, Safari, Messages) are skipped
+Switch between **sunburst** and **treemap** views to understand how space is distributed. Hover over an item to inspect it, then double-click a folder to drill deeper.
 
-### Visual Exploration
+### Browse and Search
 
-- **Disk maps** — switch between a sunburst and treemap view to see your disk usage at a glance. Hover any segment to inspect it, and double-click folders to drill down.
-- **File browser** — a sortable table with informative columns.
-- **Smart search** — filter just the current folder, or search the entire scan tree.
-- **Breadcrumb navigation** with back/forward history so you don't lose your place.
+Use the sortable file table to inspect sizes, search the current folder or the entire scan, and move through the hierarchy with breadcrumbs and back/forward navigation.
 
-### Built for macOS
+### Compare Scans Over Time
 
-- **Native SwiftUI app**
-- **Sidebar** with Smart Locations (Macintosh HD, mounted volumes, Home, Desktop, Documents, Downloads, Library, Applications) and recent scans
-- **Inspector panel** showing detailed metadata: allocated vs. logical size, parent directory, access level, largest children
-- **File actions** — Reveal in Finder, Open, Copy Path, Move to Trash, all from context menus or the inspector
-- **Snapshot import/export** — save completed scans as `.radixscan` packages and reopen them later as read-only snapshots
-- **Drag & drop** any folder into the window to scan it
-- **Automatic updates** powered by [Sparkle](https://sparkle-project.org/)
+Compare two scans to see which files and folders grew, shrank, appeared, or disappeared.
+
+### Review Cleanup Candidates
+
+Add items from the disk map, file browser, or inspector to the **Discard Pile**. Review everything together before deciding whether to move anything to the Trash.
+
+### Save and Reopen Results
+
+Export completed scans and reopen them later as read-only snapshots.
+
+## More Features
+
+- Fast, iterative file-system scanning with live progress
+- Faster follow-up scans by reusing previous results when possible
+- Automatic summarization of directories containing thousands of tiny files
+- Custom scan exclusions for paths you do not want to include
+- Optional free-space display in disk maps
+- Smart Locations for mounted volumes, Home, Desktop, Documents, Downloads, Library, and Applications
+- Recent scan history in the sidebar
+- Detailed inspector with sizes, access information, parent directory, and largest children
+- Usage stats showing scans completed, data scanned, scan speeds, chart interactions, and cleanup totals — all stored locally on your Mac
+- Quick Look, Open, Reveal in Finder, Copy Path, and Move to Trash actions
+- Drag and drop a folder into the window to start scanning
+- Automatic updates powered by [Sparkle](https://sparkle-project.org/)
 
 ### Privacy & Permissions
 
-Radix works out of the box on any folder you can already access. For folders like `~/Library` or Mail data, macOS may require **Full Disk Access**. Radix detects when files are skipped due to permissions and guides you through enabling it in System Settings.
-
-## Requirements
-
-- **macOS Sonoma 14** or later
-- **Xcode 26+** with Swift 6.0 toolchain (for building from source)
+Radix works out of the box on any folder you can already access. For some folders, the app may require **Full Disk Access**. Radix detects when files are skipped due to permissions and guides you through enabling them in System Settings.
 
 ## Installation
+
+Radix requires **macOS Sonoma 14 or later**.
 
 ### Homebrew
 
@@ -60,7 +64,7 @@ brew install --cask radix
 ```
 
 <details>
-<summary>Click here to read a quick note of gratitude from me</summary>
+<summary>View a quick note from me, the developer behind Radix</summary>
 
 When people began asking me to get Radix on Homebrew, I never imagined we'd get there so quickly. We only had half of the required stars, and I thought it might take a while before the project was ready.
 
@@ -70,72 +74,87 @@ I'm excited to continue improving Radix. Please keep the feedback coming, and th
 
 </details>
 
-### Download the Latest Release
+### Manual Installation
 
-Grab the latest release from the [Releases](https://github.com/colinvkim/Radix/releases) page, then drag Radix into your Applications folder.
+Download the latest version from [GitHub Releases](https://github.com/colinvkim/Radix/releases/latest) or the [Radix website](https://radix.colinkim.dev), then drag Radix into your Applications folder.
+
+## Developer Documentation
+
+<details>
+<summary>View build instructions, project structure, and architecture</summary>
 
 ## Building from Source
 
+Building Radix requires **Xcode 26 or later** with a Swift 6.2 toolchain.
+
+Clone the repository and run the Swift package tests:
+
 ```bash
-# Clone the repository
 git clone https://github.com/colinvkim/Radix.git
-cd radix
-
-# Build and run package tests
+cd Radix
 swift test
-
-# Open in Xcode for the full app
-open Radix.xcodeproj
 ```
 
-The `Package.swift` file contains the **RadixCore** library (scan engine, models, geometry, formatters) and has no external package dependencies. The full SwiftUI app is built through the Xcode project, which integrates Sparkle through Xcode's Swift Package Manager support.
-Use SwiftPM for the package test suite and Xcode for the app build:
+Open `Radix.xcodeproj` in Xcode to build and run the complete app, or build it from the command line:
 
 ```bash
-swift test
-xcodebuild -project Radix.xcodeproj -scheme Radix -configuration Debug -destination 'platform=macOS' build
+xcodebuild \
+  -project Radix.xcodeproj \
+  -scheme Radix \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  build
 ```
 
-The shared `Radix` app scheme is not configured with an Xcode test action because the tests belong to the SwiftPM `RadixCoreTests` target.
+The SwiftPM package contains `RadixCore` and its tests. Use `swift test` to run the test suite, and use the Xcode project to build the complete app.
 
-### Project Structure
+## Project Structure
 
-```
+```text
 Radix/
-├── App/                  # App entry point, commands, window management
-├── Models/               # Core data types (FileNodeRecord, ScanSnapshot, etc.)
-├── Services/             # Scan engine, sunburst geometry, formatters
-├── ViewModels/           # AppModel — central state manager
-├── Features/             # UI features (workspace, sidebar, file browser,
-│   ├── Workspace/        #   visualization, inspector, settings, onboarding)
-│   ├── Sidebar/
-│   ├── FileList/
-│   ├── Visualization/
-│   ├── Inspector/
-│   ├── Settings/
-│   └── Onboarding/
-└── Shared/               # Reusable components (breadcrumbs, helpers)
+├── Radix/                    # App and core source code
+│   ├── App/                  # App entry point, commands, and window management
+│   ├── Models/               # Scan targets, node records, snapshots, and safety models
+│   ├── Services/             # Scanning, archives, comparison, geometry, and formatting
+│   ├── ViewModels/           # Application state and UI coordination
+│   ├── Features/
+│   │   ├── Comparison/       # Scan comparison setup and results
+│   │   ├── DiscardPile/      # Cleanup candidate review
+│   │   ├── FileList/         # Sortable file browser
+│   │   ├── Inspector/        # Selection details and actions
+│   │   ├── Onboarding/       # First-run and permission guidance
+│   │   ├── Settings/         # Scan, visualization, and app preferences
+│   │   ├── Sidebar/          # Smart Locations, recent scans, and Discard Pile
+│   │   ├── Visualization/    # Sunburst and treemap views
+│   │   └── Workspace/        # Main scanning and exploration interface
+│   └── Shared/               # Reusable SwiftUI components and helpers
+├── RadixCoreTests/           # Unit, integration, and benchmark-style tests
+├── Package.swift             # RadixCore Swift package definition
+└── Radix.xcodeproj/          # Complete macOS app project
 ```
 
-## Architecture Notes
+## Architecture
 
-- **ScanEngine** is an actor-based async scanner that uses iterative (not recursive) filesystem traversal for safety and performance.
-- **AppModel** is the single source of truth — a `@MainActor` observable object that drives the entire UI.
-- **ScanSnapshot** and **FileTreeStore** provide immutable scan results with O(1) path lookups, flat tree storage, and efficient subtree updates.
-- The **sunburst and treemap charts** are rendered using SwiftUI's Canvas API for performant drawing of hundreds of segments.
-- **RadixCore** has no external Swift package dependencies; the Xcode app target adds Sparkle for automatic updates.
+- `ScanEngine` is an actor-based asynchronous scanner that uses iterative file-system traversal.
+- `AppModel` is the central `@MainActor` state and coordination layer for the application.
+- `ScanSnapshot` and `FileTreeStore` represent scan results using flat tree storage and indexed lookups.
+- Archive and comparison services import, export, validate, and compare `.radixscan` snapshots.
+- Sunburst and treemap services separate layout and interaction models from their SwiftUI presentation.
+- `RadixCore` has no external Swift package dependencies; the app target uses Sparkle for updates.
+
+</details>
 
 ## Contributing
 
-Contributions are welcome. Here's how to get started:
+Contributions are welcome! Here's how to get started:
 
-1. Fork the repo and create a feature branch
-2. Make your changes — keep them focused and well-documented
-3. Run the tests: `swift test`
-4. Open a pull request with a clear description of what changed and why
+1. Fork the repository and create a feature branch. Before getting started, consider reviewing the developer documentation above for build instructions and an overview of the project’s structure and architecture.
+2. Make your changes and add or update tests where appropriate. Keep them focused and well-documented.
+3. Run `swift test`.
+4. Open a pull request explaining what changed and why.
 
-If you're tackling something big, consider opening an issue first to discuss the approach.
+Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages and PR titles. If you're tackling something big, consider opening an issue first so the approach can be discussed.
 
 ## License
 
-MIT. See [LICENSE](LICENSE) for details.
+Radix is available under the [MIT License](LICENSE).
