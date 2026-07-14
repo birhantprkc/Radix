@@ -18,6 +18,10 @@ It's built with Swift and SwiftUI, designed to feel like a natural part of macOS
 
 Switch between **sunburst** and **treemap** views to understand how space is distributed. Hover over an item to inspect it, then double-click a folder to drill deeper.
 
+|                                  Sunburst                                  |                                 Treemap                                  |
+| :------------------------------------------------------------------------: | :----------------------------------------------------------------------: |
+| ![Radix sunburst disk-usage visualization](docs/images/radix-sunburst.png) | ![Radix treemap disk-usage visualization](docs/images/radix-treemap.png) |
+
 ### Browse and Search
 
 Use the sortable file table to inspect sizes, search the current folder or the entire scan, and move through the hierarchy with breadcrumbs and back/forward navigation.
@@ -25,6 +29,8 @@ Use the sortable file table to inspect sizes, search the current folder or the e
 ### Compare Scans Over Time
 
 Compare two scans to see which files and folders grew, shrank, appeared, or disappeared.
+
+![Radix scan comparison showing files and folders that changed over time](docs/images/radix-scan-comparison.png)
 
 ### Review Cleanup Candidates
 
