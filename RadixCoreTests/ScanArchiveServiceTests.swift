@@ -526,6 +526,36 @@ final class ScanArchiveServiceTests: XCTestCase {
         }
     }
 
+    func testPreviewAndImportRejectSectionSymlinkEscapingArchive() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+
+        let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
+        let externalStatsURL = archiveURL.deletingLastPathComponent()
+            .appending(path: "external-stats.json", directoryHint: .notDirectory)
+        try FileManager.default.moveItem(at: statsURL, to: externalStatsURL)
+        try FileManager.default.createSymbolicLink(at: statsURL, withDestinationURL: externalStatsURL)
+
+        do {
+            _ = try await service.previewSnapshot(from: archiveURL)
+            XCTFail("Preview should reject section symlinks that escape the archive.")
+        } catch ScanArchiveError.manifest(let detail) {
+            XCTAssertTrue(detail.contains("stats"))
+        }
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject section symlinks that escape the archive.")
+        } catch ScanArchiveError.manifest(let detail) {
+            XCTAssertTrue(detail.contains("stats"))
+        }
+    }
+
     func testImportRejectsNodePayloadExceedingManifestCountEarly() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()

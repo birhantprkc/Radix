@@ -603,7 +603,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
               !sectionName.contains("\\") else {
             throw ScanArchiveError.manifest(localized: "invalid \(sectionDescription) section path")
         }
-        return archiveURL.appending(path: sectionName, directoryHint: .notDirectory)
+        let url = archiveURL.appending(path: sectionName, directoryHint: .notDirectory)
+        guard (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) == nil else {
+            throw ScanArchiveError.manifest(localized: "invalid \(sectionDescription) section path")
+        }
+        return url
     }
 
     private func createTemporaryArchiveDirectory(for destinationURL: URL) throws -> URL {
