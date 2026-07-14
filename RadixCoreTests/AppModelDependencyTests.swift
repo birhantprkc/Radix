@@ -139,6 +139,38 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testVisualizationModeUpdatePublishesAfterViewUpdate() async throws {
+        let model = AppModel(dependencies: makeDependencies())
+        var publicationCount = 0
+        let cancellable = model.objectWillChange.sink {
+            publicationCount += 1
+        }
+
+        model.setScanVisualizationModeAfterViewUpdate(.treemap)
+
+        XCTAssertEqual(model.scanVisualizationMode, .sunburst)
+        XCTAssertEqual(publicationCount, 0)
+
+        try await waitForAppModelCondition("deferred visualization mode") {
+            model.scanVisualizationMode == .treemap
+        }
+        XCTAssertGreaterThanOrEqual(publicationCount, 1)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @MainActor
+    func testVisualizationModeUpdateCoalescesToLatestRequest() async throws {
+        let model = AppModel(dependencies: makeDependencies())
+
+        model.setScanVisualizationModeAfterViewUpdate(.treemap)
+        model.setScanVisualizationModeAfterViewUpdate(.sunburst)
+
+        try await Task.sleep(for: .milliseconds(40))
+
+        XCTAssertEqual(model.scanVisualizationMode, .sunburst)
+    }
+
+    @MainActor
     func testCleanupFlushesPendingPreferencePersistence() {
         let preferences = SpyAppPreferencesStore(preferences: .defaults)
         let model = AppModel(dependencies: makeDependencies(preferences: preferences))

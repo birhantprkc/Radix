@@ -40,7 +40,10 @@ struct ContentView: View {
                 scanComparison: appModel.scanComparison,
                 isInspectorPresented: $showsInspector,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
-                visualizationMode: $appModel.scanVisualizationMode,
+                visualizationMode: Binding(
+                    get: { appModel.scanVisualizationMode },
+                    set: { appModel.setScanVisualizationModeAfterViewUpdate($0) }
+                ),
                 maxRenderedDepth: appModel.maxRenderedDepth,
                 showFreeSpaceInDiskMaps: appModel.showFreeSpaceInDiskMaps,
                 discardPileHiddenNodeIDs: appModel.discardPileHiddenNodeIDs,

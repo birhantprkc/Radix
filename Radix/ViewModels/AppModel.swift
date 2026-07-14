@@ -242,6 +242,8 @@ final class AppModel: ObservableObject {
     private var deferredSidebarSelectionID: UUID?
     private var deferredNavigationActionTask: Task<Void, Never>?
     private var deferredNavigationActionID: UUID?
+    private var deferredVisualizationModeTask: Task<Void, Never>?
+    private var deferredVisualizationModeID: UUID?
     private var deferredDiscardPileAddTask: Task<Void, Never>?
     private var deferredDiscardPileAddID: UUID?
     private var deferredNavigationContextTask: Task<Void, Never>?
@@ -335,6 +337,7 @@ final class AppModel: ObservableObject {
         cancelDeferredScanStart()
         cancelDeferredSidebarSelection()
         cancelDeferredNavigationAction()
+        cancelDeferredVisualizationModeUpdate()
         cancelDeferredDiscardPileAdd()
         cancelDeferredNavigationContextUpdate()
         cancelPostTrashSnapshotRemoval()
@@ -367,6 +370,7 @@ final class AppModel: ObservableObject {
         cancelDeferredScanStart()
         cancelDeferredSidebarSelection()
         cancelDeferredNavigationAction()
+        cancelDeferredVisualizationModeUpdate()
         cancelDeferredDiscardPileAdd()
         cancelDeferredNavigationContextUpdate()
         cancelPostTrashSnapshotRemoval()
@@ -1500,6 +1504,12 @@ final class AppModel: ObservableObject {
         deferredNavigationActionTask = nil
     }
 
+    private func cancelDeferredVisualizationModeUpdate() {
+        deferredVisualizationModeID = nil
+        deferredVisualizationModeTask?.cancel()
+        deferredVisualizationModeTask = nil
+    }
+
     private func cancelDeferredDiscardPileAdd() {
         deferredDiscardPileAddID = nil
         deferredDiscardPileAddTask?.cancel()
@@ -1560,6 +1570,18 @@ final class AppModel: ObservableObject {
             self[keyPath: idKeyPath] = nil
             self[keyPath: taskKeyPath] = nil
             perform(self)
+        }
+    }
+
+    func setScanVisualizationModeAfterViewUpdate(_ mode: ScanVisualizationMode) {
+        cancelDeferredVisualizationModeUpdate()
+        guard scanVisualizationMode != mode else { return }
+
+        scheduleDeferredViewUpdate(
+            id: \.deferredVisualizationModeID,
+            task: \.deferredVisualizationModeTask
+        ) { model in
+            model.scanVisualizationMode = mode
         }
     }
 
