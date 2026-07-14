@@ -627,13 +627,17 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             guard !chunk.isEmpty else { break }
             buffer.append(chunk)
 
-            while let newlineRange = buffer.firstRange(of: newlineData) {
-                let lineData = Data(buffer[..<newlineRange.lowerBound])
-                buffer.removeSubrange(..<newlineRange.upperBound)
+            var lineStartIndex = buffer.startIndex
+            while let newlineIndex = buffer[lineStartIndex...].firstIndex(of: 0x0A) {
+                let lineData = Data(buffer[lineStartIndex..<newlineIndex])
+                lineStartIndex = buffer.index(after: newlineIndex)
                 try validateNodeLineSize(lineData)
                 if let node = try decodeCurrentNodeLine(lineData, decoder: decoder) {
                     result.append(node)
                 }
+            }
+            if lineStartIndex > buffer.startIndex {
+                buffer.removeSubrange(buffer.startIndex..<lineStartIndex)
             }
             try validateNodeLineSize(buffer)
         }
