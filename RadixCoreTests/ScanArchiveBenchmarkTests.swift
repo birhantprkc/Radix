@@ -79,7 +79,13 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         let nodesData = try Data(contentsOf: nodesURL)
         let topologyData = try Data(contentsOf: topologyURL)
         let orderedNodeIDs = snapshot.treeStore.indexedNodeIDs()
-        let nodeRecords = orderedNodeIDs.compactMap { snapshot.treeStore.node(id: $0) }
+        let nodeRecords = orderedNodeIDs.compactMap { nodeID -> ScanArchiveCompactNode? in
+            guard let node = snapshot.treeStore.node(id: nodeID) else { return nil }
+            return ScanArchiveCompactNode(
+                node,
+                parent: snapshot.treeStore.parent(of: nodeID)
+            )
+        }
 
         let nodeEncode = try await Self.measureMemoryAndTime {
             try Self.encodeCurrentNodes(nodeRecords)
@@ -598,23 +604,23 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         )
     }
 
-    private static func encodeCurrentNodes(_ nodes: [FileNodeRecord]) throws -> Data {
+    private static func encodeCurrentNodes(_ nodes: [ScanArchiveCompactNode]) throws -> Data {
         let encoder = archiveJSONLineEncoder()
         var data = Data()
         for node in nodes {
-            data.append(try encoder.encode(ScanArchiveNode(node)))
+            data.append(try encoder.encode(node))
             data.append(0x0A)
         }
         return data
     }
 
-    private static func decodeCurrentNodes(from url: URL) throws -> [FileNodeRecord] {
+    private static func decodeCurrentNodes(from url: URL) throws -> [ScanArchiveCompactNode] {
         let fileHandle = try FileHandle(forReadingFrom: url)
         defer { try? fileHandle.close() }
 
         let decoder = archiveJSONDecoder()
         var buffer = Data()
-        var result: [FileNodeRecord] = []
+        var result: [ScanArchiveCompactNode] = []
 
         while true {
             let chunk = try fileHandle.read(upToCount: readChunkSize) ?? Data()
@@ -642,9 +648,12 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         return result
     }
 
-    private static func decodeCurrentNodeLine(_ lineData: Data, decoder: JSONDecoder) throws -> FileNodeRecord? {
+    private static func decodeCurrentNodeLine(
+        _ lineData: Data,
+        decoder: JSONDecoder
+    ) throws -> ScanArchiveCompactNode? {
         guard !lineData.isEmpty else { return nil }
-        return try decoder.decode(ScanArchiveNode.self, from: lineData).modelNode()
+        return try decoder.decode(ScanArchiveCompactNode.self, from: lineData)
     }
 
     private static func validateNodeLineSize(_ lineData: Data) throws {
