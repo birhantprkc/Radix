@@ -373,6 +373,106 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertLessThanOrEqual(fallbackPool.debugCounters.peakOpenDescriptorCount, 1)
     }
 
+    func testBulkAndFoundationScannersMatchAdversarialFixture() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let unicodeDirectoryURL = rootURL.appending(
+            path: "Ångström-文件-🙂",
+            directoryHint: .isDirectory
+        )
+        let ownerDirectoryURL = rootURL.appending(path: "A-Owner", directoryHint: .isDirectory)
+        let linkDirectoryURL = rootURL.appending(path: "Z-Link", directoryHint: .isDirectory)
+        let packageURL = rootURL.appending(path: "Payload.app", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: unicodeDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: ownerDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: linkDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: packageURL.appending(path: "Contents/Resources", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+
+        let sparseURL = unicodeDirectoryURL.appending(path: "sparse-ß.bin")
+        XCTAssertTrue(FileManager.default.createFile(atPath: sparseURL.path, contents: nil))
+        let sparseHandle = try FileHandle(forWritingTo: sparseURL)
+        try sparseHandle.truncate(atOffset: 16 * 1_024 * 1_024)
+        try sparseHandle.close()
+        try Data([0x11]).write(to: unicodeDirectoryURL.appending(path: ".hidden"))
+
+        let ownerURL = ownerDirectoryURL.appending(path: "shared.dat")
+        let linkedURL = linkDirectoryURL.appending(path: "shared.dat")
+        try Data(repeating: 0x5A, count: 8_192).write(to: ownerURL)
+        try FileManager.default.linkItem(at: ownerURL, to: linkedURL)
+        try FileManager.default.createSymbolicLink(
+            at: rootURL.appending(path: "file-alias"),
+            withDestinationURL: ownerURL
+        )
+        try FileManager.default.createSymbolicLink(
+            at: rootURL.appending(path: "directory-alias"),
+            withDestinationURL: unicodeDirectoryURL
+        )
+        try Data(repeating: 0x7F, count: 257).write(
+            to: packageURL.appending(path: "Contents/Resources/asset.dat")
+        )
+
+        var options = ScanOptions()
+        options.includeHiddenFiles = true
+        options.autoSummarizeDirectories = false
+        let optimized = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options
+        )
+        let foundation = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(directoryContents: { url, keys, enumerationOptions, cancellationCheck in
+                try cancellationCheck()
+                let contents = try FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: keys,
+                    options: enumerationOptions
+                )
+                try cancellationCheck()
+                return contents
+            })
+        )
+
+        XCTAssertEqual(optimized.treeStore.indexedNodeIDs(), foundation.treeStore.indexedNodeIDs())
+        XCTAssertEqual(optimized.treeStore.childIDsByID, foundation.treeStore.childIDsByID)
+        XCTAssertEqual(optimized.aggregateStats.totalAllocatedSize, foundation.aggregateStats.totalAllocatedSize)
+        XCTAssertEqual(optimized.aggregateStats.totalLogicalSize, foundation.aggregateStats.totalLogicalSize)
+        XCTAssertEqual(optimized.aggregateStats.fileCount, foundation.aggregateStats.fileCount)
+        XCTAssertEqual(optimized.aggregateStats.directoryCount, foundation.aggregateStats.directoryCount)
+        XCTAssertEqual(optimized.aggregateStats.accessibleItemCount, foundation.aggregateStats.accessibleItemCount)
+        XCTAssertEqual(optimized.aggregateStats.inaccessibleItemCount, foundation.aggregateStats.inaccessibleItemCount)
+
+        for nodeID in optimized.treeStore.indexedNodeIDs() {
+            let optimizedNode = try XCTUnwrap(optimized.treeStore.node(id: nodeID))
+            let foundationNode = try XCTUnwrap(foundation.treeStore.node(id: nodeID))
+            XCTAssertEqual(optimizedNode.name, foundationNode.name, nodeID)
+            XCTAssertEqual(optimizedNode.isDirectory, foundationNode.isDirectory, nodeID)
+            XCTAssertEqual(optimizedNode.isSymbolicLink, foundationNode.isSymbolicLink, nodeID)
+            XCTAssertEqual(optimizedNode.allocatedSize, foundationNode.allocatedSize, nodeID)
+            XCTAssertEqual(
+                optimizedNode.unduplicatedAllocatedSize,
+                foundationNode.unduplicatedAllocatedSize,
+                nodeID
+            )
+            XCTAssertEqual(optimizedNode.logicalSize, foundationNode.logicalSize, nodeID)
+            XCTAssertEqual(optimizedNode.descendantFileCount, foundationNode.descendantFileCount, nodeID)
+            XCTAssertEqual(optimizedNode.linkCount, foundationNode.linkCount, nodeID)
+            XCTAssertEqual(optimizedNode.isPackage, foundationNode.isPackage, nodeID)
+            XCTAssertEqual(optimizedNode.isAccessible, foundationNode.isAccessible, nodeID)
+            XCTAssertEqual(optimizedNode.isSelfAccessible, foundationNode.isSelfAccessible, nodeID)
+            if optimizedNode.linkCount > 1 {
+                XCTAssertNotNil(optimizedNode.fileIdentity, nodeID)
+                XCTAssertNotNil(foundationNode.fileIdentity, nodeID)
+            } else if optimizedNode.isSymbolicLink || optimizedNode.isDirectory {
+                XCTAssertEqual(optimizedNode.fileIdentity, foundationNode.fileIdentity, nodeID)
+            }
+        }
+    }
+
     func testPackagesAreLeafNodesByDefault() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -870,6 +970,11 @@ final class ScanEngineTests: XCTestCase {
         try Data("visible".utf8).write(to: visibleFileURL)
 
         let permissionError = NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError)
+        let enumeratedLockedURL = lockedURL.withUnsafeFileSystemRepresentation { path -> URL? in
+            guard let path, let resolvedPath = realpath(path, nil) else { return nil }
+            defer { free(resolvedPath) }
+            return URL(filePath: String(cString: resolvedPath), directoryHint: .isDirectory)
+        } ?? lockedURL
         let engine = ScanEngine(enumeratedDirectoryContents: { url, keys, options, cancellationCheck in
             try cancellationCheck()
             if url == rootURL {
@@ -877,7 +982,7 @@ final class ScanEngineTests: XCTestCase {
                     urls: [readableDirectoryURL, visibleFileURL],
                     localizedFailures: [
                         ScanEngine.DirectoryEnumerationFailure(
-                            url: lockedURL,
+                            url: enumeratedLockedURL,
                             error: permissionError,
                             isDirectoryHint: true
                         )

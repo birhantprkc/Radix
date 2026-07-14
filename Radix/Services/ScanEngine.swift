@@ -9,6 +9,120 @@ import Darwin
 import Dispatch
 import Foundation
 
+private nonisolated final class DirectoryNamespaceResolver: @unchecked Sendable {
+    private struct Mapping {
+        let presentedRootPath: String
+        let resolvedRootPath: String
+    }
+
+    private let lock = NSLock()
+    private var mappings: [Mapping] = []
+
+    func preservingParentNamespace(_ contents: [URL], under parentURL: URL) -> [URL] {
+        let parentPath = parentURL.path
+        guard let enumeratedParentPath = contents.lazy
+            .map({ $0.deletingLastPathComponent().path })
+            .first(where: { $0 != parentPath }) else {
+            return contents
+        }
+
+        if let resolvedParentPath = cachedResolvedPath(
+            forPresentedPath: parentPath,
+            matching: enumeratedParentPath
+        ) {
+            return replacingParentNamespace(
+                in: contents,
+                from: resolvedParentPath,
+                to: parentURL
+            )
+        }
+
+        guard let resolvedParentPath = resolvedFileSystemPath(parentURL),
+              resolvedParentPath != parentPath,
+              enumeratedParentPath == resolvedParentPath else {
+            return contents
+        }
+        cacheMapping(
+            presentedRootPath: parentPath,
+            resolvedRootPath: resolvedParentPath
+        )
+        return replacingParentNamespace(
+            in: contents,
+            from: resolvedParentPath,
+            to: parentURL
+        )
+    }
+
+    private func cachedResolvedPath(
+        forPresentedPath presentedPath: String,
+        matching candidate: String
+    ) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        for mapping in mappings {
+            guard let suffix = pathSuffix(presentedPath, under: mapping.presentedRootPath) else {
+                continue
+            }
+            let resolvedPath = mapping.resolvedRootPath + suffix
+            if candidate == resolvedPath {
+                return resolvedPath
+            }
+        }
+        return nil
+    }
+
+    private func cacheMapping(presentedRootPath: String, resolvedRootPath: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !mappings.contains(where: {
+            $0.presentedRootPath == presentedRootPath && $0.resolvedRootPath == resolvedRootPath
+        }) else {
+            return
+        }
+        mappings.append(Mapping(
+            presentedRootPath: presentedRootPath,
+            resolvedRootPath: resolvedRootPath
+        ))
+    }
+
+    private func pathSuffix(_ path: String, under rootPath: String) -> String? {
+        if path == rootPath {
+            return ""
+        }
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard path.hasPrefix(prefix) else { return nil }
+        return String(path.dropFirst(rootPath.count))
+    }
+
+    private func replacingParentNamespace(
+        in contents: [URL],
+        from resolvedParentPath: String,
+        to presentedParentURL: URL
+    ) -> [URL] {
+        contents.map { childURL in
+            guard childURL.deletingLastPathComponent().path == resolvedParentPath else {
+                return childURL
+            }
+            let parentPath = presentedParentURL.path
+            let childPath = parentPath == "/"
+                ? parentPath + childURL.lastPathComponent
+                : parentPath + "/" + childURL.lastPathComponent
+            return URL(
+                filePath: childPath,
+                directoryHint: childURL.hasDirectoryPath ? .isDirectory : .notDirectory
+            )
+        }
+    }
+
+    private func resolvedFileSystemPath(_ url: URL) -> String? {
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path, let resolvedPath = realpath(path, nil) else { return nil }
+            defer { free(resolvedPath) }
+            return String(cString: resolvedPath)
+        }
+    }
+}
+
 actor ScanEngine {
     protocol DirectoryObjectEnumerating: AnyObject {
         func nextObject() -> Any?
@@ -263,6 +377,7 @@ actor ScanEngine {
 
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
+    private let directoryNamespaceResolver: DirectoryNamespaceResolver
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
     private let atomicSummaryProgressEmissionInterval: TimeInterval
@@ -319,6 +434,7 @@ actor ScanEngine {
         #endif
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
+        self.directoryNamespaceResolver = DirectoryNamespaceResolver()
         self.linkCountCapabilityCache = LinkCountCapabilityCache()
         self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
         self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
@@ -715,6 +831,7 @@ actor ScanEngine {
         )
         let directoryContentsProvider = directoryContents
         let usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
+        let directoryNamespaceResolver = directoryNamespaceResolver
         let directoryDescriptorPool = usesBulkDirectoryEnumeration
             ? directoryDescriptorPoolFactory()
             : nil
@@ -894,6 +1011,7 @@ actor ScanEngine {
                                     metadataLoader: scanMetadataLoader,
                                     directoryContents: directoryContentsProvider,
                                     usesBulkDirectoryEnumeration: usesBulkDirectoryEnumeration,
+                                    directoryNamespaceResolver: directoryNamespaceResolver,
                                     directoryDescriptorPool: directoryDescriptorPool,
                                     parentDirectoryLease: taskItem.parentDirectoryLease,
                                     nativeName: taskItem.nativeName,
@@ -1737,6 +1855,7 @@ actor ScanEngine {
         metadataLoader: ScanMetadataLoader,
         directoryContents: DirectoryContentsProvider,
         usesBulkDirectoryEnumeration: Bool,
+        directoryNamespaceResolver: DirectoryNamespaceResolver,
         directoryDescriptorPool: ScanDirectoryDescriptorPool?,
         parentDirectoryLease: ScanDirectoryDescriptorPool.Lease?,
         nativeName: BulkDirectoryEnumerator.NativeName?,
@@ -1870,8 +1989,23 @@ actor ScanEngine {
         #if DEBUG
         let classificationStart = DispatchTime.now().uptimeNanoseconds
         #endif
-        var entries = try await Self.classifiedDirectoryEntries(
+        let namespacePreservedURLs = directoryNamespaceResolver.preservingParentNamespace(
             enumerationResult.urls,
+            under: url
+        )
+        let namespacePreservedFailures = enumerationResult.localizedFailures.map { failure in
+            let preservedURL = directoryNamespaceResolver.preservingParentNamespace(
+                [failure.url],
+                under: url
+            ).first ?? failure.url
+            return DirectoryEnumerationFailure(
+                url: preservedURL,
+                error: failure.error,
+                isDirectoryHint: failure.isDirectoryHint
+            )
+        }
+        var entries = try await Self.classifiedDirectoryEntries(
+            namespacePreservedURLs,
             under: url,
             behavior: behavior,
             exclusionMatcher: exclusionMatcher,
@@ -1882,7 +2016,7 @@ actor ScanEngine {
         )
         entries.append(contentsOf:
             ScanDirectoryEntryFilter.entriesForLocalizedFailures(
-                enumerationResult.localizedFailures,
+                namespacePreservedFailures,
                 under: url,
                 behavior: behavior,
                 exclusionMatcher: exclusionMatcher
