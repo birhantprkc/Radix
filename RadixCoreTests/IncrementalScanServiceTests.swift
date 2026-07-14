@@ -44,6 +44,77 @@ final class IncrementalScanServiceTests: XCTestCase {
         XCTAssertEqual(provider.historyRequestCount, 1)
     }
 
+    func testIncrementalRescanMatchesFullScanForHardLinksAcrossSubtrees() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let ownerDirectoryURL = rootURL.appending(path: "A-Owner", directoryHint: .isDirectory)
+        let changedDirectoryURL = rootURL.appending(path: "Z-Changed", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: ownerDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: changedDirectoryURL, withIntermediateDirectories: true)
+
+        let ownerURL = ownerDirectoryURL.appending(path: "shared.dat")
+        let changedLinkURL = changedDirectoryURL.appending(path: "shared.dat")
+        try Data(repeating: 0x5A, count: 16_384).write(to: ownerURL)
+        try FileManager.default.linkItem(at: ownerURL, to: changedLinkURL)
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20)],
+            events: [
+                FileSystemEventRecord(
+                    path: changedDirectoryURL.appending(path: "new.dat").path,
+                    eventID: 15,
+                    flags: [.itemCreated, .itemIsFile]
+                )
+            ]
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        try Data([0x1]).write(to: changedDirectoryURL.appending(path: "new.dat"))
+        let incremental = try await finishedIncrementalSnapshot(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+        let full = try await finishedIncrementalSnapshot(
+            from: ScanEngine().scan(target: target, options: options)
+        )
+
+        XCTAssertEqual(
+            incremental.aggregateStats.totalAllocatedSize,
+            full.aggregateStats.totalAllocatedSize
+        )
+        XCTAssertEqual(incremental.aggregateStats.totalLogicalSize, full.aggregateStats.totalLogicalSize)
+        XCTAssertEqual(incremental.aggregateStats.fileCount, full.aggregateStats.fileCount)
+        XCTAssertEqual(incremental.aggregateStats.directoryCount, full.aggregateStats.directoryCount)
+        XCTAssertEqual(incremental.treeStore.indexedNodeIDs(), full.treeStore.indexedNodeIDs())
+        for nodeID in full.treeStore.indexedNodeIDs() {
+            let incrementalNode = try XCTUnwrap(incremental.treeStore.node(id: nodeID))
+            let fullNode = try XCTUnwrap(full.treeStore.node(id: nodeID))
+            XCTAssertEqual(incrementalNode.name, fullNode.name, nodeID)
+            XCTAssertEqual(incrementalNode.isDirectory, fullNode.isDirectory, nodeID)
+            XCTAssertEqual(incrementalNode.isSymbolicLink, fullNode.isSymbolicLink, nodeID)
+            XCTAssertEqual(incrementalNode.allocatedSize, fullNode.allocatedSize, nodeID)
+            XCTAssertEqual(
+                incrementalNode.unduplicatedAllocatedSize,
+                fullNode.unduplicatedAllocatedSize,
+                nodeID
+            )
+            XCTAssertEqual(incrementalNode.logicalSize, fullNode.logicalSize, nodeID)
+            XCTAssertEqual(incrementalNode.descendantFileCount, fullNode.descendantFileCount, nodeID)
+            XCTAssertEqual(incrementalNode.fileIdentity, fullNode.fileIdentity, nodeID)
+            XCTAssertEqual(incrementalNode.linkCount, fullNode.linkCount, nodeID)
+            XCTAssertEqual(incrementalNode.isPackage, fullNode.isPackage, nodeID)
+            XCTAssertEqual(incrementalNode.isAccessible, fullNode.isAccessible, nodeID)
+            XCTAssertEqual(incrementalNode.isSelfAccessible, fullNode.isSelfAccessible, nodeID)
+            XCTAssertEqual(incrementalNode.isSynthetic, fullNode.isSynthetic, nodeID)
+            XCTAssertEqual(incrementalNode.isAutoSummarized, fullNode.isAutoSummarized, nodeID)
+        }
+        XCTAssertEqual(incremental.treeStore.childIDsByID, full.treeStore.childIDsByID)
+    }
+
     func testNoChangeRescanAdvancesCheckpointWithoutChangingTree() async throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

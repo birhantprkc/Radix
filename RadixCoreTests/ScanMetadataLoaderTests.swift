@@ -249,6 +249,27 @@ final class ScanMetadataLoaderTests: XCTestCase {
         XCTAssertEqual(counters.lstatCount, 1)
     }
 
+    func testDirectoryMetadataUsesFileSystemIdentity() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let counters = LinkCountProbeCounters()
+        let loader = ScanMetadataLoader(
+            diagnostics: nil,
+            fileSystemInfoProvider: { _, _ in
+                counters.recordLstat()
+                return (FileIdentity(device: 7, inode: 42), 9)
+            }
+        )
+
+        let metadata = try loader.metadata(for: rootURL)
+
+        XCTAssertTrue(metadata.isDirectory)
+        XCTAssertEqual(metadata.fileIdentity, FileIdentity(device: 7, inode: 42))
+        XCTAssertEqual(metadata.linkCount, 1)
+        XCTAssertEqual(counters.lstatCount, 1)
+    }
+
     func testAtomicSummarySymlinkMetadataSkipsLstatIdentity() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

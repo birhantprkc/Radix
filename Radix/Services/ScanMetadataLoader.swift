@@ -367,6 +367,9 @@ nonisolated struct ScanMetadataLoader: Sendable {
             let fileSystemInfo = fileSystemInfoProvider(url, diagnostics)
             fileIdentity = fileSystemInfo.identity
             linkCount = fileSystemInfo.linkCount
+        } else if isDirectory && loadsSymbolicLinkFileSystemInfo {
+            let fileSystemInfo = fileSystemInfoProvider(url, diagnostics)
+            fileIdentity = fileSystemInfo.identity ?? fileIdentity
         } else if shouldReadFileSystemIdentity(
             isDirectory: isDirectory,
             isSymbolicLink: isSymbolicLink,
