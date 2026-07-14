@@ -44,7 +44,9 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(hardLinkedNode.linkCount, 2)
         XCTAssertEqual(hardLinkedNode.lastModified, Date(timeIntervalSince1970: 100))
 
-        let resourceNode = try XCTUnwrap(importedSnapshot.treeStore.node(id: "/archive/folder/resource-id.bin"))
+        let resourceNode = try XCTUnwrap(
+            importedSnapshot.treeStore.node(id: "/archive/folder/résource-文件-🙂.bin")
+        )
         XCTAssertEqual(resourceNode.fileIdentity, FileIdentity(resourceIdentifier: Data([1, 2, 3, 4])))
         XCTAssertEqual(resourceNode.lastModified, Date(timeIntervalSince1970: 200))
 
@@ -493,6 +495,37 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertTrue(try temporaryArchiveSiblings(for: archiveURL).isEmpty)
     }
 
+    func testCancelledImportStopsBeforePublishingSnapshot() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeLargeArchiveSnapshot(childCount: 20_000),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+
+        let progressReporter = ScanArchiveProgressReporter()
+        let importTask = Task {
+            try await service.importSnapshot(
+                from: archiveURL,
+                progressReporter: progressReporter
+            )
+        }
+        defer {
+            progressReporter.finish()
+            importTask.cancel()
+        }
+
+        try await waitForProgressPhase(.readingNodes, from: progressReporter)
+        importTask.cancel()
+
+        do {
+            _ = try await importTask.value
+            XCTFail("Cancelled import should not publish a snapshot.")
+        } catch is CancellationError {
+        }
+    }
+
     func testImportRejectsNodesChecksumMismatch() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
@@ -907,9 +940,9 @@ final class ScanArchiveServiceTests: XCTestCase {
             isAutoSummarized: false
         )
         let resourceFile = FileNodeRecord(
-            id: "/archive/folder/resource-id.bin",
-            url: URL(filePath: "/archive/folder/resource-id.bin"),
-            name: "resource-id.bin",
+            id: "/archive/folder/résource-文件-🙂.bin",
+            url: URL(filePath: "/archive/folder/résource-文件-🙂.bin"),
+            name: "résource-文件-🙂.bin",
             isDirectory: false,
             isSymbolicLink: false,
             allocatedSize: 80,
