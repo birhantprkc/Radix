@@ -1251,7 +1251,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "1. Apri Privacy e Sicurezza > Accesso completo al disco."
+            "value": "1. Apri Privacy e sicurezza > Accesso completo al disco."
           }
         },
         "zh-Hans": {
@@ -1319,7 +1319,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "3. Scegli Chiudi e riapri quando macOS lo richiede."
+            "value": "3. Scegli Esci e riapri quando macOS lo richiede."
           }
         },
         "zh-Hans": {
@@ -1596,7 +1596,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aggiungi schema"
+            "value": "Aggiungi modello"
           }
         },
         "zh-Hans": {
@@ -4448,7 +4448,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stile mappa del disco"
+            "value": "Stile della mappa del disco"
           }
         },
         "zh-Hans": {
@@ -6738,7 +6738,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nascondi inspector"
+            "value": "Nascondi Inspector"
           }
         },
         "zh-Hans": {
@@ -9788,7 +9788,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "il nodo %@ non cartella ha figli"
+            "value": "il nodo %@ non è una cartella ma contiene elementi figli"
           }
         },
         "zh-Hans": {
@@ -10789,7 +10789,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Radix non ha potuto creare un flusso cronologia FSEvents."
+            "value": "Radix non ha potuto creare un flusso della cronologia di FSEvents."
           }
         },
         "zh-Hans": {
@@ -10999,7 +10999,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Radix non ha potuto avviare il flusso cronologia FSEvents."
+            "value": "Radix non ha potuto avviare il flusso della cronologia di FSEvents."
           }
         },
         "zh-Hans": {
@@ -14871,7 +14871,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il flusso cronologia FSEvents si è concluso prima di segnalare HistoryDone."
+            "value": "Il flusso della cronologia di FSEvents si è concluso prima di segnalare HistoryDone."
           }
         },
         "zh-Hans": {
@@ -14906,7 +14906,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il target di scansione incrementale non è una directory: %@."
+            "value": "La destinazione della scansione incrementale non è una cartella: %@."
           }
         },
         "zh-Hans": {
@@ -14941,7 +14941,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il target di scansione incrementale non è disponibile: %@."
+            "value": "La destinazione della scansione incrementale non è disponibile: %@."
           }
         },
         "zh-Hans": {
@@ -15186,7 +15186,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il target della scansione si trova ora su un volume diverso."
+            "value": "La destinazione della scansione si trova ora su un volume diverso."
           }
         },
         "zh-Hans": {
@@ -16183,7 +16183,7 @@
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quando questa opzione è abilitata, le directory con migliaia di file di piccole dimensioni (come node_modules o cache) vengono riassunte senza espandere ogni singolo file, migliorando drasticamente la velocità di scansione."
+            "value": "Quando questa opzione è abilitata, le cartelle con migliaia di file di piccole dimensioni (come node_modules o cache) vengono riassunte senza espandere ogni singolo file, migliorando drasticamente la velocità di scansione."
           }
         },
         "zh-Hans": {
