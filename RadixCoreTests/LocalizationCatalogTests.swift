@@ -20,7 +20,7 @@ final class LocalizationCatalogTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(strings.count, 400)
         XCTAssertEqual(catalogs["Interface"]?.count, 8)
 
-        let supportedLocales = Set(["es", "fr", "zh-Hans", "de"])
+        let supportedLocales = Set(["es", "fr", "zh-Hans", "de", "it"])
         for (key, value) in strings {
             let entry = try XCTUnwrap(value as? [String: Any], "Invalid catalog entry for \(key)")
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
@@ -44,7 +44,7 @@ final class LocalizationCatalogTests: XCTestCase {
         }
     }
 
-    func testInfoPlistCatalogProvidesGermanForEveryEntry() throws {
+    func testInfoPlistCatalogProvidesSupportedLocalesForEveryEntry() throws {
         let testFileURL = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFileURL
             .deletingLastPathComponent()
@@ -63,10 +63,22 @@ final class LocalizationCatalogTests: XCTestCase {
         for (key, value) in strings {
             let entry = try XCTUnwrap(value as? [String: Any], "Invalid metadata catalog entry for \(key)")
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
-            let german = try XCTUnwrap(localizations["de"] as? [String: Any], "Missing German localization for \(key)")
-            let stringUnit = try XCTUnwrap(german["stringUnit"] as? [String: Any])
-            XCTAssertEqual(stringUnit["state"] as? String, "translated", "Untranslated German metadata value for \(key)")
-            XCTAssertNotNil(stringUnit["value"] as? String, "Missing German metadata value for \(key)")
+            for locale in ["de", "it"] {
+                let localization = try XCTUnwrap(
+                    localizations[locale] as? [String: Any],
+                    "Missing \(locale) localization for \(key)"
+                )
+                let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any])
+                XCTAssertEqual(
+                    stringUnit["state"] as? String,
+                    "translated",
+                    "Untranslated \(locale) metadata value for \(key)"
+                )
+                XCTAssertNotNil(
+                    stringUnit["value"] as? String,
+                    "Missing \(locale) metadata value for \(key)"
+                )
+            }
         }
     }
 
