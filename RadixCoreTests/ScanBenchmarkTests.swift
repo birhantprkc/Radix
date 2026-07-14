@@ -373,6 +373,58 @@ final class ScanBenchmarkTests: XCTestCase {
         }
     }
 
+    func testDeepDirectoryScanBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_DEEP_DIRECTORY"] == "1" else {
+            throw XCTSkip("Set RADIX_BENCH_DEEP_DIRECTORY=1 to run the deep-directory benchmark.")
+        }
+
+        let depth = environment["RADIX_BENCH_DEEP_DEPTH"]
+            .flatMap(Int.init)
+            .map { min(max(1, $0), 400) } ?? 256
+        let iterations = environment["RADIX_BENCH_DEEP_ITERATIONS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 3
+        let rootURL = try makeDeepBenchmarkDirectory(depth: depth)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        for usesBulkEnumeration in [true, false] {
+            _ = try await runDeepDirectoryBenchmark(
+                rootURL: rootURL,
+                depth: depth,
+                usesBulkEnumeration: usesBulkEnumeration,
+                iteration: 0,
+                isWarmup: true
+            )
+        }
+
+        var elapsedByMode: [Bool: [Double]] = [:]
+        for iteration in 1...iterations {
+            for usesBulkEnumeration in [true, false] {
+                let elapsed = try await runDeepDirectoryBenchmark(
+                    rootURL: rootURL,
+                    depth: depth,
+                    usesBulkEnumeration: usesBulkEnumeration,
+                    iteration: iteration,
+                    isWarmup: false
+                )
+                elapsedByMode[usesBulkEnumeration, default: []].append(elapsed)
+            }
+        }
+
+        for usesBulkEnumeration in [true, false] {
+            let elapsed = elapsedByMode[usesBulkEnumeration, default: []]
+            let average = elapsed.reduce(0, +) / Double(elapsed.count)
+            print(
+                "RADIX_BENCH_DEEP_SUMMARY mode=\(usesBulkEnumeration ? "bulk" : "foundation") "
+                    + "depth=\(depth) iterations=\(elapsed.count) "
+                    + "avg_elapsed=\(String(format: "%.3f", average))s "
+                    + "min_elapsed=\(String(format: "%.3f", elapsed.min() ?? average))s "
+                    + "max_elapsed=\(String(format: "%.3f", elapsed.max() ?? average))s"
+            )
+        }
+    }
+
     func testAtomicProbeResumeBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_ATOMIC_PROBE"] == "1" else {
@@ -715,6 +767,66 @@ final class ScanBenchmarkTests: XCTestCase {
             }
         }
         return rootURL
+    }
+
+    private func makeDeepBenchmarkDirectory(depth: Int) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "radix-deep-directory-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        let payload = Data([0x41])
+        var directoryURL = rootURL
+        for index in 0..<depth {
+            directoryURL.append(path: "d", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: false)
+            try payload.write(
+                to: directoryURL.appending(path: String(format: "f-%03d.dat", index))
+            )
+        }
+        return rootURL
+    }
+
+    private func runDeepDirectoryBenchmark(
+        rootURL: URL,
+        depth: Int,
+        usesBulkEnumeration: Bool,
+        iteration: Int,
+        isWarmup: Bool
+    ) async throws -> Double {
+        let engine: ScanEngine
+        if usesBulkEnumeration {
+            engine = ScanEngine()
+        } else {
+            engine = ScanEngine(directoryContents: { url, keys, enumerationOptions, cancellationCheck in
+                try cancellationCheck()
+                let contents = try FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: keys,
+                    options: enumerationOptions
+                )
+                try cancellationCheck()
+                return contents
+            })
+        }
+
+        let startedAt = ContinuousClock.now
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions(),
+            engine: engine
+        )
+        let elapsed = Self.elapsedSeconds(since: startedAt)
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, depth)
+        XCTAssertEqual(snapshot.aggregateStats.directoryCount, depth + 1)
+        XCTAssertEqual(snapshot.treeStore.nodeCount, (depth * 2) + 1)
+
+        print(
+            "RADIX_BENCH_DEEP_RESULT phase=\(isWarmup ? "warmup" : "measure") "
+                + "mode=\(usesBulkEnumeration ? "bulk" : "foundation") "
+                + "depth=\(depth) iteration=\(iteration) "
+                + "elapsed=\(String(format: "%.3f", elapsed))s"
+        )
+        return elapsed
     }
 
     private func runAtomicProbeBenchmark(
