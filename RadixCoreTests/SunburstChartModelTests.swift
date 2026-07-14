@@ -352,7 +352,7 @@ private actor ImmediateSunburstLayoutService: SunburstLayouting {
     }
 
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int
     ) async throws -> [SunburstSegment] {
@@ -383,7 +383,7 @@ private actor ControllableSunburstLayoutService: SunburstLayouting {
     }
 
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int
     ) async throws -> [SunburstSegment] {

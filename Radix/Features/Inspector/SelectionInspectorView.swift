@@ -28,7 +28,8 @@ struct SelectionInspectorView: View {
                         node: node,
                         parentName: navigation.selectedNodeParent?.name,
                         percentOfParent: selectedNodePercentOfParentText ?? "—",
-                        percentOfScan: selectedNodePercentOfScanText ?? "—"
+                        percentOfScan: selectedNodePercentOfScanText ?? "—",
+                        activeTarget: scanState.selectedTarget
                     )
 
                     InspectorActionsSection(

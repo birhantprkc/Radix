@@ -9,7 +9,7 @@ import Foundation
 
 protocol SunburstLayouting: Sendable {
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int
     ) async throws -> [SunburstSegment]
@@ -17,7 +17,7 @@ protocol SunburstLayouting: Sendable {
 
 actor SunburstLayoutService: SunburstLayouting {
     func segments(
-        in treeStore: FileTreeStore,
+        in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int
     ) async throws -> [SunburstSegment] {
@@ -90,7 +90,7 @@ final class SunburstChartModel: ObservableObject {
 
     @discardableResult
     func loadLayout(
-        treeStore: FileTreeStore,
+        treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         layoutID: String
@@ -121,6 +121,21 @@ final class SunburstChartModel: ObservableObject {
         case .superseded:
             return false
         }
+    }
+
+    @discardableResult
+    func loadLayout(
+        treeStore: FileTreeStore,
+        rootID: String,
+        depthLimit: Int,
+        layoutID: String
+    ) async -> Bool {
+        await loadLayout(
+            treeStore: DiskMapTreeStore(treeStore),
+            rootID: rootID,
+            depthLimit: depthLimit,
+            layoutID: layoutID
+        )
     }
 
     private func apply(_ segments: [SunburstSegment]) {

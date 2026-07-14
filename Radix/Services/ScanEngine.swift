@@ -897,7 +897,10 @@ actor ScanEngine {
                                     directoryDescriptorPool: directoryDescriptorPool,
                                     parentDirectoryLease: taskItem.parentDirectoryLease,
                                     nativeName: taskItem.nativeName,
-                                    expectedIdentity: taskMetadata.fileIdentity,
+                                    expectedIdentity: Self.verifiesDirectoryIdentity(
+                                        at: taskItem.url,
+                                        behavior: behavior
+                                    ) ? taskMetadata.fileIdentity : nil,
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
                                     cancellationCheck: cancellationCheck
                                 )
@@ -2029,6 +2032,18 @@ actor ScanEngine {
         ScanDirectoryEntryFilter.includes(childURL, under: parentURL, behavior: behavior)
     }
 
+    /// Startup-volume firmlinks deliberately resolve from the sealed System
+    /// volume into the Data volume. Their enumerated and opened identities are
+    /// therefore expected to differ; all other directory opens retain strict
+    /// replacement detection.
+    nonisolated static func verifiesDirectoryIdentity(
+        at url: URL,
+        behavior: ScanBehavior
+    ) -> Bool {
+        !behavior.excludesStartupVolumeInternals
+            || !TrashSafetyPolicy.isStartupVolumeFirmlinkRoot(url)
+    }
+
     private nonisolated func makeFileNode(
         url: URL,
         metadata: NodeMetadata
@@ -2205,9 +2220,10 @@ actor ScanEngine {
         return !metadata.isPackage || options.treatPackagesAsDirectories
     }
 
-    /// APFS capacity is container-wide, so only the startup-volume scan represents a
-    /// broad enough target to reconcile safely. Other whole mounted filesystems retain
-    /// the existing reconciliation behavior.
+    /// APFS capacity is container-wide and includes storage that cannot be attributed
+    /// safely to any one mounted volume (including the startup volume). Reconciling it
+    /// against per-file allocations creates a misleading synthetic remainder, so keep
+    /// capacity accounting separate from the scanned tree on every APFS volume.
     private nonisolated func estimatedTotalBytes(for target: ScanTarget, metadata: NodeMetadata) -> Int64 {
         guard target.kind == .volume,
               let volumeCapacity = metadata.volumeCapacity,
@@ -2221,13 +2237,13 @@ actor ScanEngine {
         guard let fileSystemType = volumeFileSystemTypeProvider(url) else {
             return false
         }
-        return Self.shouldReconcileVolumeCapacity(fileSystemType: fileSystemType, for: url)
+        return Self.shouldReconcileVolumeCapacity(fileSystemType: fileSystemType)
     }
 
-    nonisolated static func shouldReconcileVolumeCapacity(fileSystemType: String, for url: URL) -> Bool {
+    nonisolated static func shouldReconcileVolumeCapacity(fileSystemType: String) -> Bool {
         let normalizedType = fileSystemType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedType.isEmpty else { return false }
-        return normalizedType != "apfs" || url.standardizedFileURL.path == "/"
+        return normalizedType != "apfs"
     }
 
 }

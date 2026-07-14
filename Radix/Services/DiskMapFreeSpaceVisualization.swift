@@ -5,11 +5,160 @@
 
 import Foundation
 
+nonisolated protocol DiskMapTreeReading: Sendable {
+    var rootID: String { get }
+
+    func node(id: String?) -> FileNodeRecord?
+    func parentID(of id: String?) -> String?
+    func children(of id: String?) -> [FileNodeRecord]
+    func children(
+        of id: String?,
+        cancellationCheck: () throws -> Void
+    ) throws -> [FileNodeRecord]
+    func path(to id: String?) -> [FileNodeRecord]
+}
+
+extension FileTreeStore: DiskMapTreeReading {}
+
 struct DiskMapVisualizationInput: Sendable {
     let rootNode: FileNodeRecord
-    let treeStore: FileTreeStore
+    let treeStore: DiskMapTreeStore
     let treeContentID: UUID
     let layoutIDComponent: String
+}
+
+/// A read-only visualization facade over the scan tree. Volume-capacity nodes
+/// are overlaid here instead of rebuilding every node and edge in a large scan.
+nonisolated struct DiskMapTreeStore: DiskMapTreeReading {
+    private struct VolumeCapacityOverlay: Sendable {
+        let visualRootID: String
+        let freeSpaceNode: FileNodeRecord
+    }
+
+    private let base: FileTreeStore
+    private let volumeCapacityOverlay: VolumeCapacityOverlay?
+
+    init(_ base: FileTreeStore) {
+        self.base = base
+        volumeCapacityOverlay = nil
+    }
+
+    fileprivate init(
+        base: FileTreeStore,
+        visualRootID: String,
+        freeSpaceNode: FileNodeRecord
+    ) {
+        self.base = base
+        volumeCapacityOverlay = VolumeCapacityOverlay(
+            visualRootID: visualRootID,
+            freeSpaceNode: freeSpaceNode
+        )
+    }
+
+    var contentID: UUID { base.contentID }
+
+    var rootID: String {
+        volumeCapacityOverlay?.visualRootID ?? base.rootID
+    }
+
+    var root: FileNodeRecord {
+        guard let volumeCapacityOverlay else { return base.root }
+        return visualRoot(
+            id: volumeCapacityOverlay.visualRootID,
+            freeSpaceNode: volumeCapacityOverlay.freeSpaceNode
+        )
+    }
+
+    func node(id: String?) -> FileNodeRecord? {
+        guard let id else { return nil }
+        if id == volumeCapacityOverlay?.visualRootID {
+            return root
+        }
+        if id == volumeCapacityOverlay?.freeSpaceNode.id {
+            return volumeCapacityOverlay?.freeSpaceNode
+        }
+        return base.node(id: id)
+    }
+
+    func parentID(of id: String?) -> String? {
+        guard let id else { return nil }
+        if id == volumeCapacityOverlay?.visualRootID {
+            return nil
+        }
+        if let volumeCapacityOverlay,
+           id == base.rootID || id == volumeCapacityOverlay.freeSpaceNode.id {
+            return volumeCapacityOverlay.visualRootID
+        }
+        return base.parentID(of: id)
+    }
+
+    func parent(of id: String?) -> FileNodeRecord? {
+        node(id: parentID(of: id))
+    }
+
+    func children(of id: String?) -> [FileNodeRecord] {
+        (try? children(of: id, cancellationCheck: {})) ?? []
+    }
+
+    func children(
+        of id: String?,
+        cancellationCheck: () throws -> Void
+    ) throws -> [FileNodeRecord] {
+        let resolvedID = id ?? rootID
+        guard let volumeCapacityOverlay,
+              resolvedID == volumeCapacityOverlay.visualRootID else {
+            return try base.children(of: resolvedID, cancellationCheck: cancellationCheck)
+        }
+        try cancellationCheck()
+        return FileTreeStore.sortedChildren([base.root, volumeCapacityOverlay.freeSpaceNode])
+    }
+
+    func path(to id: String?) -> [FileNodeRecord] {
+        guard let id,
+              let volumeCapacityOverlay else {
+            return base.path(to: id)
+        }
+        if id == volumeCapacityOverlay.visualRootID {
+            return [root]
+        }
+        if id == volumeCapacityOverlay.freeSpaceNode.id {
+            return [root, volumeCapacityOverlay.freeSpaceNode]
+        }
+        guard base.node(id: id) != nil else { return [root] }
+        return [root] + base.path(to: id)
+    }
+
+    func removingSubtrees(
+        rootedAt nodeIDs: [String],
+        cancellationCheck: () throws -> Void
+    ) throws -> DiskMapTreeStore {
+        let filteredBase = try base.removingSubtrees(
+            rootedAt: nodeIDs,
+            cancellationCheck: cancellationCheck
+        )
+        guard let volumeCapacityOverlay else {
+            return DiskMapTreeStore(filteredBase)
+        }
+        return DiskMapTreeStore(
+            base: filteredBase,
+            visualRootID: volumeCapacityOverlay.visualRootID,
+            freeSpaceNode: volumeCapacityOverlay.freeSpaceNode
+        )
+    }
+
+    private func visualRoot(id: String, freeSpaceNode: FileNodeRecord) -> FileNodeRecord {
+        let baseRoot = base.root
+        return FileNodeRecord.directory(
+            id: id,
+            url: baseRoot.url,
+            name: baseRoot.name,
+            children: FileTreeStore.sortedChildren([baseRoot, freeSpaceNode]),
+            lastModified: baseRoot.lastModified,
+            isPackage: baseRoot.isPackage,
+            isAccessible: baseRoot.isSelfAccessible,
+            childrenAreSorted: true
+        )
+    }
 }
 
 enum DiskMapFreeSpaceVisualization {
@@ -30,7 +179,7 @@ enum DiskMapFreeSpaceVisualization {
               availableCapacity > 0 else {
             return DiskMapVisualizationInput(
                 rootNode: focusNode,
-                treeStore: snapshot.treeStore,
+                treeStore: DiskMapTreeStore(snapshot.treeStore),
                 treeContentID: snapshot.treeStore.contentID,
                 layoutIDComponent: disabledLayoutComponent
             )
@@ -55,34 +204,10 @@ enum DiskMapFreeSpaceVisualization {
             isSynthetic: true,
             isAutoSummarized: false
         )
-        let visualRootChildren = FileTreeStore.sortedChildren([root, freeSpaceNode])
-        let visualRoot = FileNodeRecord.directory(
-            id: visualRootID,
-            url: root.url,
-            name: root.name,
-            children: visualRootChildren,
-            lastModified: root.lastModified,
-            isPackage: root.isPackage,
-            isAccessible: root.isSelfAccessible,
-            childrenAreSorted: true
-        )
-
-        var nodesByID = snapshot.treeStore.nodesByID
-        nodesByID[visualRoot.id] = visualRoot
-        nodesByID[freeSpaceNode.id] = freeSpaceNode
-
-        var childIDsByID = snapshot.treeStore.childIDsByID
-        childIDsByID[visualRoot.id] = visualRootChildren.map(\.id)
-
-        var parentIDByID = snapshot.treeStore.parentIDByID
-        parentIDByID[root.id] = visualRoot.id
-        parentIDByID[freeSpaceNode.id] = visualRoot.id
-
-        let treeStore = FileTreeStore(
-            rootID: visualRoot.id,
-            nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID
+        let treeStore = DiskMapTreeStore(
+            base: snapshot.treeStore,
+            visualRootID: visualRootID,
+            freeSpaceNode: freeSpaceNode
         )
 
         return DiskMapVisualizationInput(

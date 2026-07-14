@@ -139,6 +139,38 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testVisualizationModeUpdatePublishesAfterViewUpdate() async throws {
+        let model = AppModel(dependencies: makeDependencies())
+        var publicationCount = 0
+        let cancellable = model.objectWillChange.sink {
+            publicationCount += 1
+        }
+
+        model.setScanVisualizationModeAfterViewUpdate(.treemap)
+
+        XCTAssertEqual(model.scanVisualizationMode, .sunburst)
+        XCTAssertEqual(publicationCount, 0)
+
+        try await waitForAppModelCondition("deferred visualization mode") {
+            model.scanVisualizationMode == .treemap
+        }
+        XCTAssertGreaterThanOrEqual(publicationCount, 1)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @MainActor
+    func testVisualizationModeUpdateCoalescesToLatestRequest() async throws {
+        let model = AppModel(dependencies: makeDependencies())
+
+        model.setScanVisualizationModeAfterViewUpdate(.treemap)
+        model.setScanVisualizationModeAfterViewUpdate(.sunburst)
+
+        try await Task.sleep(for: .milliseconds(40))
+
+        XCTAssertEqual(model.scanVisualizationMode, .sunburst)
+    }
+
+    @MainActor
     func testCleanupFlushesPendingPreferencePersistence() {
         let preferences = SpyAppPreferencesStore(preferences: .defaults)
         let model = AppModel(dependencies: makeDependencies(preferences: preferences))
@@ -2526,7 +2558,8 @@ final class AppModelDependencyTests: XCTestCase {
             importResultsByURL: [
                 oldURL: makeArchiveImportResult(archiveURL: oldURL, snapshot: oldSnapshot),
                 newURL: makeArchiveImportResult(archiveURL: newURL, snapshot: newSnapshot),
-            ]
+            ],
+            importDelay: .milliseconds(25)
         )
         var selectedSnapshotURLs = [oldURL, newURL]
         var actions = AppSystemActions.inert
@@ -2567,7 +2600,9 @@ final class AppModelDependencyTests: XCTestCase {
         }
 
         let importedURLs = await archiveService.importedURLsSnapshot()
-        XCTAssertEqual(importedURLs, [oldURL, newURL])
+        let maximumConcurrentImports = await archiveService.maximumConcurrentImportsSnapshot()
+        XCTAssertEqual(Set(importedURLs), Set([oldURL, newURL]))
+        XCTAssertEqual(maximumConcurrentImports, 2)
         XCTAssertEqual(model.scanComparison?.before.id, oldSnapshot.id)
         XCTAssertEqual(model.scanComparison?.after.id, newSnapshot.id)
         XCTAssertEqual(model.scanComparison?.rows.first?.kind, .grew)
@@ -2585,6 +2620,47 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertEqual(model.scanComparison?.id, activeComparisonID)
         XCTAssertNil(model.pendingComparisonSetup)
+    }
+
+    func testComparisonImportConcurrencyRequiresArchivePairWithinMemoryBudget() throws {
+        let oldURL = URL(filePath: "/tmp/old-budget.radixscan", directoryHint: .isDirectory)
+        let newURL = URL(filePath: "/tmp/new-budget.radixscan", directoryHint: .isDirectory)
+        let oldSnapshot = makeComparisonSnapshot(
+            rootPath: "/comparison-budget",
+            fileSize: 10,
+            startedAt: Date(timeIntervalSince1970: 10),
+            finishedAt: Date(timeIntervalSince1970: 20),
+            sourceURL: oldURL
+        )
+        let newSnapshot = makeComparisonSnapshot(
+            rootPath: "/comparison-budget",
+            fileSize: 20,
+            startedAt: Date(timeIntervalSince1970: 30),
+            finishedAt: Date(timeIntervalSince1970: 40),
+            sourceURL: newURL
+        )
+        let oldCandidate = ScanComparisonCandidate(
+            preview: try makeArchivePreview(archiveURL: oldURL, snapshot: oldSnapshot)
+        )
+        let newCandidate = ScanComparisonCandidate(
+            preview: try makeArchivePreview(archiveURL: newURL, snapshot: newSnapshot)
+        )
+
+        XCTAssertTrue(AppModel.shouldLoadComparisonSnapshotsConcurrently(
+            before: oldCandidate,
+            after: newCandidate,
+            physicalMemory: .max
+        ))
+        XCTAssertFalse(AppModel.shouldLoadComparisonSnapshotsConcurrently(
+            before: oldCandidate,
+            after: newCandidate,
+            physicalMemory: 0
+        ))
+        XCTAssertFalse(AppModel.shouldLoadComparisonSnapshotsConcurrently(
+            before: ScanComparisonCandidate(snapshot: oldSnapshot),
+            after: newCandidate,
+            physicalMemory: .max
+        ))
     }
 
     @MainActor
@@ -3445,6 +3521,9 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
     private let exportWaitProbe: AsyncValueProbe<Void>?
     private let previewWaitProbe: AsyncValueProbe<Void>?
     private let importWaitProbe: AsyncValueProbe<Void>?
+    private let importDelay: Duration?
+    private var activeImportCount = 0
+    private var maximumConcurrentImportCount = 0
     private(set) var exportCancellationStates: [Bool] = []
     private(set) var previewCancellationStates: [Bool] = []
     private(set) var importCancellationStates: [Bool] = []
@@ -3456,7 +3535,8 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
         importResultsByURL: [URL: ScanArchiveImportResult] = [:],
         exportWaitProbe: AsyncValueProbe<Void>? = nil,
         previewWaitProbe: AsyncValueProbe<Void>? = nil,
-        importWaitProbe: AsyncValueProbe<Void>? = nil
+        importWaitProbe: AsyncValueProbe<Void>? = nil,
+        importDelay: Duration? = nil
     ) {
         self.previewResult = previewResult
         self.previewResultsByURL = previewResultsByURL
@@ -3465,6 +3545,7 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
         self.exportWaitProbe = exportWaitProbe
         self.previewWaitProbe = previewWaitProbe
         self.importWaitProbe = importWaitProbe
+        self.importDelay = importDelay
     }
 
     func export(
@@ -3504,6 +3585,12 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> ScanArchiveImportResult {
         importedURLs.append(sourceURL)
+        activeImportCount += 1
+        maximumConcurrentImportCount = max(maximumConcurrentImportCount, activeImportCount)
+        defer { activeImportCount -= 1 }
+        if let importDelay {
+            try await Task.sleep(for: importDelay)
+        }
         if let importWaitProbe {
             await importWaitProbe.wait()
         }
@@ -3527,6 +3614,10 @@ private actor SpyScanArchiveService: ScanArchiveServicing {
 
     func importedURLsSnapshot() -> [URL] {
         importedURLs
+    }
+
+    func maximumConcurrentImportsSnapshot() -> Int {
+        maximumConcurrentImportCount
     }
 
     func exportCancellationStatesSnapshot() -> [Bool] {

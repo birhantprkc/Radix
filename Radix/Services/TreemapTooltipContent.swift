@@ -14,7 +14,7 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
     static func content(
         for segment: TreemapSegment,
         rootNode: FileNodeRecord,
-        treeStore: FileTreeStore
+        treeStore: some DiskMapTreeReading
     ) -> TreemapTooltipContent {
         guard let nodeID = segment.nodeID,
               let node = treeStore.node(id: nodeID) else {
@@ -51,7 +51,7 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
     private static func aggregateContent(
         for segment: TreemapSegment,
         rootNode: FileNodeRecord,
-        treeStore: FileTreeStore
+        treeStore: some DiskMapTreeReading
     ) -> TreemapTooltipContent {
         let itemCount = segment.groupedItemCount ?? 0
         return TreemapTooltipContent(
@@ -89,7 +89,7 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
     private static func pathDescription(
         to nodeID: String,
         relativeTo rootNode: FileNodeRecord,
-        treeStore: FileTreeStore
+        treeStore: some DiskMapTreeReading
     ) -> String {
         let path = treeStore.path(to: nodeID)
         let relativePath: ArraySlice<FileNodeRecord>

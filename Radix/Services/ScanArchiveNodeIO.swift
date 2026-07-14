@@ -28,6 +28,35 @@ nonisolated private struct ScanArchiveNodeLocation {
     let path: String
 }
 
+nonisolated private struct ScanArchiveStreamingJSONWriter {
+    private static let flushByteCount = 1024 * 1024
+
+    let fileHandle: FileHandle
+    private var buffer = Data()
+
+    init(fileHandle: FileHandle) {
+        self.fileHandle = fileHandle
+        buffer.reserveCapacity(Self.flushByteCount)
+    }
+
+    mutating func append(_ text: String) throws {
+        buffer.append(contentsOf: text.utf8)
+        if buffer.count >= Self.flushByteCount {
+            try flush()
+        }
+    }
+
+    mutating func finish() throws {
+        try flush()
+    }
+
+    private mutating func flush() throws {
+        guard !buffer.isEmpty else { return }
+        try fileHandle.write(contentsOf: buffer)
+        buffer.removeAll(keepingCapacity: true)
+    }
+}
+
 extension ScanArchiveService {
     func writeNodes(
         _ treeStore: FileTreeStore,
@@ -75,6 +104,90 @@ extension ScanArchiveService {
         }
 
         return Data(hasher.finalize()).base64EncodedString()
+    }
+
+    /// Writes topology incrementally. Building and encoding the complete
+    /// topology at once can consume hundreds of megabytes on a large scan.
+    func writeTopology(
+        _ treeStore: FileTreeStore,
+        to url: URL,
+        progressReporter: ScanArchiveProgressReporter?
+    ) async throws {
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+            throw ScanArchiveError.topology(localized: "could not create topology section")
+        }
+
+        let fileHandle = try FileHandle(forWritingTo: url)
+        defer { try? fileHandle.close() }
+
+        let orderedNodeIndices = treeStore.indexedNodeIndices()
+        var ordinalByNodeOffset = Array(repeating: -1, count: treeStore.nodeCount)
+        for (ordinal, nodeIndex) in orderedNodeIndices.enumerated() {
+            let offset = Int(nodeIndex.rawValue)
+            guard ordinalByNodeOffset.indices.contains(offset) else {
+                throw ScanArchiveError.topology(localized: "node index is out of range")
+            }
+            ordinalByNodeOffset[offset] = ordinal
+        }
+
+        guard let rootIndex = treeStore.nodeIndex(id: treeStore.rootID) else {
+            throw ScanArchiveError.topology(localized: "root node is missing from node order")
+        }
+        let rootOffset = Int(rootIndex.rawValue)
+        guard ordinalByNodeOffset.indices.contains(rootOffset),
+              ordinalByNodeOffset[rootOffset] >= 0 else {
+            throw ScanArchiveError.topology(localized: "root node is missing from node order")
+        }
+
+        var writer = ScanArchiveStreamingJSONWriter(fileHandle: fileHandle)
+        try writer.append("{\"r\":\(ordinalByNodeOffset[rootOffset]),\"c\":{")
+        var wroteParent = false
+
+        for (processedOffset, parentIndex) in orderedNodeIndices.enumerated() {
+            try Task.checkCancellation()
+            let childIndices = treeStore.childIndices(of: parentIndex)
+            if !childIndices.isEmpty {
+                let parentOffset = Int(parentIndex.rawValue)
+                guard ordinalByNodeOffset.indices.contains(parentOffset),
+                      ordinalByNodeOffset[parentOffset] >= 0 else {
+                    throw ScanArchiveError.topology(localized: "parent node is missing from node order")
+                }
+
+                if wroteParent {
+                    try writer.append(",")
+                }
+                wroteParent = true
+                try writer.append("\"\(ordinalByNodeOffset[parentOffset])\":[")
+
+                for (childOffset, childIndex) in childIndices.enumerated() {
+                    let nodeOffset = Int(childIndex.rawValue)
+                    guard ordinalByNodeOffset.indices.contains(nodeOffset),
+                          ordinalByNodeOffset[nodeOffset] >= 0 else {
+                        throw ScanArchiveError.topology(localized: "child node is missing from node order")
+                    }
+                    if childOffset > 0 {
+                        try writer.append(",")
+                    }
+                    try writer.append(String(ordinalByNodeOffset[nodeOffset]))
+                }
+                try writer.append("]")
+            }
+
+            let completedCount = processedOffset + 1
+            if ScanArchiveProgressReporting.shouldReportProgress(completedCount) ||
+                completedCount == orderedNodeIndices.count {
+                progressReporter?.report(ScanArchiveProgress(
+                    phase: .writingTopology,
+                    completedUnitCount: completedCount,
+                    totalUnitCount: orderedNodeIndices.count,
+                    message: "Writing topology"
+                ))
+                await Task.yield()
+            }
+        }
+
+        try writer.append("}}")
+        try writer.finish()
     }
 
     func readNodes(

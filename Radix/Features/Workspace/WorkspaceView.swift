@@ -146,15 +146,13 @@ struct WorkspaceView: View {
                     .disabled(!scanState.canRescan)
                     .help("Rescan")
 
-                    if scanState.snapshot?.isComplete == true {
-                        Button {
-                            actions.compareScans()
-                        } label: {
-                            Label("Compare Scans", systemImage: "rectangle.split.2x1")
-                        }
-                        .disabled(!actions.canCompareScans())
-                        .help("Compare Scans")
+                    Button {
+                        actions.compareScans()
+                    } label: {
+                        Label("Compare Scans", systemImage: "rectangle.split.2x1")
                     }
+                    .disabled(!actions.canCompareScans())
+                    .help("Compare Scans")
                 }
             }
             ToolbarItem(placement: .automatic) { Spacer() }

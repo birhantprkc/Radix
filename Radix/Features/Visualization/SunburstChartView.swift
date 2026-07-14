@@ -7,7 +7,7 @@ struct SunburstChartView: View {
 
     let rootNode: FileNodeRecord
     let parentNode: FileNodeRecord?
-    let treeStore: FileTreeStore
+    let treeStore: DiskMapTreeStore
     let snapshotID: UUID
     let activeTarget: ScanTarget?
     let trashSafetyPolicy: TrashSafetyPolicy
@@ -32,7 +32,7 @@ struct SunburstChartView: View {
     init(
         rootNode: FileNodeRecord,
         parentNode: FileNodeRecord?,
-        treeStore: FileTreeStore,
+        treeStore: DiskMapTreeStore,
         snapshotID: UUID,
         activeTarget: ScanTarget?,
         trashSafetyPolicy: TrashSafetyPolicy,
@@ -459,11 +459,11 @@ struct SunburstChartView: View {
            let percentText = RadixFormatters.percentage(part: node.allocatedSize, total: rootNode.allocatedSize) {
             detail = String(localized: "\(percentText) of current focus", comment: "Chart detail showing an item's percentage of the current focus.")
         } else {
-            detail = node.itemKind
+            detail = node.itemKind(activeTarget: activeTarget)
         }
 
         return ChartSummary(
-            status: node.itemKind,
+            status: node.itemKind(activeTarget: activeTarget),
             title: node.name,
             value: RadixFormatters.size(node.allocatedSize),
             detail: detail
@@ -474,7 +474,7 @@ struct SunburstChartView: View {
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
             return String(localized: "Available Space", comment: "Chart status for free capacity on a volume.")
         }
-        return node.itemKind
+        return node.itemKind(activeTarget: activeTarget)
     }
 
     private func zoomViewport(

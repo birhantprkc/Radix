@@ -509,11 +509,13 @@ nonisolated struct ScanComparisonService: Sendable {
         try Task.checkCancellation()
 
         var rows: [ScanComparisonRow] = []
-        let beforePaths = Set(beforeNodes.keys)
-        let afterPaths = Set(afterNodes.keys)
-        let addedPaths = afterPaths.subtracting(beforePaths)
-        let removedPaths = beforePaths.subtracting(afterPaths)
-        let sharedPaths = beforePaths.intersection(afterPaths)
+        let pathPartition = Self.partitionPaths(
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
+        let addedPaths = pathPartition.added
+        let removedPaths = pathPartition.removed
+        let sharedPaths = pathPartition.shared
         let materializationBoundaryPaths = Self.materializationBoundaryPaths(
             sharedPaths: sharedPaths,
             beforeNodes: beforeNodes,
@@ -525,23 +527,28 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeNodes: beforeNodes,
             afterNodes: afterNodes
         )
-        let visibleAddedPaths = Set(addedPaths.filter { relativePath in
-            !Self.hasAncestor(of: relativePath, in: addedPaths)
-                && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths)
-        })
-        let visibleRemovedPaths = Set(removedPaths.filter { relativePath in
-            !Self.hasAncestor(of: relativePath, in: removedPaths)
-                && !Self.hasAncestor(of: relativePath, in: materializationBoundaryPaths)
-        })
+        let visibleAddedPaths = Self.visibleTopLevelPaths(
+            in: addedPaths,
+            excludingDescendantsOf: materializationBoundaryPaths,
+            nodes: afterNodes,
+            treeStore: after.treeStore
+        )
+        let visibleRemovedPaths = Self.visibleTopLevelPaths(
+            in: removedPaths,
+            excludingDescendantsOf: materializationBoundaryPaths,
+            nodes: beforeNodes,
+            treeStore: before.treeStore
+        )
         let warningBoundaries = Self.warningBoundaryPaths(in: before)
             .union(Self.warningBoundaryPaths(in: after))
+        let warningBoundaryIndex = RelativePathPrefixTree(paths: warningBoundaries)
         // A warning represents unknown coverage, never proof that a path was created or
         // deleted. Suppress a collapsed ancestor row too when it contains a warning boundary.
         let coveredAddedPaths = Set(visibleAddedPaths.filter { relativePath in
-            !Self.overlapsWarningBoundary(relativePath: relativePath, boundaries: warningBoundaries)
+            !warningBoundaryIndex.overlaps(relativePath)
         })
         let coveredRemovedPaths = Set(visibleRemovedPaths.filter { relativePath in
-            !Self.overlapsWarningBoundary(relativePath: relativePath, boundaries: warningBoundaries)
+            !warningBoundaryIndex.overlaps(relativePath)
         })
         let movedPathPairs = Self.movedPathPairs(
             beforeNodes: beforeNodes,
@@ -654,6 +661,36 @@ nonisolated struct ScanComparisonService: Sendable {
         )
     }
 
+    private struct PathPartition {
+        var added: Set<String>
+        var removed: Set<String>
+        var shared: [String]
+    }
+
+    /// Partitions paths without first materializing complete key sets for both
+    /// snapshots. The after-path set becomes the final added set as matches are
+    /// removed, while only removed paths need a second set.
+    private static func partitionPaths(
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord]
+    ) -> PathPartition {
+        var added = Set(afterNodes.keys)
+        var removed = Set<String>()
+        removed.reserveCapacity(max(beforeNodes.count - afterNodes.count, 0))
+        var shared: [String] = []
+        shared.reserveCapacity(min(beforeNodes.count, afterNodes.count))
+
+        for relativePath in beforeNodes.keys {
+            if added.remove(relativePath) != nil {
+                shared.append(relativePath)
+            } else {
+                removed.insert(relativePath)
+            }
+        }
+
+        return PathPartition(added: added, removed: removed, shared: shared)
+    }
+
     private static func indexedNodes(in snapshot: ScanSnapshot) throws -> [String: FileNodeRecord] {
         var nodesByRelativePath: [String: FileNodeRecord] = [:]
         nodesByRelativePath.reserveCapacity(max(snapshot.treeStore.nodeCount - 1, 0))
@@ -684,15 +721,34 @@ nonisolated struct ScanComparisonService: Sendable {
         return relativePath.isEmpty ? nil : relativePath
     }
 
-    private static func hasAncestor(of relativePath: String, in paths: Set<String>) -> Bool {
-        var cursor = relativePath
-        while let slashIndex = cursor.lastIndex(of: "/") {
-            cursor = String(cursor[..<slashIndex])
-            if paths.contains(cursor) {
-                return true
+    private static func visibleTopLevelPaths(
+        in paths: Set<String>,
+        excludingDescendantsOf boundaryPaths: Set<String>,
+        nodes: [String: FileNodeRecord],
+        treeStore: FileTreeStore
+    ) -> Set<String> {
+        var ancestorIndices = Set<FileTreeNodeIndex>()
+        ancestorIndices.reserveCapacity(paths.count + boundaryPaths.count)
+        for relativePath in paths {
+            if let node = nodes[relativePath],
+               let nodeIndex = treeStore.nodeIndex(id: node.id) {
+                ancestorIndices.insert(nodeIndex)
             }
         }
-        return false
+        for relativePath in boundaryPaths {
+            if let node = nodes[relativePath],
+               let nodeIndex = treeStore.nodeIndex(id: node.id) {
+                ancestorIndices.insert(nodeIndex)
+            }
+        }
+
+        return Set(paths.filter { relativePath in
+            guard let node = nodes[relativePath],
+                  let nodeIndex = treeStore.nodeIndex(id: node.id) else {
+                return false
+            }
+            return !treeStore.hasAncestor(in: ancestorIndices, of: nodeIndex)
+        })
     }
 
     private struct MovedPathPair: Sendable {
@@ -821,7 +877,6 @@ nonisolated struct ScanComparisonService: Sendable {
     private struct AggregateAccumulator {
         let relativePath: String
         let parentPath: String?
-        var childPaths = Set<String>()
         var directRowID: ScanComparisonRow.ID?
         var representativeRowID: ScanComparisonRow.ID?
         var increasedAllocatedSize: Int64 = 0
@@ -877,6 +932,46 @@ nonisolated struct ScanComparisonService: Sendable {
         }
     }
 
+    private struct RelativePathInterner {
+        private struct Node {
+            let path: String
+            var children: [Substring: Int] = [:]
+        }
+
+        private var nodes = [Node(path: "")]
+
+        var rootChildIndices: Dictionary<Substring, Int>.Values {
+            nodes[0].children.values
+        }
+
+        var nodeIndices: Range<Int> {
+            1..<nodes.count
+        }
+
+        func path(at index: Int) -> String {
+            nodes[index].path
+        }
+
+        func childIndices(of index: Int) -> Dictionary<Substring, Int>.Values {
+            nodes[index].children.values
+        }
+
+        mutating func intern(_ component: Substring, under parentIndex: Int) -> Int {
+            if let index = nodes[parentIndex].children[component] {
+                return index
+            }
+
+            let parentPath = nodes[parentIndex].path
+            let path = parentPath.isEmpty
+                ? String(component)
+                : parentPath + "/" + component
+            let index = nodes.count
+            nodes.append(Node(path: path))
+            nodes[parentIndex].children[component] = index
+            return index
+        }
+    }
+
     /// Builds inclusive path rollups from the final evidence partition. Using the finalized rows
     /// is essential: raw directory sizes would double-count materialized descendants and bypass
     /// warning-boundary and hard-link normalization.
@@ -888,14 +983,16 @@ nonisolated struct ScanComparisonService: Sendable {
         guard !rows.isEmpty else { return .empty }
         var accumulators: [String: AggregateAccumulator] = [:]
         accumulators.reserveCapacity(rows.count)
+        var pathInterner = RelativePathInterner()
 
         for row in rows {
             try Task.checkCancellation()
             let components = row.relativePath.split(separator: "/", omittingEmptySubsequences: true)
+            var parentIndex = 0
             var parentPath: String?
-            var path = ""
             for (index, component) in components.enumerated() {
-                path = path.isEmpty ? String(component) : path + "/" + component
+                let pathIndex = pathInterner.intern(component, under: parentIndex)
+                let path = pathInterner.path(at: pathIndex)
                 var accumulator = accumulators[path] ?? AggregateAccumulator(
                     relativePath: path,
                     parentPath: parentPath
@@ -903,15 +1000,8 @@ nonisolated struct ScanComparisonService: Sendable {
                 accumulator.include(row, isDirect: index == components.count - 1)
                 accumulators[path] = accumulator
 
-                if let parentPath {
-                    var parent = accumulators[parentPath] ?? AggregateAccumulator(
-                        relativePath: parentPath,
-                        parentPath: Self.parentPath(of: parentPath)
-                    )
-                    parent.childPaths.insert(path)
-                    accumulators[parentPath] = parent
-                }
                 parentPath = path
+                parentIndex = pathIndex
             }
         }
 
@@ -933,16 +1023,19 @@ nonisolated struct ScanComparisonService: Sendable {
 
         var nodesByPath: [String: ScanComparisonAggregateChange] = [:]
         nodesByPath.reserveCapacity(accumulators.count)
-        for (path, accumulator) in accumulators {
+        for nodeIndex in pathInterner.nodeIndices {
             try Task.checkCancellation()
+            let path = pathInterner.path(at: nodeIndex)
+            guard let accumulator = accumulators[path] else { continue }
             guard let representativeRowID = accumulator.representativeRowID else { continue }
             let displayNode = afterNodes[path] ?? beforeNodes[path]
+            let childPaths = pathInterner.childIndices(of: nodeIndex).map(pathInterner.path)
             nodesByPath[path] = ScanComparisonAggregateChange(
                 id: path,
                 relativePath: path,
                 name: displayNode?.name ?? URL(filePath: path).lastPathComponent,
                 parentPath: accumulator.parentPath,
-                childPaths: accumulator.childPaths.sorted(by: nodeSort),
+                childPaths: childPaths.sorted(by: nodeSort),
                 directRowID: accumulator.directRowID,
                 representativeRowID: representativeRowID,
                 beforeNode: beforeNodes[path],
@@ -959,16 +1052,10 @@ nonisolated struct ScanComparisonService: Sendable {
             )
         }
 
-        let rootPaths = accumulators.values
-            .filter { $0.parentPath == nil }
-            .map(\.relativePath)
+        let rootPaths = pathInterner.rootChildIndices
+            .map(pathInterner.path)
             .sorted(by: nodeSort)
         return ScanComparisonChangeTree(rootPaths: rootPaths, nodesByPath: nodesByPath)
-    }
-
-    private static func parentPath(of relativePath: String) -> String? {
-        guard let slashIndex = relativePath.lastIndex(of: "/") else { return nil }
-        return String(relativePath[..<slashIndex])
     }
 
     private static func topLevelChanges(
@@ -1063,20 +1150,66 @@ nonisolated struct ScanComparisonService: Sendable {
         return ""
     }
 
-    private static func overlapsWarningBoundary(
-        relativePath: String,
-        boundaries: Set<String>
-    ) -> Bool {
-        boundaries.contains { boundary in
-            guard !boundary.isEmpty else { return true }
-            return relativePath == boundary
-                || relativePath.hasPrefix(boundary + "/")
-                || boundary.hasPrefix(relativePath + "/")
+    private struct RelativePathPrefixTree {
+        private struct Node {
+            var isTerminal = false
+            var children: [Substring: Int] = [:]
+        }
+
+        private var nodes = [Node()]
+
+        init(paths: Set<String>) {
+            for path in paths {
+                insert(path)
+            }
+        }
+
+        func overlaps(_ path: String) -> Bool {
+            if nodes[0].isTerminal {
+                return true
+            }
+
+            var nodeIndex = 0
+            for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+                guard let childIndex = nodes[nodeIndex].children[component] else {
+                    return false
+                }
+                nodeIndex = childIndex
+                if nodes[nodeIndex].isTerminal {
+                    return true
+                }
+            }
+
+            // A child means `path` is a collapsed ancestor of at least one
+            // warning boundary, which is equally uncertain.
+            return !nodes[nodeIndex].children.isEmpty
+        }
+
+        private mutating func insert(_ path: String) {
+            let components = path.split(separator: "/", omittingEmptySubsequences: true)
+            guard !components.isEmpty else {
+                nodes[0].isTerminal = true
+                return
+            }
+
+            var nodeIndex = 0
+            for component in components {
+                if let childIndex = nodes[nodeIndex].children[component] {
+                    nodeIndex = childIndex
+                    continue
+                }
+
+                let childIndex = nodes.count
+                nodes.append(Node())
+                nodes[nodeIndex].children[component] = childIndex
+                nodeIndex = childIndex
+            }
+            nodes[nodeIndex].isTerminal = true
         }
     }
 
     private static func materializationBoundaryPaths(
-        sharedPaths: Set<String>,
+        sharedPaths: [String],
         beforeNodes: [String: FileNodeRecord],
         afterNodes: [String: FileNodeRecord],
         beforeStore: FileTreeStore,
@@ -1116,16 +1249,16 @@ nonisolated struct ScanComparisonService: Sendable {
     ) {
         let identities = hardLinkIdentities(in: beforeNodes).union(hardLinkIdentities(in: afterNodes))
         guard !identities.isEmpty else {
-            return (
-                beforeNodes.mapValues(\.allocatedSize),
-                afterNodes.mapValues(\.allocatedSize)
-            )
+            return ([:], [:])
         }
 
         let beforeGroups = hardLinkPathsByIdentity(in: beforeNodes, identities: identities)
         let afterGroups = hardLinkPathsByIdentity(in: afterNodes, identities: identities)
-        var beforeSizes = beforeNodes.mapValues(\.allocatedSize)
-        var afterSizes = afterNodes.mapValues(\.allocatedSize)
+        // Most scans contain few hard links compared with their total node count.
+        // Keep only sizes changed by normalization instead of duplicating every
+        // path and allocated-size value from both snapshots.
+        var beforeSizes: [String: Int64] = [:]
+        var afterSizes: [String: Int64] = [:]
 
         for identity in identities {
             let beforePaths = beforeGroups[identity] ?? []
@@ -1218,8 +1351,8 @@ nonisolated struct ScanComparisonService: Sendable {
             var cursor = path
             while let slashIndex = cursor.lastIndex(of: "/") {
                 cursor = String(cursor[..<slashIndex])
-                guard sizes[cursor] != nil else { continue }
-                sizes[cursor, default: 0] += adjustment
+                guard let ancestorNode = nodes[cursor] else { continue }
+                sizes[cursor] = (sizes[cursor] ?? ancestorNode.allocatedSize) + adjustment
             }
         }
     }
