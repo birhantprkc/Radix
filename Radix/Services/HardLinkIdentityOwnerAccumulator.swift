@@ -7,15 +7,22 @@
 
 import Foundation
 
-/// Incrementally assigns each hard-link identity's allocated storage to one owner.
+/// Assigns hard-linked storage to one path, then assigns each APFS clone
+/// group's shared data-fork allocation to one distinct inode.
 ///
-/// The lexicographically smallest `(path, ownerNodeID)` claim wins. All other
-/// claims contribute an allocated-size correction to their owning tree node.
-/// Keeping only the current winner makes memory proportional to unique hard-link
-/// identities and corrected owners rather than the total number of claims.
+/// Hard links share every fork, while APFS clone IDs describe the data fork.
+/// Keeping those stages separate preserves allocation that belongs only to a
+/// clone's resource fork and prevents hard-linked paths from entering clone
+/// accounting more than once.
 nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
-    private var winnerByIdentity: [FileIdentity: HardLinkClaim] = [:]
-    private(set) var duplicateAllocatedSizeByOwner: [String: Int64] = [:]
+    private enum CloneFileKey: Hashable, Sendable {
+        case identity(FileIdentity)
+        case path(String)
+    }
+
+    private var hardLinkWinnerByIdentity: [FileIdentity: HardLinkClaim] = [:]
+    private var standaloneCloneWinnerByFile: [CloneFileKey: HardLinkClaim] = [:]
+    private var hardLinkDuplicateAllocatedSizeByOwner: [String: Int64] = [:]
 
     nonisolated init() {}
 
@@ -23,31 +30,64 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         record(contentsOf: claims)
     }
 
+    nonisolated var duplicateAllocatedSizeByOwner: [String: Int64] {
+        var corrections = hardLinkDuplicateAllocatedSizeByOwner
+        var cloneWinnerByIdentity: [CloneIdentity: HardLinkClaim] = [:]
+
+        for claim in hardLinkWinnerByIdentity.values {
+            Self.recordCloneCorrection(
+                for: claim,
+                winnerByIdentity: &cloneWinnerByIdentity,
+                corrections: &corrections
+            )
+        }
+        for claim in standaloneCloneWinnerByFile.values {
+            Self.recordCloneCorrection(
+                for: claim,
+                winnerByIdentity: &cloneWinnerByIdentity,
+                corrections: &corrections
+            )
+        }
+        return corrections
+    }
+
     nonisolated var identityCount: Int {
-        winnerByIdentity.count
+        var cloneIdentities = Set<CloneIdentity>()
+        for claim in hardLinkWinnerByIdentity.values {
+            if let cloneIdentity = claim.cloneIdentity {
+                cloneIdentities.insert(cloneIdentity)
+            }
+        }
+        for claim in standaloneCloneWinnerByFile.values {
+            if let cloneIdentity = claim.cloneIdentity {
+                cloneIdentities.insert(cloneIdentity)
+            }
+        }
+        return hardLinkWinnerByIdentity.count + cloneIdentities.count
     }
 
     nonisolated var isEmpty: Bool {
-        winnerByIdentity.isEmpty
+        hardLinkWinnerByIdentity.isEmpty && standaloneCloneWinnerByFile.isEmpty
     }
 
     nonisolated func winner(for identity: FileIdentity) -> HardLinkClaim? {
-        winnerByIdentity[identity]
+        hardLinkWinnerByIdentity[identity]
     }
 
     nonisolated mutating func record(_ claim: HardLinkClaim) {
         guard claim.allocatedSize > 0 else { return }
 
-        guard let currentWinner = winnerByIdentity[claim.identity] else {
-            winnerByIdentity[claim.identity] = claim
-            return
-        }
-
-        if Self.precedes(claim, currentWinner) {
-            addDuplicate(currentWinner)
-            winnerByIdentity[claim.identity] = claim
-        } else {
-            addDuplicate(claim)
+        if let hardLinkIdentity = claim.hardLinkIdentity {
+            recordHardLink(claim, identity: hardLinkIdentity)
+        } else if claim.cloneIdentity != nil {
+            let key = claim.fileIdentity.map(CloneFileKey.identity) ?? .path(claim.path)
+            if let currentWinner = standaloneCloneWinnerByFile[key] {
+                if Self.precedes(claim, currentWinner) {
+                    standaloneCloneWinnerByFile[key] = claim
+                }
+            } else {
+                standaloneCloneWinnerByFile[key] = claim
+            }
         }
     }
 
@@ -57,13 +97,52 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         }
     }
 
-    /// Merges a package-local accumulator without reconstructing its original claims.
+    /// Merges package-local state without reconstructing discarded hard-link claims.
     nonisolated mutating func merge(_ other: Self) {
-        for (ownerNodeID, allocatedSize) in other.duplicateAllocatedSizeByOwner {
-            duplicateAllocatedSizeByOwner[ownerNodeID, default: 0] += allocatedSize
+        for (ownerNodeID, allocatedSize) in other.hardLinkDuplicateAllocatedSizeByOwner {
+            hardLinkDuplicateAllocatedSizeByOwner[ownerNodeID, default: 0] += allocatedSize
         }
-        for winner in other.winnerByIdentity.values {
+        for winner in other.hardLinkWinnerByIdentity.values {
             record(winner)
+        }
+        for winner in other.standaloneCloneWinnerByFile.values {
+            record(winner)
+        }
+    }
+
+    private nonisolated mutating func recordHardLink(_ claim: HardLinkClaim, identity: FileIdentity) {
+        guard let currentWinner = hardLinkWinnerByIdentity[identity] else {
+            hardLinkWinnerByIdentity[identity] = claim
+            return
+        }
+
+        if Self.precedes(claim, currentWinner) {
+            addHardLinkDuplicate(currentWinner)
+            hardLinkWinnerByIdentity[identity] = claim
+        } else {
+            addHardLinkDuplicate(claim)
+        }
+    }
+
+    private nonisolated static func recordCloneCorrection(
+        for claim: HardLinkClaim,
+        winnerByIdentity: inout [CloneIdentity: HardLinkClaim],
+        corrections: inout [String: Int64]
+    ) {
+        guard let cloneIdentity = claim.cloneIdentity,
+              claim.cloneAllocatedSize > 0 else {
+            return
+        }
+        guard let currentWinner = winnerByIdentity[cloneIdentity] else {
+            winnerByIdentity[cloneIdentity] = claim
+            return
+        }
+
+        if precedes(claim, currentWinner) {
+            corrections[currentWinner.ownerNodeID, default: 0] += currentWinner.cloneAllocatedSize
+            winnerByIdentity[cloneIdentity] = claim
+        } else {
+            corrections[claim.ownerNodeID, default: 0] += claim.cloneAllocatedSize
         }
     }
 
@@ -74,7 +153,7 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         return lhs.path < rhs.path
     }
 
-    private nonisolated mutating func addDuplicate(_ claim: HardLinkClaim) {
-        duplicateAllocatedSizeByOwner[claim.ownerNodeID, default: 0] += claim.allocatedSize
+    private nonisolated mutating func addHardLinkDuplicate(_ claim: HardLinkClaim) {
+        hardLinkDuplicateAllocatedSizeByOwner[claim.ownerNodeID, default: 0] += claim.allocatedSize
     }
 }

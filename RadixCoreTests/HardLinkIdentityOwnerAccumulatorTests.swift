@@ -99,6 +99,41 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
         XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [repeated.ownerNodeID: 256])
     }
 
+    func testHardLinkedCloneEntersCloneAccountingOnlyOnce() {
+        let fileIdentity = FileIdentity(device: 1, inode: 10)
+        let cloneIdentity = CloneIdentity(device: 1, cloneID: 99)
+        let source = cloneClaim(
+            fileIdentity: fileIdentity,
+            hardLinkIdentity: fileIdentity,
+            cloneIdentity: cloneIdentity,
+            owner: "/a-source",
+            totalSize: 100,
+            dataSize: 80
+        )
+        let hardLink = cloneClaim(
+            fileIdentity: fileIdentity,
+            hardLinkIdentity: fileIdentity,
+            cloneIdentity: cloneIdentity,
+            owner: "/b-hard-link",
+            totalSize: 100,
+            dataSize: 80
+        )
+        let cloneWithResourceFork = cloneClaim(
+            fileIdentity: FileIdentity(device: 1, inode: 11),
+            cloneIdentity: cloneIdentity,
+            owner: "/z-clone",
+            totalSize: 130,
+            dataSize: 80
+        )
+
+        let accumulator = HardLinkIdentityOwnerAccumulator([source, hardLink, cloneWithResourceFork])
+
+        XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [
+            "/b-hard-link": 100,
+            "/z-clone": 80,
+        ])
+    }
+
     private func claim(
         _ identity: FileIdentity,
         owner: String,
@@ -110,6 +145,25 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
             ownerNodeID: owner,
             path: path,
             allocatedSize: size
+        )
+    }
+
+    private func cloneClaim(
+        fileIdentity: FileIdentity,
+        hardLinkIdentity: FileIdentity? = nil,
+        cloneIdentity: CloneIdentity,
+        owner: String,
+        totalSize: Int64,
+        dataSize: Int64
+    ) -> HardLinkClaim {
+        HardLinkClaim(
+            fileIdentity: fileIdentity,
+            hardLinkIdentity: hardLinkIdentity,
+            cloneIdentity: cloneIdentity,
+            ownerNodeID: owner,
+            path: owner,
+            allocatedSize: totalSize,
+            cloneAllocatedSize: dataSize
         )
     }
 }

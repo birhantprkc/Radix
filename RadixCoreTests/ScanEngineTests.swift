@@ -458,9 +458,11 @@ final class ScanEngineTests: XCTestCase {
                 foundationNode.unduplicatedAllocatedSize,
                 nodeID
             )
+            XCTAssertEqual(optimizedNode.dataAllocatedSize, foundationNode.dataAllocatedSize, nodeID)
             XCTAssertEqual(optimizedNode.logicalSize, foundationNode.logicalSize, nodeID)
             XCTAssertEqual(optimizedNode.descendantFileCount, foundationNode.descendantFileCount, nodeID)
             XCTAssertEqual(optimizedNode.linkCount, foundationNode.linkCount, nodeID)
+            XCTAssertEqual(optimizedNode.cloneIdentity, foundationNode.cloneIdentity, nodeID)
             XCTAssertEqual(optimizedNode.isPackage, foundationNode.isPackage, nodeID)
             XCTAssertEqual(optimizedNode.isAccessible, foundationNode.isAccessible, nodeID)
             XCTAssertEqual(optimizedNode.isSelfAccessible, foundationNode.isSelfAccessible, nodeID)
@@ -1875,6 +1877,116 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(children.allSatisfy { $0.unduplicatedAllocatedSize > 0 })
     }
 
+    func testAPFSClonedFilesOnlyCountAllocatedStorageOnce() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let originalURL = rootURL.appending(path: "original.bin")
+        let clonedURL = rootURL.appending(path: "cloned.bin")
+
+        try Data(repeating: 0xC3, count: 4 * 1_024 * 1_024).write(to: originalURL)
+        try cloneFileOrSkip(at: originalURL, to: clonedURL)
+
+        let metadataLoader = ScanMetadataLoader()
+        let originalMetadata = try metadataLoader.metadata(for: originalURL)
+        let clonedMetadata = try metadataLoader.metadata(for: clonedURL)
+        XCTAssertEqual(originalMetadata.linkCount, 1)
+        XCTAssertEqual(clonedMetadata.linkCount, 1)
+        XCTAssertNotEqual(originalMetadata.fileIdentity, clonedMetadata.fileIdentity)
+        XCTAssertGreaterThan(originalMetadata.allocatedSize, 0)
+        XCTAssertEqual(clonedMetadata.allocatedSize, originalMetadata.allocatedSize)
+        XCTAssertNotNil(originalMetadata.cloneIdentity)
+        XCTAssertEqual(clonedMetadata.cloneIdentity, originalMetadata.cloneIdentity)
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions()
+        )
+        let children = rootChildren(in: snapshot)
+        let allocatedSizes = children.map(\.allocatedSize)
+
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, 2)
+        XCTAssertEqual(children.map(\.logicalSize).reduce(0, +), 8 * 1_024 * 1_024)
+        XCTAssertEqual(allocatedSizes.filter { $0 > 0 }.count, 1)
+        XCTAssertEqual(snapshot.root.allocatedSize, originalMetadata.allocatedSize)
+        XCTAssertEqual(snapshot.aggregateStats.totalAllocatedSize, snapshot.root.allocatedSize)
+        XCTAssertEqual(children.filter { $0.allocatedSize == 0 }.map(\.unduplicatedAllocatedSize).count, 1)
+        XCTAssertTrue(children.allSatisfy { $0.unduplicatedAllocatedSize > 0 })
+
+        let owner = try XCTUnwrap(children.first(where: { $0.allocatedSize > 0 }))
+        let snapshotWithoutOwner = try XCTUnwrap(snapshot.removingNode(id: owner.id))
+        let remainingClone = try XCTUnwrap(rootChildren(in: snapshotWithoutOwner).first)
+        XCTAssertEqual(remainingClone.allocatedSize, remainingClone.unduplicatedAllocatedSize)
+        XCTAssertEqual(snapshotWithoutOwner.root.allocatedSize, remainingClone.allocatedSize)
+    }
+
+    func testAPFSClonePreservesUniqueResourceForkAllocation() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let originalURL = rootURL.appending(path: "a-original.bin")
+        let clonedURL = rootURL.appending(path: "z-clone.bin")
+
+        try Data(repeating: 0xC3, count: 4 * 1_024 * 1_024).write(to: originalURL)
+        try cloneFileOrSkip(at: originalURL, to: clonedURL)
+        try setExtendedAttribute(
+            named: "com.apple.ResourceFork",
+            data: Data(repeating: 0x5A, count: 256 * 1_024),
+            at: clonedURL
+        )
+
+        let metadataLoader = ScanMetadataLoader()
+        let originalMetadata = try metadataLoader.metadata(for: originalURL)
+        let clonedMetadata = try metadataLoader.metadata(for: clonedURL)
+        XCTAssertEqual(clonedMetadata.cloneIdentity, originalMetadata.cloneIdentity)
+        XCTAssertGreaterThan(clonedMetadata.allocatedSize, clonedMetadata.dataAllocatedSize)
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions()
+        )
+        let cloneNode = try XCTUnwrap(
+            rootChildren(in: snapshot).first(where: { $0.url == clonedURL })
+        )
+        let expectedCloneAllocation = clonedMetadata.allocatedSize - clonedMetadata.dataAllocatedSize
+        let expectedTotal = originalMetadata.allocatedSize + expectedCloneAllocation
+
+        XCTAssertEqual(cloneNode.allocatedSize, expectedCloneAllocation)
+        XCTAssertGreaterThan(cloneNode.allocatedSize, 0)
+        XCTAssertEqual(snapshot.root.allocatedSize, expectedTotal)
+        XCTAssertEqual(snapshot.aggregateStats.totalAllocatedSize, expectedTotal)
+    }
+
+    func testModifiedAPFSCloneRetainsAllocatedStorage() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let originalURL = rootURL.appending(path: "original.bin")
+        let clonedURL = rootURL.appending(path: "cloned.bin")
+
+        try Data(repeating: 0x5D, count: 4 * 1_024 * 1_024).write(to: originalURL)
+        try cloneFileOrSkip(at: originalURL, to: clonedURL)
+        let clonedFile = try FileHandle(forWritingTo: clonedURL)
+        defer { try? clonedFile.close() }
+        try clonedFile.seek(toOffset: 2 * 1_024 * 1_024)
+        try clonedFile.write(contentsOf: Data(repeating: 0xA7, count: 4_096))
+        try clonedFile.synchronize()
+
+        let metadataLoader = ScanMetadataLoader()
+        XCTAssertNil(try metadataLoader.metadata(for: originalURL).cloneIdentity)
+        XCTAssertNil(try metadataLoader.metadata(for: clonedURL).cloneIdentity)
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions()
+        )
+        let children = rootChildren(in: snapshot)
+
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, 2)
+        XCTAssertTrue(children.allSatisfy { $0.allocatedSize > 0 })
+        XCTAssertEqual(snapshot.root.allocatedSize, children.map(\.allocatedSize).reduce(0, +))
+    }
+
     func testParallelTraversalAssignsHardLinkStorageDeterministically() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -1901,6 +2013,64 @@ final class ScanEngineTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 0.04)
                 try cancellationCheck()
                 return [alphaLinkURL]
+            }
+            return try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: keys,
+                options: options
+            )
+        })
+
+        var options = ScanOptions()
+        options.autoSummarizeDirectories = false
+        options.directoryTraversalWorkerLimit = 2
+        options.directoryClassificationWorkerLimit = 1
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: engine
+        )
+        let alphaNode = try XCTUnwrap(rootChildren(in: snapshot).first(where: { $0.name == "Alpha" }))
+        let betaNode = try XCTUnwrap(rootChildren(in: snapshot).first(where: { $0.name == "Beta" }))
+        let alphaFile = try XCTUnwrap(children(of: alphaNode, in: snapshot).first)
+        let betaFile = try XCTUnwrap(children(of: betaNode, in: snapshot).first)
+
+        XCTAssertGreaterThan(alphaFile.allocatedSize, 0)
+        XCTAssertEqual(betaFile.allocatedSize, 0)
+        XCTAssertEqual(alphaNode.allocatedSize, alphaFile.allocatedSize)
+        XCTAssertEqual(betaNode.allocatedSize, 0)
+        XCTAssertEqual(snapshot.root.allocatedSize, alphaFile.allocatedSize)
+        XCTAssertEqual(snapshot.aggregateStats.totalAllocatedSize, snapshot.root.allocatedSize)
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, 2)
+    }
+
+    func testParallelTraversalAssignsAPFSCloneStorageDeterministically() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let alphaDirectoryURL = rootURL.appending(path: "Alpha", directoryHint: .isDirectory)
+        let betaDirectoryURL = rootURL.appending(path: "Beta", directoryHint: .isDirectory)
+        let alphaCloneURL = alphaDirectoryURL.appending(path: "cloned.bin")
+        let betaOriginalURL = betaDirectoryURL.appending(path: "original.bin")
+
+        try FileManager.default.createDirectory(at: alphaDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: betaDirectoryURL, withIntermediateDirectories: true)
+        try Data(repeating: 0x81, count: 4 * 1_024 * 1_024).write(to: betaOriginalURL)
+        try cloneFileOrSkip(at: betaOriginalURL, to: alphaCloneURL)
+
+        let engine = ScanEngine(directoryContents: { url, keys, options, cancellationCheck in
+            try cancellationCheck()
+            if url == rootURL {
+                return [alphaDirectoryURL, betaDirectoryURL]
+            }
+            if url == betaDirectoryURL {
+                return [betaOriginalURL]
+            }
+            if url == alphaDirectoryURL {
+                Thread.sleep(forTimeInterval: 0.04)
+                try cancellationCheck()
+                return [alphaCloneURL]
             }
             return try FileManager.default.contentsOfDirectory(
                 at: url,
@@ -3440,6 +3610,37 @@ private func makeTemporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+private func cloneFileOrSkip(at sourceURL: URL, to destinationURL: URL) throws {
+    let result = sourceURL.withUnsafeFileSystemRepresentation { sourcePath in
+        destinationURL.withUnsafeFileSystemRepresentation { destinationPath in
+            guard let sourcePath, let destinationPath else {
+                errno = EINVAL
+                return Int32(-1)
+            }
+            return clonefile(sourcePath, destinationPath, 0)
+        }
+    }
+    guard result == 0 else {
+        let errorCode = errno
+        if errorCode == ENOTSUP || errorCode == EXDEV {
+            throw XCTSkip("APFS file cloning is unavailable in the test environment")
+        }
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errorCode))
+    }
+}
+
+private func setExtendedAttribute(named name: String, data: Data, at url: URL) throws {
+    let result = data.withUnsafeBytes { bytes in
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return Int32(-1) }
+            return setxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
+        }
+    }
+    guard result == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
 }
 
 private func makeScanEngineFileNode(id: String, name: String, size: Int64) -> FileNodeRecord {

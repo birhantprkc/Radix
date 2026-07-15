@@ -15,11 +15,13 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
     let isSymbolicLink: Bool
     let allocatedSize: Int64
     let unduplicatedAllocatedSize: Int64
+    let dataAllocatedSize: Int64
     let logicalSize: Int64
     let descendantFileCount: Int
     let lastModified: Date?
     let fileIdentity: FileIdentity?
     let linkCount: UInt64
+    let cloneIdentity: CloneIdentity?
     let isPackage: Bool
     let isAccessible: Bool
     let isSelfAccessible: Bool
@@ -34,11 +36,13 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
         isSymbolicLink: Bool,
         allocatedSize: Int64,
         unduplicatedAllocatedSize: Int64? = nil,
+        dataAllocatedSize: Int64? = nil,
         logicalSize: Int64,
         descendantFileCount: Int,
         lastModified: Date?,
         fileIdentity: FileIdentity? = nil,
         linkCount: UInt64 = 1,
+        cloneIdentity: CloneIdentity? = nil,
         isPackage: Bool,
         isAccessible: Bool,
         isSelfAccessible: Bool,
@@ -52,11 +56,16 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
         self.isSymbolicLink = isSymbolicLink
         self.allocatedSize = allocatedSize
         self.unduplicatedAllocatedSize = unduplicatedAllocatedSize ?? allocatedSize
+        self.dataAllocatedSize = min(
+            max(dataAllocatedSize ?? unduplicatedAllocatedSize ?? allocatedSize, 0),
+            max(unduplicatedAllocatedSize ?? allocatedSize, 0)
+        )
         self.logicalSize = logicalSize
         self.descendantFileCount = descendantFileCount
         self.lastModified = lastModified
         self.fileIdentity = fileIdentity
         self.linkCount = linkCount
+        self.cloneIdentity = cloneIdentity
         self.isPackage = isPackage
         self.isAccessible = isAccessible
         self.isSelfAccessible = isSelfAccessible

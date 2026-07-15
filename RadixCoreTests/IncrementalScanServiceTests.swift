@@ -106,6 +106,7 @@ final class IncrementalScanServiceTests: XCTestCase {
             XCTAssertEqual(incrementalNode.descendantFileCount, fullNode.descendantFileCount, nodeID)
             XCTAssertEqual(incrementalNode.fileIdentity, fullNode.fileIdentity, nodeID)
             XCTAssertEqual(incrementalNode.linkCount, fullNode.linkCount, nodeID)
+            XCTAssertEqual(incrementalNode.cloneIdentity, fullNode.cloneIdentity, nodeID)
             XCTAssertEqual(incrementalNode.isPackage, fullNode.isPackage, nodeID)
             XCTAssertEqual(incrementalNode.isAccessible, fullNode.isAccessible, nodeID)
             XCTAssertEqual(incrementalNode.isSelfAccessible, fullNode.isSelfAccessible, nodeID)

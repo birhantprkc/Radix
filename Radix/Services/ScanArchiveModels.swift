@@ -133,11 +133,13 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         case isSymbolicLink = "s"
         case allocatedSize = "a"
         case unduplicatedAllocatedSize = "u"
+        case dataAllocatedSize = "v"
         case logicalSize = "l"
         case descendantFileCount = "c"
         case lastModified = "m"
         case fileIdentity = "f"
         case linkCount = "k"
+        case cloneIdentity = "o"
         case isPackage = "g"
         case isAccessible = "r"
         case isSelfAccessible = "q"
@@ -152,11 +154,13 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
     let isSymbolicLink: Bool
     let allocatedSize: Int64
     let unduplicatedAllocatedSize: Int64
+    let dataAllocatedSize: Int64
     let logicalSize: Int64
     let descendantFileCount: Int
     let lastModified: Date?
     let fileIdentity: ScanArchiveFileIdentity?
     let linkCount: UInt64
+    let cloneIdentity: ScanArchiveCloneIdentity?
     let isPackage: Bool
     let isAccessible: Bool
     let isSelfAccessible: Bool
@@ -177,11 +181,13 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         self.isSymbolicLink = node.isSymbolicLink
         self.allocatedSize = node.allocatedSize
         self.unduplicatedAllocatedSize = node.unduplicatedAllocatedSize
+        self.dataAllocatedSize = node.dataAllocatedSize
         self.logicalSize = node.logicalSize
         self.descendantFileCount = node.descendantFileCount
         self.lastModified = node.lastModified
         self.fileIdentity = node.fileIdentity.map(ScanArchiveFileIdentity.init)
         self.linkCount = node.linkCount
+        self.cloneIdentity = node.cloneIdentity.map(ScanArchiveCloneIdentity.init)
         self.isPackage = node.isPackage
         self.isAccessible = node.isAccessible
         self.isSelfAccessible = node.isSelfAccessible
@@ -201,6 +207,8 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
             Int64.self,
             forKey: .unduplicatedAllocatedSize
         ) ?? allocatedSize
+        self.dataAllocatedSize = try container.decodeIfPresent(Int64.self, forKey: .dataAllocatedSize)
+            ?? unduplicatedAllocatedSize
         self.logicalSize = try container.decodeIfPresent(Int64.self, forKey: .logicalSize) ?? allocatedSize
         self.descendantFileCount = try container.decodeIfPresent(Int.self, forKey: .descendantFileCount) ??
             (isDirectory ? 0 : 1)
@@ -211,6 +219,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         }
         self.fileIdentity = try container.decodeIfPresent(ScanArchiveFileIdentity.self, forKey: .fileIdentity)
         self.linkCount = try container.decodeIfPresent(UInt64.self, forKey: .linkCount) ?? 1
+        self.cloneIdentity = try container.decodeIfPresent(ScanArchiveCloneIdentity.self, forKey: .cloneIdentity)
         self.isPackage = try container.decodeIfPresent(Bool.self, forKey: .isPackage) ?? false
         self.isAccessible = try container.decodeIfPresent(Bool.self, forKey: .isAccessible) ?? true
         self.isSelfAccessible = try container.decodeIfPresent(Bool.self, forKey: .isSelfAccessible) ?? isAccessible
@@ -239,6 +248,9 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         if unduplicatedAllocatedSize != allocatedSize {
             try container.encode(unduplicatedAllocatedSize, forKey: .unduplicatedAllocatedSize)
         }
+        if dataAllocatedSize != unduplicatedAllocatedSize {
+            try container.encode(dataAllocatedSize, forKey: .dataAllocatedSize)
+        }
         if logicalSize != allocatedSize {
             try container.encode(logicalSize, forKey: .logicalSize)
         }
@@ -254,6 +266,9 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         }
         if linkCount != 1 {
             try container.encode(linkCount, forKey: .linkCount)
+        }
+        if let cloneIdentity {
+            try container.encode(cloneIdentity, forKey: .cloneIdentity)
         }
         if isPackage {
             try container.encode(true, forKey: .isPackage)
@@ -285,7 +300,11 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         guard !modelPath.isEmpty else {
             throw ScanArchiveError.nodes(localized: "node \(modelID) has empty path")
         }
-        guard allocatedSize >= 0, unduplicatedAllocatedSize >= 0, logicalSize >= 0 else {
+        guard allocatedSize >= 0,
+              unduplicatedAllocatedSize >= 0,
+              dataAllocatedSize >= 0,
+              dataAllocatedSize <= unduplicatedAllocatedSize,
+              logicalSize >= 0 else {
             throw ScanArchiveError.nodes(localized: "node \(modelID) has negative size")
         }
         guard descendantFileCount >= 0 else {
@@ -305,17 +324,38 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
             isSymbolicLink: isSymbolicLink,
             allocatedSize: allocatedSize,
             unduplicatedAllocatedSize: unduplicatedAllocatedSize,
+            dataAllocatedSize: dataAllocatedSize,
             logicalSize: logicalSize,
             descendantFileCount: descendantFileCount,
             lastModified: lastModified,
             fileIdentity: try fileIdentity?.modelIdentity(),
             linkCount: max(linkCount, 1),
+            cloneIdentity: cloneIdentity?.modelIdentity(),
             isPackage: isPackage,
             isAccessible: isAccessible,
             isSelfAccessible: isSelfAccessible,
             isSynthetic: isSynthetic,
             isAutoSummarized: isAutoSummarized
         )
+    }
+}
+
+nonisolated struct ScanArchiveCloneIdentity: Codable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case device = "d"
+        case cloneID = "c"
+    }
+
+    let device: UInt64
+    let cloneID: UInt64
+
+    init(_ identity: CloneIdentity) {
+        self.device = identity.device
+        self.cloneID = identity.cloneID
+    }
+
+    func modelIdentity() -> CloneIdentity {
+        CloneIdentity(device: device, cloneID: cloneID)
     }
 }
 

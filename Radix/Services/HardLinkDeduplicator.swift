@@ -14,17 +14,23 @@ nonisolated struct HardLinkDeduplicator {
         path: String
     ) -> HardLinkClaim? {
         guard !metadata.isDirectory,
-              !metadata.isSymbolicLink,
-              metadata.linkCount > 1,
-              let fileIdentity = metadata.fileIdentity else {
+              !metadata.isSymbolicLink else {
+            return nil
+        }
+
+        let hardLinkIdentity = metadata.linkCount > 1 ? metadata.fileIdentity : nil
+        guard hardLinkIdentity != nil || metadata.cloneIdentity != nil else {
             return nil
         }
 
         return HardLinkClaim(
-            identity: fileIdentity,
+            fileIdentity: metadata.fileIdentity,
+            hardLinkIdentity: hardLinkIdentity,
+            cloneIdentity: metadata.cloneIdentity,
             ownerNodeID: ownerNodeID,
             path: path,
-            allocatedSize: metadata.allocatedSize
+            allocatedSize: metadata.allocatedSize,
+            cloneAllocatedSize: metadata.dataAllocatedSize
         )
     }
 
@@ -108,7 +114,7 @@ nonisolated struct HardLinkDeduplicator {
     }
 
     /// Scanner fast path. The scan already owns a verified integer topology, so
-    /// hard-link correction stays index-based instead of materializing three
+    /// shared-allocation correction stays index-based instead of materializing three
     /// full-path-keyed dictionaries before constructing the compact store.
     nonisolated static func deduplicatedStore(
         rootIndex: FileTreeNodeIndex,
@@ -382,17 +388,23 @@ nonisolated struct HardLinkDeduplicator {
     private nonisolated static func claim(for node: FileNodeRecord) -> HardLinkClaim? {
         guard !node.isDirectory,
               !node.isSymbolicLink,
-              !node.isSynthetic,
-              node.linkCount > 1,
-              let fileIdentity = node.fileIdentity else {
+              !node.isSynthetic else {
+            return nil
+        }
+
+        let hardLinkIdentity = node.linkCount > 1 ? node.fileIdentity : nil
+        guard hardLinkIdentity != nil || node.cloneIdentity != nil else {
             return nil
         }
 
         return HardLinkClaim(
-            identity: fileIdentity,
+            fileIdentity: node.fileIdentity,
+            hardLinkIdentity: hardLinkIdentity,
+            cloneIdentity: node.cloneIdentity,
             ownerNodeID: node.id,
             path: node.url.path,
-            allocatedSize: node.unduplicatedAllocatedSize
+            allocatedSize: node.unduplicatedAllocatedSize,
+            cloneAllocatedSize: node.dataAllocatedSize
         )
     }
 
@@ -449,10 +461,48 @@ nonisolated struct HardLinkDeduplicator {
 }
 
 nonisolated struct HardLinkClaim: Sendable {
-    let identity: FileIdentity
+    let fileIdentity: FileIdentity?
+    let hardLinkIdentity: FileIdentity?
+    let cloneIdentity: CloneIdentity?
     let ownerNodeID: String
     let path: String
     let allocatedSize: Int64
+    let cloneAllocatedSize: Int64
+
+    init(
+        identity: FileIdentity,
+        ownerNodeID: String,
+        path: String,
+        allocatedSize: Int64
+    ) {
+        self.init(
+            fileIdentity: identity,
+            hardLinkIdentity: identity,
+            cloneIdentity: nil,
+            ownerNodeID: ownerNodeID,
+            path: path,
+            allocatedSize: allocatedSize,
+            cloneAllocatedSize: 0
+        )
+    }
+
+    init(
+        fileIdentity: FileIdentity?,
+        hardLinkIdentity: FileIdentity?,
+        cloneIdentity: CloneIdentity?,
+        ownerNodeID: String,
+        path: String,
+        allocatedSize: Int64,
+        cloneAllocatedSize: Int64
+    ) {
+        self.fileIdentity = fileIdentity
+        self.hardLinkIdentity = hardLinkIdentity
+        self.cloneIdentity = cloneIdentity
+        self.ownerNodeID = ownerNodeID
+        self.path = path
+        self.allocatedSize = allocatedSize
+        self.cloneAllocatedSize = min(max(cloneAllocatedSize, 0), max(allocatedSize, 0))
+    }
 }
 
 private extension FileNodeRecord {
@@ -465,11 +515,13 @@ private extension FileNodeRecord {
             isSymbolicLink: isSymbolicLink,
             allocatedSize: allocatedSize,
             unduplicatedAllocatedSize: unduplicatedAllocatedSize,
+            dataAllocatedSize: dataAllocatedSize,
             logicalSize: logicalSize,
             descendantFileCount: descendantFileCount,
             lastModified: lastModified,
             fileIdentity: fileIdentity,
             linkCount: linkCount,
+            cloneIdentity: cloneIdentity,
             isPackage: isPackage,
             isAccessible: isAccessible,
             isSelfAccessible: isSelfAccessible,

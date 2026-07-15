@@ -35,6 +35,58 @@ final class ScanMetadataLoaderTests: XCTestCase {
         let metadata = loader.metadata(for: url, prefetchedResourceValues: URLResourceValues())
 
         XCTAssertEqual(metadata.allocatedSize, 8_192)
+        XCTAssertEqual(metadata.dataAllocatedSize, 8_192)
+    }
+
+    func testUnsupportedCloneMappingVolumeIsProbedOnlyOnce() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let firstURL = rootURL.appending(path: "first.bin")
+        let secondURL = rootURL.appending(path: "second.bin")
+        try Data(repeating: 0xA5, count: 128).write(to: firstURL)
+        try Data(repeating: 0x5A, count: 128).write(to: secondURL)
+
+        let counters = MetadataProbeCounters()
+        let cache = CloneMappingCapabilityCache(
+            probeProvider: { _ in
+                counters.recordProbe()
+                return CloneMappingCapabilityCache.ProbeResult(
+                    identity: nil,
+                    supportsCloneMapping: false
+                )
+            },
+            volumeRootProvider: { _ in rootURL.path }
+        )
+        let loader = ScanMetadataLoader(cloneMappingCapabilityCache: cache)
+
+        let firstMetadata = try loader.metadata(for: firstURL)
+        let secondMetadata = try loader.metadata(for: secondURL)
+
+        XCTAssertNil(firstMetadata.cloneIdentity)
+        XCTAssertNil(secondMetadata.cloneIdentity)
+        XCTAssertEqual(counters.probeCount, 1)
+    }
+
+    func testRootVolumeCloneCacheDoesNotMaskMountedVolume() {
+        let counters = MetadataProbeCounters()
+        let cache = CloneMappingCapabilityCache(
+            probeProvider: { _ in
+                counters.recordProbe()
+                return CloneMappingCapabilityCache.ProbeResult(
+                    identity: nil,
+                    supportsCloneMapping: false
+                )
+            },
+            volumeRootProvider: { url in
+                url.path.hasPrefix("/Volumes/External/") ? "/Volumes/External" : "/"
+            }
+        )
+
+        XCTAssertNil(cache.cloneIdentity(for: URL(filePath: "/Users/example/first.bin")))
+        XCTAssertNil(cache.cloneIdentity(for: URL(filePath: "/Volumes/External/second.bin")))
+
+        XCTAssertEqual(counters.probeCount, 2)
     }
 
     func testMissingLinkCountMetadataUsesLstatFallback() throws {
@@ -85,7 +137,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
         try Data(repeating: 0xA5, count: 128).write(to: firstURL)
         try Data(repeating: 0x5A, count: 128).write(to: secondURL)
 
-        let counters = LinkCountProbeCounters()
+        let counters = MetadataProbeCounters()
         let cache = LinkCountCapabilityCache { _ in
             counters.recordProbe()
             return LinkCountCapabilityCache.ProbeResult(
@@ -129,7 +181,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
         try Data(repeating: 0xA5, count: 128).write(to: firstURL)
         try Data(repeating: 0x5A, count: 128).write(to: secondURL)
 
-        let counters = LinkCountProbeCounters()
+        let counters = MetadataProbeCounters()
         let cache = LinkCountCapabilityCache { _ in
             counters.recordProbe()
             return LinkCountCapabilityCache.ProbeResult(
@@ -180,7 +232,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
         try Data(repeating: 0xA5, count: 128).write(to: fileWithoutVolumeURL)
         try Data(repeating: 0x5A, count: 128).write(to: fileWithVolumeURL)
 
-        let counters = LinkCountProbeCounters()
+        let counters = MetadataProbeCounters()
         let cache = LinkCountCapabilityCache { url in
             counters.recordProbe()
             if url.path.hasPrefix(rootWithoutVolumeURL.path) {
@@ -230,7 +282,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
         try Data(repeating: 0xA5, count: 128).write(to: targetURL)
         try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
 
-        let counters = LinkCountProbeCounters()
+        let counters = MetadataProbeCounters()
         let loader = ScanMetadataLoader(
             diagnostics: nil,
             fileSystemInfoProvider: { _, _ in
@@ -253,7 +305,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
 
-        let counters = LinkCountProbeCounters()
+        let counters = MetadataProbeCounters()
         let loader = ScanMetadataLoader(
             diagnostics: nil,
             fileSystemInfoProvider: { _, _ in
@@ -279,7 +331,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
         try Data(repeating: 0xA5, count: 128).write(to: targetURL)
         try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
 
-        let counters = LinkCountProbeCounters()
+        let counters = MetadataProbeCounters()
         let loader = ScanMetadataLoader(
             diagnostics: nil,
             fileSystemInfoProvider: { _, _ in
@@ -334,7 +386,7 @@ final class ScanMetadataLoaderTests: XCTestCase {
 
 }
 
-private final class LinkCountProbeCounters: @unchecked Sendable {
+private final class MetadataProbeCounters: @unchecked Sendable {
     private let lock = NSLock()
     private var probes = 0
     private var lstats = 0

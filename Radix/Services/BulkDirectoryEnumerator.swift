@@ -185,7 +185,7 @@ nonisolated enum BulkDirectoryEnumerator {
                     &attributes,
                     bufferAddress,
                     buffer.count,
-                    UInt64(FSOPT_PACK_INVAL_ATTRS)
+                    UInt64(FSOPT_PACK_INVAL_ATTRS | FSOPT_ATTR_CMN_EXTENDED)
                 )
                 return (count: count, errorCode: count < 0 ? errno : 0)
             }) else {
@@ -399,6 +399,7 @@ nonisolated enum BulkDirectoryEnumerator {
         attributes.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT)
         attributes.commonattr = requestedCommonAttributes
         attributes.fileattr = requiredFileAttributes
+        attributes.forkattr = requestedExtendedCommonAttributes
         return attributes
     }
 
@@ -423,8 +424,13 @@ nonisolated enum BulkDirectoryEnumerator {
         attrgroup_t(
             ATTR_FILE_LINKCOUNT |
             ATTR_FILE_TOTALSIZE |
-            ATTR_FILE_ALLOCSIZE
+            ATTR_FILE_ALLOCSIZE |
+            ATTR_FILE_DATAALLOCSIZE
         )
+    }
+
+    private static var requestedExtendedCommonAttributes: attrgroup_t {
+        attrgroup_t(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
     }
 
     /// Bulk enumeration can succeed even when an individual filesystem cannot
@@ -543,18 +549,26 @@ nonisolated enum BulkDirectoryEnumerator {
         var fileLinkCount: UInt32 = 1
         var fileLogicalSize: off_t = 0
         var fileAllocatedSize: off_t = 0
+        var fileDataAllocatedSize: off_t = 0
         if objectType == VREG.rawValue || returned.fileattr != 0 {
             // Once a file-attribute payload is present, FSOPT_PACK_INVAL_ATTRS
             // physically packs every requested field in that group. Advance
             // through the complete layout before inspecting `returned`.
             guard let linkCount: UInt32 = cursor.read(),
                   let logicalSize: off_t = cursor.read(),
-                  let allocatedSize: off_t = cursor.read() else {
+                  let allocatedSize: off_t = cursor.read(),
+                  let dataAllocatedSize: off_t = cursor.read() else {
                 return nil
             }
             fileLinkCount = linkCount
             fileLogicalSize = logicalSize
             fileAllocatedSize = allocatedSize
+            fileDataAllocatedSize = dataAllocatedSize
+        }
+
+        guard let cloneID: UInt64 = cursor.read(),
+              let cloneReferenceCount: UInt32 = cursor.read() else {
+            return nil
         }
 
         let isDirectory = objectType == VDIR.rawValue
@@ -591,6 +605,20 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let logicalSize: off_t = isDirectory ? 0 : fileLogicalSize
         let allocatedSize: off_t = isDirectory ? 0 : fileAllocatedSize
+        let dataAllocatedSize: off_t = isDirectory ? 0 : fileDataAllocatedSize
+        let cloneIdentity: CloneIdentity?
+        if !isDirectory,
+           !isSymbolicLink,
+           returned.forkattr & requestedExtendedCommonAttributes == requestedExtendedCommonAttributes,
+           cloneID > 0,
+           cloneReferenceCount > 1 {
+            cloneIdentity = CloneIdentity(
+                device: UInt64(truncatingIfNeeded: deviceID),
+                cloneID: cloneID
+            )
+        } else {
+            cloneIdentity = nil
+        }
         let lastModified = Date(
             timeIntervalSince1970: Double(modificationTime.tv_sec) +
                 Double(modificationTime.tv_nsec) / 1_000_000_000
@@ -605,6 +633,7 @@ nonisolated enum BulkDirectoryEnumerator {
             isSymbolicLink: isSymbolicLink,
             logicalSize: max(Int64(logicalSize), 0),
             allocatedSize: max(Int64(allocatedSize), 0),
+            dataAllocatedSize: max(Int64(dataAllocatedSize), 0),
             lastModified: lastModified,
             isReadable: (userAccess & UInt32(R_OK)) != 0,
             volumeCapacity: nil,
@@ -612,7 +641,8 @@ nonisolated enum BulkDirectoryEnumerator {
                 device: UInt64(truncatingIfNeeded: deviceID),
                 inode: fileID
             ),
-            linkCount: isDirectory ? 1 : max(UInt64(fileLinkCount), 1)
+            linkCount: isDirectory ? 1 : max(UInt64(fileLinkCount), 1),
+            cloneIdentity: cloneIdentity
         )
         return (
             DirectoryEntry(url: url, metadata: metadata, nativeName: parsedName.nativeName),

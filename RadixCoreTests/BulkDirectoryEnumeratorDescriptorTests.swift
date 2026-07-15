@@ -157,8 +157,10 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
             XCTAssertEqual(nativeMetadata.isSymbolicLink, pathMetadata.isSymbolicLink, name)
             XCTAssertEqual(nativeMetadata.logicalSize, pathMetadata.logicalSize, name)
             XCTAssertEqual(nativeMetadata.allocatedSize, pathMetadata.allocatedSize, name)
+            XCTAssertEqual(nativeMetadata.dataAllocatedSize, pathMetadata.dataAllocatedSize, name)
             XCTAssertEqual(nativeMetadata.fileIdentity, pathMetadata.fileIdentity, name)
             XCTAssertEqual(nativeMetadata.linkCount, pathMetadata.linkCount, name)
+            XCTAssertEqual(nativeMetadata.cloneIdentity, pathMetadata.cloneIdentity, name)
         }
     }
 

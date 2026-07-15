@@ -68,8 +68,11 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
         if !metadata.isSymbolicLink {
             descendantFileCount = ScanIntegerMath.addingClamped(descendantFileCount, 1)
         }
-        if metadata.linkCount > 1,
-           let claim = HardLinkDeduplicator.claim(for: metadata, ownerNodeID: ownerNodeID, path: url.path) {
+        if let claim = HardLinkDeduplicator.claim(
+            for: metadata,
+            ownerNodeID: ownerNodeID,
+            path: url.path
+        ) {
             hardLinkAccumulator.record(claim)
         }
     }

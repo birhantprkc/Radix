@@ -8,6 +8,58 @@
 import Darwin
 import Foundation
 
+/// Thread-safe lookup shared by filesystem capabilities that are constant for
+/// every item on a mounted volume.
+private nonisolated final class VolumeCapabilityCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var valueByRootPath: [String: Bool] = [:]
+
+    func value(for url: URL) -> Bool? {
+        let path = Self.normalizedPath(url.path)
+        let mountedRoot = Self.inferredMountedRoot(for: path)
+        lock.lock()
+        defer { lock.unlock() }
+
+        var result: (rootLength: Int, value: Bool)?
+        for (root, value) in valueByRootPath
+        where Self.contains(path, root: root)
+            && mountedRoot.map({ Self.contains(root, root: $0) }) != false {
+            if root.count > (result?.rootLength ?? -1) {
+                result = (root.count, value)
+            }
+        }
+        return result?.value
+    }
+
+    func store(_ value: Bool, for url: URL, volumeRootPath: String?) {
+        let path = Self.normalizedPath(url.path)
+        guard let root = volumeRootPath.map(Self.normalizedPath) ?? Self.inferredMountedRoot(for: path) else {
+            return
+        }
+        lock.lock()
+        valueByRootPath[root] = value
+        lock.unlock()
+    }
+
+    private static func contains(_ path: String, root: String) -> Bool {
+        root == "/" ? path.hasPrefix("/") : path == root || path.hasPrefix(root + "/")
+    }
+
+    private static func inferredMountedRoot(for path: String) -> String? {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard components.count >= 2, components[0] == "Volumes" else { return nil }
+        return "/Volumes/\(components[1])"
+    }
+
+    private static func normalizedPath(_ path: String) -> String {
+        var result = URL(fileURLWithPath: path).standardizedFileURL.path
+        while result.count > 1 && result.hasSuffix("/") {
+            result.removeLast()
+        }
+        return result
+    }
+}
+
 nonisolated final class LinkCountCapabilityCache: @unchecked Sendable {
     nonisolated struct ProbeResult: Sendable {
         let volumeRootPath: String?
@@ -31,33 +83,24 @@ nonisolated final class LinkCountCapabilityCache: @unchecked Sendable {
 
     typealias ProbeProvider = @Sendable (URL) -> ProbeResult
 
-    private let lock = NSLock()
     private let probeProvider: ProbeProvider
-    private var requiresFileSystemInfoByRootPath: [String: Bool] = [:]
+    private let cache = VolumeCapabilityCache()
 
     init(probeProvider: @escaping ProbeProvider = LinkCountCapabilityCache.defaultProbe) {
         self.probeProvider = probeProvider
     }
 
     func requiresFileSystemInfoWhenLinkCountMissing(for url: URL, diagnostics: ScanDiagnosticsContext?) -> Bool {
-        let path = Self.standardizedPath(for: url)
-        lock.lock()
-        if let cachedRequirement = cachedRequirementLocked(for: path) {
-            lock.unlock()
+        if let cachedRequirement = cache.value(for: url) {
             return cachedRequirement
         }
-        lock.unlock()
 
         #if DEBUG
         let start = diagnostics?.start()
         #endif
         let probe = probeProvider(url)
         let requiresFileSystemInfo = probe.supportsHardLinks != false
-        if let rootPath = Self.cacheRootPath(for: probe, path: path) {
-            lock.lock()
-            requiresFileSystemInfoByRootPath[rootPath] = requiresFileSystemInfo
-            lock.unlock()
-        }
+        cache.store(requiresFileSystemInfo, for: url, volumeRootPath: probe.volumeRootPath)
 
         #if DEBUG
         diagnostics?.record(
@@ -68,17 +111,6 @@ nonisolated final class LinkCountCapabilityCache: @unchecked Sendable {
         )
         #endif
         return requiresFileSystemInfo
-    }
-
-    private func cachedRequirementLocked(for path: String) -> Bool? {
-        var bestMatch: (rootLength: Int, requiresFileSystemInfo: Bool)?
-        for (rootPath, requiresFileSystemInfo) in requiresFileSystemInfoByRootPath
-        where Self.path(path, isUnder: rootPath) {
-            if bestMatch == nil || rootPath.count > bestMatch!.rootLength {
-                bestMatch = (rootPath.count, requiresFileSystemInfo)
-            }
-        }
-        return bestMatch?.requiresFileSystemInfo
     }
 
     private static func defaultProbe(for url: URL) -> ProbeResult {
@@ -125,39 +157,61 @@ nonisolated final class LinkCountCapabilityCache: @unchecked Sendable {
         return fields.joined(separator: " ")
     }
     #endif
+}
 
-    private static func path(_ path: String, isUnder rootPath: String) -> Bool {
-        guard rootPath != "/" else {
-            return path.hasPrefix("/")
+/// Avoids requesting APFS clone metadata for every file on volumes that do not
+/// expose clone mapping attributes. Supported volumes still require one probe
+/// per regular file because the clone identity is file-specific.
+nonisolated final class CloneMappingCapabilityCache: @unchecked Sendable {
+    nonisolated struct ProbeResult: Sendable {
+        let identity: CloneIdentity?
+        let supportsCloneMapping: Bool?
+
+        init(identity: CloneIdentity?, supportsCloneMapping: Bool?) {
+            self.identity = identity
+            self.supportsCloneMapping = supportsCloneMapping
         }
-        return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
-    private static func standardizedPath(for url: URL) -> String {
-        normalizedRootPath(url.standardizedFileURL.path)
+    typealias ProbeProvider = @Sendable (URL) -> ProbeResult
+    typealias VolumeRootProvider = @Sendable (URL) -> String?
+
+    private let probeProvider: ProbeProvider
+    private let volumeRootProvider: VolumeRootProvider
+    private let cache = VolumeCapabilityCache()
+
+    init(
+        probeProvider: @escaping ProbeProvider = CloneMappingCapabilityCache.defaultProbe,
+        volumeRootProvider: @escaping VolumeRootProvider = CloneMappingCapabilityCache.defaultVolumeRootPath
+    ) {
+        self.probeProvider = probeProvider
+        self.volumeRootProvider = volumeRootProvider
     }
 
-    private static func normalizedRootPath(_ path: String) -> String {
-        var normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        while normalizedPath.count > 1 && normalizedPath.hasSuffix("/") {
-            normalizedPath.removeLast()
+    func cloneIdentity(for url: URL) -> CloneIdentity? {
+        let cachedSupport = cache.value(for: url)
+        if cachedSupport == false {
+            return nil
         }
-        return normalizedPath
+
+        let probe = probeProvider(url)
+        if cachedSupport == nil,
+           let supportsCloneMapping = probe.supportsCloneMapping {
+            cache.store(
+                supportsCloneMapping,
+                for: url,
+                volumeRootPath: volumeRootProvider(url)
+            )
+        }
+        return probe.identity
     }
 
-    private static func cacheRootPath(for probe: ProbeResult, path: String) -> String? {
-        if let volumeRootPath = probe.volumeRootPath {
-            return normalizedRootPath(volumeRootPath)
-        }
-        return inferredMountedVolumeRootPath(for: path)
+    private static func defaultProbe(for url: URL) -> ProbeResult {
+        ScanMetadataLoader.defaultCloneProbe(for: url)
     }
 
-    private static func inferredMountedVolumeRootPath(for path: String) -> String? {
-        let components = path.split(separator: "/", omittingEmptySubsequences: true)
-        if components.count >= 2, components[0] == "Volumes" {
-            return "/Volumes/\(components[1])"
-        }
-        return nil
+    private static func defaultVolumeRootPath(for url: URL) -> String? {
+        try? url.resourceValues(forKeys: [.volumeURLKey]).volume?.standardizedFileURL.path
     }
 }
 
@@ -220,6 +274,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
 
     let diagnostics: ScanDiagnosticsContext?
     private let linkCountCapabilityCache: LinkCountCapabilityCache
+    private let cloneMappingCapabilityCache: CloneMappingCapabilityCache
     private let fileSystemInfoProvider: FileSystemInfoProvider
     private let fileAllocatedSizeProvider: FileAllocatedSizeProvider
     private let packageClassifier: PackageClassifier
@@ -227,12 +282,14 @@ nonisolated struct ScanMetadataLoader: Sendable {
     init(
         diagnostics: ScanDiagnosticsContext? = nil,
         linkCountCapabilityCache: LinkCountCapabilityCache = LinkCountCapabilityCache(),
+        cloneMappingCapabilityCache: CloneMappingCapabilityCache = CloneMappingCapabilityCache(),
         fileSystemInfoProvider: @escaping FileSystemInfoProvider = ScanMetadataLoader.defaultFileSystemInfo,
         fileAllocatedSizeProvider: @escaping FileAllocatedSizeProvider = ScanMetadataLoader.defaultFileAllocatedSize,
         packageClassifier: PackageClassifier = PackageClassifier()
     ) {
         self.diagnostics = diagnostics
         self.linkCountCapabilityCache = linkCountCapabilityCache
+        self.cloneMappingCapabilityCache = cloneMappingCapabilityCache
         self.fileSystemInfoProvider = fileSystemInfoProvider
         self.fileAllocatedSizeProvider = fileAllocatedSizeProvider
         self.packageClassifier = packageClassifier
@@ -326,6 +383,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
             loadsSymbolicLinkFileSystemInfo: loadsSymbolicLinkFileSystemInfo,
             diagnostics: diagnostics,
             linkCountCapabilityCache: linkCountCapabilityCache,
+            cloneMappingCapabilityCache: cloneMappingCapabilityCache,
             fileSystemInfoProvider: fileSystemInfoProvider,
             fileAllocatedSizeProvider: fileAllocatedSizeProvider
         )
@@ -349,6 +407,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
         loadsSymbolicLinkFileSystemInfo: Bool,
         diagnostics: ScanDiagnosticsContext? = nil,
         linkCountCapabilityCache: LinkCountCapabilityCache,
+        cloneMappingCapabilityCache: CloneMappingCapabilityCache,
         fileSystemInfoProvider: FileSystemInfoProvider,
         fileAllocatedSizeProvider: FileAllocatedSizeProvider
     ) -> NodeMetadata {
@@ -360,6 +419,10 @@ nonisolated struct ScanMetadataLoader: Sendable {
             ?? values.fileAllocatedSize.map(Int64.init)
             ?? fileAllocatedSizeProvider(url)
             ?? 0
+        let dataAllocatedSize = min(
+            max(values.fileAllocatedSize.map(Int64.init) ?? allocatedSize, 0),
+            max(allocatedSize, 0)
+        )
         let isReadable = values.isReadable ?? false
         var fileIdentity = Self.fileIdentity(from: values.fileResourceIdentifier)
         var linkCount = values.linkCount.map(UInt64.init) ?? 1
@@ -383,6 +446,9 @@ nonisolated struct ScanMetadataLoader: Sendable {
             fileIdentity = fileIdentity ?? fileSystemInfo.identity
             linkCount = values.linkCount.map(UInt64.init) ?? fileSystemInfo.linkCount
         }
+        let cloneIdentity = !isDirectory && !isSymbolicLink
+            ? cloneMappingCapabilityCache.cloneIdentity(for: url)
+            : nil
         let volumeCapacity: VolumeCapacitySnapshot?
         if includeVolumeDetails,
            let totalCapacity = values.volumeTotalCapacity,
@@ -401,11 +467,13 @@ nonisolated struct ScanMetadataLoader: Sendable {
             isSymbolicLink: isSymbolicLink,
             logicalSize: logicalSize,
             allocatedSize: allocatedSize,
+            dataAllocatedSize: dataAllocatedSize,
             lastModified: values.contentModificationDate,
             isReadable: isReadable,
             volumeCapacity: volumeCapacity,
             fileIdentity: fileIdentity,
-            linkCount: linkCount
+            linkCount: linkCount,
+            cloneIdentity: cloneIdentity
         )
     }
 
@@ -466,6 +534,69 @@ nonisolated struct ScanMetadataLoader: Sendable {
         return overflow ? Int64.max : allocatedSize
     }
 
+    nonisolated static func defaultCloneProbe(for url: URL) -> CloneMappingCapabilityCache.ProbeResult {
+        var attributes = attrlist()
+        attributes.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT)
+        attributes.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_DEVID)
+        attributes.forkattr = attrgroup_t(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
+
+        var buffer = [UInt8](repeating: 0, count: 64)
+        let result = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return Int32(-1) }
+            return buffer.withUnsafeMutableBytes { rawBuffer in
+                getattrlist(
+                    path,
+                    &attributes,
+                    rawBuffer.baseAddress,
+                    rawBuffer.count,
+                    UInt32(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)
+                )
+            }
+        }
+        guard result == 0 else {
+            let unsupported = errno == ENOTSUP || errno == EOPNOTSUPP || errno == EINVAL
+            return CloneMappingCapabilityCache.ProbeResult(
+                identity: nil,
+                supportsCloneMapping: unsupported ? false : nil
+            )
+        }
+
+        return buffer.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress,
+                  rawBuffer.count >= MemoryLayout<UInt32>.size else {
+                return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: nil)
+            }
+            let reportedLength = Int(baseAddress.loadUnaligned(as: UInt32.self))
+            guard reportedLength >= MemoryLayout<UInt32>.size,
+                  reportedLength <= rawBuffer.count else {
+                return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: nil)
+            }
+
+            var cursor = ScanMetadataAttributeCursor(
+                current: baseAddress.advanced(by: MemoryLayout<UInt32>.size),
+                end: baseAddress.advanced(by: reportedLength)
+            )
+            guard let returned: attribute_set_t = cursor.read() else {
+                return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: nil)
+            }
+            let requiredForkAttributes = attrgroup_t(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
+            guard returned.commonattr & attrgroup_t(ATTR_CMN_DEVID) != 0,
+                  returned.forkattr & requiredForkAttributes == requiredForkAttributes,
+                  let deviceID: dev_t = cursor.read(),
+                  let cloneID: UInt64 = cursor.read(),
+                  let cloneReferenceCount: UInt32 = cursor.read() else {
+                return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: false)
+            }
+            let identity = cloneID > 0 && cloneReferenceCount > 1
+                ? CloneIdentity(device: UInt64(truncatingIfNeeded: deviceID), cloneID: cloneID)
+                : nil
+            return CloneMappingCapabilityCache.ProbeResult(
+                identity: identity,
+                supportsCloneMapping: true
+            )
+        }
+    }
+
     private nonisolated static func fileIdentity(
         from resourceIdentifier: (any NSCopying & NSSecureCoding & NSObjectProtocol)?
     ) -> FileIdentity? {
@@ -480,11 +611,46 @@ nonisolated struct NodeMetadata: Sendable {
     let isSymbolicLink: Bool
     let logicalSize: Int64
     let allocatedSize: Int64
+    let dataAllocatedSize: Int64
     let lastModified: Date?
     let isReadable: Bool
     let volumeCapacity: VolumeCapacitySnapshot?
     let fileIdentity: FileIdentity?
     let linkCount: UInt64
+    let cloneIdentity: CloneIdentity?
+
+    init(
+        isDirectory: Bool,
+        isPackage: Bool,
+        isSymbolicLink: Bool,
+        logicalSize: Int64,
+        allocatedSize: Int64,
+        dataAllocatedSize: Int64? = nil,
+        lastModified: Date?,
+        isReadable: Bool,
+        volumeCapacity: VolumeCapacitySnapshot?,
+        fileIdentity: FileIdentity?,
+        linkCount: UInt64,
+        cloneIdentity: CloneIdentity? = nil
+    ) {
+        self.isDirectory = isDirectory
+        self.isPackage = isPackage
+        self.isSymbolicLink = isSymbolicLink
+        self.logicalSize = logicalSize
+        self.allocatedSize = allocatedSize
+        self.dataAllocatedSize = min(max(dataAllocatedSize ?? allocatedSize, 0), max(allocatedSize, 0))
+        self.lastModified = lastModified
+        self.isReadable = isReadable
+        self.volumeCapacity = volumeCapacity
+        self.fileIdentity = fileIdentity
+        self.linkCount = linkCount
+        self.cloneIdentity = cloneIdentity
+    }
+}
+
+nonisolated struct CloneIdentity: Hashable, Sendable {
+    let device: UInt64
+    let cloneID: UInt64
 }
 
 nonisolated enum FileIdentity: Hashable, Sendable {
@@ -504,5 +670,22 @@ nonisolated enum FileIdentity: Hashable, Sendable {
             return true
         }
         return false
+    }
+}
+
+private nonisolated struct ScanMetadataAttributeCursor {
+    var current: UnsafeRawPointer
+    let end: UnsafeRawPointer
+
+    mutating func read<T>() -> T? {
+        let size = MemoryLayout<T>.size
+        let alignedSize = (size + 3) & ~3
+        guard size <= current.distance(to: end),
+              alignedSize <= current.distance(to: end) else {
+            return nil
+        }
+        let value = current.loadUnaligned(as: T.self)
+        current = current.advanced(by: alignedSize)
+        return value
     }
 }

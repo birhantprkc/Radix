@@ -1432,12 +1432,11 @@ actor ScanEngine {
                             url: childEntry.url,
                             metadata: childMetadata
                         )
-                        if childMetadata.linkCount > 1,
-                           let hardLinkClaim = HardLinkDeduplicator.claim(
-                               for: childMetadata,
-                               ownerNodeID: childNode.id,
-                               path: childPath
-                           ) {
+                        if let hardLinkClaim = HardLinkDeduplicator.claim(
+                            for: childMetadata,
+                            ownerNodeID: childNode.id,
+                            path: childPath
+                        ) {
                             hardLinkAccumulator.record(hardLinkClaim)
                         }
                         metrics.currentPath = childPath
@@ -2189,11 +2188,13 @@ actor ScanEngine {
             isDirectory: metadata.isDirectory,
             isSymbolicLink: metadata.isSymbolicLink,
             allocatedSize: metadata.allocatedSize,
+            dataAllocatedSize: metadata.dataAllocatedSize,
             logicalSize: metadata.logicalSize,
             descendantFileCount: metadata.isDirectory || metadata.isSymbolicLink ? 0 : 1,
             lastModified: metadata.lastModified,
             fileIdentity: metadata.fileIdentity,
             linkCount: metadata.linkCount,
+            cloneIdentity: metadata.cloneIdentity,
             isPackage: metadata.isPackage,
             isAccessible: metadata.isReadable,
             isSelfAccessible: metadata.isReadable,
@@ -2220,9 +2221,11 @@ actor ScanEngine {
                 url: url,
                 metadata: metadata
             )
-            let hardLinkClaim = metadata.linkCount > 1
-                ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
-                : nil
+            let hardLinkClaim = HardLinkDeduplicator.claim(
+                for: metadata,
+                ownerNodeID: node.id,
+                path: url.path
+            )
             var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
             if let hardLinkClaim {
                 hardLinkAccumulator.record(hardLinkClaim)
@@ -2252,9 +2255,11 @@ actor ScanEngine {
                 url: url,
                 metadata: metadata
             )
-            let hardLinkClaim = metadata.linkCount > 1
-                ? HardLinkDeduplicator.claim(for: metadata, ownerNodeID: node.id, path: url.path)
-                : nil
+            let hardLinkClaim = HardLinkDeduplicator.claim(
+                for: metadata,
+                ownerNodeID: node.id,
+                path: url.path
+            )
             var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
             if let hardLinkClaim {
                 hardLinkAccumulator.record(hardLinkClaim)

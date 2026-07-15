@@ -48,6 +48,8 @@ final class ScanArchiveServiceTests: XCTestCase {
             importedSnapshot.treeStore.node(id: "/archive/folder/résource-文件-🙂.bin")
         )
         XCTAssertEqual(resourceNode.fileIdentity, FileIdentity(resourceIdentifier: Data([1, 2, 3, 4])))
+        XCTAssertEqual(resourceNode.cloneIdentity, CloneIdentity(device: 10, cloneID: 30))
+        XCTAssertEqual(resourceNode.dataAllocatedSize, 64)
         XCTAssertEqual(resourceNode.lastModified, Date(timeIntervalSince1970: 200))
 
         let summarizedNode = try XCTUnwrap(importedSnapshot.treeStore.node(id: "/archive/folder/tiny-cache"))
@@ -946,11 +948,13 @@ final class ScanArchiveServiceTests: XCTestCase {
             isDirectory: false,
             isSymbolicLink: false,
             allocatedSize: 80,
+            dataAllocatedSize: 64,
             logicalSize: 80,
             descendantFileCount: 1,
             lastModified: Date(timeIntervalSince1970: 200),
             fileIdentity: FileIdentity(resourceIdentifier: Data([1, 2, 3, 4])),
             linkCount: 1,
+            cloneIdentity: CloneIdentity(device: 10, cloneID: 30),
             isPackage: false,
             isAccessible: true,
             isSelfAccessible: true,
