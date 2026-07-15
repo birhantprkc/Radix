@@ -1,105 +1,64 @@
 # AGENTS.md
 
-This file tells coding agents how to work effectively in this repository.
+## Project
 
-## Purpose
+Radix is a native macOS 14+ disk-space analyzer built with Swift 6.2,
+SwiftUI, and Xcode 26+.
 
-Radix is a native macOS disk space analyzer built in Swift and SwiftUI. When developing Radix, prioritize Swift/SwiftUI best practices and modern code.
+Preserve these product guarantees:
 
-## Commit Guidelines
+- Scanning remains responsive and does not block the UI.
+- Files are never modified or removed without an explicit user action.
+- Visualizations and the file browser remain primary navigation surfaces.
 
-- Make small, focused commits
-- Each commit should represent a single logical change
-- Avoid mixing refactors with behavior changes
-- Use Conventional Commits:
-  - `fix: correct size totals for nested directories`
-  - `feat: remember last opened scan location`
-  - `perf: cache formatted file sizes in file list rows`
-  - `refactor: remove unused scan coordination code`
+Prefer SwiftUI for UI. Use AppKit only when required for macOS system integration.
 
-## Environment Facts
+## Architecture and task routing
 
-- Repository root: `Radix/`
-- Swift 6
-- macOS target: macOS 14.0+
-- App UI framework: SwiftUI (always preferred over UIKit/AppKit)
+- Scanner or data behavior: `Radix/Services/`, `Radix/Models/`
+- Tree and indexing: `Radix/Models/FileTreeStore.swift`
+- App coordination, navigation, or selection: `Radix/ViewModels/AppModel.swift`
+- Search and sorting: `Radix/Services/FileBrowserModel.swift`
+- Sunburst or treemap layout: the corresponding geometry/chart model in
+  `Radix/Services/`
+- Feature UI: `Radix/Features/`
 - Tests: `RadixCoreTests/`
-- Supported locales: `en`, `de`, `es`, `fr`, `it`, `zh-Hans`
 
-## Project Structure
+`Package.swift` defines the non-UI `RadixCore` target. When adding or moving a
+non-UI Swift file, update its explicit source list. The Xcode project builds
+the complete app.
 
-```
-Radix/
-├── App/                  # App entry point, commands, window management
-├── Models/               # Core data types (FileNodeRecord, ScanSnapshot, etc.)
-├── Services/             # Scan engine, sunburst geometry, formatters
-├── ViewModels/           # AppModel — central state manager
-├── Features/             # UI features (workspace, sidebar, file browser,
-│   ├── Workspace/        #   visualization, inspector, settings, onboarding)
-│   ├── Sidebar/
-│   ├── FileList/
-│   ├── Visualization/
-│   ├── Inspector/
-│   ├── Settings/
-│   └── Onboarding/
-├── Views/                # Reserved for future shared view composition
-└── Shared/               # Reusable components (breadcrumbs, helpers)
-```
+## Change guidelines
 
-## Project Layout
+- Fix data behavior in models or services; fix UI coordination in view models.
+- Add or update tests for scanner, tree, path, archive, comparison, geometry,
+  search, and formatting changes.
+- Add new user-facing text to the appropriate `.xcstrings` catalog for every
+  supported locale: `en`, `de`, `es`, `fr`, `it`, and `zh-Hans`.
+- Avoid new dependencies unless clearly justified. `RadixCore` has none.
+- Sparkle is managed through Xcode Swift Package Manager; never vendor it.
+- Use current documentation for version-sensitive Apple or external APIs.
 
-Important paths:
+## Validation
 
-- `README.md`: product intent, feature summary, high-level architecture
-- `Package.swift`: exact package target membership
-- `Radix/RadixApp.swift`: app entry
-- `Radix/ContentView.swift`: root content composition
-- `Radix/ViewModels/AppModel.swift`: central `@MainActor` app state and UI coordination
-- `Radix/Models/`: core scan targets, node records, tree storage, snapshots, progress, file actions, and trash safety
-- `Radix/Services/ScanEngine.swift`: actor-based filesystem scanner
-- `Radix/Services/SunburstGeometry.swift`: sunburst layout math
-- `Radix/Services/SystemIntegration.swift`: Finder/open/trash/system-facing actions
-- `Radix/Shared/`: shared UI helpers
-- `RadixCoreTests/`: package-level unit and benchmark-style tests
-- `releases/`: release/update assets
-- Sparkle is managed through Xcode Swift Package Manager; do not add vendored Sparkle folders or frameworks to the repo.
+Run core tests:
 
-## Product Constraints
+    swift test
 
-Radix makes several user-facing promises. Do not casually violate them:
+Build the complete app:
 
-- Scans should feel fast and responsive.
-- The app should not mutate files unless the user explicitly requests an action.
-- The sunburst and file browser are primary navigation surfaces, not secondary embellishments.
+    xcodebuild -project Radix.xcodeproj -scheme Radix \
+      -configuration Debug -destination 'platform=macOS' build
 
-## Working Agreement For Changes
+Use small, focused Conventional Commits and Conventional Commit PR titles.
 
-When making changes:
+## Simplicity and Code Economy
 
-- Keep edits consistent with the existing architecture unless existing architecture is problematic.
-- Prefer fixing behavior in the core model/service layer when the bug is data-related.
-- Prefer fixing behavior in `AppModel` when the issue is coordination, selection, focus, navigation, or settings persistence.
-- Prefer adding or updating tests when changing scanner behavior, path normalization, indexing, geometry, or formatting logic.
-- Avoid introducing new dependencies unless explicitly justified. The project is intentionally light on external packages.
-
-Use Context7 when working with external libraries, frameworks, or APIs and you need current, version-aware documentation.
-
-Prefer Context7 for:
-
-- SwiftUI or Apple framework usage where exact modern APIs matter
-- Cases where examples from memory may be outdated
-
-Do not use Context7 for:
-
-- Understanding this repository’s internal architecture
-- Answering questions already resolved by local code, tests, or README
-- Simple edits that can be completed by following existing patterns in the codebase
-
-## If You Need A Starting Point
-
-- Scanner bug or data bug: start with `Radix/Services/ScanEngine.swift` and the matching tests in `RadixCoreTests/`
-- Selection/navigation/UI state bug: start with `Radix/ViewModels/AppModel.swift`
-- Tree/index behavior bug: start with `Radix/Models/FileTreeStore.swift`
-- Search behavior bug: start with `Radix/Services/FileBrowserModel.swift`
-- Size or display formatting bug: start with `Radix/Services/FileSizeFormatter.swift`
-- Visualization/layout bug: start with `Radix/Services/SunburstGeometry.swift`
+- Prefer the smallest coherent implementation that preserves correctness, clarity, and performance.
+- Reuse or extend an existing abstraction before adding another cache, helper, wrapper, state owner, or model field.
+- Keep state at the narrowest layer that needs it; add model or persistence fields only for a concrete consumer.
+- Consolidate mechanisms that enforce the same invariant, not those with merely similar shapes.
+- Add the minimum high-signal tests needed to cover the behavior and distinct edge cases; avoid duplicating the same scenario across layers.
+- Treat a focused change exceeding roughly 200 production lines or introducing several new types as a design-review trigger, not a hard limit.
+- Before finishing, review the diff and touched code for redundant state, branches, abstractions, repeated work, duplicate tests, and opportunities to simplify data flow; avoid unrelated refactors.
+- In performance-sensitive paths, look for repeated traversal, allocation, I/O, or main-actor work. Measure meaningful performance changes when practical, and do not add caching without evidence of repeated cost.
