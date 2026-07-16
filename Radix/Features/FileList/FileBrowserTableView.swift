@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FileBrowserActions {
     let selectNode: (String?) -> Void
@@ -221,12 +222,10 @@ struct FileBrowserTableView: View {
             .width(min: 150, ideal: 180)
         } rows: {
             ForEach(model.displayedNodes) { node in
-                if dragContext.canDrag(startingFrom: node) {
-                    TableRow(node)
-                        .draggable(discardPileDragPayload(for: node, in: dragContext))
-                } else {
-                    TableRow(node)
-                }
+                TableRow(node)
+                    .itemProvider {
+                        discardPileItemProvider(for: node, in: dragContext)
+                    }
             }
         }
         .accessibilityLabel("Contents table")
@@ -457,24 +456,15 @@ struct FileBrowserTableView: View {
             return .disabled
         }
 
-        let displayedNodes = model.displayedNodes
-        let displayedIDs = Set(displayedNodes.map(\.id))
-        let selectedIDs = navigation.selectedNodeIDs.intersection(displayedIDs)
-        let selectedNodes = displayedNodes.filter { selectedIDs.contains($0.id) }
+        let selectedNodes = model.displayedNodes(ids: navigation.selectedNodeIDs)
+        let selectedIDs = Set(selectedNodes.map(\.id))
         let selectedNodesCanMoveToTrash = !selectedNodes.isEmpty && canAddToDiscardPile(selectedNodes)
-
-        var individuallyDraggableNodeIDs = Set<FileNodeRecord.ID>()
-        individuallyDraggableNodeIDs.reserveCapacity(displayedNodes.count)
-        for node in displayedNodes where canAddToDiscardPile([node]) {
-            individuallyDraggableNodeIDs.insert(node.id)
-        }
 
         return FileBrowserTableDragContext(
             snapshotID: snapshotID,
             selectedIDs: selectedIDs,
             selectedNodes: selectedNodes,
-            selectedNodesCanMoveToTrash: selectedNodesCanMoveToTrash,
-            individuallyDraggableNodeIDs: individuallyDraggableNodeIDs
+            selectedNodesCanMoveToTrash: selectedNodesCanMoveToTrash
         )
     }
 
@@ -487,27 +477,27 @@ struct FileBrowserTableView: View {
         ).canMoveToTrash
     }
 
-    private func discardPileDragPayload(
+    private func discardPileItemProvider(
         for node: FileNodeRecord,
         in dragContext: FileBrowserTableDragContext
-    ) -> DiscardPileDragPayload {
-        guard let snapshotID = dragContext.snapshotID else {
-            preconditionFailure("Discard pile drag requires an active scan snapshot.")
-        }
+    ) -> NSItemProvider? {
+        guard let snapshotID = dragContext.snapshotID else { return nil }
 
         let dragNodes = dragContext.nodes(startingFrom: node)
-        guard dragContext.canDrag(startingFrom: node) else {
-            return DiscardPileDragPayload(
-                snapshotID: snapshotID,
-                nodeIDs: []
-            )
-        }
+        let canDrag = dragContext.selectedIDs.contains(node.id)
+            ? dragContext.selectedNodesCanMoveToTrash
+            : canAddToDiscardPile(dragNodes)
+        guard canDrag else { return nil }
 
         actions.setDiscardPileDragActiveAfterThreshold(true)
-
-        return DiscardPileDragPayload(
+        let payload = DiscardPileDragPayload(
             snapshotID: snapshotID,
             nodeIDs: dragNodes.map(\.id)
+        )
+        guard let data = try? JSONEncoder().encode(payload) else { return nil }
+        return NSItemProvider(
+            item: data as NSData,
+            typeIdentifier: DiscardPileDragPayload.contentType.identifier
         )
     }
 
@@ -552,23 +542,13 @@ private struct FileBrowserTableDragContext {
         snapshotID: nil,
         selectedIDs: [],
         selectedNodes: [],
-        selectedNodesCanMoveToTrash: false,
-        individuallyDraggableNodeIDs: []
+        selectedNodesCanMoveToTrash: false
     )
 
     let snapshotID: UUID?
     let selectedIDs: Set<FileNodeRecord.ID>
     let selectedNodes: [FileNodeRecord]
     let selectedNodesCanMoveToTrash: Bool
-    let individuallyDraggableNodeIDs: Set<FileNodeRecord.ID>
-
-    func canDrag(startingFrom node: FileNodeRecord) -> Bool {
-        guard snapshotID != nil else { return false }
-        if selectedIDs.contains(node.id) {
-            return selectedNodesCanMoveToTrash
-        }
-        return individuallyDraggableNodeIDs.contains(node.id)
-    }
 
     func nodes(startingFrom node: FileNodeRecord) -> [FileNodeRecord] {
         if selectedIDs.contains(node.id) {

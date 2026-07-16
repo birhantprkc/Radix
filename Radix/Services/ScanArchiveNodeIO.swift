@@ -46,6 +46,13 @@ nonisolated private struct ScanArchiveStreamingJSONWriter {
         }
     }
 
+    mutating func append(_ data: Data) throws {
+        buffer.append(data)
+        if buffer.count >= Self.flushByteCount {
+            try flush()
+        }
+    }
+
     mutating func finish() throws {
         try flush()
     }
@@ -74,22 +81,24 @@ extension ScanArchiveService {
         let encoder = Self.makeJSONLineEncoder()
         let totalNodeCount = treeStore.nodeCount
         var processedNodeCount = 0
-        let orderedNodeIDs = treeStore.indexedNodeIDs()
+        let orderedNodeIndices = treeStore.indexedNodeIndices()
+        var writer = ScanArchiveStreamingJSONWriter(fileHandle: fileHandle)
 
-        for nodeID in orderedNodeIDs {
+        for nodeIndex in orderedNodeIndices {
             try Task.checkCancellation()
-            guard let node = treeStore.node(id: nodeID) else {
-                throw ScanArchiveError.nodes(localized: "node \(nodeID) disappeared while exporting")
+            guard let node = treeStore.node(at: nodeIndex) else {
+                throw ScanArchiveError.nodes(localized: "node index disappeared while exporting")
             }
+            let parent = treeStore.parentIndex(of: nodeIndex).flatMap { treeStore.node(at: $0) }
             var lineData = try encoder.encode(
                 ScanArchiveCompactNode(
                     node,
-                    parent: treeStore.parent(of: nodeID)
+                    parent: parent
                 )
             )
             lineData.append(ScanArchiveNodeIOConstants.newlineData)
             hasher.update(data: lineData)
-            try fileHandle.write(contentsOf: lineData)
+            try writer.append(lineData)
             processedNodeCount += 1
 
             if ScanArchiveProgressReporting.shouldReportProgress(processedNodeCount) || processedNodeCount == totalNodeCount {
@@ -102,6 +111,7 @@ extension ScanArchiveService {
                 await Task.yield()
             }
         }
+        try writer.finish()
 
         return Data(hasher.finalize()).base64EncodedString()
     }

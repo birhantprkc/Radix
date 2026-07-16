@@ -1,5 +1,32 @@
 import Foundation
 
+nonisolated struct ScanComparisonSearchIndex: Equatable, Sendable {
+    private struct Entry: Equatable, Sendable {
+        let name: String
+        let relativePath: String
+    }
+
+    private let entryByRowID: [ScanComparisonRow.ID: Entry]
+
+    init(rows: [ScanComparisonRow]) {
+        var entryByRowID: [ScanComparisonRow.ID: Entry] = [:]
+        entryByRowID.reserveCapacity(rows.count)
+        for row in rows {
+            entryByRowID[row.id] = Entry(
+                name: SearchNormalizer.normalize(row.name),
+                relativePath: SearchNormalizer.normalize(row.relativePath)
+            )
+        }
+        self.entryByRowID = entryByRowID
+    }
+
+    func row(_ row: ScanComparisonRow, matches normalizedQuery: String) -> Bool {
+        guard let entry = entryByRowID[row.id] else { return false }
+        return entry.name.contains(normalizedQuery)
+            || entry.relativePath.contains(normalizedQuery)
+    }
+}
+
 /// Sorts comparison evidence independently from the service that constructs it.
 nonisolated struct ScanComparisonRowComparator: Equatable, SortComparator, Sendable {
     enum Field: Equatable, Sendable {
@@ -35,18 +62,7 @@ nonisolated struct ScanComparisonRowComparator: Equatable, SortComparator, Senda
             lhs.itemKind.localizedStandardCompare(rhs.itemKind)
         }
 
-        let orderedResult = FileNodeSortComparison.applying(order, to: result)
-        switch orderedResult {
-        case .orderedSame:
-            return FileNodeSortComparison.fallback(
-                lhsName: lhs.name,
-                lhsID: lhs.relativePath,
-                rhsName: rhs.name,
-                rhsID: rhs.relativePath
-            )
-        default:
-            return orderedResult
-        }
+        return FileNodeSortComparison.applying(order, to: result)
     }
 }
 
@@ -70,7 +86,10 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
         self.pathPrefix = pathPrefix
     }
 
-    func applying(to rows: [ScanComparisonRow]) -> [ScanComparisonRow] {
+    func applying(
+        to rows: [ScanComparisonRow],
+        searchIndex: ScanComparisonSearchIndex? = nil
+    ) -> [ScanComparisonRow] {
         let query = SearchNormalizer.normalize(
             searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -82,6 +101,9 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
                 }
             }
             guard !query.isEmpty else { return true }
+            if let searchIndex {
+                return searchIndex.row(row, matches: query)
+            }
             return SearchNormalizer.normalize(row.name).contains(query)
                 || SearchNormalizer.normalize(row.relativePath).contains(query)
         }
@@ -100,7 +122,12 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
                     continue
                 }
             }
-            return false
+            return FileNodeSortComparison.fallback(
+                lhsName: lhs.name,
+                lhsID: lhs.relativePath,
+                rhsName: rhs.name,
+                rhsID: rhs.relativePath
+            ) == .orderedAscending
         }
     }
 }

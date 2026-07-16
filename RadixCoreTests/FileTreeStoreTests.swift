@@ -81,6 +81,41 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertFalse(store.isNodeOrDescendant(sibling.id, of: [folder.id]))
     }
 
+    func testPreparedNodeSetPreservesMissingSiblingAndNestedSemantics() {
+        let leaf = makeFileNode(id: "/root/folder/file.txt", name: "file.txt", size: 12)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])
+        let sibling = makeFileNode(id: "/root/sibling.txt", name: "sibling.txt", size: 4)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder, sibling])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, sibling],
+            folder.id: [leaf],
+        ])
+
+        let prepared = store.preparedNodeSet(for: [folder.id, "/missing"])
+
+        XCTAssertTrue(store.isNodeOrDescendant(folder.id, of: prepared))
+        XCTAssertTrue(store.isNodeOrDescendant(leaf.id, of: prepared))
+        XCTAssertFalse(store.isNodeOrDescendant(root.id, of: prepared))
+        XCTAssertFalse(store.isNodeOrDescendant(sibling.id, of: prepared))
+        XCTAssertFalse(store.isNodeOrDescendant("/missing", of: prepared))
+    }
+
+    func testTopLevelNodeIDsHandlesLargeSiblingBatchWithoutDroppingNodes() {
+        let siblings = (0..<10_000).map { index in
+            makeFileNode(
+                id: "/root/file-\(index).txt",
+                name: "file-\(index).txt",
+                size: Int64(index)
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: siblings)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: siblings])
+
+        let result = store.topLevelNodeIDs(from: siblings.map(\.id))
+
+        XCTAssertEqual(result, siblings.map(\.id))
+    }
+
     func testRemovingSubtreesRemovesQueuedParentsAndRepairsTotals() {
         let leaf = makeFileNode(id: "/root/folder/file.txt", name: "file.txt", size: 12)
         let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])
@@ -827,6 +862,60 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(shrunk.aggregateStats.directoryCount, originalStats.directoryCount)
         XCTAssertEqual(shrunk.aggregateStats.accessibleItemCount, originalStats.accessibleItemCount)
         XCTAssertEqual(shrunk.aggregateStats.inaccessibleItemCount, originalStats.inaccessibleItemCount)
+    }
+
+    func testVolumeReconciliationAddsAndRemovesRemainderWithoutMaterializingTreeMaps() throws {
+        let mebibyte: Int64 = 1_024 * 1_024
+        let nested = makeFileNode(id: "/root/folder/nested.bin", name: "nested.bin", size: 100 * mebibyte)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [nested])
+        let payload = makeFileNode(id: "/root/payload.bin", name: "payload.bin", size: 100 * mebibyte)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder, payload])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, payload],
+            folder.id: [nested],
+        ])
+        let originalStats = store.aggregateStats
+        let target = ScanTarget(
+            url: URL(filePath: root.id, directoryHint: .isDirectory),
+            kind: .volume
+        )
+
+        let grown = VolumeCapacityAccounting.reconciledStore(
+            store,
+            target: target,
+            capacity: VolumeCapacitySnapshot(
+                totalCapacity: 400 * mebibyte,
+                availableCapacity: 0
+            ),
+            hasActiveExclusions: false
+        )
+        let remainderID = root.id + "#system-unattributed"
+
+        XCTAssertEqual(grown.nodeCount, store.nodeCount + 1)
+        XCTAssertEqual(grown.node(id: remainderID)?.allocatedSize, 200 * mebibyte)
+        XCTAssertEqual(grown.parentID(of: nested.id), folder.id)
+        XCTAssertEqual(grown.aggregateStats.accessibleItemCount, originalStats.accessibleItemCount + 1)
+
+        let restored = VolumeCapacityAccounting.reconciledStore(
+            grown,
+            target: target,
+            capacity: VolumeCapacitySnapshot(
+                totalCapacity: 200 * mebibyte,
+                availableCapacity: 0
+            ),
+            hasActiveExclusions: false
+        )
+
+        XCTAssertEqual(restored.nodeCount, store.nodeCount)
+        XCTAssertNil(restored.node(id: remainderID))
+        XCTAssertEqual(restored.indexedNodeIDs(), store.indexedNodeIDs())
+        XCTAssertEqual(restored.parentID(of: nested.id), folder.id)
+        XCTAssertEqual(restored.aggregateStats.totalAllocatedSize, originalStats.totalAllocatedSize)
+        XCTAssertEqual(restored.aggregateStats.totalLogicalSize, originalStats.totalLogicalSize)
+        XCTAssertEqual(restored.aggregateStats.fileCount, originalStats.fileCount)
+        XCTAssertEqual(restored.aggregateStats.directoryCount, originalStats.directoryCount)
+        XCTAssertEqual(restored.aggregateStats.accessibleItemCount, originalStats.accessibleItemCount)
+        XCTAssertEqual(restored.aggregateStats.inaccessibleItemCount, originalStats.inaccessibleItemCount)
     }
 }
 

@@ -48,13 +48,13 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         let activeCloudLocations = [
             Self.cloudLocation(
                 configuredRootPath: cloudStorageRootPath,
-                userRelativeComponents: ["Library", "CloudStorage"],
+                userRelativePath: "Library/CloudStorage",
                 scanRootPath: normalizedRootPath,
                 includeCloudStorage: includeCloudStorage
             ),
             Self.cloudLocation(
                 configuredRootPath: iCloudDriveRootPath,
-                userRelativeComponents: ["Library", "Mobile Documents"],
+                userRelativePath: "Library/Mobile Documents",
                 scanRootPath: normalizedRootPath,
                 includeCloudStorage: includeCloudStorage
             )
@@ -141,77 +141,58 @@ nonisolated struct ScanExclusionMatcher: Sendable {
 
     private static func cloudLocation(
         configuredRootPath: String,
-        userRelativeComponents: [String],
+        userRelativePath: String,
         scanRootPath: String,
         includeCloudStorage: Bool
     ) -> CloudLocation {
         let normalizedConfiguredRootPath = normalizedRootPath(configuredRootPath)
+        let scanUserRootPath = usersRootPath(containing: scanRootPath)
+        let scanUserCloudPath = scanUserRootPath.map { "\($0)/\(userRelativePath)" }
         let explicitlyScanning = path(
             scanRootPath,
             isEqualToOrDescendantOf: normalizedConfiguredRootPath
-        ) || isUsersCloudPath(scanRootPath, userRelativeComponents: userRelativeComponents)
-        let currentLocationCanMatch = pathsOverlap(scanRootPath, normalizedConfiguredRootPath)
-        let excludedRootPath = includeCloudStorage
-            || explicitlyScanning
-            || !currentLocationCanMatch
-            ? nil
-            : normalizedConfiguredRootPath
-        let excludesAnyUser = !includeCloudStorage
-            && !explicitlyScanning
-            && usersCloudRuleCanMatchDescendant(
-                of: scanRootPath,
-                userRelativeComponents: userRelativeComponents
-            )
+        ) || isUsersCloudPath(scanRootPath, userRelativePath: userRelativePath)
+
+        guard !includeCloudStorage, !explicitlyScanning else {
+            return CloudLocation(excludedRoots: [], anyUserPathSuffix: nil)
+        }
+
+        let excludesAnyUser = scanRootPath == "/" || scanRootPath == "/Users"
+        var excludedRoots: [String] = []
+        if !excludesAnyUser, pathsOverlap(scanRootPath, normalizedConfiguredRootPath) {
+            excludedRoots.append(normalizedConfiguredRootPath)
+        }
+        if !excludesAnyUser,
+           let scanUserCloudPath,
+           pathsOverlap(scanRootPath, scanUserCloudPath),
+           !excludedRoots.contains(scanUserCloudPath) {
+            excludedRoots.append(scanUserCloudPath)
+        }
         return CloudLocation(
-            excludedRootPath: excludedRootPath,
-            excludesAnyUser: excludesAnyUser,
-            userRelativeComponents: userRelativeComponents
+            excludedRoots: excludedRoots,
+            anyUserPathSuffix: excludesAnyUser ? "/\(userRelativePath)" : nil
         )
     }
 
-    private static func usersCloudRuleCanMatchDescendant(
-        of rootPath: String,
-        userRelativeComponents: [String]
-    ) -> Bool {
-        if rootPath == "/" || rootPath == "/Users" {
-            return true
-        }
-
-        let components = pathComponents(rootPath)
-        guard components.first == "Users" else { return false }
-
-        // Full cloud path is /Users/<user>/<userRelativeComponents...>.
-        let fullCount = 2 + userRelativeComponents.count
-        if components.count < fullCount {
-            // Scan root is an ancestor of the cloud path; the components it does
-            // pin down must still match the cloud path's prefix.
-            for index in 2..<components.count where components[index] != userRelativeComponents[index - 2] {
-                return false
-            }
-            return true
-        }
-
-        // Scan root is at or below the cloud path's depth; it can only contain a
-        // descendant of the rule when the root itself is the cloud path.
-        return isUsersCloudPath(rootPath, userRelativeComponents: userRelativeComponents)
+    private static func usersRootPath(containing path: String) -> Substring? {
+        let usersPrefix = "/Users/"
+        guard path.hasPrefix(usersPrefix) else { return nil }
+        let userStart = path.index(path.startIndex, offsetBy: usersPrefix.count)
+        guard userStart < path.endIndex else { return nil }
+        let userEnd = path[userStart...].firstIndex(of: "/") ?? path.endIndex
+        guard userEnd > userStart else { return nil }
+        return path[..<userEnd]
     }
 
     fileprivate static func isUsersCloudPath(
         _ path: String,
-        userRelativeComponents: [String]
+        userRelativePath: String
     ) -> Bool {
-        let components = pathComponents(path)
-        guard components.count >= 2 + userRelativeComponents.count else { return false }
-        guard components[0] == "Users" else { return false }
-        for (offset, expected) in userRelativeComponents.enumerated()
-        where components[2 + offset] != expected {
-            return false
-        }
-        return true
-    }
-
-    private static func pathComponents(_ path: String) -> [String] {
-        path.split(separator: "/").map(String.init)
+        guard let usersRootPath = usersRootPath(containing: path) else { return false }
+        return self.path(
+            path,
+            isEqualToOrDescendantOf: "\(usersRootPath)/\(userRelativePath)"
+        )
     }
 
     private static func pathsOverlap(_ firstPath: String, _ secondPath: String) -> Bool {
@@ -285,37 +266,51 @@ nonisolated struct ScanExclusionMatcher: Sendable {
 }
 
 nonisolated private struct CloudLocation: Sendable {
-    /// Concrete cloud root (current user's) to exclude, or nil when not applicable
-    /// for this scan (e.g. the user opted in, or is explicitly scanning into it).
-    let excludedRootPath: String?
-    /// Whether the generic `/Users/*/<userRelativeComponents>` rule should apply,
-    /// so that broad scans (`/`, `/Users`, ...) skip every user's cloud root.
-    let excludesAnyUser: Bool
-    /// Path components after `/Users/<user>` identifying this cloud location,
-    /// e.g. `["Library", "CloudStorage"]` or `["Library", "Mobile Documents"]`.
-    let userRelativeComponents: [String]
+    let excludedRoots: [CloudPathPrefix]
+    let anyUserPathSuffix: String?
+    let anyUserDescendantPrefix: String?
+
+    init(excludedRoots: [String], anyUserPathSuffix: String?) {
+        self.excludedRoots = excludedRoots.map(CloudPathPrefix.init)
+        self.anyUserPathSuffix = anyUserPathSuffix
+        self.anyUserDescendantPrefix = anyUserPathSuffix.map { "\($0)/" }
+    }
 
     var isActive: Bool {
-        excludedRootPath != nil || excludesAnyUser
+        !excludedRoots.isEmpty || anyUserPathSuffix != nil
     }
 
     func excludes(path: String) -> Bool {
-        if let excludedRootPath {
-            if path == excludedRootPath {
-                return true
-            }
-
-            let rootPrefix = excludedRootPath.hasSuffix("/")
-                ? excludedRootPath
-                : "\(excludedRootPath)/"
-            if path.hasPrefix(rootPrefix) {
-                return true
-            }
+        if excludedRoots.contains(where: { $0.excludes(path) }) {
+            return true
         }
+        guard let anyUserPathSuffix,
+              let anyUserDescendantPrefix,
+              path.hasPrefix("/Users/") else {
+            return false
+        }
+        let userStart = path.index(path.startIndex, offsetBy: "/Users/".count)
+        guard let relativeStart = path[userStart...].firstIndex(of: "/"),
+              relativeStart > userStart else {
+            return false
+        }
+        let relativePath = path[relativeStart...]
+        return relativePath == anyUserPathSuffix
+            || relativePath.hasPrefix(anyUserDescendantPrefix)
+    }
+}
 
-        return excludesAnyUser
-            && path.hasPrefix("/Users/")
-            && ScanExclusionMatcher.isUsersCloudPath(path, userRelativeComponents: userRelativeComponents)
+nonisolated private struct CloudPathPrefix: Sendable {
+    let root: String
+    let descendantPrefix: String
+
+    init(_ root: String) {
+        self.root = root
+        self.descendantPrefix = root.hasSuffix("/") ? root : "\(root)/"
+    }
+
+    func excludes(_ path: String) -> Bool {
+        path == root || path.hasPrefix(descendantPrefix)
     }
 }
 
@@ -459,11 +454,6 @@ nonisolated private struct GlobPattern: Sendable {
         case anyRun(allowsSlash: Bool)
     }
 
-    private struct MemoKey: Hashable, Sendable {
-        let tokenIndex: Int
-        let valueIndex: Int
-    }
-
     private let tokens: [Token]
 
     init(pattern: String, matchesPath: Bool) {
@@ -498,43 +488,34 @@ nonisolated private struct GlobPattern: Sendable {
 
     func matches<Value: StringProtocol>(_ value: Value) -> Bool {
         let characters = Array(value)
-        var memo: [MemoKey: Bool] = [:]
+        var previous = Array(repeating: false, count: characters.count + 1)
+        var current = previous
+        previous[0] = true
 
-        func match(tokenIndex: Int, valueIndex: Int) -> Bool {
-            let key = MemoKey(tokenIndex: tokenIndex, valueIndex: valueIndex)
-            if let cached = memo[key] {
-                return cached
+        for token in tokens {
+            for index in current.indices {
+                current[index] = false
             }
-
-            let result: Bool
-            if tokenIndex == tokens.count {
-                result = valueIndex == characters.count
-            } else {
-                switch tokens[tokenIndex] {
-                case .literal(let character):
-                    result = valueIndex < characters.count &&
-                        characters[valueIndex] == character &&
-                        match(tokenIndex: tokenIndex + 1, valueIndex: valueIndex + 1)
-                case .anySingle(let allowsSlash):
-                    result = valueIndex < characters.count &&
-                        (allowsSlash || characters[valueIndex] != "/") &&
-                        match(tokenIndex: tokenIndex + 1, valueIndex: valueIndex + 1)
-                case .anyRun(let allowsSlash):
-                    if match(tokenIndex: tokenIndex + 1, valueIndex: valueIndex) {
-                        result = true
-                    } else if valueIndex < characters.count &&
-                                (allowsSlash || characters[valueIndex] != "/") {
-                        result = match(tokenIndex: tokenIndex, valueIndex: valueIndex + 1)
-                    } else {
-                        result = false
-                    }
+            switch token {
+            case .literal(let literal):
+                for valueIndex in characters.indices where previous[valueIndex] {
+                    current[valueIndex + 1] = characters[valueIndex] == literal
+                }
+            case .anySingle(let allowsSlash):
+                for valueIndex in characters.indices where previous[valueIndex] {
+                    current[valueIndex + 1] = allowsSlash || characters[valueIndex] != "/"
+                }
+            case .anyRun(let allowsSlash):
+                current[0] = previous[0]
+                for valueIndex in characters.indices {
+                    current[valueIndex + 1] = previous[valueIndex + 1]
+                        || (current[valueIndex]
+                            && (allowsSlash || characters[valueIndex] != "/"))
                 }
             }
-
-            memo[key] = result
-            return result
+            swap(&previous, &current)
         }
 
-        return match(tokenIndex: 0, valueIndex: 0)
+        return previous[characters.count]
     }
 }

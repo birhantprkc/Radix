@@ -72,6 +72,10 @@ final class FileBrowserModel: ObservableObject {
         displayState.node(id: id)
     }
 
+    func displayedNodes(ids: Set<FileNodeRecord.ID>) -> [FileNodeRecord] {
+        displayState.nodes(ids: ids)
+    }
+
     func displayValues(
         for node: FileNodeRecord,
         hidesPackageContents: Bool = false
@@ -397,8 +401,9 @@ final class FileBrowserModel: ObservableObject {
             return nodes
         }
 
+        let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenNodeIDs)
         return nodes.filter { node in
-            !fileTreeStore.isNodeOrDescendant(node.id, of: hiddenNodeIDs)
+            !fileTreeStore.isNodeOrDescendant(node.id, of: hiddenNodes)
         }
     }
 }

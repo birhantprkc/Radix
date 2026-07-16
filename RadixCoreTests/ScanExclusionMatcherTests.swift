@@ -48,6 +48,83 @@ final class ScanExclusionMatcherTests: XCTestCase {
         XCTAssertFalse(matcher.excludesKnownNormalizedPath("\(rootPath)/Library/Caches/file.bin", isDirectory: false))
     }
 
+    func testComplexGlobUsesBoundedMatchingAndPreservesGlobstarSemantics() {
+        let rootPath = "/tmp/RadixProject"
+        let matcher = ScanExclusionMatcher(
+            patterns: ["**/cache/**/file?.txt", "*a*a*a*a*a*a*a*a*b"],
+            rootPath: rootPath,
+            includeCloudStorage: true
+        )
+
+        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
+            "\(rootPath)/Sources/cache/nested/file1.txt",
+            isDirectory: false
+        ))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
+            "\(rootPath)/Sources/cache/nested/file10.txt",
+            isDirectory: false
+        ))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
+            "\(rootPath)/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            isDirectory: false
+        ))
+    }
+
+    func testSingleUserCloudRuleCompilesConcreteBoundaryAwarePrefixes() {
+        let matcher = ScanExclusionMatcher(
+            patterns: [],
+            rootPath: "/Users/alex",
+            includeCloudStorage: false,
+            cloudStorageRootPath: "/CustomHomes/colin/Library/CloudStorage",
+            iCloudDriveRootPath: "/CustomHomes/colin/Library/Mobile Documents"
+        )
+
+        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
+            "/Users/alex/Library/CloudStorage/Dropbox/file.bin",
+            isDirectory: false
+        ))
+        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
+            "/Users/alex/Library/Mobile Documents/com~apple~CloudDocs/file.bin",
+            isDirectory: false
+        ))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
+            "/Users/alex/Library/CloudStorageBackup/file.bin",
+            isDirectory: false
+        ))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
+            "/Users/alexander/Library/CloudStorage/file.bin",
+            isDirectory: false
+        ))
+    }
+
+    func testRootCloudRuleRejectsMalformedAndNearPrefixPaths() {
+        let matcher = ScanExclusionMatcher(
+            patterns: [],
+            rootPath: "/",
+            includeCloudStorage: false,
+            cloudStorageRootPath: "/CustomHomes/colin/Library/CloudStorage",
+            iCloudDriveRootPath: "/CustomHomes/colin/Library/Mobile Documents"
+        )
+
+        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
+            "/Users/alex/Library/CloudStorage/file.bin",
+            isDirectory: false
+        ))
+        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
+            "/Users/blair/Library/Mobile Documents/file.bin",
+            isDirectory: false
+        ))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
+            "/Users//Library/CloudStorage/file.bin",
+            isDirectory: false
+        ))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath("/Users/alex", isDirectory: true))
+        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
+            "/Users/alex/Library/Mobile Documents Backup/file.bin",
+            isDirectory: false
+        ))
+    }
+
     func testMatcherHandlesManyExcludedChildren() {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(

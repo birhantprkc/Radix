@@ -11,6 +11,10 @@ nonisolated struct FileTreeNodeIndex: RawRepresentable, Hashable, Sendable {
     let rawValue: UInt32
 }
 
+nonisolated struct PreparedFileTreeNodeSet: Sendable {
+    fileprivate let indices: Set<FileTreeNodeIndex>
+}
+
 nonisolated private struct FileTreeChildSpan: Sendable {
     var start: UInt32 = 0
     var count: UInt32 = 0
@@ -671,6 +675,118 @@ nonisolated struct FileTreeStore: Sendable {
         )
     }
 
+    /// Adds or removes one root-level leaf while preserving every unaffected
+    /// subtree in the compact arena. This avoids dictionary projections for
+    /// synthetic capacity nodes without exposing general topology mutation.
+    nonisolated func replacingRootLeaf(
+        removing removedLeafID: String?,
+        adding addedLeaf: FileNodeRecord?,
+        root replacementRoot: FileNodeRecord,
+        orderedChildIDs: [String],
+        aggregateStats: ScanAggregateStats
+    ) -> FileTreeStore? {
+        guard replacementRoot.id == rootID,
+              let oldRootIndex = nodeIndex(id: rootID) else {
+            return nil
+        }
+
+        let oldRootChildren = topologyArena.children(of: oldRootIndex)
+        var expectedChildIDs = oldRootChildren.compactMap { node(at: $0)?.id }
+        var removedIndex: FileTreeNodeIndex?
+        if let removedLeafID {
+            guard let index = nodeIndex(id: removedLeafID),
+                  topologyArena.parentIndex(of: index) == oldRootIndex,
+                  topologyArena.children(of: index).isEmpty else {
+                return nil
+            }
+            removedIndex = index
+            expectedChildIDs.removeAll { $0 == removedLeafID }
+        }
+        if let addedLeaf {
+            guard !addedLeaf.isDirectory,
+                  addedLeaf.id != removedLeafID,
+                  nodeIndex(id: addedLeaf.id) == nil else {
+                return nil
+            }
+            expectedChildIDs.append(addedLeaf.id)
+        }
+        guard orderedChildIDs.count == expectedChildIDs.count,
+              Set(orderedChildIDs).count == orderedChildIDs.count,
+              Set(orderedChildIDs) == Set(expectedChildIDs) else {
+            return nil
+        }
+
+        var remappedIndices = Array<FileTreeNodeIndex?>(repeating: nil, count: nodeRecords.count)
+        var updatedRecords: [FileNodeRecord] = []
+        updatedRecords.reserveCapacity(
+            nodeRecords.count
+                - (removedIndex == nil ? 0 : 1)
+                + (addedLeaf == nil ? 0 : 1)
+        )
+        for (offset, record) in nodeRecords.enumerated() {
+            let oldIndex = FileTreeNodeIndex(rawValue: UInt32(offset))
+            guard oldIndex != removedIndex else { continue }
+            let newIndex = FileTreeNodeIndex(rawValue: UInt32(updatedRecords.count))
+            remappedIndices[offset] = newIndex
+            updatedRecords.append(oldIndex == oldRootIndex ? replacementRoot : record)
+        }
+        let addedLeafIndex: FileTreeNodeIndex?
+        if let addedLeaf {
+            addedLeafIndex = FileTreeNodeIndex(rawValue: UInt32(updatedRecords.count))
+            updatedRecords.append(addedLeaf)
+        } else {
+            addedLeafIndex = nil
+        }
+
+        guard let updatedRootIndex = remappedIndices[Int(oldRootIndex.rawValue)] else {
+            return nil
+        }
+        var parentIndices = Array<FileTreeNodeIndex?>(repeating: nil, count: updatedRecords.count)
+        var childIndicesByIndex = Array(repeating: [FileTreeNodeIndex](), count: updatedRecords.count)
+        for oldOffset in nodeRecords.indices {
+            guard let newIndex = remappedIndices[oldOffset] else { continue }
+            let oldIndex = FileTreeNodeIndex(rawValue: UInt32(oldOffset))
+            if let oldParent = topologyArena.parentIndex(of: oldIndex) {
+                guard let newParent = remappedIndices[Int(oldParent.rawValue)] else { return nil }
+                parentIndices[Int(newIndex.rawValue)] = newParent
+            }
+            childIndicesByIndex[Int(newIndex.rawValue)] = topologyArena.children(of: oldIndex).compactMap {
+                remappedIndices[Int($0.rawValue)]
+            }
+        }
+
+        let updatedRootChildren = orderedChildIDs.compactMap { childID -> FileTreeNodeIndex? in
+            if childID == addedLeaf?.id {
+                return addedLeafIndex
+            }
+            guard let oldIndex = nodeIndex(id: childID) else { return nil }
+            return remappedIndices[Int(oldIndex.rawValue)]
+        }
+        guard updatedRootChildren.count == orderedChildIDs.count else { return nil }
+        childIndicesByIndex[Int(updatedRootIndex.rawValue)] = updatedRootChildren
+        for childIndex in updatedRootChildren {
+            parentIndices[Int(childIndex.rawValue)] = updatedRootIndex
+        }
+
+        var orderedNodeIndices: [FileTreeNodeIndex] = []
+        orderedNodeIndices.reserveCapacity(updatedRecords.count)
+        var stack = [updatedRootIndex]
+        while let index = stack.popLast() {
+            orderedNodeIndices.append(index)
+            stack.append(contentsOf: childIndicesByIndex[Int(index.rawValue)].reversed())
+        }
+        guard orderedNodeIndices.count == updatedRecords.count else { return nil }
+
+        return FileTreeStore(
+            verifiedRootIndex: updatedRootIndex,
+            nodes: updatedRecords,
+            childIndicesByIndex: childIndicesByIndex,
+            parentIndices: parentIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: aggregateStats
+        )
+    }
+
     nonisolated func replacingAllocatedSizes(
         _ allocatedSizeByNodeID: [String: Int64],
         cancellationCheck: () throws -> Void
@@ -894,9 +1010,21 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func hasAncestor(in ancestorIDs: Set<String>, of nodeID: String) -> Bool {
-        let ancestorIndices = Set(ancestorIDs.compactMap { topologyArena.indexByNodeID[$0] })
+        hasAncestor(in: preparedNodeSet(for: ancestorIDs), of: nodeID)
+    }
+
+    nonisolated func preparedNodeSet(for nodeIDs: Set<String>) -> PreparedFileTreeNodeSet {
+        PreparedFileTreeNodeSet(
+            indices: Set(nodeIDs.compactMap { topologyArena.indexByNodeID[$0] })
+        )
+    }
+
+    nonisolated func hasAncestor(
+        in ancestorNodes: PreparedFileTreeNodeSet,
+        of nodeID: String
+    ) -> Bool {
         guard let nodeIndex = nodeIndex(id: nodeID) else { return false }
-        return hasAncestor(in: ancestorIndices, of: nodeIndex)
+        return hasAncestor(in: ancestorNodes.indices, of: nodeIndex)
     }
 
     nonisolated func hasAncestor(
@@ -914,17 +1042,27 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func isNodeOrDescendant(_ nodeID: String, of ancestorIDs: Set<String>) -> Bool {
-        ancestorIDs.contains(nodeID) || hasAncestor(in: ancestorIDs, of: nodeID)
+        isNodeOrDescendant(nodeID, of: preparedNodeSet(for: ancestorIDs))
+    }
+
+    nonisolated func isNodeOrDescendant(
+        _ nodeID: String,
+        of ancestorNodes: PreparedFileTreeNodeSet
+    ) -> Bool {
+        guard let nodeIndex = nodeIndex(id: nodeID) else { return false }
+        return ancestorNodes.indices.contains(nodeIndex)
+            || hasAncestor(in: ancestorNodes.indices, of: nodeIndex)
     }
 
     nonisolated func topLevelNodeIDs(from nodeIDs: [String]) -> [String] {
         let candidateIDs = Set(nodeIDs.filter { nodeIndex(id: $0) != nil })
+        let candidateNodes = preparedNodeSet(for: candidateIDs)
         var emittedIDs = Set<String>()
         var result: [String] = []
         result.reserveCapacity(nodeIDs.count)
 
         for nodeID in nodeIDs where candidateIDs.contains(nodeID) && !emittedIDs.contains(nodeID) {
-            guard !hasAncestor(in: candidateIDs, of: nodeID) else {
+            guard !hasAncestor(in: candidateNodes, of: nodeID) else {
                 continue
             }
             emittedIDs.insert(nodeID)

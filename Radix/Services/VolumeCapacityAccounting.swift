@@ -39,18 +39,37 @@ nonisolated enum VolumeCapacityAccounting {
         let shouldIncludeRemainder = missingBytes >= minimumNewRemainder || existingRemainder != nil
 
         guard shouldIncludeRemainder, missingBytes > 0 else {
-            var nodesByID = treeStore.nodesByID
-            var childIDsByID = treeStore.childIDsByID
-            if let existingRemainder {
-                nodesByID.removeValue(forKey: existingRemainder.id)
-                childIDsByID.removeValue(forKey: existingRemainder.id)
+            let reconciledStats = adjustedStats(
+                treeStore.aggregateStats,
+                root: scannedRoot,
+                removing: existingRemainder,
+                adding: nil
+            )
+            if let existingRemainder,
+               let updatedStore = treeStore.replacingRootLeaf(
+                    removing: existingRemainder.id,
+                    adding: nil,
+                    root: scannedRoot,
+                    orderedChildIDs: ordinaryChildren.map(\.id),
+                    aggregateStats: reconciledStats
+               ) {
+                return updatedStore
             }
-            nodesByID[scannedRoot.id] = scannedRoot
-            childIDsByID[scannedRoot.id] = ordinaryChildren.map(\.id)
-            return FileTreeStore(
-                rootID: treeStore.rootID,
-                nodesByID: nodesByID,
-                childIDsByID: childIDsByID
+            if existingRemainder == nil,
+               let updatedStore = treeStore.replacingRecordsPreservingTopology(
+                    [scannedRoot],
+                    orderedChildIDs: ordinaryChildren.map(\.id),
+                    of: root.id,
+                    aggregateStats: reconciledStats
+               ) {
+                return updatedStore
+            }
+            return rebuiltStore(
+                treeStore,
+                root: scannedRoot,
+                children: ordinaryChildren,
+                removing: existingRemainder,
+                adding: nil
             )
         }
 
@@ -72,16 +91,13 @@ nonisolated enum VolumeCapacityAccounting {
         )
         let rootChildren = FileTreeStore.sortedChildren(ordinaryChildren + [unattributedNode])
         let reconciledRoot = rebuiltRoot(root, children: rootChildren)
+        let reconciledStats = adjustedStats(
+            treeStore.aggregateStats,
+            root: reconciledRoot,
+            removing: existingRemainder,
+            adding: unattributedNode
+        )
         if existingRemainder != nil {
-            let existingStats = treeStore.aggregateStats
-            let reconciledStats = ScanAggregateStats(
-                totalAllocatedSize: reconciledRoot.allocatedSize,
-                totalLogicalSize: reconciledRoot.logicalSize,
-                fileCount: existingStats.fileCount,
-                directoryCount: existingStats.directoryCount,
-                accessibleItemCount: existingStats.accessibleItemCount,
-                inaccessibleItemCount: existingStats.inaccessibleItemCount
-            )
             if let updatedStore = treeStore.replacingRecordsPreservingTopology(
                 [reconciledRoot, unattributedNode],
                 orderedChildIDs: rootChildren.map(\.id),
@@ -91,21 +107,21 @@ nonisolated enum VolumeCapacityAccounting {
                 return updatedStore
             }
         }
-
-        var nodesByID = treeStore.nodesByID
-        var childIDsByID = treeStore.childIDsByID
-        if let existingRemainder {
-            nodesByID.removeValue(forKey: existingRemainder.id)
-            childIDsByID.removeValue(forKey: existingRemainder.id)
+        if let updatedStore = treeStore.replacingRootLeaf(
+            removing: existingRemainder?.id,
+            adding: unattributedNode,
+            root: reconciledRoot,
+            orderedChildIDs: rootChildren.map(\.id),
+            aggregateStats: reconciledStats
+        ) {
+            return updatedStore
         }
-        nodesByID[reconciledRoot.id] = reconciledRoot
-        nodesByID[unattributedNode.id] = unattributedNode
-        childIDsByID[reconciledRoot.id] = rootChildren.map(\.id)
-
-        return FileTreeStore(
-            rootID: treeStore.rootID,
-            nodesByID: nodesByID,
-            childIDsByID: childIDsByID
+        return rebuiltStore(
+            treeStore,
+            root: reconciledRoot,
+            children: rootChildren,
+            removing: existingRemainder,
+            adding: unattributedNode
         )
     }
 
@@ -123,6 +139,63 @@ nonisolated enum VolumeCapacityAccounting {
 
     private static func isUnattributedNodeID(_ nodeID: String) -> Bool {
         nodeID.hasSuffix(unattributedSuffix)
+    }
+
+    private static func adjustedStats(
+        _ existing: ScanAggregateStats,
+        root: FileNodeRecord,
+        removing removedLeaf: FileNodeRecord?,
+        adding addedLeaf: FileNodeRecord?
+    ) -> ScanAggregateStats {
+        var accessibleItemCount = existing.accessibleItemCount
+        var inaccessibleItemCount = existing.inaccessibleItemCount
+        if let removedLeaf {
+            if removedLeaf.isAccessible {
+                accessibleItemCount -= 1
+            } else {
+                inaccessibleItemCount -= 1
+            }
+        }
+        if let addedLeaf {
+            if addedLeaf.isAccessible {
+                accessibleItemCount += 1
+            } else {
+                inaccessibleItemCount += 1
+            }
+        }
+        return ScanAggregateStats(
+            totalAllocatedSize: root.allocatedSize,
+            totalLogicalSize: root.logicalSize,
+            fileCount: existing.fileCount,
+            directoryCount: existing.directoryCount,
+            accessibleItemCount: accessibleItemCount,
+            inaccessibleItemCount: inaccessibleItemCount
+        )
+    }
+
+    private static func rebuiltStore(
+        _ treeStore: FileTreeStore,
+        root: FileNodeRecord,
+        children: [FileNodeRecord],
+        removing removedLeaf: FileNodeRecord?,
+        adding addedLeaf: FileNodeRecord?
+    ) -> FileTreeStore {
+        var nodesByID = treeStore.nodesByID
+        var childIDsByID = treeStore.childIDsByID
+        if let removedLeaf {
+            nodesByID.removeValue(forKey: removedLeaf.id)
+            childIDsByID.removeValue(forKey: removedLeaf.id)
+        }
+        nodesByID[root.id] = root
+        if let addedLeaf {
+            nodesByID[addedLeaf.id] = addedLeaf
+        }
+        childIDsByID[root.id] = children.map(\.id)
+        return FileTreeStore(
+            rootID: treeStore.rootID,
+            nodesByID: nodesByID,
+            childIDsByID: childIDsByID
+        )
     }
 
     private static func rebuiltRoot(

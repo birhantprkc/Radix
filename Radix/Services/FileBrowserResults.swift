@@ -110,7 +110,12 @@ enum FileBrowserResults {
                     continue
                 }
             }
-            return false
+            return FileNodeSortComparison.fallback(
+                lhsName: lhs.name,
+                lhsID: lhs.id,
+                rhsName: rhs.name,
+                rhsID: rhs.id
+            ) == .orderedAscending
         }
         try cancellationCheck()
         return sortedNodes.map(\.node)
@@ -169,18 +174,7 @@ enum FileBrowserResults {
                 FileNodeSortComparison.compareOptional(lastModified, rhs.lastModified)
             }
 
-            let orderedResult = FileNodeSortComparison.applying(comparator.order, to: result)
-            switch orderedResult {
-            case .orderedSame:
-                return FileNodeSortComparison.fallback(
-                    lhsName: name,
-                    lhsID: id,
-                    rhsName: rhs.name,
-                    rhsID: rhs.id
-                )
-            default:
-                return orderedResult
-            }
+            return FileNodeSortComparison.applying(comparator.order, to: result)
         }
     }
 }

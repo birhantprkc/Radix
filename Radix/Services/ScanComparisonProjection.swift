@@ -127,23 +127,17 @@ nonisolated struct ScanComparisonChangeTree: Equatable, Sendable {
         }
 
         let ranked = eligible.map { node in
-            (
+            RankedSignificantNode(
                 node: node,
                 impact: node.impact(for: changeKinds),
                 changeCount: Int64(changeKinds.reduce(0) { $0 + node.changeCount(for: $1) })
             )
-        }.sorted { lhs, rhs in
-            if lhs.impact != rhs.impact { return lhs.impact > rhs.impact }
-            if lhs.node.grossChangedAllocatedSize != rhs.node.grossChangedAllocatedSize {
-                return lhs.node.grossChangedAllocatedSize > rhs.node.grossChangedAllocatedSize
-            }
-            return lhs.node.relativePath.localizedStandardCompare(rhs.node.relativePath) == .orderedAscending
         }
 
-        var selected: [String] = []
+        var selectedEntries: [RankedSignificantNode] = []
         var hidden: [String] = []
         let selectedCapacity = min(selectedIDs.count, ranked.count)
-        selected.reserveCapacity(selectedCapacity)
+        selectedEntries.reserveCapacity(selectedCapacity)
         hidden.reserveCapacity(ranked.count - selectedCapacity)
         var totalImpact: Int64 = 0
         var representedImpact: Int64 = 0
@@ -152,7 +146,7 @@ nonisolated struct ScanComparisonChangeTree: Equatable, Sendable {
         for entry in ranked {
             let isSelected = selectedIDs.contains(entry.node.id)
             if isSelected {
-                selected.append(entry.node.relativePath)
+                selectedEntries.append(entry)
             } else {
                 hidden.append(entry.node.relativePath)
             }
@@ -176,8 +170,9 @@ nonisolated struct ScanComparisonChangeTree: Equatable, Sendable {
             totalImpact = totalChangeCount
             representedImpact = representedChangeCount
         }
+        selectedEntries.sort(by: ranksBefore)
         return SignificantSelection(
-            selected: selected,
+            selected: selectedEntries.map { $0.node.relativePath },
             hidden: hidden,
             representedImpact: representedImpact,
             totalImpact: totalImpact
@@ -190,24 +185,59 @@ nonisolated struct ScanComparisonChangeTree: Equatable, Sendable {
         coverageTarget: Double,
         maximumCount: Int
     ) -> Set<String> {
-        let sorted = nodes.compactMap { node -> (node: ScanComparisonAggregateChange, value: Int64)? in
+        guard maximumCount > 0 else { return [] }
+
+        var total = Double(0)
+        var leading: [CoverageCandidate] = []
+        leading.reserveCapacity(min(maximumCount, nodes.count))
+        for node in nodes {
             let nodeValue = value(node)
-            return nodeValue > 0 ? (node, nodeValue) : nil
-        }.sorted { lhs, rhs in
-            if lhs.value != rhs.value { return lhs.value > rhs.value }
-            return lhs.node.relativePath.localizedStandardCompare(rhs.node.relativePath) == .orderedAscending
+            guard nodeValue > 0 else { continue }
+            total += Double(nodeValue)
+            let candidate = CoverageCandidate(node: node, value: nodeValue)
+            let insertionIndex = leading.firstIndex { coverageRanksBefore(candidate, $0) }
+                ?? leading.endIndex
+            if leading.count < maximumCount {
+                leading.insert(candidate, at: insertionIndex)
+            } else if insertionIndex < leading.endIndex {
+                leading.insert(candidate, at: insertionIndex)
+                leading.removeLast()
+            }
         }
-        let total = sorted.reduce(Double(0)) { $0 + Double($1.value) }
         guard total > 0 else { return [] }
         let target = total * coverageTarget
         var represented = Double(0)
         var selected = Set<String>()
-        for entry in sorted {
-            guard selected.count < maximumCount, represented < target else { break }
+        for entry in leading {
+            guard represented < target else { break }
             selected.insert(entry.node.id)
             represented += Double(entry.value)
         }
         return selected
+    }
+
+    private func ranksBefore(_ lhs: RankedSignificantNode, _ rhs: RankedSignificantNode) -> Bool {
+        if lhs.impact != rhs.impact { return lhs.impact > rhs.impact }
+        if lhs.node.grossChangedAllocatedSize != rhs.node.grossChangedAllocatedSize {
+            return lhs.node.grossChangedAllocatedSize > rhs.node.grossChangedAllocatedSize
+        }
+        return lhs.node.relativePath.localizedStandardCompare(rhs.node.relativePath) == .orderedAscending
+    }
+
+    private func coverageRanksBefore(_ lhs: CoverageCandidate, _ rhs: CoverageCandidate) -> Bool {
+        if lhs.value != rhs.value { return lhs.value > rhs.value }
+        return lhs.node.relativePath.localizedStandardCompare(rhs.node.relativePath) == .orderedAscending
+    }
+
+    private struct RankedSignificantNode {
+        let node: ScanComparisonAggregateChange
+        let impact: Int64
+        let changeCount: Int64
+    }
+
+    private struct CoverageCandidate {
+        let node: ScanComparisonAggregateChange
+        let value: Int64
     }
 
     private struct SignificantSelection {

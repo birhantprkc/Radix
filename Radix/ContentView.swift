@@ -23,12 +23,14 @@ struct ContentView: View {
     @FocusState private var focusedWorkspaceTarget: WorkspaceFocusTarget?
 
     var body: some View {
+        let discardPileSnapshot = appModel.discardPileSnapshot
+
         NavigationSplitView(columnVisibility: $splitViewVisibility) {
             SidebarView(
                 model: appModel.sidebar,
                 scanState: appModel.scanState,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
-                discardPileSummary: appModel.discardPileSummary,
+                discardPileSummary: discardPileSnapshot.summary,
                 discardPileDragIsActive: discardPileDragIsActive,
                 actions: sidebarActions
             )
@@ -126,7 +128,7 @@ struct ContentView: View {
                 OnboardingView()
             case .discardPileReview:
                 DiscardPileReviewSheet(
-                    nodes: appModel.discardPileNodes,
+                    nodes: discardPileSnapshot.nodes,
                     actions: DiscardPileReviewActions(
                         removeNode: { nodeID in
                             appModel.removeDiscardPileNode(id: nodeID)

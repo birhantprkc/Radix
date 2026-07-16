@@ -42,18 +42,7 @@ struct FileNodeTableComparator: Equatable, SortComparator, Sendable {
             FileNodeSortComparison.compareOptional(lhs.lastModified, rhs.lastModified)
         }
 
-        let orderedResult = FileNodeSortComparison.applying(order, to: result)
-        switch orderedResult {
-        case .orderedSame:
-            return FileNodeSortComparison.fallback(
-                lhsName: lhs.name,
-                lhsID: lhs.id,
-                rhsName: rhs.name,
-                rhsID: rhs.id
-            )
-        default:
-            return orderedResult
-        }
+        return FileNodeSortComparison.applying(order, to: result)
     }
 
     private func displayedDescendantFileCount(

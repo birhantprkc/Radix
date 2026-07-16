@@ -780,6 +780,34 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(result.map(\.relativePath), ["grew.bin", "shrank.bin"])
     }
 
+    func testRowQueryUsesSecondaryDescriptorBeforeDeterministicFallback() {
+        let alpha = makeTestFileNode(id: "/after/alpha.bin", name: "alpha.bin", size: 10)
+        let zeta = makeTestFileNode(id: "/after/zeta.bin", name: "zeta.bin", size: 10)
+        let rows = [
+            ScanComparisonRow(
+                relativePath: "alpha.bin",
+                kind: .added,
+                beforeNode: nil,
+                afterNode: alpha
+            ),
+            ScanComparisonRow(
+                relativePath: "zeta.bin",
+                kind: .added,
+                beforeNode: nil,
+                afterNode: zeta
+            ),
+        ]
+        let query = ScanComparisonRowQuery(
+            searchText: "",
+            sortOrder: [
+                ScanComparisonRowComparator(field: .allocatedDelta, order: .reverse),
+                ScanComparisonRowComparator(field: .relativePath, order: .reverse),
+            ]
+        )
+
+        XCTAssertEqual(query.applying(to: rows).map(\.relativePath), ["zeta.bin", "alpha.bin"])
+    }
+
     func testRowQueryFiltersKindAndNormalizedPath() {
         let addedNode = makeTestFileNode(
             id: "/after/Library/Application Support/cache.bin",
@@ -810,6 +838,40 @@ final class ScanComparisonServiceTests: XCTestCase {
         let result = query.applying(to: rows)
 
         XCTAssertEqual(result.map(\.relativePath), ["Library/Application Support/cache.bin"])
+    }
+
+    func testRowQuerySearchIndexPreservesCaseDiacriticNameAndPathMatching() {
+        let cafe = makeTestFileNode(
+            id: "/after/Library/Café/cache.bin",
+            name: "résumé.bin",
+            size: 10
+        )
+        let row = ScanComparisonRow(
+            relativePath: "Library/Café/cache.bin",
+            kind: .added,
+            beforeNode: nil,
+            afterNode: cafe
+        )
+        let rows = [row]
+        let index = ScanComparisonSearchIndex(rows: rows)
+
+        XCTAssertEqual(
+            ScanComparisonRowQuery(searchText: "RESUME", sortOrder: [])
+                .applying(to: rows, searchIndex: index)
+                .map(\.id),
+            [row.id]
+        )
+        XCTAssertEqual(
+            ScanComparisonRowQuery(searchText: "library/cafe", sortOrder: [])
+                .applying(to: rows, searchIndex: index)
+                .map(\.id),
+            [row.id]
+        )
+        XCTAssertTrue(
+            ScanComparisonRowQuery(searchText: "resume\nlibrary", sortOrder: [])
+                .applying(to: rows, searchIndex: index)
+                .isEmpty
+        )
     }
 
     func testRowQueryFiltersExactLocationPrefix() {

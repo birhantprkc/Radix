@@ -12,11 +12,23 @@ final class ScanComparisonBrowserModel: ObservableObject {
         let changeTree: ScanComparisonChangeTree
         let query: ScanComparisonRowQuery
         let changeKinds: Set<ScanComparisonChangeKind>
+        let searchIndex: ScanComparisonSearchIndex?
     }
 
     nonisolated struct WorkOutput: Equatable, Sendable {
         let rows: [ScanComparisonRow]
         let projection: ScanComparisonChangeTreeProjection
+        let searchIndex: ScanComparisonSearchIndex?
+
+        init(
+            rows: [ScanComparisonRow],
+            projection: ScanComparisonChangeTreeProjection,
+            searchIndex: ScanComparisonSearchIndex? = nil
+        ) {
+            self.rows = rows
+            self.projection = projection
+            self.searchIndex = searchIndex
+        }
     }
 
     typealias Processor = @Sendable (WorkInput) async throws -> WorkOutput
@@ -44,6 +56,7 @@ final class ScanComparisonBrowserModel: ObservableObject {
     private var latestComparisonID: UUID?
     private var latestQuery: ScanComparisonRowQuery?
     private var latestChangeKinds: Set<ScanComparisonChangeKind>?
+    private var searchIndex: ScanComparisonSearchIndex?
 
     init(
         searchDebounceNanoseconds: UInt64 = 200_000_000,
@@ -68,8 +81,12 @@ final class ScanComparisonBrowserModel: ObservableObject {
             return
         }
 
-        let shouldDebounceSearch = latestComparisonID == comparisonID &&
+        let datasetChanged = latestComparisonID != comparisonID
+        let shouldDebounceSearch = !datasetChanged &&
             latestQuery?.searchText != query.searchText
+        if datasetChanged {
+            searchIndex = nil
+        }
         latestComparisonID = comparisonID
         latestQuery = query
         latestChangeKinds = changeKinds
@@ -82,7 +99,8 @@ final class ScanComparisonBrowserModel: ObservableObject {
             rows: rows,
             changeTree: changeTree,
             query: query,
-            changeKinds: changeKinds
+            changeKinds: changeKinds,
+            searchIndex: searchIndex
         )
         let processor = self.processor
         let sleeper = self.sleeper
@@ -100,6 +118,7 @@ final class ScanComparisonBrowserModel: ObservableObject {
 
                 displayedRows = output.rows
                 projection = output.projection
+                searchIndex = output.searchIndex ?? searchIndex
                 selection.formIntersection(output.rows.lazy.map(\.id))
                 aggregateSelection = aggregateSelection.filter {
                     output.projection.node(withID: $0) != nil
@@ -121,17 +140,23 @@ final class ScanComparisonBrowserModel: ObservableObject {
         latestComparisonID = nil
         latestQuery = nil
         latestChangeKinds = nil
+        searchIndex = nil
         isRefreshing = false
     }
 
     private nonisolated static func process(_ input: WorkInput) async throws -> WorkOutput {
         let task = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
-            let rows = input.query.applying(to: input.rows)
+            let searchIndex = input.searchIndex ?? ScanComparisonSearchIndex(rows: input.rows)
+            let rows = input.query.applying(to: input.rows, searchIndex: searchIndex)
             try Task.checkCancellation()
             let projection = input.changeTree.significantProjection(changeKinds: input.changeKinds)
             try Task.checkCancellation()
-            return WorkOutput(rows: rows, projection: projection)
+            return WorkOutput(
+                rows: rows,
+                projection: projection,
+                searchIndex: searchIndex
+            )
         }
         return try await withTaskCancellationHandler {
             try await task.value

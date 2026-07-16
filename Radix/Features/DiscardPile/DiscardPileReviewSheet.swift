@@ -172,14 +172,3 @@ private struct DiscardPileReviewRow: Identifiable {
         self.itemKind = node.itemKind
     }
 }
-
-private extension DiscardPileSummary {
-    init(nodes: [FileNodeRecord]) {
-        self.init(
-            itemCount: nodes.count,
-            totalAllocatedSize: nodes.reduce(into: Int64(0)) { total, node in
-                total += node.allocatedSize
-            }
-        )
-    }
-}

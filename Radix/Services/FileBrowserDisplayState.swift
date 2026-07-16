@@ -64,6 +64,12 @@ struct FileBrowserDisplayState {
         return nodes[index]
     }
 
+    func nodes(ids: Set<FileNodeRecord.ID>) -> [FileNodeRecord] {
+        ids.compactMap { indexesByNodeID[$0] }
+            .sorted()
+            .map { nodes[$0] }
+    }
+
     func displayValues(
         for node: FileNodeRecord,
         hidesPackageContents: Bool = false

@@ -391,6 +391,42 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(modifiedResults.map(\.id), [beta.id, folder.id, alpha.id])
     }
 
+    func testSortOrderUsesSecondaryDescriptorBeforeDeterministicFallback() throws {
+        let older = Date(timeIntervalSince1970: 10)
+        let newer = Date(timeIntervalSince1970: 20)
+        let alpha = makeTestFileNode(
+            id: "/root/alpha.txt",
+            name: "alpha.txt",
+            size: 10,
+            lastModified: older
+        )
+        let zeta = makeTestFileNode(
+            id: "/root/zeta.txt",
+            name: "zeta.txt",
+            size: 10,
+            lastModified: newer
+        )
+
+        let secondaryResult = try FileBrowserResults.sorted(
+            [alpha, zeta],
+            sortOrder: [
+                FileNodeTableComparator(field: .allocatedSize, order: .reverse),
+                FileNodeTableComparator(field: .lastModified, order: .reverse),
+            ],
+            cancellationCheck: {}
+        )
+        let fallbackResult = try FileBrowserResults.sorted(
+            [zeta, alpha],
+            sortOrder: [
+                FileNodeTableComparator(field: .allocatedSize, order: .reverse),
+            ],
+            cancellationCheck: {}
+        )
+
+        XCTAssertEqual(secondaryResult.map(\.id), [zeta.id, alpha.id])
+        XCTAssertEqual(fallbackResult.map(\.id), [alpha.id, zeta.id])
+    }
+
     @MainActor
     func testLargeCurrentContentsFilterDebouncesAndIgnoresStaleQuery() async throws {
         let small = makeTestFileNode(id: "/root/small.txt", name: "small.txt", size: 10)

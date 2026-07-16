@@ -265,38 +265,62 @@ nonisolated enum TreemapLayout {
         var nextEntryIndex = 0
         var remainingBounds = bounds
         var row: [WeightedEntry] = []
+        var rowArea = CGFloat(0)
+        var rowMinimumArea = CGFloat.greatestFiniteMagnitude
+        var rowMaximumArea = CGFloat(0)
         var result: [Tile] = []
 
         while nextEntryIndex < weightedEntries.count {
             try cancellationCheck()
             let next = weightedEntries[nextEntryIndex]
             let shortSide = min(remainingBounds.width, remainingBounds.height)
-            if row.isEmpty || worstAspectRatio(for: row + [next], shortSide: shortSide)
-                <= worstAspectRatio(for: row, shortSide: shortSide) {
+            let candidateArea = rowArea + next.area
+            let candidateMinimumArea = min(rowMinimumArea, next.area)
+            let candidateMaximumArea = max(rowMaximumArea, next.area)
+            if row.isEmpty || worstAspectRatio(
+                sum: candidateArea,
+                minimum: candidateMinimumArea,
+                maximum: candidateMaximumArea,
+                shortSide: shortSide
+            ) <= worstAspectRatio(
+                sum: rowArea,
+                minimum: rowMinimumArea,
+                maximum: rowMaximumArea,
+                shortSide: shortSide
+            ) {
                 row.append(next)
+                rowArea = candidateArea
+                rowMinimumArea = candidateMinimumArea
+                rowMaximumArea = candidateMaximumArea
                 nextEntryIndex += 1
             } else {
-                remainingBounds = layoutRow(row, in: remainingBounds, into: &result)
+                remainingBounds = layoutRow(
+                    row,
+                    area: rowArea,
+                    in: remainingBounds,
+                    into: &result
+                )
                 row.removeAll(keepingCapacity: true)
+                rowArea = 0
+                rowMinimumArea = .greatestFiniteMagnitude
+                rowMaximumArea = 0
             }
         }
 
         if !row.isEmpty {
-            _ = layoutRow(row, in: remainingBounds, into: &result)
+            _ = layoutRow(row, area: rowArea, in: remainingBounds, into: &result)
         }
 
         return result
     }
 
     private nonisolated static func worstAspectRatio(
-        for row: [WeightedEntry],
+        sum: CGFloat,
+        minimum: CGFloat,
+        maximum: CGFloat,
         shortSide: CGFloat
     ) -> CGFloat {
-        guard !row.isEmpty, shortSide > 0 else { return .infinity }
-        let sum = row.reduce(CGFloat(0)) { $0 + $1.area }
-        let maximum = row.reduce(CGFloat(0)) { max($0, $1.area) }
-        let minimum = row.reduce(CGFloat.greatestFiniteMagnitude) { min($0, $1.area) }
-        guard sum > 0, minimum > 0 else { return .infinity }
+        guard shortSide > 0, sum > 0, minimum > 0 else { return .infinity }
 
         let sumSquared = sum * sum
         let sideSquared = shortSide * shortSide
@@ -309,11 +333,11 @@ nonisolated enum TreemapLayout {
     @discardableResult
     private nonisolated static func layoutRow(
         _ row: [WeightedEntry],
+        area rowArea: CGFloat,
         in bounds: CGRect,
         into result: inout [Tile]
     ) -> CGRect {
         guard !row.isEmpty, bounds.width > 0, bounds.height > 0 else { return bounds }
-        let rowArea = row.reduce(CGFloat(0)) { $0 + $1.area }
 
         if bounds.width >= bounds.height {
             let columnWidth = min(rowArea / bounds.height, bounds.width)

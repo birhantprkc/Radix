@@ -44,9 +44,28 @@ struct DiscardPileSummary: Equatable, Sendable {
     let itemCount: Int
     let totalAllocatedSize: Int64
 
+    init(itemCount: Int, totalAllocatedSize: Int64) {
+        self.itemCount = itemCount
+        self.totalAllocatedSize = totalAllocatedSize
+    }
+
     var isEmpty: Bool {
         itemCount == 0
     }
+
+    init(nodes: [FileNodeRecord]) {
+        self.init(
+            itemCount: nodes.count,
+            totalAllocatedSize: nodes.reduce(into: Int64(0)) { total, node in
+                total += node.allocatedSize
+            }
+        )
+    }
+}
+
+struct DiscardPileSnapshot: Equatable, Sendable {
+    let nodes: [FileNodeRecord]
+    let summary: DiscardPileSummary
 }
 
 @MainActor
@@ -400,16 +419,18 @@ final class AppModel: ObservableObject {
     }
 
     var discardPileNodes: [FileNodeRecord] {
-        resolvedDiscardPileNodes()
+        discardPileSnapshot.nodes
     }
 
     var discardPileSummary: DiscardPileSummary {
+        discardPileSnapshot.summary
+    }
+
+    var discardPileSnapshot: DiscardPileSnapshot {
         let nodes = resolvedDiscardPileNodes()
-        return DiscardPileSummary(
-            itemCount: nodes.count,
-            totalAllocatedSize: nodes.reduce(into: Int64(0)) { total, node in
-                total += node.allocatedSize
-            }
+        return DiscardPileSnapshot(
+            nodes: nodes,
+            summary: DiscardPileSummary(nodes: nodes)
         )
     }
 
@@ -1797,7 +1818,8 @@ final class AppModel: ObservableObject {
 
         let hiddenIDs = hiddenNodeIDs(for: snapshotID)
         guard !hiddenIDs.isEmpty else { return nodeIDs }
-        return nodeIDs.filter { !fileTreeStore.isNodeOrDescendant($0, of: hiddenIDs) }
+        let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenIDs)
+        return nodeIDs.filter { !fileTreeStore.isNodeOrDescendant($0, of: hiddenNodes) }
     }
 
     private func isVisibleNavigationNode(_ nodeID: FileNodeRecord.ID) -> Bool {
@@ -2591,11 +2613,13 @@ final class AppModel: ObservableObject {
         guard !hiddenIDs.isEmpty else { return }
 
         let requestedIDs = Set(nodes.map(\.id))
+        let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenIDs)
+        let requestedNodes = fileTreeStore.preparedNodeSet(for: requestedIDs)
         let requestedNodeIsHidden = requestedIDs.contains(where: { requestedID in
-            fileTreeStore.isNodeOrDescendant(requestedID, of: hiddenIDs)
+            fileTreeStore.isNodeOrDescendant(requestedID, of: hiddenNodes)
         })
         let requestedNodeContainsHiddenNode = hiddenIDs.contains(where: { hiddenID in
-            requestedIDs.contains(hiddenID) || fileTreeStore.hasAncestor(in: requestedIDs, of: hiddenID)
+            fileTreeStore.isNodeOrDescendant(hiddenID, of: requestedNodes)
         })
 
         guard !requestedNodeIsHidden && !requestedNodeContainsHiddenNode else {
@@ -2707,20 +2731,21 @@ final class AppModel: ObservableObject {
         fileTreeStore: FileTreeStore
     ) {
         guard !hiddenNodeIDs.isEmpty else { return }
+        let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenNodeIDs)
 
         if let focusedNodeID = navigationModel.focusedNodeID,
-           fileTreeStore.isNodeOrDescendant(focusedNodeID, of: hiddenNodeIDs) {
+           fileTreeStore.isNodeOrDescendant(focusedNodeID, of: hiddenNodes) {
             navigationModel.setFocusedNodeID(
                 discardPileFocusFallbackID(
                     for: focusedNodeID,
-                    hiddenNodeIDs: hiddenNodeIDs,
+                    hiddenNodes: hiddenNodes,
                     fileTreeStore: fileTreeStore
                 )
             )
         }
 
         if navigationModel.selectedNodeIDs.contains(where: { selectedNodeID in
-            fileTreeStore.isNodeOrDescendant(selectedNodeID, of: hiddenNodeIDs)
+            fileTreeStore.isNodeOrDescendant(selectedNodeID, of: hiddenNodes)
         }) {
             navigationModel.clearSelection()
         }
@@ -2728,12 +2753,12 @@ final class AppModel: ObservableObject {
 
     private func discardPileFocusFallbackID(
         for nodeID: FileNodeRecord.ID,
-        hiddenNodeIDs: Set<FileNodeRecord.ID>,
+        hiddenNodes: PreparedFileTreeNodeSet,
         fileTreeStore: FileTreeStore
     ) -> FileNodeRecord.ID? {
         var parentID = fileTreeStore.parent(of: nodeID)?.id
         while let candidateID = parentID {
-            if !fileTreeStore.isNodeOrDescendant(candidateID, of: hiddenNodeIDs) {
+            if !fileTreeStore.isNodeOrDescendant(candidateID, of: hiddenNodes) {
                 return candidateID
             }
             parentID = fileTreeStore.parent(of: candidateID)?.id
@@ -2748,10 +2773,11 @@ final class AppModel: ObservableObject {
         guard !discardPile.isEmpty, !movedNodes.isEmpty else { return }
 
         let movedIDs = Set(movedNodes.map(\.id))
+        let movedNodeSet = fileTreeStore?.preparedNodeSet(for: movedIDs)
         let remainingIDs = discardPile.nodeIDs.filter { queuedID in
             guard !movedIDs.contains(queuedID) else { return false }
-            guard let fileTreeStore else { return true }
-            return !fileTreeStore.isNodeOrDescendant(queuedID, of: movedIDs)
+            guard let fileTreeStore, let movedNodeSet else { return true }
+            return !fileTreeStore.isNodeOrDescendant(queuedID, of: movedNodeSet)
         }
         guard remainingIDs != discardPile.nodeIDs else { return }
         discardPile = DiscardPileState(
