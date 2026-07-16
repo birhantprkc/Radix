@@ -198,6 +198,45 @@ nonisolated struct FileTreeStore: Sendable {
         let replacementParentIDByID: [String: String]
     }
 
+    private struct AggregateStatsAccumulator {
+        private var fileCount = 0
+        private var directoryCount = 0
+        private var accessibleItemCount = 0
+        private var inaccessibleItemCount = 0
+
+        @inline(__always)
+        mutating func include(_ node: FileNodeRecord, hasMaterializedChildren: Bool) {
+            if node.isDirectory {
+                directoryCount += 1
+                if node.isPackage && !hasMaterializedChildren {
+                    fileCount = FileTreeStore.saturatingAdd(fileCount, node.descendantFileCount)
+                }
+                if node.isAutoSummarized {
+                    fileCount = FileTreeStore.saturatingAdd(fileCount, node.descendantFileCount)
+                }
+            } else if !node.isSymbolicLink && !node.isSynthetic {
+                fileCount = FileTreeStore.saturatingAdd(fileCount, 1)
+            }
+
+            if node.isAccessible {
+                accessibleItemCount = FileTreeStore.saturatingAdd(accessibleItemCount, 1)
+            } else {
+                inaccessibleItemCount = FileTreeStore.saturatingAdd(inaccessibleItemCount, 1)
+            }
+        }
+
+        func stats(root: FileNodeRecord) -> ScanAggregateStats {
+            ScanAggregateStats(
+                totalAllocatedSize: root.allocatedSize,
+                totalLogicalSize: root.logicalSize,
+                fileCount: fileCount,
+                directoryCount: directoryCount,
+                accessibleItemCount: accessibleItemCount,
+                inaccessibleItemCount: inaccessibleItemCount
+            )
+        }
+    }
+
     private enum StoreError: LocalizedError {
         case replacementIDCollision(String)
         case overlappingReplacementTargets(String, String)
@@ -232,41 +271,14 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     private nonisolated func computedAggregateStats() -> ScanAggregateStats {
-        var fileCount = 0
-        var directoryCount = 0
-        var accessibleItemCount = 0
-        var inaccessibleItemCount = 0
+        var accumulator = AggregateStatsAccumulator()
 
         for nodeIndex in topologyArena.orderedNodeIndices {
             guard let node = node(at: nodeIndex) else { continue }
-
-            if node.isDirectory {
-                directoryCount += 1
-                if node.isPackage && !containsChildren(id: node.id) {
-                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
-                }
-                if node.isAutoSummarized {
-                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
-                }
-            } else if !node.isSymbolicLink && !node.isSynthetic {
-                fileCount = Self.saturatingAdd(fileCount, 1)
-            }
-
-            if node.isAccessible {
-                accessibleItemCount = Self.saturatingAdd(accessibleItemCount, 1)
-            } else {
-                inaccessibleItemCount = Self.saturatingAdd(inaccessibleItemCount, 1)
-            }
+            accumulator.include(node, hasMaterializedChildren: containsChildren(id: node.id))
         }
 
-        return ScanAggregateStats(
-            totalAllocatedSize: root.allocatedSize,
-            totalLogicalSize: root.logicalSize,
-            fileCount: fileCount,
-            directoryCount: directoryCount,
-            accessibleItemCount: accessibleItemCount,
-            inaccessibleItemCount: inaccessibleItemCount
-        )
+        return accumulator.stats(root: root)
     }
 
     nonisolated init(root: FileNodeRecord) {
@@ -1118,41 +1130,18 @@ nonisolated struct FileTreeStore: Sendable {
             preconditionFailure("Verified FileTreeStore root is missing.")
         }
 
-        var fileCount = 0
-        var directoryCount = 0
-        var accessibleItemCount = 0
-        var inaccessibleItemCount = 0
+        var accumulator = AggregateStatsAccumulator()
         for (offset, node) in nodesByID.values.enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            if node.isDirectory {
-                directoryCount += 1
-                if node.isPackage && childIDsByID[node.id]?.isEmpty != false {
-                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
-                }
-                if node.isAutoSummarized {
-                    fileCount = Self.saturatingAdd(fileCount, node.descendantFileCount)
-                }
-            } else if !node.isSymbolicLink && !node.isSynthetic {
-                fileCount = Self.saturatingAdd(fileCount, 1)
-            }
-
-            if node.isAccessible {
-                accessibleItemCount = Self.saturatingAdd(accessibleItemCount, 1)
-            } else {
-                inaccessibleItemCount = Self.saturatingAdd(inaccessibleItemCount, 1)
-            }
+            accumulator.include(
+                node,
+                hasMaterializedChildren: childIDsByID[node.id]?.isEmpty == false
+            )
         }
 
-        return ScanAggregateStats(
-            totalAllocatedSize: root.allocatedSize,
-            totalLogicalSize: root.logicalSize,
-            fileCount: fileCount,
-            directoryCount: directoryCount,
-            accessibleItemCount: accessibleItemCount,
-            inaccessibleItemCount: inaccessibleItemCount
-        )
+        return accumulator.stats(root: root)
     }
 
     nonisolated func subtree(rootedAt targetID: String) -> FileTreeStore? {
