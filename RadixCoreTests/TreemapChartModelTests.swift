@@ -22,8 +22,8 @@ final class TreemapChartModelTests: XCTestCase {
 
         XCTAssertTrue(didApply)
         XCTAssertEqual(selectedSegment?.id, selected.id)
-        XCTAssertEqual(model.renderedLayoutID, "layout")
-        XCTAssertFalse(model.isRenderingPending(layoutID: "layout"))
+        XCTAssertEqual(model.layoutReadiness.renderedLayoutID, "layout")
+        XCTAssertFalse(model.layoutReadiness.isRenderingPending(layoutID: "layout"))
         XCTAssertNil(model.selectedSegment(nodeID: "missing"))
         XCTAssertNil(model.selectedSegment(nodeID: nil))
     }
@@ -109,11 +109,11 @@ final class TreemapChartModelTests: XCTestCase {
         XCTAssertFalse(didApplyFailingLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
         XCTAssertEqual(model.renderedLayoutVersion, initialVersion)
-        XCTAssertEqual(model.layoutError?.message, TestTreemapLayoutError.failed.localizedDescription)
-        XCTAssertFalse(model.isLayoutPending)
-        XCTAssertEqual(model.renderedLayoutID, "initial")
-        XCTAssertEqual(model.failedLayoutID, "failing")
-        XCTAssertFalse(model.isRenderingPending(layoutID: "failing"))
+        XCTAssertEqual(model.layoutReadiness.failure?.message, TestTreemapLayoutError.failed.localizedDescription)
+        XCTAssertFalse(model.layoutReadiness.isPending)
+        XCTAssertEqual(model.layoutReadiness.renderedLayoutID, "initial")
+        XCTAssertEqual(model.layoutReadiness.failedLayoutID, "failing")
+        XCTAssertFalse(model.layoutReadiness.isRenderingPending(layoutID: "failing"))
     }
 
     func testStaleLayoutFailureDoesNotReplaceNewerSuccessOrPublishError() async {
@@ -153,8 +153,8 @@ final class TreemapChartModelTests: XCTestCase {
         let didApplyStaleLayout = await staleTask.value
         XCTAssertFalse(didApplyStaleLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [currentSegment.id])
-        XCTAssertNil(model.layoutError)
-        XCTAssertFalse(model.isLayoutPending)
+        XCTAssertNil(model.layoutReadiness.failure)
+        XCTAssertFalse(model.layoutReadiness.isPending)
     }
 
     func testRetryClearsFailureAndAppliesSuccessfulLayout() async {
@@ -176,7 +176,7 @@ final class TreemapChartModelTests: XCTestCase {
         XCTAssertTrue(didFailRequest)
         let didApplyFailingLayout = await failingTask.value
         XCTAssertFalse(didApplyFailingLayout)
-        XCTAssertNotNil(model.layoutError)
+        XCTAssertNotNil(model.layoutReadiness.failure)
 
         let retryTask = Task {
             await model.loadLayout(
@@ -188,8 +188,8 @@ final class TreemapChartModelTests: XCTestCase {
             )
         }
         await service.waitForIssuedRequestCount(2)
-        XCTAssertNil(model.layoutError)
-        XCTAssertTrue(model.isLayoutPending)
+        XCTAssertNil(model.layoutReadiness.failure)
+        XCTAssertTrue(model.layoutReadiness.isPending)
 
         let retrySegment = makeTreemapSegment(id: "retry")
         let didCompleteRetryRequest = await service.completeRequest(id: 1, with: [retrySegment])
@@ -197,7 +197,7 @@ final class TreemapChartModelTests: XCTestCase {
         let didApplyRetryLayout = await retryTask.value
         XCTAssertTrue(didApplyRetryLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [retrySegment.id])
-        XCTAssertNil(model.layoutError)
+        XCTAssertNil(model.layoutReadiness.failure)
     }
 
     func testCancellationPreservesLastRenderWithoutPublishingError() async {
@@ -237,8 +237,8 @@ final class TreemapChartModelTests: XCTestCase {
         let didApplyCancelledLayout = await cancelledTask.value
         XCTAssertFalse(didApplyCancelledLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
-        XCTAssertNil(model.layoutError)
-        XCTAssertFalse(model.isLayoutPending)
+        XCTAssertNil(model.layoutReadiness.failure)
+        XCTAssertFalse(model.layoutReadiness.isPending)
     }
 }
 

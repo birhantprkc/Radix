@@ -23,9 +23,9 @@ final class SunburstChartModelTests: XCTestCase {
         }
         await service.waitForIssuedRequestCount(1)
 
-        XCTAssertTrue(model.isLayoutPending)
-        XCTAssertTrue(model.isRenderingPending(layoutID: "layout"))
-        XCTAssertNil(model.renderedLayoutID)
+        XCTAssertTrue(model.layoutReadiness.isPending)
+        XCTAssertTrue(model.layoutReadiness.isRenderingPending(layoutID: "layout"))
+        XCTAssertNil(model.layoutReadiness.renderedLayoutID)
         XCTAssertGreaterThanOrEqual(publishCount, 1)
 
         let segment = makeSegment(id: "segment")
@@ -34,10 +34,10 @@ final class SunburstChartModelTests: XCTestCase {
         let didApplyLayout = await layoutTask.value
 
         XCTAssertTrue(didApplyLayout)
-        XCTAssertFalse(model.isLayoutPending)
+        XCTAssertFalse(model.layoutReadiness.isPending)
         XCTAssertEqual(model.renderedSegments.map(\.id), [segment.id])
-        XCTAssertEqual(model.renderedLayoutID, "layout")
-        XCTAssertFalse(model.isRenderingPending(layoutID: "layout"))
+        XCTAssertEqual(model.layoutReadiness.renderedLayoutID, "layout")
+        XCTAssertFalse(model.layoutReadiness.isRenderingPending(layoutID: "layout"))
         XCTAssertGreaterThanOrEqual(publishCount, 2)
         withExtendedLifetime(cancellable) {}
     }
@@ -113,7 +113,7 @@ final class SunburstChartModelTests: XCTestCase {
         await service.waitForIssuedRequestCount(2)
 
         XCTAssertNil(model.hoveredSegmentID)
-        XCTAssertTrue(model.isLayoutPending)
+        XCTAssertTrue(model.layoutReadiness.isPending)
 
         let newSegment = makeSegment(id: "new-segment")
         let didCompleteSecondRequest = await service.completeRequest(id: 1, with: [newSegment])
@@ -199,11 +199,11 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertFalse(didApplyFailingLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
         XCTAssertEqual(model.renderedLayoutVersion, initialVersion)
-        XCTAssertEqual(model.layoutError?.message, TestChartLayoutError.failed.localizedDescription)
-        XCTAssertFalse(model.isLayoutPending)
-        XCTAssertEqual(model.renderedLayoutID, "initial")
-        XCTAssertEqual(model.failedLayoutID, "failing")
-        XCTAssertFalse(model.isRenderingPending(layoutID: "failing"))
+        XCTAssertEqual(model.layoutReadiness.failure?.message, TestChartLayoutError.failed.localizedDescription)
+        XCTAssertFalse(model.layoutReadiness.isPending)
+        XCTAssertEqual(model.layoutReadiness.renderedLayoutID, "initial")
+        XCTAssertEqual(model.layoutReadiness.failedLayoutID, "failing")
+        XCTAssertFalse(model.layoutReadiness.isRenderingPending(layoutID: "failing"))
     }
 
     func testStaleLayoutFailureDoesNotReplaceNewerSuccessOrPublishError() async {
@@ -241,8 +241,8 @@ final class SunburstChartModelTests: XCTestCase {
         let didApplyStaleLayout = await staleTask.value
         XCTAssertFalse(didApplyStaleLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [currentSegment.id])
-        XCTAssertNil(model.layoutError)
-        XCTAssertFalse(model.isLayoutPending)
+        XCTAssertNil(model.layoutReadiness.failure)
+        XCTAssertFalse(model.layoutReadiness.isPending)
     }
 
     func testRetryClearsFailureAndAppliesSuccessfulLayout() async {
@@ -263,7 +263,7 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertTrue(didFailRequest)
         let didApplyFailingLayout = await failingTask.value
         XCTAssertFalse(didApplyFailingLayout)
-        XCTAssertNotNil(model.layoutError)
+        XCTAssertNotNil(model.layoutReadiness.failure)
 
         let retryTask = Task {
             await model.loadLayout(
@@ -274,8 +274,8 @@ final class SunburstChartModelTests: XCTestCase {
             )
         }
         await service.waitForIssuedRequestCount(2)
-        XCTAssertNil(model.layoutError)
-        XCTAssertTrue(model.isLayoutPending)
+        XCTAssertNil(model.layoutReadiness.failure)
+        XCTAssertTrue(model.layoutReadiness.isPending)
 
         let retrySegment = makeSegment(id: "retry")
         let didCompleteRetryRequest = await service.completeRequest(id: 1, with: [retrySegment])
@@ -283,7 +283,7 @@ final class SunburstChartModelTests: XCTestCase {
         let didApplyRetryLayout = await retryTask.value
         XCTAssertTrue(didApplyRetryLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [retrySegment.id])
-        XCTAssertNil(model.layoutError)
+        XCTAssertNil(model.layoutReadiness.failure)
     }
 
     func testCancellationPreservesLastRenderWithoutPublishingError() async {
@@ -321,8 +321,8 @@ final class SunburstChartModelTests: XCTestCase {
         let didApplyCancelledLayout = await cancelledTask.value
         XCTAssertFalse(didApplyCancelledLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
-        XCTAssertNil(model.layoutError)
-        XCTAssertFalse(model.isLayoutPending)
+        XCTAssertNil(model.layoutReadiness.failure)
+        XCTAssertFalse(model.layoutReadiness.isPending)
     }
 
     func testSelectionOverlaySegmentsIncludeAncestorsAndSelectedLast() async {

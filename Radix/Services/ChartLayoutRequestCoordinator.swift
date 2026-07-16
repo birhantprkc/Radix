@@ -14,6 +14,38 @@ struct ChartLayoutFailure: Equatable, Sendable {
     }
 }
 
+struct ChartLayoutReadiness: Equatable, Sendable {
+    private(set) var isPending = false
+    private(set) var failure: ChartLayoutFailure?
+    private(set) var renderedLayoutID: String?
+    private(set) var failedLayoutID: String?
+
+    mutating func start() {
+        isPending = true
+        failure = nil
+        failedLayoutID = nil
+    }
+
+    mutating func succeed(layoutID: String) {
+        isPending = false
+        renderedLayoutID = layoutID
+    }
+
+    mutating func fail(_ failure: ChartLayoutFailure, layoutID: String) {
+        isPending = false
+        self.failure = failure
+        failedLayoutID = layoutID
+    }
+
+    mutating func cancel() {
+        isPending = false
+    }
+
+    func isRenderingPending(layoutID: String) -> Bool {
+        isPending || (renderedLayoutID != layoutID && failedLayoutID != layoutID)
+    }
+}
+
 struct ChartLayoutRequest<Output: Sendable> {
     let generation: Int
     let layoutID: String

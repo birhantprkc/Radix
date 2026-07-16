@@ -107,7 +107,7 @@ struct SunburstChartView: View {
     }
 
     private var isDiskMapPending: Bool {
-        isInputPending || chartModel.isRenderingPending(layoutID: layoutRequestID)
+        isInputPending || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutRequestID)
     }
 
     private var layoutRequestID: String {
@@ -171,7 +171,7 @@ struct SunburstChartView: View {
                             .controlSize(.small)
                             .transition(.opacity)
                     }
-                } else if chartModel.layoutError == nil,
+                } else if chartModel.layoutReadiness.failure == nil,
                           chartModel.renderedSegments.isEmpty {
                     ProgressView()
                         .controlSize(.small)
@@ -255,7 +255,7 @@ struct SunburstChartView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if let layoutError = chartModel.layoutError,
+                if let layoutError = chartModel.layoutReadiness.failure,
                    !isDiskMapPending {
                     ChartLayoutFailureBanner(failure: layoutError) {
                         layoutRetryGeneration += 1

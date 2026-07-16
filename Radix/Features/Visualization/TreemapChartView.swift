@@ -89,7 +89,7 @@ struct TreemapChartView: View {
                 retryGeneration: layoutRetryGeneration
             )
             let isDiskMapPending = isInputPending
-                || chartModel.isRenderingPending(layoutID: layoutTaskID.requestID)
+                || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutTaskID.requestID)
 
             ZStack {
                 TreemapRenderedChartLayer(
@@ -113,7 +113,7 @@ struct TreemapChartView: View {
                             .controlSize(.small)
                             .transition(.opacity)
                     }
-                } else if chartModel.layoutError == nil,
+                } else if chartModel.layoutReadiness.failure == nil,
                           chartModel.renderedSegments.isEmpty {
                     ProgressView()
                         .controlSize(.small)
@@ -156,7 +156,7 @@ struct TreemapChartView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if let layoutError = chartModel.layoutError,
+                if let layoutError = chartModel.layoutReadiness.failure,
                    !isDiskMapPending {
                     ChartLayoutFailureBanner(failure: layoutError) {
                         layoutRetryGeneration += 1
@@ -311,7 +311,8 @@ struct TreemapChartView: View {
         } catch {
             return
         }
-        guard isInputPending || chartModel.isRenderingPending(layoutID: layoutID) else { return }
+        guard isInputPending
+            || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutID) else { return }
         showsLoadingDiskMapProgress = true
     }
 }
