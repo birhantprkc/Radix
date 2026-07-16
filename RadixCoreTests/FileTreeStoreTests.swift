@@ -116,6 +116,94 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updatedStore.aggregateStats.fileCount, 0)
     }
 
+    func testRemovingSubtreesRepairsAndResortsSharedAncestors() {
+        let retained = makeFileNode(id: "/root/folder/retained.bin", name: "retained.bin", size: 1)
+        let removed = makeFileNode(id: "/root/folder/removed.bin", name: "removed.bin", size: 99)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [removed, retained])
+        let sibling = makeFileNode(id: "/root/sibling.bin", name: "sibling.bin", size: 50)
+        let unrelated = makeFileNode(id: "/root/unrelated.bin", name: "unrelated.bin", size: 4)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder, sibling, unrelated])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, sibling, unrelated],
+            folder.id: [removed, retained],
+        ])
+
+        let updatedStore = store.removingSubtrees(rootedAt: [removed.id, unrelated.id])
+
+        XCTAssertEqual(updatedStore.children(of: folder.id).map(\.id), [retained.id])
+        XCTAssertEqual(updatedStore.children(of: root.id).map(\.id), [sibling.id, folder.id])
+        XCTAssertEqual(
+            updatedStore.indexedNodeIDs(),
+            [root.id, sibling.id, folder.id, retained.id]
+        )
+        XCTAssertEqual(updatedStore.node(id: folder.id)?.allocatedSize, 1)
+        XCTAssertEqual(updatedStore.root.allocatedSize, 51)
+        XCTAssertEqual(updatedStore.aggregateStats.totalAllocatedSize, 51)
+        XCTAssertEqual(updatedStore.aggregateStats.fileCount, 2)
+    }
+
+    func testRemovingSubtreeSaturatesAncestorTotalsAndRepairsAccessibility() throws {
+        let maximum = makeFileNode(id: "/root/maximum.bin", name: "maximum.bin", size: .max)
+        let tiny = makeFileNode(id: "/root/tiny.bin", name: "tiny.bin", size: 1)
+        let inaccessible = makeFileNode(
+            id: "/root/inaccessible.bin",
+            name: "inaccessible.bin",
+            size: 10,
+            isAccessible: false
+        )
+        let staleRoot = makeDirectoryNode(id: "/root", name: "root", children: [])
+        let store = FileTreeStore(
+            rootID: staleRoot.id,
+            nodesByID: [
+                staleRoot.id: staleRoot,
+                maximum.id: maximum,
+                tiny.id: tiny,
+                inaccessible.id: inaccessible,
+            ],
+            childIDsByID: [staleRoot.id: [maximum.id, inaccessible.id, tiny.id]]
+        )
+
+        let updatedStore = try XCTUnwrap(store.removingSubtree(id: inaccessible.id))
+
+        XCTAssertEqual(updatedStore.root.allocatedSize, Int64.max)
+        XCTAssertEqual(updatedStore.root.logicalSize, Int64.max)
+        XCTAssertEqual(updatedStore.root.descendantFileCount, 2)
+        XCTAssertTrue(updatedStore.root.isAccessible)
+        XCTAssertEqual(updatedStore.aggregateStats.accessibleItemCount, 3)
+        XCTAssertEqual(updatedStore.aggregateStats.inaccessibleItemCount, 0)
+    }
+
+    func testRemovingSubtreeHonorsCancellationDuringCompaction() {
+        let children = (0..<1_024).map { index in
+            makeFileNode(
+                id: "/root/folder/item-\(index).bin",
+                name: "item-\(index).bin",
+                size: 1
+            )
+        }
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: children)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: children,
+        ])
+        var checkCount = 0
+
+        XCTAssertThrowsError(try store.removingSubtree(
+            id: folder.id,
+            cancellationCheck: {
+                checkCount += 1
+                if checkCount == 10 {
+                    throw CancellationError()
+                }
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(store.nodeCount, children.count + 2)
+        XCTAssertNotNil(store.node(id: folder.id))
+    }
+
     func testIndexedNodeIDsPreserveTraversalOrderAndCanExcludeRoot() {
         let first = makeFileNode(id: "/root/a.txt", name: "a.txt", size: 12)
         let nested = makeFileNode(id: "/root/folder/b.txt", name: "b.txt", size: 12)
@@ -607,7 +695,7 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updated.node(id: secondLink.id)?.allocatedSize, 0)
     }
 
-    func testDeepTreeIndexingAndAggregateStatsAvoidRecursiveTraversal() {
+    func testDeepTreeIndexingAndAggregateStatsAvoidRecursiveTraversal() throws {
         let depth = 5_000
         let leafID = "/root/file.txt"
         let leaf = makeFileNode(id: leafID, name: "file.txt", size: 12)
@@ -644,6 +732,13 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.path(to: leafID).count, depth + 2)
         XCTAssertEqual(store.aggregateStats.directoryCount, depth + 1)
         XCTAssertEqual(store.aggregateStats.fileCount, 1)
+
+        let updatedStore = try XCTUnwrap(store.removingSubtree(id: leafID))
+
+        XCTAssertEqual(updatedStore.nodeCount, depth + 1)
+        XCTAssertEqual(updatedStore.root.allocatedSize, 0)
+        XCTAssertEqual(updatedStore.aggregateStats.directoryCount, depth + 1)
+        XCTAssertEqual(updatedStore.aggregateStats.fileCount, 0)
     }
 
     func testVolumeReconciliationUpdatesAndReordersExistingRemainderWithoutChangingTopology() throws {

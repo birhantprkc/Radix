@@ -248,26 +248,9 @@ nonisolated struct HardLinkDeduplicator {
 
         guard !targetAllocatedSizeByNodeID.isEmpty else { return store }
 
-        var nodesByID = store.nodesByID
-        for (nodeID, targetAllocatedSize) in targetAllocatedSizeByNodeID {
-            guard let node = nodesByID[nodeID] else { continue }
-            nodesByID[nodeID] = node.replacingAllocatedSize(targetAllocatedSize)
-        }
-
-        var childIDsByID = store.childIDsByID
-        let parentIDByID = store.parentIDByID
-        try rebuildAffectedAncestorDirectories(
-            for: Set(targetAllocatedSizeByNodeID.keys),
-            nodesByID: &nodesByID,
-            childIDsByID: &childIDsByID,
-            parentIDByID: parentIDByID,
+        return try store.replacingAllocatedSizes(
+            targetAllocatedSizeByNodeID,
             cancellationCheck: cancellationCheck
-        )
-
-        return FileTreeStore(
-            rootID: store.rootID,
-            nodesByID: nodesByID,
-            childIDsByID: childIDsByID
         )
     }
 
@@ -352,12 +335,10 @@ nonisolated struct HardLinkDeduplicator {
             guard node.isDirectory else { continue }
             var childIndices = childIndicesByIndex[nodeIndex]
             childIndices.sort { lhsIndex, rhsIndex in
-                let lhs = nodes[Int(lhsIndex.rawValue)]
-                let rhs = nodes[Int(rhsIndex.rawValue)]
-                if lhs.allocatedSize == rhs.allocatedSize {
-                    return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-                }
-                return lhs.allocatedSize > rhs.allocatedSize
+                FileTreeStore.areInDisplayOrder(
+                    nodes[Int(lhsIndex.rawValue)],
+                    nodes[Int(rhsIndex.rawValue)]
+                )
             }
             let children = childIndices.map { nodes[Int($0.rawValue)] }
             nodes[nodeIndex] = FileNodeRecord.directory(
@@ -509,31 +490,5 @@ nonisolated struct HardLinkClaim: Sendable {
         self.path = path
         self.allocatedSize = allocatedSize
         self.cloneAllocatedSize = min(max(cloneAllocatedSize, 0), max(allocatedSize, 0))
-    }
-}
-
-private extension FileNodeRecord {
-    nonisolated func replacingAllocatedSize(_ allocatedSize: Int64) -> FileNodeRecord {
-        FileNodeRecord(
-            id: id,
-            url: url,
-            name: name,
-            isDirectory: isDirectory,
-            isSymbolicLink: isSymbolicLink,
-            allocatedSize: allocatedSize,
-            unduplicatedAllocatedSize: unduplicatedAllocatedSize,
-            dataAllocatedSize: dataAllocatedSize,
-            logicalSize: logicalSize,
-            descendantFileCount: descendantFileCount,
-            lastModified: lastModified,
-            fileIdentity: fileIdentity,
-            linkCount: linkCount,
-            cloneIdentity: cloneIdentity,
-            isPackage: isPackage,
-            isAccessible: isAccessible,
-            isSelfAccessible: isSelfAccessible,
-            isSynthetic: isSynthetic,
-            isAutoSummarized: isAutoSummarized
-        )
     }
 }

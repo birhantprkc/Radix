@@ -157,6 +157,30 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
 }
 
 extension FileNodeRecord {
+    nonisolated func replacingAllocatedSize(_ allocatedSize: Int64) -> FileNodeRecord {
+        FileNodeRecord(
+            id: id,
+            url: url,
+            name: name,
+            isDirectory: isDirectory,
+            isSymbolicLink: isSymbolicLink,
+            allocatedSize: allocatedSize,
+            unduplicatedAllocatedSize: unduplicatedAllocatedSize,
+            dataAllocatedSize: dataAllocatedSize,
+            logicalSize: logicalSize,
+            descendantFileCount: descendantFileCount,
+            lastModified: lastModified,
+            fileIdentity: fileIdentity,
+            linkCount: linkCount,
+            cloneIdentity: cloneIdentity,
+            isPackage: isPackage,
+            isAccessible: isAccessible,
+            isSelfAccessible: isSelfAccessible,
+            isSynthetic: isSynthetic,
+            isAutoSummarized: isAutoSummarized
+        )
+    }
+
     nonisolated var systemImageName: String {
         if isSynthetic {
             return "internaldrive.fill"

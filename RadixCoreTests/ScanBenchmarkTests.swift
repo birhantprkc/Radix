@@ -55,6 +55,127 @@ final class ScanBenchmarkTests: XCTestCase {
         )
     }
 
+    func testTreeRemovalBenchmark() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_TREE_REMOVAL"] == "1" else {
+            throw XCTSkip("Set RADIX_BENCH_TREE_REMOVAL=1 to run the tree-removal benchmark.")
+        }
+
+        let directoryCount = environment["RADIX_BENCH_TREE_DIRECTORIES"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 200
+        let filesPerDirectory = environment["RADIX_BENCH_TREE_FILES_PER_DIRECTORY"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 1_000
+        let fileCount = directoryCount * filesPerDirectory
+        let nodeCount = fileCount + directoryCount + 1
+        let rootIndex = FileTreeNodeIndex(rawValue: 0)
+        var nodes = [FileNodeRecord(
+            id: "/benchmark",
+            url: URL(filePath: "/benchmark", directoryHint: .isDirectory),
+            name: "benchmark",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: Int64(fileCount),
+            logicalSize: Int64(fileCount),
+            descendantFileCount: fileCount,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )]
+        nodes.reserveCapacity(nodeCount)
+        var childIndicesByIndex = Array(repeating: [FileTreeNodeIndex](), count: nodeCount)
+        var parentIndices = Array<FileTreeNodeIndex?>(repeating: nil, count: nodeCount)
+        var rootChildren: [FileTreeNodeIndex] = []
+        rootChildren.reserveCapacity(directoryCount)
+        var removalID = ""
+
+        for directoryOffset in 0..<directoryCount {
+            let directoryIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
+            let directoryID = String(format: "/benchmark/directory-%06d", directoryOffset)
+            nodes.append(FileNodeRecord(
+                id: directoryID,
+                url: URL(filePath: directoryID, directoryHint: .isDirectory),
+                name: URL(filePath: directoryID).lastPathComponent,
+                isDirectory: true,
+                isSymbolicLink: false,
+                allocatedSize: Int64(filesPerDirectory),
+                logicalSize: Int64(filesPerDirectory),
+                descendantFileCount: filesPerDirectory,
+                lastModified: nil,
+                isPackage: false,
+                isAccessible: true,
+                isSelfAccessible: true,
+                isSynthetic: false,
+                isAutoSummarized: false
+            ))
+            parentIndices[Int(directoryIndex.rawValue)] = rootIndex
+            rootChildren.append(directoryIndex)
+
+            var directoryChildren: [FileTreeNodeIndex] = []
+            directoryChildren.reserveCapacity(filesPerDirectory)
+            for fileOffset in 0..<filesPerDirectory {
+                let fileIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
+                let fileID = directoryID + String(format: "/file-%06d.bin", fileOffset)
+                nodes.append(FileNodeRecord(
+                    id: fileID,
+                    url: URL(filePath: fileID),
+                    name: URL(filePath: fileID).lastPathComponent,
+                    isDirectory: false,
+                    isSymbolicLink: false,
+                    allocatedSize: 1,
+                    logicalSize: 1,
+                    descendantFileCount: 1,
+                    lastModified: nil,
+                    isPackage: false,
+                    isAccessible: true,
+                    isSelfAccessible: true,
+                    isSynthetic: false,
+                    isAutoSummarized: false
+                ))
+                parentIndices[Int(fileIndex.rawValue)] = directoryIndex
+                directoryChildren.append(fileIndex)
+                if directoryOffset == 0, fileOffset == filesPerDirectory / 2 {
+                    removalID = fileID
+                }
+            }
+            childIndicesByIndex[Int(directoryIndex.rawValue)] = directoryChildren
+        }
+        childIndicesByIndex[0] = rootChildren
+        let orderedNodeIndices = nodes.indices.map { FileTreeNodeIndex(rawValue: UInt32($0)) }
+        let store = FileTreeStore(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            childIndicesByIndex: childIndicesByIndex,
+            parentIndices: parentIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: ScanAggregateStats(
+                totalAllocatedSize: Int64(fileCount),
+                totalLogicalSize: Int64(fileCount),
+                fileCount: fileCount,
+                directoryCount: directoryCount + 1,
+                accessibleItemCount: nodeCount,
+                inaccessibleItemCount: 0
+            )
+        )
+
+        let startedAt = ContinuousClock.now
+        let updatedStore = try XCTUnwrap(store.removingSubtree(id: removalID))
+        let elapsed = startedAt.duration(to: .now)
+        let elapsedSeconds = Double(elapsed.components.seconds) +
+            (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+
+        XCTAssertEqual(updatedStore.nodeCount, nodeCount - 1)
+        XCTAssertEqual(updatedStore.aggregateStats.fileCount, fileCount - 1)
+        print(
+            "RADIX_BENCH_TREE_REMOVAL_RESULT nodes=\(nodeCount) " +
+            "removed=1 elapsed=\(String(format: "%.6f", elapsedSeconds))s"
+        )
+    }
+
     /// Release gate for the startup-volume namespace. It compares the optimized
     /// bulk/descriptor scanner with the independent Foundation enumeration path
     /// and verifies that macOS firmlink roots were actually traversed.
