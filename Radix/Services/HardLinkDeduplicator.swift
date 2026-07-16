@@ -217,6 +217,7 @@ nonisolated struct HardLinkDeduplicator {
         cancellationCheck: () throws -> Void = {}
     ) throws -> FileTreeStore {
         var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var claimNodeIndices: [FileTreeNodeIndex] = []
 
         for (offset, nodeIndex) in store.indexedNodeIndices().enumerated() {
             if offset.isMultiple(of: 256) {
@@ -227,19 +228,19 @@ nonisolated struct HardLinkDeduplicator {
                 continue
             }
             hardLinkAccumulator.record(claim)
+            claimNodeIndices.append(nodeIndex)
         }
 
         guard !hardLinkAccumulator.isEmpty else { return store }
 
         let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
         var targetAllocatedSizeByNodeID: [String: Int64] = [:]
-        for (offset, nodeIndex) in store.indexedNodeIndices().enumerated() {
+        targetAllocatedSizeByNodeID.reserveCapacity(claimNodeIndices.count)
+        for (offset, nodeIndex) in claimNodeIndices.enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            guard let node = store.node(at: nodeIndex), claim(for: node) != nil else {
-                continue
-            }
+            guard let node = store.node(at: nodeIndex) else { continue }
             let duplicateAllocatedSize = duplicateAllocatedSizeByOwner[node.id] ?? 0
             let targetAllocatedSize = max(0, node.unduplicatedAllocatedSize - duplicateAllocatedSize)
             guard node.allocatedSize != targetAllocatedSize else { continue }
