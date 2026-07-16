@@ -8,7 +8,7 @@ final class SidebarModelTests: XCTestCase {
         var availabilityCheckCount = 0
         let model = SidebarModel(
             recentTargetStore: RecentTargetStore(
-                persistence: SidebarRecentTargetPersistence(),
+                persistence: TestRecentTargetPersistence(),
                 isAvailable: { _ in
                     availabilityCheckCount += 1
                     return true
@@ -133,21 +133,11 @@ private func makeSidebarRecentTargetStore(
     isAvailable: @escaping (ScanTarget) -> Bool = { _ in true }
 ) -> RecentTargetStore {
     RecentTargetStore(
-        persistence: SidebarRecentTargetPersistence(),
+        persistence: TestRecentTargetPersistence(),
         isAvailable: isAvailable
     )
 }
 
 private func makeSidebarTarget(_ path: String, kind: ScanTargetKind = .folder) -> ScanTarget {
     ScanTarget(url: URL(filePath: path, directoryHint: .isDirectory), kind: kind)
-}
-
-private final class SidebarRecentTargetPersistence: RecentTargetPersisting {
-    func loadRecentTargets() -> [ScanTarget] {
-        []
-    }
-
-    func saveRecentTargets(_ targets: [ScanTarget]) {}
-
-    func clearRecentTargets() {}
 }

@@ -3227,23 +3227,6 @@ private func makeSpaceKeyEvent(windowNumber: Int = 0) -> NSEvent {
 }
 
 @MainActor
-private func waitUntil(
-    _ description: String,
-    timeout: TimeInterval = 1,
-    condition: () -> Bool
-) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline {
-            XCTFail("Timed out waiting for \(description).")
-            return
-        }
-
-        try await Task.sleep(for: .milliseconds(10))
-    }
-}
-
-@MainActor
 @discardableResult
 private func installSelection(
     on model: AppModel,

@@ -1,5 +1,74 @@
 import Foundation
+import XCTest
 @testable import RadixCore
+
+@MainActor
+func waitUntil(
+    _ description: String,
+    timeout: TimeInterval = 1,
+    condition: () -> Bool
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() {
+        if Date() >= deadline {
+            XCTFail("Timed out waiting for \(description).")
+            return
+        }
+
+        try await Task.sleep(for: .milliseconds(10))
+    }
+}
+
+func makeTemporaryDirectory() throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
+final class TestAppPreferencesStore: AppPreferencesPersisting {
+    var preferences: AppPreferences
+
+    init(preferences: AppPreferences = .defaults) {
+        self.preferences = preferences
+    }
+
+    func loadPreferences() -> AppPreferences {
+        preferences
+    }
+
+    func saveScanPreferences(_ preferences: AppScanPreferences) {
+        self.preferences.scan = preferences
+    }
+
+    func markOnboardingComplete() {
+        preferences.didCompleteOnboarding = true
+    }
+
+    func markOnboardingIncomplete() {
+        preferences.didCompleteOnboarding = false
+    }
+}
+
+final class TestRecentTargetPersistence: RecentTargetPersisting {
+    var targets: [ScanTarget]
+
+    init(targets: [ScanTarget] = []) {
+        self.targets = targets
+    }
+
+    func loadRecentTargets() -> [ScanTarget] {
+        targets
+    }
+
+    func saveRecentTargets(_ targets: [ScanTarget]) {
+        self.targets = targets
+    }
+
+    func clearRecentTargets() {
+        targets = []
+    }
+}
 
 func makeTestTarget(_ path: String, kind: ScanTargetKind = .folder) -> ScanTarget {
     ScanTarget(url: URL(filePath: path, directoryHint: .isDirectory), kind: kind)

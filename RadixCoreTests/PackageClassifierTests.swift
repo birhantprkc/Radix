@@ -279,13 +279,6 @@ final class PackageClassifierTests: XCTestCase {
         }
     }
 
-    private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     private func setFinderBundleBit(at url: URL) throws {
         var finderInfo = [UInt8](repeating: 0, count: 32)
         finderInfo[8] = 0x20

@@ -649,7 +649,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let service = ControlledScanService()
         let homeTarget = makeCoordinatorTarget("/app/sidebar/exclusion-home")
         let libraryTarget = makeCoordinatorTarget("/app/sidebar/exclusion-home/Library")
-        let preferences = CoordinatorAppPreferencesStore(
+        let preferences = TestAppPreferencesStore(
             preferences: AppPreferences(
                 scan: exclusionScanPreferences(patterns: ["Library/Caches/**"]),
                 didCompleteOnboarding: true
@@ -1415,7 +1415,7 @@ final class ScanCoordinatorTests: XCTestCase {
     func testAppModelExpansionPreservesPathScopedExclusionRoot() async throws {
         let service = ControlledScanService()
         let rootTarget = makeCoordinatorTarget("/root")
-        let preferences = CoordinatorAppPreferencesStore(
+        let preferences = TestAppPreferencesStore(
             preferences: AppPreferences(
                 scan: exclusionScanPreferences(patterns: ["cache/tmp/**"]),
                 didCompleteOnboarding: true
@@ -1617,14 +1617,14 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
 
 @MainActor
 private func makeCoordinatorAppDependencies(
-    preferences: CoordinatorAppPreferencesStore = CoordinatorAppPreferencesStore(),
+    preferences: TestAppPreferencesStore = TestAppPreferencesStore(),
     scanService: any ScanEventStreaming,
     systemActions: AppSystemActions = .inert
 ) -> AppDependencies {
     AppDependencies(
         preferences: preferences,
         recentTargets: RecentTargetStore(
-            persistence: CoordinatorRecentTargetPersistence(),
+            persistence: TestRecentTargetPersistence(),
             isAvailable: { _ in true }
         ),
         systemActions: systemActions,
@@ -1643,63 +1643,6 @@ private func exclusionScanPreferences(patterns: [String]) -> AppScanPreferences 
 private final class CoordinatorLifecycleActionRecorder {
     var quickLookCloseCount = 0
     var quickLookMonitorRemovalCount = 0
-}
-
-private final class CoordinatorAppPreferencesStore: AppPreferencesPersisting {
-    var preferences: AppPreferences
-
-    init(preferences: AppPreferences = .defaults) {
-        self.preferences = preferences
-    }
-
-    func loadPreferences() -> AppPreferences {
-        preferences
-    }
-
-    func saveScanPreferences(_ preferences: AppScanPreferences) {
-        self.preferences.scan = preferences
-    }
-
-    func markOnboardingComplete() {
-        preferences.didCompleteOnboarding = true
-    }
-
-    func markOnboardingIncomplete() {
-        preferences.didCompleteOnboarding = false
-    }
-}
-
-private final class CoordinatorRecentTargetPersistence: RecentTargetPersisting {
-    var targets: [ScanTarget] = []
-
-    func loadRecentTargets() -> [ScanTarget] {
-        targets
-    }
-
-    func saveRecentTargets(_ targets: [ScanTarget]) {
-        self.targets = targets
-    }
-
-    func clearRecentTargets() {
-        targets = []
-    }
-}
-
-@MainActor
-private func waitUntil(
-    _ description: String,
-    timeout: TimeInterval = 1,
-    condition: () -> Bool
-) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline {
-            XCTFail("Timed out waiting for \(description).")
-            return
-        }
-
-        try await Task.sleep(for: .milliseconds(10))
-    }
 }
 
 private func makeCoordinatorTarget(_ path: String) -> ScanTarget {

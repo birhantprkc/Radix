@@ -213,13 +213,6 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
         XCTAssertNil(try cursor.nextBatch(cancellationCheck: {}))
     }
 
-    private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     private func openDirectoryDescriptor(at url: URL) throws -> Int32 {
         let descriptor = url.withUnsafeFileSystemRepresentation { path in
             path.map { Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC) } ?? -1

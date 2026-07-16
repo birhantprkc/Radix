@@ -3606,12 +3606,6 @@ private func containsChildren(_ node: FileNodeRecord, in snapshot: ScanSnapshot)
     snapshot.treeStore.containsChildren(id: node.id)
 }
 
-private func makeTemporaryDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
-}
-
 private func cloneFileOrSkip(at sourceURL: URL, to destinationURL: URL) throws {
     let result = sourceURL.withUnsafeFileSystemRepresentation { sourcePath in
         destinationURL.withUnsafeFileSystemRepresentation { destinationPath in

@@ -563,23 +563,6 @@ final class WorkspaceNavigationModelTests: XCTestCase {
 }
 
 @MainActor
-private func waitUntil(
-    _ description: String,
-    timeout: TimeInterval = 1,
-    condition: () -> Bool
-) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline {
-            XCTFail("Timed out waiting for \(description).")
-            return
-        }
-
-        try await Task.sleep(for: .milliseconds(10))
-    }
-}
-
-@MainActor
 private func makeConfiguredNavigationModel(fixture: NavigationFixture) -> WorkspaceNavigationModel {
     let model = WorkspaceNavigationModel()
     model.reconcileAfterSnapshotApplied(fixture.snapshot)
@@ -589,9 +572,9 @@ private func makeConfiguredNavigationModel(fixture: NavigationFixture) -> Worksp
 @MainActor
 private func makeNavigationAppDependencies() -> AppDependencies {
     AppDependencies(
-        preferences: NavigationAppPreferencesStore(),
+        preferences: TestAppPreferencesStore(),
         recentTargets: RecentTargetStore(
-            persistence: NavigationRecentTargetPersistence(),
+            persistence: TestRecentTargetPersistence(),
             isAvailable: { _ in true }
         ),
         systemActions: .inert
@@ -638,41 +621,5 @@ private func tableStorageAddress(of nodes: [FileNodeRecord]) -> UnsafeRawPointer
     nodes.withUnsafeBufferPointer { buffer in
         guard let baseAddress = buffer.baseAddress else { return nil }
         return UnsafeRawPointer(baseAddress)
-    }
-}
-
-private final class NavigationAppPreferencesStore: AppPreferencesPersisting {
-    var preferences = AppPreferences.defaults
-
-    func loadPreferences() -> AppPreferences {
-        preferences
-    }
-
-    func saveScanPreferences(_ preferences: AppScanPreferences) {
-        self.preferences.scan = preferences
-    }
-
-    func markOnboardingComplete() {
-        preferences.didCompleteOnboarding = true
-    }
-
-    func markOnboardingIncomplete() {
-        preferences.didCompleteOnboarding = false
-    }
-}
-
-private final class NavigationRecentTargetPersistence: RecentTargetPersisting {
-    var targets: [ScanTarget] = []
-
-    func loadRecentTargets() -> [ScanTarget] {
-        targets
-    }
-
-    func saveRecentTargets(_ targets: [ScanTarget]) {
-        self.targets = targets
-    }
-
-    func clearRecentTargets() {
-        targets = []
     }
 }

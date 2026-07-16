@@ -365,13 +365,6 @@ final class ScanMetadataLoaderTests: XCTestCase {
         ])
     }
 
-    private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     private func setExtendedAttribute(named name: String, data: Data, at url: URL) throws {
         let result = data.withUnsafeBytes { bytes in
             url.withUnsafeFileSystemRepresentation { path in
