@@ -55,7 +55,6 @@ final class ScanCoordinator: ObservableObject {
     @Published var phase: AppModelPhase = .idle
     @Published var snapshot: ScanSnapshot?
     @Published var selectedTarget: ScanTarget?
-    @Published var fileTreeStore: FileTreeStore?
     @Published private(set) var completedScanSnapshot: ScanSnapshot?
     @Published private(set) var scanErrorMessage: String?
     @Published private(set) var expandingNodeID: FileNodeRecord.ID?
@@ -113,6 +112,10 @@ final class ScanCoordinator: ObservableObject {
         snapshot?.source ?? .live
     }
 
+    var fileTreeStore: FileTreeStore? {
+        snapshot?.treeStore
+    }
+
     func replaceTrashSafetyPolicy(_ policy: TrashSafetyPolicy) {
         trashSafetyPolicy = policy
     }
@@ -131,7 +134,6 @@ final class ScanCoordinator: ObservableObject {
         scanErrorMessage = nil
         scanMetrics = ScanMetrics()
         snapshot = nil
-        fileTreeStore = nil
         completedScanSnapshot = nil
         resetProgressThrottling()
 
@@ -168,7 +170,6 @@ final class ScanCoordinator: ObservableObject {
         stopScan(resetState: false)
         selectedTarget = nil
         snapshot = nil
-        fileTreeStore = nil
         completedScanSnapshot = nil
         scanMetrics = ScanMetrics()
         phase = .idle
@@ -176,7 +177,6 @@ final class ScanCoordinator: ObservableObject {
 
     func replaceCurrentSnapshot(_ snapshot: ScanSnapshot?) {
         self.snapshot = snapshot
-        fileTreeStore = snapshot?.treeStore
         if snapshot == nil {
             phase = .idle
         } else if !isScanning {
@@ -224,7 +224,6 @@ final class ScanCoordinator: ObservableObject {
             guard snapshot?.id == currentSnapshotID else { return false }
 
             snapshot = updatedSnapshot
-            fileTreeStore = updatedSnapshot.treeStore
             completedScanSnapshot = nil
             if !isScanning {
                 phase = .displaying
@@ -411,7 +410,6 @@ final class ScanCoordinator: ObservableObject {
 
     private func apply(snapshot: ScanSnapshot) {
         self.snapshot = snapshot
-        fileTreeStore = snapshot.treeStore
     }
 
     private func completeCancelledScan(scanID: UUID) {
@@ -508,7 +506,6 @@ final class ScanCoordinator: ObservableObject {
         }
 
         snapshot = updatedSnapshot
-        fileTreeStore = updatedSnapshot.treeStore
         return expandedSnapshot.root.id
     }
 }
