@@ -424,6 +424,61 @@ final class ScanModelTests: XCTestCase {
         XCTAssertNil(snapshot.removingNode(id: root.id))
     }
 
+    func testSnapshotRemovesMultipleSubtreesAndTheirWarningsTogether() throws {
+        let first = makeNode(id: "/root/first/file.bin", isDirectory: false, isSynthetic: false, isAccessible: true)
+        let firstDirectory = FileNodeRecord.directory(
+            id: "/root/first",
+            url: URL(filePath: "/root/first", directoryHint: .isDirectory),
+            name: "first",
+            children: [first],
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true
+        )
+        let second = makeNode(id: "/root/second.bin", isDirectory: false, isSynthetic: false, isAccessible: true)
+        let retained = makeNode(id: "/root/retained.bin", isDirectory: false, isSynthetic: false, isAccessible: true)
+        let root = FileNodeRecord.directory(
+            id: "/root",
+            url: URL(filePath: "/root", directoryHint: .isDirectory),
+            name: "root",
+            children: [firstDirectory, second, retained],
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true
+        )
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [firstDirectory, second, retained],
+            firstDirectory.id: [first],
+        ])
+        let removedWarnings = [
+            ScanWarning(path: first.id, message: "first", category: .fileSystem),
+            ScanWarning(path: second.id, message: "second", category: .fileSystem),
+        ]
+        let retainedWarning = ScanWarning(path: retained.id, message: "retained", category: .fileSystem)
+        let prefixSiblingWarning = ScanWarning(
+            path: "/root/first-other/file.bin",
+            message: "prefix sibling",
+            category: .fileSystem
+        )
+        let snapshot = makeSnapshot(
+            root: root,
+            treeStore: store,
+            warnings: removedWarnings + [retainedWarning, prefixSiblingWarning]
+        )
+
+        let updated = try XCTUnwrap(snapshot.removingNodes(ids: [firstDirectory.id, first.id, second.id]))
+
+        XCTAssertNil(updated.treeStore.node(id: firstDirectory.id))
+        XCTAssertNil(updated.treeStore.node(id: first.id))
+        XCTAssertNil(updated.treeStore.node(id: second.id))
+        XCTAssertNotNil(updated.treeStore.node(id: retained.id))
+        XCTAssertEqual(updated.scanWarnings.map(\.path), [retained.id, prefixSiblingWarning.path])
+        XCTAssertEqual(updated.aggregateStats.fileCount, 1)
+        XCTAssertNil(snapshot.removingNodes(ids: []))
+        XCTAssertNil(snapshot.removingNodes(ids: ["/root/missing"]))
+        XCTAssertNil(snapshot.removingNodes(ids: [root.id, second.id]))
+    }
+
     func testSnapshotScopedToDescendantUsesSubtreeAndFiltersWarnings() throws {
         let docsFile = makeNode(id: "/root/Documents/report.pdf", isDirectory: false, isSynthetic: false, isAccessible: true)
         let cacheFile = makeNode(id: "/root/Library/cache.db", isDirectory: false, isSynthetic: false, isAccessible: true)

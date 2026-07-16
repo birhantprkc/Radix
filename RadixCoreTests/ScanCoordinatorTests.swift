@@ -330,6 +330,31 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testRemovingMultipleNodesUsesOneSnapshotTransformation() async throws {
+        let transformService = RecordingSnapshotTransformService()
+        let coordinator = ScanCoordinator(snapshotTransformService: transformService)
+        let first = makeTestFileNode(id: "/root/first.dat", name: "first.dat", size: 10)
+        let second = makeTestFileNode(id: "/root/second.dat", name: "second.dat", size: 20)
+        let retained = makeTestFileNode(id: "/root/retained.dat", name: "retained.dat", size: 30)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [first, second, retained])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second, retained]])
+        coordinator.replaceCurrentSnapshot(makeCoordinatorSnapshot(
+            target: makeCoordinatorTarget(root.id),
+            root: root,
+            store: store
+        ))
+
+        let didRemove = await coordinator.removeNodesFromCurrentSnapshot(ids: [first.id, second.id])
+        let batches = await transformService.recordedRemovingNodeIDBatches()
+
+        XCTAssertTrue(didRemove)
+        XCTAssertEqual(batches, [[first.id, second.id]])
+        XCTAssertNil(coordinator.snapshot?.treeStore.node(id: first.id))
+        XCTAssertNil(coordinator.snapshot?.treeStore.node(id: second.id))
+        XCTAssertNotNil(coordinator.snapshot?.treeStore.node(id: retained.id))
+    }
+
+    @MainActor
     func testAppModelScanLifecycleUsesInjectedCoordinatorState() async throws {
         let service = ControlledScanService()
         let model = AppModel(dependencies: makeCoordinatorAppDependencies(scanService: service))
@@ -1515,10 +1540,14 @@ private final class RescanRecordingService: ScanEventStreaming, @unchecked Senda
 }
 
 private actor RecordingSnapshotTransformService: ScanSnapshotTransforming {
-    private var removingNodeIDs: [String] = []
+    private var removingNodeIDBatches: [[String]] = []
 
     func recordedRemovingNodeIDs() -> [String] {
-        removingNodeIDs
+        removingNodeIDBatches.flatMap { $0 }
+    }
+
+    func recordedRemovingNodeIDBatches() -> [[String]] {
+        removingNodeIDBatches
     }
 
     func replacingNode(
@@ -1537,13 +1566,13 @@ private actor RecordingSnapshotTransformService: ScanSnapshotTransforming {
         )
     }
 
-    func removingNode(
+    func removingNodes(
         in snapshot: ScanSnapshot,
-        id targetID: String
+        ids targetIDs: [String]
     ) async throws -> ScanSnapshot? {
-        removingNodeIDs.append(targetID)
-        return try snapshot.removingNode(
-            id: targetID,
+        removingNodeIDBatches.append(targetIDs)
+        return try snapshot.removingNodes(
+            ids: targetIDs,
             cancellationCheck: {
                 try Task.checkCancellation()
             }

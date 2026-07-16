@@ -52,7 +52,7 @@ struct DiscardPileSummary: Equatable, Sendable {
 @MainActor
 final class AppModel: ObservableObject {
     private struct PostTrashRemovalRequest: Sendable {
-        let nodeID: FileNodeRecord.ID
+        let nodeIDs: [FileNodeRecord.ID]
         let fallbackFocusID: FileNodeRecord.ID?
     }
 
@@ -2302,16 +2302,16 @@ final class AppModel: ObservableObject {
 
     private func handleMovedToTrash(_ nodes: [FileNodeRecord]) {
         var shouldClearActiveScan = false
+        var removalNodeIDs: [FileNodeRecord.ID] = []
+        var fallbackFocusID: FileNodeRecord.ID?
 
         for node in nodes {
             switch ScanPostTrashAction.afterRemovingNode(activeTargetID: scanCoordinator.selectedTarget?.id, removedNodeID: node.id) {
             case .clearActiveScan:
                 shouldClearActiveScan = true
             case .removeFromActiveScan:
-                enqueuePostTrashSnapshotRemoval(
-                    nodeID: node.id,
-                    fallbackFocusID: postTrashFocusFallbackID(for: node)
-                )
+                removalNodeIDs.append(node.id)
+                fallbackFocusID = fallbackFocusID ?? postTrashFocusFallbackID(for: node)
             case .none:
                 break
             }
@@ -2323,6 +2323,11 @@ final class AppModel: ObservableObject {
             navigationModel.reset()
             sidebarModel.setActiveTargetID(nil)
             sidebarScanCacheController.clearDisplayedSnapshot()
+        } else if !removalNodeIDs.isEmpty {
+            enqueuePostTrashSnapshotRemoval(
+                nodeIDs: removalNodeIDs,
+                fallbackFocusID: fallbackFocusID
+            )
         }
     }
 
@@ -2356,11 +2361,11 @@ final class AppModel: ObservableObject {
     }
 
     private func enqueuePostTrashSnapshotRemoval(
-        nodeID: FileNodeRecord.ID,
+        nodeIDs: [FileNodeRecord.ID],
         fallbackFocusID: FileNodeRecord.ID?
     ) {
         postTrashRemovalRequests.append(PostTrashRemovalRequest(
-            nodeID: nodeID,
+            nodeIDs: nodeIDs,
             fallbackFocusID: fallbackFocusID
         ))
         startPostTrashSnapshotRemovalIfNeeded()
@@ -2378,7 +2383,7 @@ final class AppModel: ObservableObject {
                 }
 
                 let request = self.postTrashRemovalRequests.removeFirst()
-                let didRemove = await self.scanCoordinator.removeNodeFromCurrentSnapshot(id: request.nodeID)
+                let didRemove = await self.scanCoordinator.removeNodesFromCurrentSnapshot(ids: request.nodeIDs)
                 guard !Task.isCancelled else {
                     self.postTrashRemovalRequests.removeAll()
                     self.postTrashRemovalTask = nil

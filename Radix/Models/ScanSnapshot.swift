@@ -165,24 +165,51 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
     }
 
     nonisolated func removingNode(id targetID: String) -> ScanSnapshot? {
-        try? removingNode(id: targetID, cancellationCheck: {})
+        try? removingNodes(ids: [targetID], cancellationCheck: {})
     }
 
     nonisolated func removingNode(
         id targetID: String,
         cancellationCheck: () throws -> Void
     ) throws -> ScanSnapshot? {
+        try removingNodes(ids: [targetID], cancellationCheck: cancellationCheck)
+    }
+
+    nonisolated func removingNodes(ids targetIDs: [String]) -> ScanSnapshot? {
+        try? removingNodes(ids: targetIDs, cancellationCheck: {})
+    }
+
+    nonisolated func removingNodes(
+        ids targetIDs: [String],
+        cancellationCheck: () throws -> Void
+    ) throws -> ScanSnapshot? {
         try cancellationCheck()
-        guard let updatedStore = try treeStore.removingSubtree(
-            id: targetID,
-            cancellationCheck: cancellationCheck
-        ) else { return nil }
+        let removalIDs = treeStore.topLevelNodeIDs(from: targetIDs)
+        guard !removalIDs.isEmpty, !removalIDs.contains(treeStore.rootID) else {
+            return nil
+        }
+
+        let updatedStore: FileTreeStore
+        if removalIDs.count == 1 {
+            guard let removedStore = try treeStore.removingSubtree(
+                id: removalIDs[0],
+                cancellationCheck: cancellationCheck
+            ) else { return nil }
+            updatedStore = removedStore
+        } else {
+            updatedStore = try treeStore.removingSubtrees(
+                rootedAt: removalIDs,
+                cancellationCheck: cancellationCheck
+            )
+        }
 
         var retainedWarnings: [ScanWarning] = []
         retainedWarnings.reserveCapacity(scanWarnings.count)
         for warning in scanWarnings {
             try cancellationCheck()
-            if !Self.path(warning.path, isContainedIn: targetID) {
+            if !removalIDs.contains(where: { removalID in
+                Self.path(warning.path, isContainedIn: removalID)
+            }) {
                 retainedWarnings.append(warning)
             }
         }

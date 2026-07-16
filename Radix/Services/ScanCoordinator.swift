@@ -207,18 +207,27 @@ final class ScanCoordinator: ObservableObject {
 
     @discardableResult
     func removeNodeFromCurrentSnapshot(id nodeID: FileNodeRecord.ID) async -> Bool {
+        await removeNodesFromCurrentSnapshot(ids: [nodeID])
+    }
+
+    @discardableResult
+    func removeNodesFromCurrentSnapshot(ids nodeIDs: [FileNodeRecord.ID]) async -> Bool {
         guard let currentSnapshot = snapshot else { return false }
         let currentSnapshotID = currentSnapshot.id
+        let removalNodeIDs = currentSnapshot.treeStore.topLevelNodeIDs(from: nodeIDs)
+        guard !removalNodeIDs.isEmpty else { return false }
 
         if let expandingNodeID,
-           currentSnapshot.treeStore.isAncestor(nodeID, of: expandingNodeID) {
+           removalNodeIDs.contains(where: {
+               currentSnapshot.treeStore.isAncestor($0, of: expandingNodeID)
+           }) {
             cancelExpansion(completeWith: .cancelled)
         }
 
         do {
-            guard let updatedSnapshot = try await snapshotTransformService.removingNode(
+            guard let updatedSnapshot = try await snapshotTransformService.removingNodes(
                 in: currentSnapshot,
-                id: nodeID
+                ids: removalNodeIDs
             ) else { return false }
             try Task.checkCancellation()
             guard snapshot?.id == currentSnapshotID else { return false }
