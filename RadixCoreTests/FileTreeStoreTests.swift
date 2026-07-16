@@ -645,6 +645,94 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.aggregateStats.directoryCount, depth + 1)
         XCTAssertEqual(store.aggregateStats.fileCount, 1)
     }
+
+    func testVolumeReconciliationUpdatesAndReordersExistingRemainderWithoutChangingTopology() throws {
+        let mebibyte: Int64 = 1_024 * 1_024
+        let nested = makeFileNode(id: "/root/folder/nested.bin", name: "nested.bin", size: 300 * mebibyte)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [nested])
+        let payload = makeFileNode(id: "/root/payload.bin", name: "payload.bin", size: 200 * mebibyte)
+        let remainder = FileNodeRecord(
+            id: "/root#system-unattributed",
+            url: URL(filePath: "/root", directoryHint: .isDirectory),
+            name: "System & Unattributed",
+            isDirectory: false,
+            isSymbolicLink: false,
+            allocatedSize: 32 * mebibyte,
+            logicalSize: 0,
+            descendantFileCount: 0,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: true,
+            isAutoSummarized: false
+        )
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder, payload, remainder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, payload, remainder],
+            folder.id: [nested],
+        ])
+        let originalStats = store.aggregateStats
+        let target = ScanTarget(
+            url: URL(filePath: root.id, directoryHint: .isDirectory),
+            kind: .volume
+        )
+
+        let grown = VolumeCapacityAccounting.reconciledStore(
+            store,
+            target: target,
+            capacity: VolumeCapacitySnapshot(
+                totalCapacity: 1_200 * mebibyte,
+                availableCapacity: 0
+            ),
+            hasActiveExclusions: false
+        )
+        let grownRemainder = try XCTUnwrap(grown.node(id: remainder.id))
+
+        XCTAssertNotEqual(grown.contentID, store.contentID)
+        XCTAssertEqual(grown.root.allocatedSize, 1_200 * mebibyte)
+        XCTAssertEqual(grownRemainder.allocatedSize, 700 * mebibyte)
+        XCTAssertEqual(grownRemainder.name, "System & Unattributed")
+        XCTAssertTrue(grownRemainder.isSynthetic)
+        XCTAssertTrue(grownRemainder.isAccessible)
+        XCTAssertEqual(grownRemainder.logicalSize, 0)
+        XCTAssertEqual(grown.childIDs(of: root.id), [remainder.id, folder.id, payload.id])
+        XCTAssertEqual(
+            grown.indexedNodeIDs(),
+            [root.id, remainder.id, folder.id, nested.id, payload.id]
+        )
+        XCTAssertEqual(grown.parentID(of: remainder.id), root.id)
+        XCTAssertEqual(grown.parentID(of: nested.id), folder.id)
+        XCTAssertEqual(grown.aggregateStats.fileCount, originalStats.fileCount)
+        XCTAssertEqual(grown.aggregateStats.directoryCount, originalStats.directoryCount)
+        XCTAssertEqual(grown.aggregateStats.accessibleItemCount, originalStats.accessibleItemCount)
+        XCTAssertEqual(grown.aggregateStats.inaccessibleItemCount, originalStats.inaccessibleItemCount)
+
+        let shrunk = VolumeCapacityAccounting.reconciledStore(
+            grown,
+            target: target,
+            capacity: VolumeCapacitySnapshot(
+                totalCapacity: 532 * mebibyte,
+                availableCapacity: 0
+            ),
+            hasActiveExclusions: true
+        )
+        let shrunkRemainder = try XCTUnwrap(shrunk.node(id: remainder.id))
+
+        XCTAssertNotEqual(shrunk.contentID, grown.contentID)
+        XCTAssertEqual(shrunk.root.allocatedSize, 532 * mebibyte)
+        XCTAssertEqual(shrunkRemainder.allocatedSize, 32 * mebibyte)
+        XCTAssertEqual(shrunkRemainder.name, "Excluded & Unattributed")
+        XCTAssertEqual(shrunk.childIDs(of: root.id), [folder.id, payload.id, remainder.id])
+        XCTAssertEqual(
+            shrunk.indexedNodeIDs(),
+            [root.id, folder.id, nested.id, payload.id, remainder.id]
+        )
+        XCTAssertEqual(shrunk.aggregateStats.fileCount, originalStats.fileCount)
+        XCTAssertEqual(shrunk.aggregateStats.directoryCount, originalStats.directoryCount)
+        XCTAssertEqual(shrunk.aggregateStats.accessibleItemCount, originalStats.accessibleItemCount)
+        XCTAssertEqual(shrunk.aggregateStats.inaccessibleItemCount, originalStats.inaccessibleItemCount)
+    }
 }
 
 private func makeFileNode(
