@@ -355,6 +355,164 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testConcurrentSameContextRemovalsRetryAndPreserveBothMutations() async throws {
+        let first = makeTestFileNode(id: "/root/first.dat", name: "first.dat", size: 10)
+        let second = makeTestFileNode(id: "/root/second.dat", name: "second.dat", size: 20)
+        let retained = makeTestFileNode(id: "/root/retained.dat", name: "retained.dat", size: 30)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [first, second, retained])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second, retained]])
+        let transformService = PausingSnapshotTransformService(pausedRemovalID: first.id)
+        let coordinator = ScanCoordinator(snapshotTransformService: transformService)
+        coordinator.replaceCurrentSnapshot(makeCoordinatorSnapshot(
+            target: makeCoordinatorTarget(root.id),
+            root: root,
+            store: store
+        ))
+
+        let firstRemoval = Task { @MainActor in
+            await coordinator.removeNodeFromCurrentSnapshot(id: first.id)
+        }
+        await transformService.waitUntilPaused()
+        let didRemoveSecond = await coordinator.removeNodeFromCurrentSnapshot(id: second.id)
+        await transformService.resume()
+        let didRemoveFirst = await firstRemoval.value
+        let batches = await transformService.recordedRemovalBatches()
+
+        XCTAssertTrue(didRemoveFirst)
+        XCTAssertTrue(didRemoveSecond)
+        XCTAssertEqual(batches, [[first.id], [second.id], [first.id]])
+        XCTAssertNil(coordinator.snapshot?.treeStore.node(id: first.id))
+        XCTAssertNil(coordinator.snapshot?.treeStore.node(id: second.id))
+        XCTAssertNotNil(coordinator.snapshot?.treeStore.node(id: retained.id))
+    }
+
+    @MainActor
+    func testPausedRemovalCannotOverwriteSameIDExternalSnapshotReplacement() async throws {
+        let removed = makeTestFileNode(id: "/root/removed.dat", name: "removed.dat", size: 10)
+        let retained = makeTestFileNode(id: "/root/retained.dat", name: "retained.dat", size: 20)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [removed, retained])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [removed, retained]])
+        let originalSnapshot = makeCoordinatorSnapshot(
+            target: makeCoordinatorTarget(root.id),
+            root: root,
+            store: store
+        )
+        let transformService = PausingSnapshotTransformService(pausedRemovalID: removed.id)
+        let coordinator = ScanCoordinator(snapshotTransformService: transformService)
+        coordinator.replaceCurrentSnapshot(originalSnapshot)
+
+        let removal = Task { @MainActor in
+            await coordinator.removeNodeFromCurrentSnapshot(id: removed.id)
+        }
+        await transformService.waitUntilPaused()
+
+        let externallyAdded = makeTestFileNode(id: "/root/external.dat", name: "external.dat", size: 30)
+        let replacementRoot = makeTestDirectoryNode(
+            id: root.id,
+            name: root.name,
+            children: [removed, retained, externallyAdded]
+        )
+        let replacementStore = FileTreeStore(root: replacementRoot, childrenByID: [
+            replacementRoot.id: [removed, retained, externallyAdded],
+        ])
+        coordinator.replaceCurrentSnapshot(copyCoordinatorSnapshot(
+            originalSnapshot,
+            treeStore: replacementStore
+        ))
+
+        await transformService.resume()
+        let didRemove = await removal.value
+
+        XCTAssertFalse(didRemove)
+        XCTAssertEqual(coordinator.snapshot?.id, originalSnapshot.id)
+        XCTAssertEqual(coordinator.snapshot?.treeStore.contentID, replacementStore.contentID)
+        XCTAssertNotNil(coordinator.snapshot?.treeStore.node(id: removed.id))
+        XCTAssertNotNil(coordinator.snapshot?.treeStore.node(id: externallyAdded.id))
+    }
+
+    @MainActor
+    func testExpansionRetriesAfterUnrelatedRemovalInSameContext() async throws {
+        let scanService = ControlledScanService()
+        let summarized = makeCoordinatorSummarizedDirectoryNode(id: "/root/cache", name: "cache", size: 300)
+        let removed = makeTestFileNode(id: "/root/removed.dat", name: "removed.dat", size: 20)
+        let retained = makeTestFileNode(id: "/root/retained.dat", name: "retained.dat", size: 10)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [summarized, removed, retained])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [summarized, removed, retained]])
+        let transformService = PausingSnapshotTransformService(pausedReplacementID: summarized.id)
+        let coordinator = ScanCoordinator(
+            scanService: scanService,
+            snapshotTransformService: transformService
+        )
+        coordinator.replaceCurrentSnapshot(makeCoordinatorSnapshot(
+            target: makeCoordinatorTarget(root.id),
+            root: root,
+            store: store
+        ))
+
+        let expandedFile = makeTestFileNode(id: summarized.id + "/expanded.dat", name: "expanded.dat", size: 125)
+        let expandedRoot = makeTestDirectoryNode(id: summarized.id, name: summarized.name, children: [expandedFile])
+        let expandedStore = FileTreeStore(root: expandedRoot, childrenByID: [expandedRoot.id: [expandedFile]])
+        let expandedSnapshot = makeCoordinatorSnapshot(
+            target: makeCoordinatorTarget(summarized.id),
+            root: expandedRoot,
+            store: expandedStore
+        )
+        var expansionResult: ScanExpansionResult?
+        coordinator.expandSummarizedNode(summarized, options: ScanOptions()) { result in
+            expansionResult = result
+        }
+        scanService.yield(.finished(expandedSnapshot), scanIndex: 0)
+        scanService.finish(scanIndex: 0)
+        await transformService.waitUntilPaused()
+
+        let didRemove = await coordinator.removeNodeFromCurrentSnapshot(id: removed.id)
+        await transformService.resume()
+        try await waitUntil("expansion retry") {
+            expansionResult != nil
+        }
+        let replacementIDs = await transformService.recordedReplacementIDs()
+
+        XCTAssertTrue(didRemove)
+        guard case .expanded(let replacementRootID) = expansionResult else {
+            return XCTFail("Expected expansion to survive the unrelated removal.")
+        }
+        XCTAssertEqual(replacementRootID, summarized.id)
+        XCTAssertEqual(replacementIDs, [summarized.id, summarized.id])
+        XCTAssertNil(coordinator.snapshot?.treeStore.node(id: removed.id))
+        XCTAssertNotNil(coordinator.snapshot?.treeStore.node(id: retained.id))
+        XCTAssertEqual(
+            coordinator.snapshot?.treeStore.children(of: summarized.id).map(\.id),
+            [expandedFile.id]
+        )
+    }
+
+    @MainActor
+    func testReplacingCurrentSnapshotCancelsActiveExpansion() {
+        let scanService = ControlledScanService()
+        let coordinator = ScanCoordinator(scanService: scanService)
+        let summarized = makeCoordinatorSummarizedDirectoryNode(id: "/root/cache", name: "cache", size: 300)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [summarized])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [summarized]])
+        let snapshot = makeCoordinatorSnapshot(
+            target: makeCoordinatorTarget(root.id),
+            root: root,
+            store: store
+        )
+        coordinator.replaceCurrentSnapshot(snapshot)
+        var expansionResult: ScanExpansionResult?
+        coordinator.expandSummarizedNode(summarized, options: ScanOptions()) { result in
+            expansionResult = result
+        }
+
+        coordinator.replaceCurrentSnapshot(snapshot)
+
+        guard case .cancelled = expansionResult else {
+            return XCTFail("Expected external snapshot replacement to cancel expansion.")
+        }
+        XCTAssertNil(coordinator.expandingNodeID)
+    }
+
+    @MainActor
     func testAppModelScanLifecycleUsesInjectedCoordinatorState() async throws {
         let service = ControlledScanService()
         let model = AppModel(dependencies: makeCoordinatorAppDependencies(scanService: service))
@@ -1592,6 +1750,98 @@ private actor RecordingSnapshotTransformService: ScanSnapshotTransforming {
     }
 }
 
+private actor PausingSnapshotTransformService: ScanSnapshotTransforming {
+    private let pausedRemovalID: String?
+    private let pausedReplacementID: String?
+    private var didPause = false
+    private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var resumeContinuation: CheckedContinuation<Void, Never>?
+    private var removalBatches: [[String]] = []
+    private var replacementIDs: [String] = []
+
+    init(pausedRemovalID: String? = nil, pausedReplacementID: String? = nil) {
+        self.pausedRemovalID = pausedRemovalID
+        self.pausedReplacementID = pausedReplacementID
+    }
+
+    func waitUntilPaused() async {
+        guard !didPause else { return }
+        await withCheckedContinuation { continuation in
+            pauseWaiters.append(continuation)
+        }
+    }
+
+    func resume() {
+        resumeContinuation?.resume()
+        resumeContinuation = nil
+    }
+
+    func recordedRemovalBatches() -> [[String]] {
+        removalBatches
+    }
+
+    func recordedReplacementIDs() -> [String] {
+        replacementIDs
+    }
+
+    func replacingNode(
+        in snapshot: ScanSnapshot,
+        id targetID: String,
+        with replacement: FileTreeStore,
+        additionalWarnings: [ScanWarning]
+    ) async throws -> ScanSnapshot? {
+        replacementIDs.append(targetID)
+        await pauseIfNeeded(pausedReplacementID == targetID)
+        return try snapshot.replacingNode(
+            id: targetID,
+            with: replacement,
+            additionalWarnings: additionalWarnings,
+            cancellationCheck: {
+                try Task.checkCancellation()
+            }
+        )
+    }
+
+    func removingNodes(
+        in snapshot: ScanSnapshot,
+        ids targetIDs: [String]
+    ) async throws -> ScanSnapshot? {
+        removalBatches.append(targetIDs)
+        await pauseIfNeeded(pausedRemovalID.map(targetIDs.contains) == true)
+        return try snapshot.removingNodes(
+            ids: targetIDs,
+            cancellationCheck: {
+                try Task.checkCancellation()
+            }
+        )
+    }
+
+    func scopedSnapshot(
+        _ snapshot: ScanSnapshot,
+        to target: ScanTarget
+    ) async throws -> ScanSnapshot? {
+        try snapshot.scoped(
+            to: target,
+            cancellationCheck: {
+                try Task.checkCancellation()
+            }
+        )
+    }
+
+    private func pauseIfNeeded(_ shouldPause: Bool) async {
+        guard shouldPause, !didPause else { return }
+        didPause = true
+        let waiters = pauseWaiters
+        pauseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            resumeContinuation = continuation
+        }
+    }
+}
+
 private final class ControlledScanService: ScanEventStreaming, @unchecked Sendable {
     private typealias Continuation = AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
 
@@ -1747,6 +1997,26 @@ private func makeCoordinatorSnapshot(
         root: root,
         store: store,
         warnings: warnings
+    )
+}
+
+private func copyCoordinatorSnapshot(
+    _ snapshot: ScanSnapshot,
+    treeStore: FileTreeStore
+) -> ScanSnapshot {
+    ScanSnapshot(
+        id: snapshot.id,
+        target: snapshot.target,
+        treeStore: treeStore,
+        startedAt: snapshot.startedAt,
+        finishedAt: snapshot.finishedAt,
+        scanWarnings: snapshot.scanWarnings,
+        aggregateStats: treeStore.aggregateStats,
+        isComplete: snapshot.isComplete,
+        scanOptions: snapshot.scanOptions,
+        volumeCapacity: snapshot.volumeCapacity,
+        source: snapshot.source,
+        incrementalCheckpoint: snapshot.incrementalCheckpoint
     )
 }
 

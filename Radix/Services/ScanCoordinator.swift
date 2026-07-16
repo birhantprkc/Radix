@@ -53,7 +53,7 @@ final class ScanProgressState: ObservableObject {
 @MainActor
 final class ScanCoordinator: ObservableObject {
     @Published var phase: AppModelPhase = .idle
-    @Published var snapshot: ScanSnapshot?
+    @Published private(set) var snapshot: ScanSnapshot?
     @Published var selectedTarget: ScanTarget?
     @Published private(set) var completedScanSnapshot: ScanSnapshot?
     @Published private(set) var scanErrorMessage: String?
@@ -75,6 +75,8 @@ final class ScanCoordinator: ObservableObject {
     private var expansionCompletion: ((ScanExpansionResult) -> Void)?
     private var pendingProgressMetrics: ScanMetrics?
     private var lastProgressPublishTime: ContinuousClock.Instant?
+    private var snapshotContextID = UUID()
+    private var snapshotRevision: UInt64 = 0
     var onScanFinished: ((ScanSnapshot) -> Void)?
 
     init(
@@ -133,7 +135,7 @@ final class ScanCoordinator: ObservableObject {
         phase = .scanning
         scanErrorMessage = nil
         scanMetrics = ScanMetrics()
-        snapshot = nil
+        publishSnapshot(nil, startsNewContext: true)
         completedScanSnapshot = nil
         resetProgressThrottling()
 
@@ -169,14 +171,15 @@ final class ScanCoordinator: ObservableObject {
     func clearScan() {
         stopScan(resetState: false)
         selectedTarget = nil
-        snapshot = nil
+        publishSnapshot(nil, startsNewContext: true)
         completedScanSnapshot = nil
         scanMetrics = ScanMetrics()
         phase = .idle
     }
 
     func replaceCurrentSnapshot(_ snapshot: ScanSnapshot?) {
-        self.snapshot = snapshot
+        cancelExpansion(completeWith: .cancelled)
+        publishSnapshot(snapshot, startsNewContext: true)
         if snapshot == nil {
             phase = .idle
         } else if !isScanning {
@@ -212,32 +215,46 @@ final class ScanCoordinator: ObservableObject {
 
     @discardableResult
     func removeNodesFromCurrentSnapshot(ids nodeIDs: [FileNodeRecord.ID]) async -> Bool {
-        guard let currentSnapshot = snapshot else { return false }
-        let currentSnapshotID = currentSnapshot.id
-        let removalNodeIDs = currentSnapshot.treeStore.topLevelNodeIDs(from: nodeIDs)
+        guard let initialSnapshot = snapshot else { return false }
+        let removalNodeIDs = initialSnapshot.treeStore.topLevelNodeIDs(from: nodeIDs)
         guard !removalNodeIDs.isEmpty else { return false }
-
-        if let expandingNodeID,
-           removalNodeIDs.contains(where: {
-               currentSnapshot.treeStore.isAncestor($0, of: expandingNodeID)
-           }) {
-            cancelExpansion(completeWith: .cancelled)
-        }
+        let removalContextID = snapshotContextID
 
         do {
-            guard let updatedSnapshot = try await snapshotTransformService.removingNodes(
-                in: currentSnapshot,
-                ids: removalNodeIDs
-            ) else { return false }
-            try Task.checkCancellation()
-            guard snapshot?.id == currentSnapshotID else { return false }
+            while snapshotContextID == removalContextID {
+                try Task.checkCancellation()
+                guard let currentSnapshot = snapshot else { return false }
+                let currentRemovalNodeIDs = currentSnapshot.treeStore.topLevelNodeIDs(
+                    from: removalNodeIDs
+                )
+                if currentRemovalNodeIDs.isEmpty {
+                    return true
+                }
 
-            snapshot = updatedSnapshot
-            completedScanSnapshot = nil
-            if !isScanning {
-                phase = .displaying
+                if let expandingNodeID,
+                   currentRemovalNodeIDs.contains(where: {
+                       currentSnapshot.treeStore.isAncestor($0, of: expandingNodeID)
+                   }) {
+                    cancelExpansion(completeWith: .cancelled)
+                }
+
+                let transformRevision = snapshotRevision
+                guard let updatedSnapshot = try await snapshotTransformService.removingNodes(
+                    in: currentSnapshot,
+                    ids: currentRemovalNodeIDs
+                ) else { return false }
+                try Task.checkCancellation()
+                guard snapshotContextID == removalContextID else { return false }
+                guard snapshotRevision == transformRevision else { continue }
+
+                publishSnapshot(updatedSnapshot, startsNewContext: false)
+                completedScanSnapshot = nil
+                if !isScanning {
+                    phase = .displaying
+                }
+                return true
             }
-            return true
+            return false
         } catch is CancellationError {
             return false
         } catch {
@@ -258,6 +275,7 @@ final class ScanCoordinator: ObservableObject {
         cancelExpansion(completeWith: .cancelled)
 
         let expansionID = UUID()
+        let expansionContextID = snapshotContextID
         activeExpansionID = expansionID
         expandingNodeID = node.id
         expansionCompletion = completion
@@ -265,7 +283,12 @@ final class ScanCoordinator: ObservableObject {
         let target = ScanTarget(url: node.url)
         let stream = scanService.scan(target: target, options: options)
         expandTask = Task { [weak self] in
-            await self?.consumeExpansionStream(stream, node: node, expansionID: expansionID)
+            await self?.consumeExpansionStream(
+                stream,
+                node: node,
+                expansionID: expansionID,
+                snapshotContextID: expansionContextID
+            )
         }
     }
 
@@ -292,7 +315,8 @@ final class ScanCoordinator: ObservableObject {
     private func consumeExpansionStream(
         _ stream: AsyncThrowingStream<ScanProgressEvent, Error>,
         node: FileNodeRecord,
-        expansionID: UUID
+        expansionID: UUID,
+        snapshotContextID expansionContextID: UUID
     ) async {
         do {
             var expandedSnapshot: ScanSnapshot?
@@ -313,7 +337,8 @@ final class ScanCoordinator: ObservableObject {
             let replacementRootID = try await replaceNodeInTree(
                 node,
                 with: expandedSnapshot,
-                expansionID: expansionID
+                expansionID: expansionID,
+                snapshotContextID: expansionContextID
             )
             guard activeExpansionID == expansionID else { return }
             if let replacementRootID {
@@ -418,6 +443,17 @@ final class ScanCoordinator: ObservableObject {
     }
 
     private func apply(snapshot: ScanSnapshot) {
+        publishSnapshot(snapshot, startsNewContext: true)
+    }
+
+    private func publishSnapshot(
+        _ snapshot: ScanSnapshot?,
+        startsNewContext: Bool
+    ) {
+        if startsNewContext {
+            snapshotContextID = UUID()
+        }
+        snapshotRevision &+= 1
         self.snapshot = snapshot
     }
 
@@ -498,23 +534,36 @@ final class ScanCoordinator: ObservableObject {
     private func replaceNodeInTree(
         _ oldNode: FileNodeRecord,
         with expandedSnapshot: ScanSnapshot,
-        expansionID: UUID
+        expansionID: UUID,
+        snapshotContextID expansionContextID: UUID
     ) async throws -> FileNodeRecord.ID? {
-        guard let currentSnapshot = snapshot else { return nil }
-        let currentSnapshotID = currentSnapshot.id
-        guard let updatedSnapshot = try await snapshotTransformService.replacingNode(
-            in: currentSnapshot,
-            id: oldNode.id,
-            with: expandedSnapshot.treeStore,
-            additionalWarnings: expandedSnapshot.scanWarnings
-        ) else { return nil }
-        try Task.checkCancellation()
-        guard activeExpansionID == expansionID,
-              snapshot?.id == currentSnapshotID else {
-            return nil
-        }
+        while activeExpansionID == expansionID,
+              snapshotContextID == expansionContextID {
+            try Task.checkCancellation()
+            guard let currentSnapshot = snapshot,
+                  let currentNode = currentSnapshot.treeStore.node(id: oldNode.id),
+                  currentNode.isAutoSummarized,
+                  currentNode.fileIdentity == oldNode.fileIdentity else {
+                return nil
+            }
 
-        snapshot = updatedSnapshot
-        return expandedSnapshot.root.id
+            let transformRevision = snapshotRevision
+            guard let updatedSnapshot = try await snapshotTransformService.replacingNode(
+                in: currentSnapshot,
+                id: oldNode.id,
+                with: expandedSnapshot.treeStore,
+                additionalWarnings: expandedSnapshot.scanWarnings
+            ) else { return nil }
+            try Task.checkCancellation()
+            guard activeExpansionID == expansionID,
+                  snapshotContextID == expansionContextID else {
+                return nil
+            }
+            guard snapshotRevision == transformRevision else { continue }
+
+            publishSnapshot(updatedSnapshot, startsNewContext: false)
+            return expandedSnapshot.root.id
+        }
+        return nil
     }
 }
