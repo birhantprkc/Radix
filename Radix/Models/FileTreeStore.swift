@@ -326,7 +326,6 @@ nonisolated struct FileTreeStore: Sendable {
         rootID: String,
         nodesByID: [String: FileNodeRecord],
         childIDsByID: [String: [String]],
-        parentIDByID: [String: String],
         aggregateStats: ScanAggregateStats? = nil
     ) {
         let topology = Self.sanitizedTopology(
@@ -352,6 +351,21 @@ nonisolated struct FileTreeStore: Sendable {
             orderedNodeIDs: topology.orderedNodeIDs
         )
         self.precomputedAggregateStats = topology.didDropReferences ? nil : aggregateStats
+    }
+
+    nonisolated init(
+        rootID: String,
+        nodesByID: [String: FileNodeRecord],
+        childIDsByID: [String: [String]],
+        parentIDByID _: [String: String],
+        aggregateStats: ScanAggregateStats? = nil
+    ) {
+        self.init(
+            rootID: rootID,
+            nodesByID: nodesByID,
+            childIDsByID: childIDsByID,
+            aggregateStats: aggregateStats
+        )
     }
 
     /// Fast construction for scanner output whose topology has already been
@@ -676,7 +690,6 @@ nonisolated struct FileTreeStore: Sendable {
         var updatedNodes = nodesByID
         let existingChildIDs = childIDsByID
         var updatedChildIDs = existingChildIDs
-        var updatedParentIDs = parentIDByID
 
         for (offset, removedID) in removedIDs.enumerated() {
             if offset.isMultiple(of: 256) {
@@ -684,7 +697,6 @@ nonisolated struct FileTreeStore: Sendable {
             }
             updatedNodes.removeValue(forKey: removedID)
             updatedChildIDs.removeValue(forKey: removedID)
-            updatedParentIDs.removeValue(forKey: removedID)
         }
 
         for (offset, entry) in existingChildIDs.enumerated() {
@@ -698,8 +710,7 @@ nonisolated struct FileTreeStore: Sendable {
         let updatedStore = FileTreeStore(
             rootID: rootID,
             nodesByID: updatedNodes,
-            childIDsByID: updatedChildIDs,
-            parentIDByID: updatedParentIDs
+            childIDsByID: updatedChildIDs
         )
         return try HardLinkDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
     }
@@ -725,7 +736,6 @@ nonisolated struct FileTreeStore: Sendable {
         ))
         var updatedNodes = nodesByID
         var updatedChildIDs = childIDsByID
-        var updatedParentIDs = existingParentIDs
 
         for (offset, removedID) in removedIDs.enumerated() {
             if offset.isMultiple(of: 256) {
@@ -733,7 +743,6 @@ nonisolated struct FileTreeStore: Sendable {
             }
             updatedNodes.removeValue(forKey: removedID)
             updatedChildIDs.removeValue(forKey: removedID)
-            updatedParentIDs.removeValue(forKey: removedID)
         }
 
         let remainingParentChildIDs = (updatedChildIDs[parentID] ?? []).filter { !removedIDs.contains($0) }
@@ -766,14 +775,13 @@ nonisolated struct FileTreeStore: Sendable {
             } else {
                 updatedChildIDs[currentID] = sortedChildRecords.map(\.id)
             }
-            cursor = updatedParentIDs[currentID]
+            cursor = existingParentIDs[currentID]
         }
 
         let updatedStore = FileTreeStore(
             rootID: rootID,
             nodesByID: updatedNodes,
-            childIDsByID: updatedChildIDs,
-            parentIDByID: updatedParentIDs
+            childIDsByID: updatedChildIDs
         )
         return try HardLinkDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
     }

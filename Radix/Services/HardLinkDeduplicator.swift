@@ -218,11 +218,11 @@ nonisolated struct HardLinkDeduplicator {
     ) throws -> FileTreeStore {
         var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
 
-        for (offset, nodeID) in store.indexedNodeIDs().enumerated() {
+        for (offset, nodeIndex) in store.indexedNodeIndices().enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            guard let node = store.node(id: nodeID),
+            guard let node = store.node(at: nodeIndex),
                   let claim = claim(for: node) else {
                 continue
             }
@@ -231,36 +231,43 @@ nonisolated struct HardLinkDeduplicator {
 
         guard !hardLinkAccumulator.isEmpty else { return store }
 
-        var nodesByID = store.nodesByID
-        var childIDsByID = store.childIDsByID
-        var changedNodeIDs: Set<String> = []
-        for (offset, nodeID) in store.indexedNodeIDs().enumerated() {
+        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        var targetAllocatedSizeByNodeID: [String: Int64] = [:]
+        for (offset, nodeIndex) in store.indexedNodeIndices().enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            guard let node = nodesByID[nodeID], claim(for: node) != nil else {
+            guard let node = store.node(at: nodeIndex), claim(for: node) != nil else {
                 continue
             }
-            let duplicateAllocatedSize = hardLinkAccumulator.duplicateAllocatedSizeByOwner[nodeID] ?? 0
+            let duplicateAllocatedSize = duplicateAllocatedSizeByOwner[node.id] ?? 0
             let targetAllocatedSize = max(0, node.unduplicatedAllocatedSize - duplicateAllocatedSize)
             guard node.allocatedSize != targetAllocatedSize else { continue }
-            nodesByID[nodeID] = node.replacingAllocatedSize(targetAllocatedSize)
-            changedNodeIDs.insert(nodeID)
+            targetAllocatedSizeByNodeID[node.id] = targetAllocatedSize
         }
 
+        guard !targetAllocatedSizeByNodeID.isEmpty else { return store }
+
+        var nodesByID = store.nodesByID
+        for (nodeID, targetAllocatedSize) in targetAllocatedSizeByNodeID {
+            guard let node = nodesByID[nodeID] else { continue }
+            nodesByID[nodeID] = node.replacingAllocatedSize(targetAllocatedSize)
+        }
+
+        var childIDsByID = store.childIDsByID
+        let parentIDByID = store.parentIDByID
         try rebuildAffectedAncestorDirectories(
-            for: changedNodeIDs,
+            for: Set(targetAllocatedSizeByNodeID.keys),
             nodesByID: &nodesByID,
             childIDsByID: &childIDsByID,
-            parentIDByID: store.parentIDByID,
+            parentIDByID: parentIDByID,
             cancellationCheck: cancellationCheck
         )
 
         return FileTreeStore(
             rootID: store.rootID,
             nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: store.parentIDByID
+            childIDsByID: childIDsByID
         )
     }
 

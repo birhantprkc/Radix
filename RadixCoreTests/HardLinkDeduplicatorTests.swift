@@ -255,6 +255,24 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         XCTAssertEqual(updatedStore.aggregateStats.totalAllocatedSize, 100)
     }
 
+    func testRebalancingAlreadyCorrectOwnersReturnsOriginalStore() throws {
+        let identity = FileIdentity(device: 1, inode: 99)
+        let winner = makeFile(id: "/root/a.bin", allocatedSize: 100, identity: identity)
+        let loser = makeFile(
+            id: "/root/z.bin",
+            allocatedSize: 0,
+            unduplicatedAllocatedSize: 100,
+            identity: identity
+        )
+        let root = makeDirectory(id: "/root", children: [winner, loser])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [winner, loser]])
+
+        let rebalancedStore = try HardLinkDeduplicator.rebalancedStore(store)
+
+        XCTAssertEqual(rebalancedStore.contentID, store.contentID)
+        XCTAssertEqual(rebalancedStore.root, store.root)
+    }
+
     func testScopingToHardLinkLoserRestoresVisibleClaimSize() throws {
         let identity = FileIdentity(device: 1, inode: 43)
         let winner = makeFile(id: "/root/A/a.bin", allocatedSize: 100, identity: identity)

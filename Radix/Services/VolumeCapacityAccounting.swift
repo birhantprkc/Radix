@@ -39,11 +39,9 @@ nonisolated enum VolumeCapacityAccounting {
 
         var nodesByID = treeStore.nodesByID
         var childIDsByID = treeStore.childIDsByID
-        var parentIDByID = treeStore.parentIDByID
         if let existingRemainder {
             nodesByID.removeValue(forKey: existingRemainder.id)
             childIDsByID.removeValue(forKey: existingRemainder.id)
-            parentIDByID.removeValue(forKey: existingRemainder.id)
         }
 
         guard shouldIncludeRemainder, missingBytes > 0 else {
@@ -52,8 +50,7 @@ nonisolated enum VolumeCapacityAccounting {
             return FileTreeStore(
                 rootID: treeStore.rootID,
                 nodesByID: nodesByID,
-                childIDsByID: childIDsByID,
-                parentIDByID: parentIDByID
+                childIDsByID: childIDsByID
             )
         }
 
@@ -78,13 +75,11 @@ nonisolated enum VolumeCapacityAccounting {
         nodesByID[reconciledRoot.id] = reconciledRoot
         nodesByID[unattributedNode.id] = unattributedNode
         childIDsByID[reconciledRoot.id] = rootChildren.map(\.id)
-        parentIDByID[unattributedNode.id] = reconciledRoot.id
 
         return FileTreeStore(
             rootID: treeStore.rootID,
             nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID
+            childIDsByID: childIDsByID
         )
     }
 
