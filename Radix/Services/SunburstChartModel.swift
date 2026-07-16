@@ -35,6 +35,8 @@ final class SunburstChartModel: ObservableObject {
     @Published private var renderState = SunburstChartRenderState()
     @Published private(set) var isLayoutPending = false
     @Published private(set) var layoutError: ChartLayoutFailure?
+    @Published private(set) var renderedLayoutID: String?
+    @Published private(set) var failedLayoutID: String?
 
     private let layoutService: any SunburstLayouting
     private let layoutRequests = ChartLayoutRequestCoordinator<[SunburstSegment]>()
@@ -58,6 +60,10 @@ final class SunburstChartModel: ObservableObject {
 
     var renderedLayoutVersion: Int {
         renderState.version
+    }
+
+    func isRenderingPending(layoutID: String) -> Bool {
+        isLayoutPending || (renderedLayoutID != layoutID && failedLayoutID != layoutID)
     }
 
     func setHoveredSegmentID(_ segmentID: SunburstSegment.ID?) {
@@ -104,15 +110,17 @@ final class SunburstChartModel: ObservableObject {
         }
         clearHover()
         setLayoutError(nil)
+        failedLayoutID = nil
         setIsLayoutPending(true)
 
         switch await layoutRequests.outcome(for: request) {
         case let .success(segments):
-            apply(segments)
+            apply(segments, layoutID: layoutID)
             setIsLayoutPending(false)
             return true
         case let .failure(error):
             setLayoutError(error)
+            failedLayoutID = layoutID
             setIsLayoutPending(false)
             return false
         case .cancelled:
@@ -138,12 +146,13 @@ final class SunburstChartModel: ObservableObject {
         )
     }
 
-    private func apply(_ segments: [SunburstSegment]) {
+    private func apply(_ segments: [SunburstSegment], layoutID: String) {
         selectionOverlayCache.removeAll()
         renderState = SunburstChartRenderState(
             segments: segments,
             version: renderState.version + 1
         )
+        renderedLayoutID = layoutID
     }
 
     private func clearHover() {

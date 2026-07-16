@@ -24,6 +24,8 @@ final class SunburstChartModelTests: XCTestCase {
         await service.waitForIssuedRequestCount(1)
 
         XCTAssertTrue(model.isLayoutPending)
+        XCTAssertTrue(model.isRenderingPending(layoutID: "layout"))
+        XCTAssertNil(model.renderedLayoutID)
         XCTAssertGreaterThanOrEqual(publishCount, 1)
 
         let segment = makeSegment(id: "segment")
@@ -34,6 +36,8 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertTrue(didApplyLayout)
         XCTAssertFalse(model.isLayoutPending)
         XCTAssertEqual(model.renderedSegments.map(\.id), [segment.id])
+        XCTAssertEqual(model.renderedLayoutID, "layout")
+        XCTAssertFalse(model.isRenderingPending(layoutID: "layout"))
         XCTAssertGreaterThanOrEqual(publishCount, 2)
         withExtendedLifetime(cancellable) {}
     }
@@ -197,6 +201,9 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertEqual(model.renderedLayoutVersion, initialVersion)
         XCTAssertEqual(model.layoutError?.message, TestChartLayoutError.failed.localizedDescription)
         XCTAssertFalse(model.isLayoutPending)
+        XCTAssertEqual(model.renderedLayoutID, "initial")
+        XCTAssertEqual(model.failedLayoutID, "failing")
+        XCTAssertFalse(model.isRenderingPending(layoutID: "failing"))
     }
 
     func testStaleLayoutFailureDoesNotReplaceNewerSuccessOrPublishError() async {

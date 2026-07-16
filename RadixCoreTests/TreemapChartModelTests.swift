@@ -22,6 +22,8 @@ final class TreemapChartModelTests: XCTestCase {
 
         XCTAssertTrue(didApply)
         XCTAssertEqual(selectedSegment?.id, selected.id)
+        XCTAssertEqual(model.renderedLayoutID, "layout")
+        XCTAssertFalse(model.isRenderingPending(layoutID: "layout"))
         XCTAssertNil(model.selectedSegment(nodeID: "missing"))
         XCTAssertNil(model.selectedSegment(nodeID: nil))
     }
@@ -109,6 +111,9 @@ final class TreemapChartModelTests: XCTestCase {
         XCTAssertEqual(model.renderedLayoutVersion, initialVersion)
         XCTAssertEqual(model.layoutError?.message, TestTreemapLayoutError.failed.localizedDescription)
         XCTAssertFalse(model.isLayoutPending)
+        XCTAssertEqual(model.renderedLayoutID, "initial")
+        XCTAssertEqual(model.failedLayoutID, "failing")
+        XCTAssertFalse(model.isRenderingPending(layoutID: "failing"))
     }
 
     func testStaleLayoutFailureDoesNotReplaceNewerSuccessOrPublishError() async {

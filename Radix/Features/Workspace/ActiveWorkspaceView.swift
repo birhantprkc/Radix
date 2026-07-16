@@ -63,6 +63,13 @@ struct ActiveWorkspaceView: View {
             focusNodeID: focusNode.id,
             hiddenNodeIDs: discardPileHiddenNodeIDs
         )
+        let isVisualizationInputPending = visualizationFilter.isFiltering
+            || visualizationFilter.isInputPending(
+                baseInput: baseVisualizationInput,
+                snapshotID: snapshot.id,
+                focusNodeID: focusNode.id,
+                hiddenNodeIDs: discardPileHiddenNodeIDs
+            )
         let filterUpdateToken = VisualizationFilterUpdateToken(
             baseInput: baseVisualizationInput,
             snapshotID: snapshot.id,
@@ -94,6 +101,7 @@ struct ActiveWorkspaceView: View {
                     selectedAncestorIDs: navigation.selectedAncestorIDs,
                     depthLimit: maxRenderedDepth,
                     layoutID: layoutID,
+                    isInputPending: isVisualizationInputPending,
                     onSelect: actions.selectNode,
                     onZoom: actions.selectAndFocusNode,
                     onSegmentClick: actions.recordSunburstSegmentClick,
@@ -111,6 +119,7 @@ struct ActiveWorkspaceView: View {
                     selectedNodeID: navigation.selectedNodeID,
                     depthLimit: maxRenderedDepth,
                     layoutID: layoutID,
+                    isInputPending: isVisualizationInputPending,
                     onSelect: actions.selectNode,
                     onZoom: actions.selectAndFocusNode,
                     onDiscardPileDragActiveChange: actions.setDiscardPileDragActive

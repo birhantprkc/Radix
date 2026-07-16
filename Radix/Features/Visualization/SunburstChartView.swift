@@ -16,6 +16,7 @@ struct SunburstChartView: View {
     let selectedAncestorIDs: Set<String>
     let depthLimit: Int
     let layoutID: String
+    let isInputPending: Bool
     let onSelect: (String?) -> Void
     let onZoom: (String) -> Void
     let onSegmentClick: () -> Void
@@ -41,6 +42,7 @@ struct SunburstChartView: View {
         selectedAncestorIDs: Set<String>,
         depthLimit: Int,
         layoutID: String,
+        isInputPending: Bool,
         onSelect: @escaping (String?) -> Void,
         onZoom: @escaping (String) -> Void,
         onSegmentClick: @escaping () -> Void,
@@ -59,6 +61,7 @@ struct SunburstChartView: View {
         self.selectedAncestorIDs = selectedAncestorIDs
         self.depthLimit = depthLimit
         self.layoutID = layoutID
+        self.isInputPending = isInputPending
         self.onSelect = onSelect
         self.onZoom = onZoom
         self.onSegmentClick = onSegmentClick
@@ -83,6 +86,7 @@ struct SunburstChartView: View {
     }
 
     private var hoverSummary: ChartSummary? {
+        guard !isDiskMapPending else { return nil }
         guard let hoveredSegment = chartModel.hoveredSegment else { return nil }
 
         if let hoveredNodeID = hoveredSegment.nodeID,
@@ -99,11 +103,19 @@ struct SunburstChartView: View {
     }
 
     private var canAdjustViewport: Bool {
-        !chartModel.isLayoutPending && !chartModel.renderedSegments.isEmpty
+        !isDiskMapPending && !chartModel.renderedSegments.isEmpty
+    }
+
+    private var isDiskMapPending: Bool {
+        isInputPending || chartModel.isRenderingPending(layoutID: layoutRequestID)
+    }
+
+    private var layoutRequestID: String {
+        "\(layoutID)|retry:\(layoutRetryGeneration)"
     }
 
     private var loadingDiskMapProgressTaskID: String {
-        "\(layoutID)|\(chartModel.isLayoutPending)"
+        "\(layoutRequestID)|\(isDiskMapPending)"
     }
 
     var body: some View {
@@ -127,7 +139,7 @@ struct SunburstChartView: View {
                 .allowsHitTesting(false)
 
                 SunburstHoverOverlay(
-                    segment: chartModel.hoveredSegment
+                    segment: isDiskMapPending ? nil : chartModel.hoveredSegment
                 )
                 .equatable()
                 .frame(width: chartFrame.width, height: chartFrame.height)
@@ -136,7 +148,7 @@ struct SunburstChartView: View {
 
                 if parentNode != nil,
                    isHoveringCenter,
-                   !chartModel.isLayoutPending,
+                   !isDiskMapPending,
                    !chartModel.renderedSegments.isEmpty {
                     SunburstCenterAffordance()
                         .equatable()
@@ -149,7 +161,7 @@ struct SunburstChartView: View {
                         .transition(.opacity)
                 }
 
-                if chartModel.isLayoutPending {
+                if isDiskMapPending {
                     Color(nsColor: .windowBackgroundColor)
                         .opacity(0.28)
                         .allowsHitTesting(false)
@@ -169,11 +181,11 @@ struct SunburstChartView: View {
             .overlay {
                 SunburstInteractionOverlay(
                     onHover: { location in
-                        guard !chartModel.isLayoutPending else { return }
+                        guard !isDiskMapPending else { return }
                         updateHover(at: location, in: baseChartFrame)
                     },
                     onClick: { location, clickCount in
-                        guard !chartModel.isLayoutPending else { return }
+                        guard !isDiskMapPending else { return }
                         handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
                     },
                     onPan: { delta in
@@ -190,13 +202,13 @@ struct SunburstChartView: View {
                     },
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange,
                     help: { location in
-                        guard !chartModel.isLayoutPending else { return nil }
+                        guard !isDiskMapPending else { return nil }
                         return help(at: location, in: baseChartFrame)
                     },
                     isPanEnabled: canAdjustViewport && viewportTransform.isZoomed
                 )
                 .accessibilityHidden(true)
-                .allowsHitTesting(!chartModel.isLayoutPending)
+                .allowsHitTesting(!isDiskMapPending)
             }
             .clipped()
             .accessibilityElement(children: .ignore)
@@ -244,7 +256,7 @@ struct SunburstChartView: View {
             }
             .overlay(alignment: .bottom) {
                 if let layoutError = chartModel.layoutError,
-                   !chartModel.isLayoutPending {
+                   !isDiskMapPending {
                     ChartLayoutFailureBanner(failure: layoutError) {
                         layoutRetryGeneration += 1
                     }
@@ -265,14 +277,14 @@ struct SunburstChartView: View {
                 handleViewportAction(action, in: baseChartFrame)
             }
             .task(id: loadingDiskMapProgressTaskID) {
-                await updateLoadingDiskMapProgress(isPending: chartModel.isLayoutPending)
+                await updateLoadingDiskMapProgress(isPending: isDiskMapPending)
             }
             .task(id: SunburstLayoutTaskID(layoutID: layoutID, retryGeneration: layoutRetryGeneration)) {
                 await chartModel.loadLayout(
                     treeStore: treeStore,
                     rootID: rootNode.id,
                     depthLimit: depthLimit,
-                    layoutID: layoutID
+                    layoutID: layoutRequestID
                 )
             }
         }
@@ -553,7 +565,7 @@ struct SunburstChartView: View {
             return
         }
 
-        guard chartModel.isLayoutPending else { return }
+        guard isDiskMapPending else { return }
         showsLoadingDiskMapProgress = true
     }
 }

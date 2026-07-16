@@ -38,6 +38,8 @@ final class TreemapChartModel: ObservableObject {
     @Published private var renderState = TreemapChartRenderState()
     @Published private(set) var isLayoutPending = false
     @Published private(set) var layoutError: ChartLayoutFailure?
+    @Published private(set) var renderedLayoutID: String?
+    @Published private(set) var failedLayoutID: String?
 
     private let layoutService: any TreemapLayouting
     private let layoutRequests = ChartLayoutRequestCoordinator<[TreemapSegment]>()
@@ -60,6 +62,10 @@ final class TreemapChartModel: ObservableObject {
 
     var renderedLayoutVersion: Int {
         renderState.version
+    }
+
+    func isRenderingPending(layoutID: String) -> Bool {
+        isLayoutPending || (renderedLayoutID != layoutID && failedLayoutID != layoutID)
     }
 
     func setHoveredSegmentID(_ segmentID: TreemapSegment.ID?) {
@@ -95,15 +101,17 @@ final class TreemapChartModel: ObservableObject {
         }
         clearHover()
         setLayoutError(nil)
+        failedLayoutID = nil
         setIsLayoutPending(true)
 
         switch await layoutRequests.outcome(for: request) {
         case let .success(segments):
-            apply(segments)
+            apply(segments, layoutID: layoutID)
             setIsLayoutPending(false)
             return true
         case let .failure(error):
             setLayoutError(error)
+            failedLayoutID = layoutID
             setIsLayoutPending(false)
             return false
         case .cancelled:
@@ -131,11 +139,12 @@ final class TreemapChartModel: ObservableObject {
         )
     }
 
-    private func apply(_ segments: [TreemapSegment]) {
+    private func apply(_ segments: [TreemapSegment], layoutID: String) {
         renderState = TreemapChartRenderState(
             segments: segments,
             version: renderState.version + 1
         )
+        renderedLayoutID = layoutID
     }
 
     private func clearHover() {

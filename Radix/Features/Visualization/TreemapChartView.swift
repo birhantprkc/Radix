@@ -16,6 +16,7 @@ struct TreemapChartView: View {
     let selectedNodeID: String?
     let depthLimit: Int
     let layoutID: String
+    let isInputPending: Bool
     let onSelect: (String?) -> Void
     let onZoom: (String) -> Void
     let onDiscardPileDragActiveChange: (Bool) -> Void
@@ -36,6 +37,7 @@ struct TreemapChartView: View {
         selectedNodeID: String?,
         depthLimit: Int,
         layoutID: String,
+        isInputPending: Bool,
         onSelect: @escaping (String?) -> Void,
         onZoom: @escaping (String) -> Void,
         onDiscardPileDragActiveChange: @escaping (Bool) -> Void,
@@ -50,6 +52,7 @@ struct TreemapChartView: View {
         self.selectedNodeID = selectedNodeID
         self.depthLimit = depthLimit
         self.layoutID = layoutID
+        self.isInputPending = isInputPending
         self.onSelect = onSelect
         self.onZoom = onZoom
         self.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
@@ -77,10 +80,6 @@ struct TreemapChartView: View {
         )
     }
 
-    private var loadingDiskMapProgressTaskID: String {
-        "\(layoutID)|\(chartModel.isLayoutPending)"
-    }
-
     var body: some View {
         GeometryReader { geometry in
             let chartFrame = chartFrame(in: geometry.size)
@@ -89,20 +88,22 @@ struct TreemapChartView: View {
                 size: chartFrame.size,
                 retryGeneration: layoutRetryGeneration
             )
+            let isDiskMapPending = isInputPending
+                || chartModel.isRenderingPending(layoutID: layoutTaskID.requestID)
 
             ZStack {
                 TreemapRenderedChartLayer(
                     segments: chartModel.renderedSegments,
                     renderVersion: chartModel.renderedLayoutVersion,
                     selectedSegment: chartModel.selectedSegment(nodeID: selectedNodeID),
-                    hoveredSegment: chartModel.hoveredSegment,
+                    hoveredSegment: isDiskMapPending ? nil : chartModel.hoveredSegment,
                     chartFrame: chartFrame
                 )
                 .id(chartModel.renderedLayoutVersion)
                 .transition(chartTransition)
                 .allowsHitTesting(false)
 
-                if chartModel.isLayoutPending {
+                if isDiskMapPending {
                     Color(nsColor: .windowBackgroundColor)
                         .opacity(0.28)
                         .allowsHitTesting(false)
@@ -122,11 +123,11 @@ struct TreemapChartView: View {
             .overlay {
                 TreemapInteractionOverlay(
                     onHover: { location in
-                        guard !chartModel.isLayoutPending else { return }
+                        guard !isDiskMapPending else { return }
                         updateHover(at: location, in: chartFrame)
                     },
                     onClick: { location, clickCount in
-                        guard !chartModel.isLayoutPending else { return }
+                        guard !isDiskMapPending else { return }
                         handleClick(at: location, in: chartFrame, clickCount: clickCount)
                     },
                     discardPileDragItem: { location in
@@ -135,7 +136,7 @@ struct TreemapChartView: View {
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange
                 )
                 .accessibilityHidden(true)
-                .allowsHitTesting(!chartModel.isLayoutPending)
+                .allowsHitTesting(!isDiskMapPending)
             }
             .clipped()
             .accessibilityElement(children: .ignore)
@@ -143,7 +144,9 @@ struct TreemapChartView: View {
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Select a tile to inspect it. Double-click a folder tile to zoom in. Use the breadcrumb to go up.")
             .overlay(alignment: .topLeading) {
-                if let tooltipContent, let tooltipAnchor {
+                if !isDiskMapPending,
+                   let tooltipContent,
+                   let tooltipAnchor {
                     TreemapHoverTooltip(content: tooltipContent)
                         .frame(width: Self.tooltipMaximumSize.width)
                         .offset(tooltipOrigin(at: tooltipAnchor, in: geometry.size))
@@ -154,7 +157,7 @@ struct TreemapChartView: View {
             }
             .overlay(alignment: .bottom) {
                 if let layoutError = chartModel.layoutError,
-                   !chartModel.isLayoutPending {
+                   !isDiskMapPending {
                     ChartLayoutFailureBanner(failure: layoutError) {
                         layoutRetryGeneration += 1
                     }
@@ -164,8 +167,11 @@ struct TreemapChartView: View {
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
-            .task(id: loadingDiskMapProgressTaskID) {
-                await updateLoadingDiskMapProgress(isPending: chartModel.isLayoutPending)
+            .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
+                await updateLoadingDiskMapProgress(
+                    isPending: isDiskMapPending,
+                    layoutID: layoutTaskID.requestID
+                )
             }
             .task(id: layoutTaskID) {
                 await chartModel.loadLayout(
@@ -173,7 +179,7 @@ struct TreemapChartView: View {
                     rootID: rootNode.id,
                     depthLimit: depthLimit,
                     size: chartFrame.size,
-                    layoutID: layoutTaskID.cacheID
+                    layoutID: layoutTaskID.requestID
                 )
             }
         }
@@ -290,7 +296,10 @@ struct TreemapChartView: View {
             : node.itemKind(activeTarget: activeTarget)
     }
 
-    private func updateLoadingDiskMapProgress(isPending: Bool) async {
+    private func updateLoadingDiskMapProgress(
+        isPending: Bool,
+        layoutID: String
+    ) async {
         guard isPending else {
             showsLoadingDiskMapProgress = false
             return
@@ -302,7 +311,7 @@ struct TreemapChartView: View {
         } catch {
             return
         }
-        guard chartModel.isLayoutPending else { return }
+        guard isInputPending || chartModel.isRenderingPending(layoutID: layoutID) else { return }
         showsLoadingDiskMapProgress = true
     }
 }
@@ -385,6 +394,10 @@ private struct TreemapLayoutTaskID: Hashable {
 
     var cacheID: String {
         "\(layoutID)|treemap:\(widthBucket)x\(heightBucket)"
+    }
+
+    var requestID: String {
+        "\(cacheID)|retry:\(retryGeneration)"
     }
 }
 
