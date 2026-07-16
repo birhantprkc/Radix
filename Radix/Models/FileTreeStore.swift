@@ -1062,6 +1062,7 @@ nonisolated struct FileTreeStore: Sendable {
         var compactedChildSpans = Array(repeating: FileTreeChildSpan(), count: retainedCount)
         var compactedChildIndices: [FileTreeNodeIndex] = []
         compactedChildIndices.reserveCapacity(max(retainedCount - 1, 0))
+        var statsAccumulator = AggregateStatsAccumulator()
 
         for oldOffset in nodeRecords.indices where !removed[oldOffset] {
             let newOffset = Int(oldToNewRawIndex[oldOffset])
@@ -1087,9 +1088,14 @@ nonisolated struct FileTreeStore: Sendable {
                     compactedChildIndices.append(FileTreeNodeIndex(rawValue: compactedRawIndex))
                 }
             }
+            let childCount = UInt32(compactedChildIndices.count - childStart)
             compactedChildSpans[newOffset] = FileTreeChildSpan(
                 start: UInt32(childStart),
-                count: UInt32(compactedChildIndices.count - childStart)
+                count: childCount
+            )
+            statsAccumulator.include(
+                compactedNodes[newOffset],
+                hasMaterializedChildren: childCount > 0
             )
         }
 
@@ -1102,16 +1108,6 @@ nonisolated struct FileTreeStore: Sendable {
         )
         precondition(compactedOrder.count == retainedCount, "Subtree compaction produced disconnected nodes.")
 
-        var statsAccumulator = AggregateStatsAccumulator()
-        for (offset, node) in compactedNodes.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            statsAccumulator.include(
-                node,
-                hasMaterializedChildren: compactedChildSpans[offset].count > 0
-            )
-        }
         let compactedStats = statsAccumulator.stats(
             root: compactedNodes[Int(compactedRootIndex.rawValue)]
         )
