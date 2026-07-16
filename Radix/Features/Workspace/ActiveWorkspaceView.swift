@@ -57,25 +57,18 @@ struct ActiveWorkspaceView: View {
     @ViewBuilder
     private var chartContent: some View {
         let baseVisualizationInput = diskMapVisualizationInput
+        let filterRequest = DiskMapVisualizationFilterRequest(
+            baseInput: baseVisualizationInput,
+            snapshotID: snapshot.id,
+            focusNodeID: focusNode.id,
+            hiddenNodeIDs: discardPileHiddenNodeIDs
+        )
         let visualizationInput = visualizationFilter.input(
             baseInput: baseVisualizationInput,
-            snapshotID: snapshot.id,
-            focusNodeID: focusNode.id,
-            hiddenNodeIDs: discardPileHiddenNodeIDs
+            request: filterRequest
         )
         let isVisualizationInputPending = visualizationFilter.isFiltering
-            || visualizationFilter.isInputPending(
-                baseInput: baseVisualizationInput,
-                snapshotID: snapshot.id,
-                focusNodeID: focusNode.id,
-                hiddenNodeIDs: discardPileHiddenNodeIDs
-            )
-        let filterUpdateToken = VisualizationFilterUpdateToken(
-            baseInput: baseVisualizationInput,
-            snapshotID: snapshot.id,
-            focusNodeID: focusNode.id,
-            hiddenNodeIDs: discardPileHiddenNodeIDs
-        )
+            || visualizationFilter.isInputPending(for: filterRequest)
 
         let layoutID = [
             snapshot.id.uuidString,
@@ -130,12 +123,10 @@ struct ActiveWorkspaceView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focusedWorkspaceTarget, equals: .chart)
-        .onChange(of: filterUpdateToken, initial: true) { _, _ in
+        .onChange(of: filterRequest, initial: true) { _, request in
             visualizationFilter.update(
                 baseInput: baseVisualizationInput,
-                snapshotID: snapshot.id,
-                focusNodeID: focusNode.id,
-                hiddenNodeIDs: discardPileHiddenNodeIDs
+                request: request
             )
         }
     }
@@ -203,27 +194,4 @@ struct ActiveWorkspaceView: View {
 private struct WarningDismissalScope: Equatable {
     let targetID: String
     let startedAt: Date
-}
-
-private struct VisualizationFilterUpdateToken: Equatable {
-    let snapshotID: UUID
-    let focusNodeID: FileNodeRecord.ID
-    let rootNodeID: FileNodeRecord.ID
-    let treeContentID: UUID
-    let baseLayoutIDComponent: String
-    let hiddenNodeIDs: [FileNodeRecord.ID]
-
-    init(
-        baseInput: DiskMapVisualizationInput,
-        snapshotID: UUID,
-        focusNodeID: FileNodeRecord.ID,
-        hiddenNodeIDs: Set<FileNodeRecord.ID>
-    ) {
-        self.snapshotID = snapshotID
-        self.focusNodeID = focusNodeID
-        rootNodeID = baseInput.rootNode.id
-        treeContentID = baseInput.treeContentID
-        baseLayoutIDComponent = baseInput.layoutIDComponent
-        self.hiddenNodeIDs = hiddenNodeIDs.sorted()
-    }
 }

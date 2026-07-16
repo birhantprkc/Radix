@@ -18,7 +18,7 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
     @Published private(set) var isFiltering = false
 
     private let filterOperation: DiskMapVisualizationFilterOperation
-    private var pendingKey: DiskMapVisualizationFilterKey?
+    private var pendingRequest: DiskMapVisualizationFilterRequest?
     private var filterTask: Task<Void, Never>?
 
     init(
@@ -33,139 +33,96 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
 
     func input(
         baseInput: DiskMapVisualizationInput,
-        snapshotID: UUID,
-        focusNodeID: FileNodeRecord.ID,
-        hiddenNodeIDs: Set<FileNodeRecord.ID>
+        request: DiskMapVisualizationFilterRequest
     ) -> DiskMapVisualizationInput {
-        guard let key = filterKey(
-            baseInput: baseInput,
-            snapshotID: snapshotID,
-            focusNodeID: focusNodeID,
-            hiddenNodeIDs: hiddenNodeIDs
-        ) else {
+        guard request.requiresFiltering else {
             return baseInput
         }
 
         if let cachedResult,
-           cachedResult.key == key || cachedResult.key.hasSameBase(as: key) {
+           cachedResult.request == request || cachedResult.request.hasSameBase(as: request) {
             return cachedResult.input
         }
 
         return baseInput
     }
 
-    func isInputPending(
-        baseInput: DiskMapVisualizationInput,
-        snapshotID: UUID,
-        focusNodeID: FileNodeRecord.ID,
-        hiddenNodeIDs: Set<FileNodeRecord.ID>
-    ) -> Bool {
-        guard let key = filterKey(
-            baseInput: baseInput,
-            snapshotID: snapshotID,
-            focusNodeID: focusNodeID,
-            hiddenNodeIDs: hiddenNodeIDs
-        ) else {
-            return false
-        }
-
-        return cachedResult?.key != key
+    func isInputPending(for request: DiskMapVisualizationFilterRequest) -> Bool {
+        request.requiresFiltering && cachedResult?.request != request
     }
 
     func update(
         baseInput: DiskMapVisualizationInput,
-        snapshotID: UUID,
-        focusNodeID: FileNodeRecord.ID,
-        hiddenNodeIDs: Set<FileNodeRecord.ID>
+        request: DiskMapVisualizationFilterRequest
     ) {
-        guard let key = filterKey(
-            baseInput: baseInput,
-            snapshotID: snapshotID,
-            focusNodeID: focusNodeID,
-            hiddenNodeIDs: hiddenNodeIDs
-        ) else {
+        guard request.requiresFiltering else {
             clearFilter()
             return
         }
 
-        if cachedResult?.key == key {
+        if cachedResult?.request == request {
             cancelPendingFilter()
             return
         }
 
-        if pendingKey != key {
-            startFiltering(baseInput: baseInput, key: key)
+        if pendingRequest != request {
+            startFiltering(baseInput: baseInput, request: request)
         }
-    }
-
-    private func filterKey(
-        baseInput: DiskMapVisualizationInput,
-        snapshotID: UUID,
-        focusNodeID: FileNodeRecord.ID,
-        hiddenNodeIDs: Set<FileNodeRecord.ID>
-    ) -> DiskMapVisualizationFilterKey? {
-        guard !hiddenNodeIDs.isEmpty else { return nil }
-
-        return DiskMapVisualizationFilterKey(
-            snapshotID: snapshotID,
-            focusNodeID: focusNodeID,
-            rootNodeID: baseInput.rootNode.id,
-            baseTreeContentID: baseInput.treeContentID,
-            baseLayoutIDComponent: baseInput.layoutIDComponent,
-            hiddenNodeIDs: hiddenNodeIDs.sorted()
-        )
     }
 
     private func startFiltering(
         baseInput: DiskMapVisualizationInput,
-        key: DiskMapVisualizationFilterKey
+        request: DiskMapVisualizationFilterRequest
     ) {
         filterTask?.cancel()
-        pendingKey = key
+        pendingRequest = request
         setIsFiltering(true)
 
         filterTask = Task { [weak self, filterOperation] in
             do {
                 let input = try await filterOperation(
                     baseInput,
-                    key.hiddenNodeIDs,
-                    key.discardPileLayoutComponent
+                    request.hiddenNodeIDs,
+                    request.discardPileLayoutComponent
                 )
-                self?.cache(input, for: key)
+                self?.cache(input, for: request)
             } catch is CancellationError {
-                self?.clearPendingFilter(for: key)
+                self?.clearPendingFilter(for: request)
             } catch {
-                self?.clearPendingFilter(for: key)
+                self?.clearPendingFilter(for: request)
             }
         }
     }
 
-    private func cache(_ input: DiskMapVisualizationInput, for key: DiskMapVisualizationFilterKey) {
-        guard pendingKey == key else { return }
-        cachedResult = DiskMapVisualizationFilterResult(key: key, input: input)
-        pendingKey = nil
+    private func cache(
+        _ input: DiskMapVisualizationInput,
+        for request: DiskMapVisualizationFilterRequest
+    ) {
+        guard pendingRequest == request else { return }
+        cachedResult = DiskMapVisualizationFilterResult(request: request, input: input)
+        pendingRequest = nil
         filterTask = nil
         setIsFiltering(false)
     }
 
-    private func clearPendingFilter(for key: DiskMapVisualizationFilterKey) {
-        guard pendingKey == key else { return }
-        pendingKey = nil
+    private func clearPendingFilter(for request: DiskMapVisualizationFilterRequest) {
+        guard pendingRequest == request else { return }
+        pendingRequest = nil
         filterTask = nil
         setIsFiltering(false)
     }
 
     private func clearFilter() {
-        guard filterTask != nil || pendingKey != nil || cachedResult != nil else { return }
+        guard filterTask != nil || pendingRequest != nil || cachedResult != nil else { return }
         cancelPendingFilter()
         cachedResult = nil
     }
 
     private func cancelPendingFilter() {
-        guard filterTask != nil || pendingKey != nil || isFiltering else { return }
+        guard filterTask != nil || pendingRequest != nil || isFiltering else { return }
         filterTask?.cancel()
         filterTask = nil
-        pendingKey = nil
+        pendingRequest = nil
         setIsFiltering(false)
     }
 
@@ -204,17 +161,35 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
 }
 
 private nonisolated struct DiskMapVisualizationFilterResult {
-    let key: DiskMapVisualizationFilterKey
+    let request: DiskMapVisualizationFilterRequest
     let input: DiskMapVisualizationInput
 }
 
-private nonisolated struct DiskMapVisualizationFilterKey: Hashable, Sendable {
+nonisolated struct DiskMapVisualizationFilterRequest: Equatable, Sendable {
     let snapshotID: UUID
     let focusNodeID: FileNodeRecord.ID
     let rootNodeID: FileNodeRecord.ID
     let baseTreeContentID: UUID
     let baseLayoutIDComponent: String
     let hiddenNodeIDs: [FileNodeRecord.ID]
+
+    init(
+        baseInput: DiskMapVisualizationInput,
+        snapshotID: UUID,
+        focusNodeID: FileNodeRecord.ID,
+        hiddenNodeIDs: Set<FileNodeRecord.ID>
+    ) {
+        self.snapshotID = snapshotID
+        self.focusNodeID = focusNodeID
+        rootNodeID = baseInput.rootNode.id
+        baseTreeContentID = baseInput.treeContentID
+        baseLayoutIDComponent = baseInput.layoutIDComponent
+        self.hiddenNodeIDs = hiddenNodeIDs.sorted()
+    }
+
+    nonisolated var requiresFiltering: Bool {
+        !hiddenNodeIDs.isEmpty
+    }
 
     nonisolated var discardPileLayoutComponent: String {
         hiddenNodeIDs.reduce("discard-pile:\(hiddenNodeIDs.count)") { component, id in
