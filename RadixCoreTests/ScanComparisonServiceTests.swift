@@ -808,6 +808,61 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(query.applying(to: rows).map(\.relativePath), ["zeta.bin", "alpha.bin"])
     }
 
+    func testComparisonServiceUsesDeterministicFallbackForEqualImpactRows() async throws {
+        let beforeDocuments = makeTestDirectoryNode(
+            id: "/before/Documents",
+            name: "Documents",
+            children: []
+        )
+        let beforeRoot = makeTestDirectoryNode(
+            id: "/before",
+            name: "before",
+            children: [beforeDocuments]
+        )
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeDocuments],
+            beforeDocuments.id: [],
+        ])
+        let alpha = makeTestFileNode(
+            id: "/after/Documents/alpha.bin",
+            name: "alpha.bin",
+            size: 10
+        )
+        let zeta = makeTestFileNode(
+            id: "/after/Documents/zeta.bin",
+            name: "zeta.bin",
+            size: 10
+        )
+        let afterDocuments = makeTestDirectoryNode(
+            id: "/after/Documents",
+            name: "Documents",
+            children: [alpha, zeta]
+        )
+        let afterRoot = makeTestDirectoryNode(
+            id: "/after",
+            name: "after",
+            children: [afterDocuments]
+        )
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterDocuments],
+            afterDocuments.id: [alpha, zeta],
+        ])
+
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: beforeRoot, store: beforeStore),
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+
+        XCTAssertEqual(
+            comparison.rows.map(\.relativePath),
+            ["Documents/alpha.bin", "Documents/zeta.bin"]
+        )
+        XCTAssertEqual(
+            comparison.topLevelChanges.first?.representativeRelativePath,
+            "Documents/alpha.bin"
+        )
+    }
+
     func testRowQueryFiltersKindAndNormalizedPath() {
         let addedNode = makeTestFileNode(
             id: "/after/Library/Application Support/cache.bin",

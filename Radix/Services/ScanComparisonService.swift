@@ -640,7 +640,11 @@ nonisolated struct ScanComparisonService: Sendable {
 
         try Task.checkCancellation()
         let sortedRows = rows.sorted { lhs, rhs in
-            ScanComparisonRowComparator.defaultOrder.compare(lhs, rhs) == .orderedAscending
+            ScanComparisonRowComparator.sortsBefore(
+                lhs,
+                rhs,
+                using: ScanComparisonRowComparator.defaultSortOrder
+            )
         }
         let changeTree = try Self.changeTree(
             from: sortedRows,
@@ -1069,7 +1073,11 @@ nonisolated struct ScanComparisonService: Sendable {
 
         return rowsByLocation.compactMap { relativePath, locationRows in
             guard let representativeRow = locationRows.min(by: {
-                ScanComparisonRowComparator.defaultOrder.compare($0, $1) == .orderedAscending
+                ScanComparisonRowComparator.sortsBefore(
+                    $0,
+                    $1,
+                    using: ScanComparisonRowComparator.defaultSortOrder
+                )
             }) else {
                 return nil
             }

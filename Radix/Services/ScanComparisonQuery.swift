@@ -40,6 +40,7 @@ nonisolated struct ScanComparisonRowComparator: Equatable, SortComparator, Senda
     }
 
     static let defaultOrder = ScanComparisonRowComparator(field: .absoluteAllocatedDelta, order: .reverse)
+    static let defaultSortOrder = [defaultOrder]
 
     let field: Field
     var order: SortOrder = .forward
@@ -64,6 +65,31 @@ nonisolated struct ScanComparisonRowComparator: Equatable, SortComparator, Senda
 
         return FileNodeSortComparison.applying(order, to: result)
     }
+
+    static func sortsBefore(
+        _ lhs: ScanComparisonRow,
+        _ rhs: ScanComparisonRow,
+        using comparators: [ScanComparisonRowComparator]
+    ) -> Bool {
+        for comparator in comparators {
+            switch comparator.compare(lhs, rhs) {
+            case .orderedAscending:
+                return true
+            case .orderedDescending:
+                return false
+            case .orderedSame:
+                continue
+            @unknown default:
+                continue
+            }
+        }
+        return FileNodeSortComparison.fallback(
+            lhsName: lhs.name,
+            lhsID: lhs.relativePath,
+            rhsName: rhs.name,
+            rhsID: rhs.relativePath
+        ) == .orderedAscending
+    }
 }
 
 /// Filters and orders comparison evidence for table presentation.
@@ -84,6 +110,10 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
         self.searchText = searchText
         self.sortOrder = sortOrder
         self.pathPrefix = pathPrefix
+    }
+
+    var hasSearchText: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func applying(
@@ -110,24 +140,7 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
 
         guard !sortOrder.isEmpty else { return filteredRows }
         return filteredRows.sorted { lhs, rhs in
-            for comparator in sortOrder {
-                switch comparator.compare(lhs, rhs) {
-                case .orderedAscending:
-                    return true
-                case .orderedDescending:
-                    return false
-                case .orderedSame:
-                    continue
-                @unknown default:
-                    continue
-                }
-            }
-            return FileNodeSortComparison.fallback(
-                lhsName: lhs.name,
-                lhsID: lhs.relativePath,
-                rhsName: rhs.name,
-                rhsID: rhs.relativePath
-            ) == .orderedAscending
+            ScanComparisonRowComparator.sortsBefore(lhs, rhs, using: sortOrder)
         }
     }
 }

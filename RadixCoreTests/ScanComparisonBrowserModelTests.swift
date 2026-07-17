@@ -138,6 +138,37 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         XCTAssertTrue(model.projection.roots.isEmpty)
     }
 
+    func testDefaultProcessorBuildsSearchIndexOnlyForNonemptySearch() async throws {
+        let rows = [makeRow("first.txt"), makeRow("second.txt")]
+        let comparisonID = UUID()
+        let emptyOutput = try await ScanComparisonBrowserModel.process(
+            ScanComparisonBrowserModel.WorkInput(
+                comparisonID: comparisonID,
+                rows: rows,
+                changeTree: .empty,
+                query: query(""),
+                changeKinds: allKinds,
+                searchIndex: nil
+            )
+        )
+
+        XCTAssertNil(emptyOutput.searchIndex)
+
+        let searchOutput = try await ScanComparisonBrowserModel.process(
+            ScanComparisonBrowserModel.WorkInput(
+                comparisonID: comparisonID,
+                rows: rows,
+                changeTree: .empty,
+                query: query("second"),
+                changeKinds: allKinds,
+                searchIndex: nil
+            )
+        )
+
+        XCTAssertNotNil(searchOutput.searchIndex)
+        XCTAssertEqual(searchOutput.rows.map(\.name), ["second.txt"])
+    }
+
     func testDefaultProcessorRebuildsSearchIndexForReplacementDataset() async throws {
         let model = ScanComparisonBrowserModel(searchDebounceNanoseconds: 0)
 
