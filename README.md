@@ -4,7 +4,7 @@
 
 <h1 align="center">Radix</h1>
 
-A fast, native macOS disk space analyzer that makes crowded drives easy to understand. Scan folders and volumes, explore where your storage is going, compare results over time, and safely clean up — all without leaving the app. Visit the [Radix website](https://radix.colinkim.dev) to learn more!
+A fast, native macOS disk space analyzer that makes crowded drives easy to understand. Scan folders and volumes, explore where your storage is going, compare results over time, and safely clean up — all without leaving the app. Visit the [Radix website](https://tryradix.app) to learn more!
 
 ## Why Radix?
 
@@ -82,7 +82,7 @@ I'm excited to continue improving Radix. Please keep the feedback coming, and th
 
 ### Manual Installation
 
-Download the latest version from [Releases](https://github.com/colinvkim/Radix/releases/latest) or the [Radix website](https://radix.colinkim.dev), then drag Radix into your Applications folder.
+Download the latest version from [Releases](https://github.com/colinvkim/Radix/releases/latest) or the [Radix website](https://tryradix.app), then drag Radix into your Applications folder.
 
 ## Developer Documentation
 
