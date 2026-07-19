@@ -10,7 +10,7 @@ private nonisolated enum ScanArchiveNodeIOConstants {
     static let readChunkSize = 1024 * 1024
     static let maxNodeLineByteCount = 1024 * 1024
     static let maximumInitialRecordCapacity = 65_536
-    static let maximumConcurrentDecodes = 4
+    static let maximumConcurrentDecodes = 8
     static let newlineData = Data([0x0A])
 }
 
