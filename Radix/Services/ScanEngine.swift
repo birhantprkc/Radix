@@ -370,8 +370,7 @@ actor ScanEngine {
 
     private struct AtomicDirectoryScanResult: Sendable {
         let candidate: AtomicDirectoryScanCandidate
-        /// nil when the probe decided the directory should be expanded normally.
-        let summary: AtomicDirectorySummary?
+        let decision: AtomicDirectorySummaryDecision
     }
 
     private enum ScanTaskResult: Sendable {
@@ -627,6 +626,9 @@ actor ScanEngine {
         static let directoryClassificationParallelThreshold = 128
         /// Caps additional prepared-node storage per leaf-preparation task.
         static let ordinaryLeafPreparationBatchLimit = 2_048
+
+        /// Bounds metadata retained between a rejected auto-summary probe and normal traversal.
+        static let autoSummaryProbeReuseEntryLimit = 65_536
         // Shared budget for concurrent child metadata reads across traversal and classification workers.
         static let directoryMetadataWorkerBudgetMaximum = 16
 
@@ -1127,6 +1129,8 @@ actor ScanEngine {
             var pendingPackageScans: [(item: ScanWorkItem, itemKey: Int, metadata: NodeMetadata)] = []
             var pendingAtomicScans: [AtomicDirectoryScanCandidate] = []
             var pendingOrdinaryLeafRequests: [OrdinaryLeafPreparationRequest] = []
+            var reusableProbeListings: [String: AtomicDirectoryProbeListing] = [:]
+            var reusableProbeListingCost = 0
             let autoSummarizeMinFileCount = options.autoSummarizeMinFileCount ?? AtomicDirectoryThresholds.minFileCount
             let autoSummarizeMaxAverageFileSize = options.autoSummarizeMaxAverageFileSize ?? AtomicDirectoryThresholds.maxAverageFileSize
             let autoSummarizeMinDepth = options.autoSummarizeMinDepthForSummarization ?? AtomicDirectoryThresholds.minDepthForSummarization
@@ -1148,6 +1152,11 @@ actor ScanEngine {
                             summaryPool: atomicSummaryPool
                         )
                         continue
+                    }
+
+                    let preloadedListing = reusableProbeListings.removeValue(forKey: item.url.path)
+                    if let preloadedListing {
+                        reusableProbeListingCost -= max(1, preloadedListing.entries.count)
                     }
 
                     let itemKey = nextKey
@@ -1233,6 +1242,8 @@ actor ScanEngine {
                                         behavior: behavior
                                     ) ? taskMetadata.fileIdentity : nil,
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
+                                    preloadedListing: preloadedListing,
+                                    autoSummaryProfileReporter: self.autoSummaryProfileReporter,
                                     cancellationCheck: cancellationCheck
                                 )
                                 var childDirectoryCount = 0
@@ -1385,7 +1396,7 @@ actor ScanEngine {
                     group.addTask {
                         var localMetrics = taskMetrics
                         var localEmissionState = taskEmissionState
-                        let summary = try await scanAtomicDirectorySummarizer.summaryIfNeeded(
+                        let decision = try await scanAtomicDirectorySummarizer.summaryDecisionIfNeeded(
                             url: candidate.item.url,
                             childEntries: candidate.contents.entries,
                             metadata: candidate.metadata,
@@ -1404,7 +1415,7 @@ actor ScanEngine {
                         )
                         return .atomicDirectory(AtomicDirectoryScanResult(
                             candidate: candidate,
-                            summary: summary
+                            decision: decision
                         ))
                     }
                 }
@@ -1561,7 +1572,17 @@ actor ScanEngine {
                 case .atomicDirectory(let atomicResult):
                     activePackageTasks -= 1
                     let candidate = atomicResult.candidate
-                    guard let summary = atomicResult.summary else {
+                    guard let summary = atomicResult.decision.summary else {
+                        for (path, listing) in atomicResult.decision.reusableDirectoryListings {
+                            guard reusableProbeListings[path] == nil else { continue }
+                            let listingCost = max(1, listing.entries.count)
+                            guard reusableProbeListingCost + listingCost
+                                <= ScanConcurrencyPolicy.autoSummaryProbeReuseEntryLimit else {
+                                continue
+                            }
+                            reusableProbeListings[path] = listing
+                            reusableProbeListingCost += listingCost
+                        }
                         // Probe declined: expand the directory normally.
                         directoryToExpand = candidate
                         break
@@ -2226,6 +2247,8 @@ actor ScanEngine {
         nativeName: BulkDirectoryEnumerator.NativeName?,
         expectedIdentity: FileIdentity?,
         classificationWorkerLimit: Int,
+        preloadedListing: AtomicDirectoryProbeListing? = nil,
+        autoSummaryProfileReporter: AutoSummaryProfileReporter? = nil,
         cancellationCheck: @escaping CancellationCheck
     ) async throws -> DirectoryContentsScanResult {
         try cancellationCheck()
@@ -2262,6 +2285,34 @@ actor ScanEngine {
                 }
             } else {
                 directoryLease = nil
+            }
+            if let preloadedListing, directoryLease != nil {
+                #if DEBUG
+                let classificationStart = DispatchTime.now().uptimeNanoseconds
+                #endif
+                let entries = try ScanDirectoryEntryFilter.filteredEntries(
+                    preloadedListing.entries,
+                    under: url,
+                    behavior: behavior,
+                    exclusionMatcher: exclusionMatcher,
+                    cancellationCheck: cancellationCheck
+                )
+                autoSummaryProfileReporter?(.reusedDirectoryListing(entryCount: entries.count))
+                #if DEBUG
+                return DirectoryContentsScanResult(
+                    entries: entries,
+                    enumeratedItemCount: preloadedListing.enumeratedItemCount,
+                    directoryLease: directoryLease,
+                    enumerationNanoseconds: 0,
+                    classificationNanoseconds: DispatchTime.now().uptimeNanoseconds - classificationStart
+                )
+                #else
+                return DirectoryContentsScanResult(
+                    entries: entries,
+                    enumeratedItemCount: preloadedListing.enumeratedItemCount,
+                    directoryLease: directoryLease
+                )
+                #endif
             }
             let cursor: BulkDirectoryEnumerator.Cursor
             let entryInclusion: BulkDirectoryEnumerator.EntryInclusion?

@@ -130,16 +130,29 @@ nonisolated struct AtomicDirectoryProbeOutcome: @unchecked Sendable {
     var profile: AtomicDirectoryProbeProfile
     var resumeState: AtomicDirectoryProbeResumeState?
     var visitedItemCount: Int
+    var reusableDirectoryListings: [String: AtomicDirectoryProbeListing]
 
     init(
         profile: AtomicDirectoryProbeProfile,
         resumeState: AtomicDirectoryProbeResumeState?,
-        visitedItemCount: Int = 0
+        visitedItemCount: Int = 0,
+        reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:]
     ) {
         self.profile = profile
         self.resumeState = resumeState
         self.visitedItemCount = visitedItemCount
+        self.reusableDirectoryListings = reusableDirectoryListings
     }
+}
+
+nonisolated struct AtomicDirectoryProbeListing: Sendable {
+    let entries: [DirectoryEntry]
+    let enumeratedItemCount: Int
+}
+
+nonisolated struct AtomicDirectorySummaryDecision: Sendable {
+    let summary: AtomicDirectorySummary?
+    let reusableDirectoryListings: [String: AtomicDirectoryProbeListing]
 }
 
 nonisolated enum ScanAutoSummaryProfileEvent: Sendable {

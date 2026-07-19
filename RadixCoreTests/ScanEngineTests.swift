@@ -3590,6 +3590,77 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(children(of: cacheNode, in: snapshot).count, 20)
     }
 
+    func testRejectedAutoSummaryProbeReusesCompleteListingsWithoutChangingResults() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let cacheURL = rootURL.appending(
+            path: "projects/cache",
+            directoryHint: .isDirectory
+        )
+        for index in 0..<12 {
+            let shardURL = cacheURL.appending(path: "shard-\(index)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: shardURL, withIntermediateDirectories: true)
+            try Data(repeating: UInt8(index), count: 8_192)
+                .write(to: shardURL.appending(path: "payload.bin"))
+            try Data([0xFF]).write(to: shardURL.appending(path: "ignored.tmp"))
+        }
+
+        var options = ScanOptions()
+        options.exclusionPatterns = ["*.tmp"]
+        options.autoSummarizeMinFileCount = 10
+        options.autoSummarizeMaxAverageFileSize = 256
+        options.autoSummarizeMinDepthForSummarization = 2
+
+        let profile = AutoSummaryEventProbe()
+        let enabledSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(autoSummaryProfileReporter: profile.record)
+        )
+        options.autoSummarizeDirectories = false
+        let disabledSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options
+        )
+
+        XCTAssertGreaterThan(profile.rejectedProbeCount, 0)
+        XCTAssertGreaterThan(profile.reusedDirectoryCount, 0)
+        XCTAssertGreaterThan(profile.reusedEntryCount, 0)
+        let expectedNodeIDs = disabledSnapshot.treeStore.indexedNodeIDs()
+        XCTAssertEqual(enabledSnapshot.treeStore.indexedNodeIDs(), expectedNodeIDs)
+        for nodeID in expectedNodeIDs {
+            XCTAssertEqual(
+                enabledSnapshot.treeStore.node(id: nodeID),
+                disabledSnapshot.treeStore.node(id: nodeID),
+                nodeID
+            )
+            XCTAssertEqual(
+                enabledSnapshot.treeStore.children(of: nodeID).map(\.id),
+                disabledSnapshot.treeStore.children(of: nodeID).map(\.id),
+                nodeID
+            )
+        }
+        XCTAssertEqual(
+            enabledSnapshot.aggregateStats.totalAllocatedSize,
+            disabledSnapshot.aggregateStats.totalAllocatedSize
+        )
+        XCTAssertEqual(
+            enabledSnapshot.aggregateStats.totalLogicalSize,
+            disabledSnapshot.aggregateStats.totalLogicalSize
+        )
+        XCTAssertEqual(enabledSnapshot.aggregateStats.fileCount, disabledSnapshot.aggregateStats.fileCount)
+        XCTAssertEqual(enabledSnapshot.aggregateStats.directoryCount, disabledSnapshot.aggregateStats.directoryCount)
+        XCTAssertEqual(
+            enabledSnapshot.aggregateStats.accessibleItemCount,
+            disabledSnapshot.aggregateStats.accessibleItemCount
+        )
+        XCTAssertEqual(
+            enabledSnapshot.aggregateStats.inaccessibleItemCount,
+            disabledSnapshot.aggregateStats.inaccessibleItemCount
+        )
+    }
+
     func testNodeDependencyLayoutNotAutoSummarizedWhenFilesAreLarge() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -3885,6 +3956,41 @@ private final class CancellationAfterChecks: @unchecked Sendable {
         lock.unlock()
         if shouldCancel {
             throw CancellationError()
+        }
+    }
+}
+
+private final class AutoSummaryEventProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var rejectedProbes = 0
+    private var reusedDirectories = 0
+    private var reusedEntries = 0
+
+    var rejectedProbeCount: Int {
+        lock.withLock { rejectedProbes }
+    }
+
+    var reusedDirectoryCount: Int {
+        lock.withLock { reusedDirectories }
+    }
+
+    var reusedEntryCount: Int {
+        lock.withLock { reusedEntries }
+    }
+
+    func record(_ event: ScanAutoSummaryProfileEvent) {
+        lock.withLock {
+            switch event {
+            case .probeCompleted(_, let wasAccepted):
+                if !wasAccepted {
+                    rejectedProbes += 1
+                }
+            case .reusedDirectoryListing(let entryCount):
+                reusedDirectories += 1
+                reusedEntries += entryCount
+            case .directorySummarized:
+                break
+            }
         }
     }
 }
