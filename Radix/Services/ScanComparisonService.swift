@@ -1091,7 +1091,6 @@ nonisolated struct ScanComparisonService: Sendable {
     }
 
     private struct AggregateAccumulator {
-        let relativePath: String
         let parentPath: String?
         var directRowID: ScanComparisonRow.ID?
         var representativeRowID: ScanComparisonRow.ID?
@@ -1198,7 +1197,7 @@ nonisolated struct ScanComparisonService: Sendable {
     ) throws -> ScanComparisonChangeTree {
         guard !rows.isEmpty else { return .empty }
         var pathInterner = RelativePathInterner()
-        var accumulators = [AggregateAccumulator(relativePath: "", parentPath: nil)]
+        var accumulators = [AggregateAccumulator(parentPath: nil)]
         accumulators.reserveCapacity(rows.count + 1)
 
         for row in rows {
@@ -1210,10 +1209,7 @@ nonisolated struct ScanComparisonService: Sendable {
                 let pathIndex = pathInterner.intern(component, under: parentIndex)
                 let path = pathInterner.path(at: pathIndex)
                 if pathIndex == accumulators.count {
-                    accumulators.append(AggregateAccumulator(
-                        relativePath: path,
-                        parentPath: parentPath
-                    ))
+                    accumulators.append(AggregateAccumulator(parentPath: parentPath))
                 }
                 accumulators[pathIndex].include(row, isDirect: index == components.count - 1)
 
