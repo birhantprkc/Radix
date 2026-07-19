@@ -113,14 +113,16 @@ nonisolated struct HardLinkDeduplicator {
         )
     }
 
-    /// Scanner fast path. The scan already owns a verified integer topology, so
+    /// Scanner fast path. The scan already owns a verified compact topology, so
     /// shared-allocation correction stays index-based instead of materializing three
     /// full-path-keyed dictionaries before constructing the compact store.
     nonisolated static func deduplicatedStore(
         rootIndex: FileTreeNodeIndex,
         nodes: [FileNodeRecord],
-        childIndicesByIndex: [[FileTreeNodeIndex]],
-        parentIndices: [FileTreeNodeIndex?],
+        indexByNodeID: [String: FileTreeNodeIndex],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
         hardLinkClaims: [HardLinkClaim],
         minimumAllocatedSizeByNodeID: [String: Int64]
@@ -128,8 +130,10 @@ nonisolated struct HardLinkDeduplicator {
         deduplicatedStore(
             rootIndex: rootIndex,
             nodes: nodes,
-            childIndicesByIndex: childIndicesByIndex,
-            parentIndices: parentIndices,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
             aggregateStats: aggregateStats,
             hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(hardLinkClaims),
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
@@ -139,8 +143,10 @@ nonisolated struct HardLinkDeduplicator {
     nonisolated static func deduplicatedStore(
         rootIndex: FileTreeNodeIndex,
         nodes: [FileNodeRecord],
-        childIndicesByIndex: [[FileTreeNodeIndex]],
-        parentIndices: [FileTreeNodeIndex?],
+        indexByNodeID: [String: FileTreeNodeIndex],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
         hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
         minimumAllocatedSizeByNodeID: [String: Int64]
@@ -148,8 +154,10 @@ nonisolated struct HardLinkDeduplicator {
         deduplicatedStore(
             rootIndex: rootIndex,
             nodes: nodes,
-            childIndicesByIndex: childIndicesByIndex,
-            parentIndices: parentIndices,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
             aggregateStats: aggregateStats,
             hardLinkAccumulator: hardLinkAccumulator,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID,
@@ -160,8 +168,10 @@ nonisolated struct HardLinkDeduplicator {
     nonisolated static func deduplicatedStore(
         rootIndex: FileTreeNodeIndex,
         nodes inputNodes: [FileNodeRecord],
-        childIndicesByIndex inputChildIndicesByIndex: [[FileTreeNodeIndex]],
-        parentIndices: [FileTreeNodeIndex?],
+        indexByNodeID: [String: FileTreeNodeIndex],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices inputChildIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
         hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
         minimumAllocatedSizeByNodeID: [String: Int64],
@@ -171,33 +181,31 @@ nonisolated struct HardLinkDeduplicator {
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
             let orderedNodeIndices = try preorderNodeIndices(
                 rootIndex: rootIndex,
-                childIndicesByIndex: inputChildIndicesByIndex,
+                childSpans: childSpans,
+                childIndices: inputChildIndices,
                 capacity: inputNodes.count,
                 cancellationCheck: cancellationCheck
             )
             return FileTreeStore(
                 verifiedRootIndex: rootIndex,
                 nodes: inputNodes,
-                childIndicesByIndex: inputChildIndicesByIndex,
-                parentIndices: parentIndices,
+                indexByNodeID: indexByNodeID,
+                parentRawIndices: parentRawIndices,
+                childSpans: childSpans,
+                childIndices: inputChildIndices,
                 orderedNodeIndices: orderedNodeIndices,
                 aggregateStats: aggregateStats
             )
         }
 
         var nodes = inputNodes
-        var childIndicesByIndex = inputChildIndicesByIndex
-        let duplicateOwnerIDs = Set(duplicateAllocatedSizeByOwner.keys)
-        var nodeIndexByDuplicateOwnerID: [String: Int] = [:]
-        nodeIndexByDuplicateOwnerID.reserveCapacity(duplicateOwnerIDs.count)
-        for (index, node) in nodes.enumerated() where duplicateOwnerIDs.contains(node.id) {
-            nodeIndexByDuplicateOwnerID[node.id] = index
-        }
+        var childIndices = inputChildIndices
 
         var changedNodeIndices = Set<Int>()
         changedNodeIndices.reserveCapacity(duplicateAllocatedSizeByOwner.count)
         for (nodeID, duplicateAllocatedSize) in duplicateAllocatedSizeByOwner {
-            guard let nodeIndex = nodeIndexByDuplicateOwnerID[nodeID] else { continue }
+            guard let rawNodeIndex = indexByNodeID[nodeID]?.rawValue else { continue }
+            let nodeIndex = Int(rawNodeIndex)
             let node = nodes[nodeIndex]
             let minimumAllocatedSize = minimumAllocatedSizeByNodeID[nodeID] ?? 0
             let allocatedSize = max(minimumAllocatedSize, node.allocatedSize - duplicateAllocatedSize)
@@ -208,13 +216,15 @@ nonisolated struct HardLinkDeduplicator {
         rebuildAffectedAncestorDirectories(
             for: changedNodeIndices,
             nodes: &nodes,
-            childIndicesByIndex: &childIndicesByIndex,
-            parentIndices: parentIndices
+            childSpans: childSpans,
+            childIndices: &childIndices,
+            parentRawIndices: parentRawIndices
         )
 
         let orderedNodeIndices = try preorderNodeIndices(
             rootIndex: rootIndex,
-            childIndicesByIndex: childIndicesByIndex,
+            childSpans: childSpans,
+            childIndices: childIndices,
             capacity: nodes.count,
             cancellationCheck: cancellationCheck
         )
@@ -231,8 +241,10 @@ nonisolated struct HardLinkDeduplicator {
         return FileTreeStore(
             verifiedRootIndex: rootIndex,
             nodes: nodes,
-            childIndicesByIndex: childIndicesByIndex,
-            parentIndices: parentIndices,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
             orderedNodeIndices: orderedNodeIndices,
             aggregateStats: deduplicatedStats
         )
@@ -317,22 +329,23 @@ nonisolated struct HardLinkDeduplicator {
     private nonisolated static func rebuildAffectedAncestorDirectories(
         for changedNodeIndices: Set<Int>,
         nodes: inout [FileNodeRecord],
-        childIndicesByIndex: inout [[FileTreeNodeIndex]],
-        parentIndices: [FileTreeNodeIndex?]
+        childSpans: [FileTreeChildSpan],
+        childIndices: inout [FileTreeNodeIndex],
+        parentRawIndices: [UInt32]
     ) {
         guard !changedNodeIndices.isEmpty else { return }
 
         var affectedDirectoryIndices = Set<Int>()
         var visitedAncestorIndices = Set<Int>()
         for changedNodeIndex in changedNodeIndices {
-            var cursor = parentIndices[changedNodeIndex]
-            while let currentIndex = cursor {
-                let rawIndex = Int(currentIndex.rawValue)
-                guard visitedAncestorIndices.insert(rawIndex).inserted else { break }
-                if nodes[rawIndex].isDirectory {
-                    affectedDirectoryIndices.insert(rawIndex)
+            var rawIndex = parentRawIndices[changedNodeIndex]
+            while rawIndex != UInt32.max {
+                let index = Int(rawIndex)
+                guard visitedAncestorIndices.insert(index).inserted else { break }
+                if nodes[index].isDirectory {
+                    affectedDirectoryIndices.insert(index)
                 }
-                cursor = parentIndices[rawIndex]
+                rawIndex = parentRawIndices[index]
             }
         }
 
@@ -340,10 +353,10 @@ nonisolated struct HardLinkDeduplicator {
         depthByDirectoryIndex.reserveCapacity(affectedDirectoryIndices.count)
         for directoryIndex in affectedDirectoryIndices {
             var depth = 0
-            var cursor = parentIndices[directoryIndex]
-            while let currentIndex = cursor {
+            var rawIndex = parentRawIndices[directoryIndex]
+            while rawIndex != UInt32.max {
                 depth += 1
-                cursor = parentIndices[Int(currentIndex.rawValue)]
+                rawIndex = parentRawIndices[Int(rawIndex)]
             }
             depthByDirectoryIndex[directoryIndex] = depth
         }
@@ -360,14 +373,17 @@ nonisolated struct HardLinkDeduplicator {
         for nodeIndex in deepestFirst {
             let node = nodes[nodeIndex]
             guard node.isDirectory else { continue }
-            var childIndices = childIndicesByIndex[nodeIndex]
-            childIndices.sort { lhsIndex, rhsIndex in
+            let span = childSpans[nodeIndex]
+            let start = Int(span.start)
+            let end = start + Int(span.count)
+            var sortedChildIndices = Array(childIndices[start..<end])
+            sortedChildIndices.sort { lhsIndex, rhsIndex in
                 FileTreeStore.areInDisplayOrder(
                     nodes[Int(lhsIndex.rawValue)],
                     nodes[Int(rhsIndex.rawValue)]
                 )
             }
-            let children = childIndices.map { nodes[Int($0.rawValue)] }
+            let children = sortedChildIndices.map { nodes[Int($0.rawValue)] }
             nodes[nodeIndex] = FileNodeRecord.directory(
                 id: node.id,
                 url: node.url,
@@ -380,13 +396,14 @@ nonisolated struct HardLinkDeduplicator {
                 isAccessible: node.isSelfAccessible,
                 childrenAreSorted: true
             )
-            childIndicesByIndex[nodeIndex] = childIndices
+            childIndices.replaceSubrange(start..<end, with: sortedChildIndices)
         }
     }
 
     private nonisolated static func preorderNodeIndices(
         rootIndex: FileTreeNodeIndex,
-        childIndicesByIndex: [[FileTreeNodeIndex]],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
         capacity: Int,
         cancellationCheck: () throws -> Void
     ) rethrows -> [FileTreeNodeIndex] {
@@ -398,8 +415,10 @@ nonisolated struct HardLinkDeduplicator {
                 try cancellationCheck()
             }
             result.append(nodeIndex)
-            let children = childIndicesByIndex[Int(nodeIndex.rawValue)]
-            stack.append(contentsOf: children.reversed())
+            let span = childSpans[Int(nodeIndex.rawValue)]
+            let start = Int(span.start)
+            let end = start + Int(span.count)
+            stack.append(contentsOf: childIndices[start..<end].reversed())
         }
         return result
     }

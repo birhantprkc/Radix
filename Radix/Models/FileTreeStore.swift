@@ -587,12 +587,43 @@ nonisolated struct FileTreeStore: Sendable {
         )
         let rootOffset = Int(rootIndex.rawValue)
         precondition(nodes.indices.contains(rootOffset), "Verified FileTreeStore root is missing.")
+        self.init(
+            rootID: nodes[rootOffset].id,
+            nodeRecords: nodes,
+            topologyArena: topologyArena,
+            aggregateStats: aggregateStats
+        )
+    }
 
-        self.contentID = UUID()
-        self.rootID = nodes[rootOffset].id
-        self.nodeRecords = nodes
-        self.topologyArena = topologyArena
-        self.precomputedAggregateStats = aggregateStats
+    /// Fast construction for scanner output already assembled into the store's
+    /// compact topology representation.
+    nonisolated init(
+        verifiedRootIndex rootIndex: FileTreeNodeIndex,
+        nodes: [FileNodeRecord],
+        indexByNodeID: [String: FileTreeNodeIndex],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
+        orderedNodeIndices: [FileTreeNodeIndex],
+        aggregateStats: ScanAggregateStats
+    ) {
+        let topologyArena = FileTreeTopologyArena(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices
+        )
+        let rootOffset = Int(rootIndex.rawValue)
+        precondition(nodes.indices.contains(rootOffset), "Verified FileTreeStore root is missing.")
+        self.init(
+            rootID: nodes[rootOffset].id,
+            nodeRecords: nodes,
+            topologyArena: topologyArena,
+            aggregateStats: aggregateStats
+        )
     }
 
     /// Fast construction for imported compact archives whose ordinal topology

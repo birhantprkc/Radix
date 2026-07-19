@@ -9,8 +9,10 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         XCTAssertThrowsError(try HardLinkDeduplicator.deduplicatedStore(
             rootIndex: rootIndex,
             nodes: [root],
-            childIndicesByIndex: [[]],
-            parentIndices: [nil],
+            indexByNodeID: [root.id: rootIndex],
+            parentRawIndices: [UInt32.max],
+            childSpans: [FileTreeChildSpan()],
+            childIndices: [],
             aggregateStats: ScanAggregateStats(
                 totalAllocatedSize: 0,
                 totalLogicalSize: 0,
@@ -46,14 +48,16 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         let store = HardLinkDeduplicator.deduplicatedStore(
             rootIndex: indices[0],
             nodes: nodes,
-            childIndicesByIndex: [
-                [indices[1], indices[4]],
-                [indices[2], indices[3]],
-                [],
-                [],
-                []
+            indexByNodeID: Dictionary(uniqueKeysWithValues: zip(nodes.map(\.id), indices)),
+            parentRawIndices: [UInt32.max, 0, 1, 1, 0],
+            childSpans: [
+                FileTreeChildSpan(start: 0, count: 2),
+                FileTreeChildSpan(start: 2, count: 2),
+                FileTreeChildSpan(),
+                FileTreeChildSpan(),
+                FileTreeChildSpan(),
             ],
-            parentIndices: [nil, indices[0], indices[1], indices[1], indices[0]],
+            childIndices: [indices[1], indices[4], indices[2], indices[3]],
             aggregateStats: ScanAggregateStats(
                 totalAllocatedSize: 250,
                 totalLogicalSize: 250,
@@ -107,8 +111,14 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         let store = HardLinkDeduplicator.deduplicatedStore(
             rootIndex: indices[0],
             nodes: nodes,
-            childIndicesByIndex: [[indices[1], indices[2]], [], []],
-            parentIndices: [nil, indices[0], indices[0]],
+            indexByNodeID: Dictionary(uniqueKeysWithValues: zip(nodes.map(\.id), indices)),
+            parentRawIndices: [UInt32.max, 0, 0],
+            childSpans: [
+                FileTreeChildSpan(start: 0, count: 2),
+                FileTreeChildSpan(),
+                FileTreeChildSpan(),
+            ],
+            childIndices: [indices[1], indices[2]],
             aggregateStats: ScanAggregateStats(
                 totalAllocatedSize: 220,
                 totalLogicalSize: 220,

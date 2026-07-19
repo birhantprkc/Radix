@@ -1847,8 +1847,10 @@ actor ScanEngine {
         let finalizationProgressInterval = max(512, finalizationTotal / 200)
         var finalizedItems = 0
         var resolvedNodeByKey = Array<FileNodeRecord?>(repeating: nil, count: nextKey)
-        var childIndicesByIndex = Array<[FileTreeNodeIndex]>(repeating: [], count: nextKey)
-        var parentIndices = Array<FileTreeNodeIndex?>(repeating: nil, count: nextKey)
+        var parentRawIndices = Array(repeating: UInt32.max, count: nextKey)
+        var childSpans = Array(repeating: FileTreeChildSpan(), count: nextKey)
+        var childIndices: [FileTreeNodeIndex] = []
+        childIndices.reserveCapacity(max(nextKey - 1, 0))
         var aggregateStats = AggregateStatsAccumulator()
         #if DEBUG
         let finalizationStart = diagnostics?.start()
@@ -1893,8 +1895,7 @@ actor ScanEngine {
                 var logicalSize: Int64 = 0
                 var descendantFileCount = 0
                 var childrenAreAccessible = true
-                var sortedChildIndices: [FileTreeNodeIndex] = []
-                sortedChildIndices.reserveCapacity(sortedChildKeys.count)
+                let childSpanStart = childIndices.count
                 for (offset, childKey) in sortedChildKeys.enumerated() {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
@@ -1912,8 +1913,8 @@ actor ScanEngine {
                         descendantFileCount = ScanIntegerMath.addingClamped(descendantFileCount, 1)
                     }
                     let childIndex = FileTreeNodeIndex(rawValue: UInt32(childKey))
-                    sortedChildIndices.append(childIndex)
-                    parentIndices[childKey] = FileTreeNodeIndex(rawValue: UInt32(key))
+                    childIndices.append(childIndex)
+                    parentRawIndices[childKey] = UInt32(key)
                 }
 
                 let assembled = FileNodeRecord(
@@ -1935,9 +1936,12 @@ actor ScanEngine {
                     isAutoSummarized: false
                 )
                 resolvedNodeByKey[key] = assembled
-                aggregateStats.include(assembled, hasChildren: !sortedChildIndices.isEmpty)
+                aggregateStats.include(assembled, hasChildren: childIndices.count > childSpanStart)
 
-                childIndicesByIndex[key] = sortedChildIndices
+                childSpans[key] = FileTreeChildSpan(
+                    start: UInt32(childSpanStart),
+                    count: UInt32(childIndices.count - childSpanStart)
+                )
 
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
             } else if let onlyChild = completed.node {
@@ -1963,6 +1967,8 @@ actor ScanEngine {
 
         var nodes: [FileNodeRecord] = []
         nodes.reserveCapacity(resolvedNodeByKey.count)
+        var indexByNodeID: [String: FileTreeNodeIndex] = [:]
+        indexByNodeID.reserveCapacity(resolvedNodeByKey.count)
         for key in resolvedNodeByKey.indices {
             guard let node = resolvedNodeByKey[key] else {
                 assertionFailure("Missing finalized node for scan key \(key).")
@@ -1970,6 +1976,11 @@ actor ScanEngine {
             }
             resolvedNodeByKey[key] = nil
             nodes.append(node)
+            let previous = indexByNodeID.updateValue(
+                FileTreeNodeIndex(rawValue: UInt32(key)),
+                forKey: node.id
+            )
+            assert(previous == nil)
         }
 
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
@@ -1984,8 +1995,10 @@ actor ScanEngine {
         let store = try HardLinkDeduplicator.deduplicatedStore(
             rootIndex: rootIndex,
             nodes: nodes,
-            childIndicesByIndex: childIndicesByIndex,
-            parentIndices: parentIndices,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
             aggregateStats: aggregateStats.makeStats(root: rootNode),
             hardLinkAccumulator: hardLinkAccumulator,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID,
