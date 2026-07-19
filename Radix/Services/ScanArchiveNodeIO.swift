@@ -421,6 +421,7 @@ extension ScanArchiveService {
               !component.isEmpty,
               component != ".",
               component != "..",
+              !component.contains("\0"),
               !component.contains("/") else {
             throw ScanArchiveError.nodes(localized:
                 "node ordinal \(ordinal) has an invalid relative path"
