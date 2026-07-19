@@ -248,6 +248,9 @@ final class ScanEngineTests: XCTestCase {
         let linkMetadata = try XCTUnwrap(entriesByName["payload-link.bin"]?.metadata)
         let symlinkMetadata = try XCTUnwrap(entriesByName["payload-alias"]?.metadata)
         let directoryMetadata = try XCTUnwrap(entriesByName["Folder"]?.metadata)
+        let loadedDirectoryMetadata = try metadataLoader.metadata(for: directoryURL)
+
+        XCTAssertEqual(directoryMetadata.lastModified, loadedDirectoryMetadata.lastModified)
         let packageMetadata = try XCTUnwrap(entriesByName["Sample.app"]?.metadata)
         let foundationFileMetadata = try metadataLoader.metadata(for: fileURL)
 

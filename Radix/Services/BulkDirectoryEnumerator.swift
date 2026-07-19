@@ -620,7 +620,8 @@ nonisolated enum BulkDirectoryEnumerator {
             cloneIdentity = nil
         }
         let lastModified = Date(
-            timeIntervalSince1970: Double(modificationTime.tv_sec) +
+            timeIntervalSinceReferenceDate: Double(modificationTime.tv_sec) -
+                Date.timeIntervalBetween1970AndReferenceDate +
                 Double(modificationTime.tv_nsec) / 1_000_000_000
         )
 
