@@ -437,7 +437,8 @@ extension ScanArchiveService {
         location: ScanArchiveNodeLocation,
         ordinal: Int,
         rootOrdinal: Int,
-        expectedTargetPath: String
+        expectedTargetPath: String,
+        parentIsKnownContained: Bool = false
     ) throws -> FileNodeRecord {
         let hasValidatedRelativeLocation = ordinal != rootOrdinal &&
             record.explicitID == nil &&
@@ -452,7 +453,9 @@ extension ScanArchiveService {
         if ordinal == rootOrdinal, node.url.path != expectedTargetPath {
             throw ScanArchiveError.topology(localized: "root path does not match target path")
         }
+        let containmentAlreadyValidated = hasValidatedRelativeLocation && parentIsKnownContained
         if !node.isSynthetic,
+           !containmentAlreadyValidated,
            !Self.path(node.id, isContainedIn: expectedTargetPath) {
             throw ScanArchiveError.topology(localized: "node \(node.id) path is outside target")
         }
@@ -656,8 +659,10 @@ extension ScanArchiveService {
                     try Task.checkCancellation()
                 }
                 let parent: ScanArchiveNodeLocation?
+                let parentIsKnownContained: Bool
                 if ordinal == topology.rootOrdinal {
                     parent = nil
+                    parentIsKnownContained = false
                 } else {
                     let parentOrdinal = Int(topology.parentRawIndices[ordinal])
                     guard nodes.indices.contains(parentOrdinal) else {
@@ -670,6 +675,7 @@ extension ScanArchiveService {
                         id: parentNode.id,
                         path: explicitPathByOrdinal[parentOrdinal] ?? parentNode.id
                     )
+                    parentIsKnownContained = !parentNode.isSynthetic
                 }
 
                 let location = try compactNodeLocation(
@@ -687,7 +693,8 @@ extension ScanArchiveService {
                     location: location,
                     ordinal: ordinal,
                     rootOrdinal: topology.rootOrdinal,
-                    expectedTargetPath: expectedTargetPath
+                    expectedTargetPath: expectedTargetPath,
+                    parentIsKnownContained: parentIsKnownContained
                 )
                 if topology.childSpans[ordinal].count > 0, !node.isDirectory {
                     throw ScanArchiveError.topology(localized:
