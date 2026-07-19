@@ -393,6 +393,7 @@ actor ScanEngine {
 
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
+    private let usesDeferredBulkEntryFiltering: Bool
     private let directoryNamespaceResolver: DirectoryNamespaceResolver
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
@@ -409,6 +410,7 @@ actor ScanEngine {
         directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory = {
             ScanDirectoryDescriptorPool()
         },
+        usesDeferredBulkEntryFiltering: Bool = true,
         usesWorkerSideLeafPreparation: Bool = true,
         workerSideLeafPreparationBatchLimit: Int? = nil
     ) {
@@ -419,6 +421,7 @@ actor ScanEngine {
             atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
             atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval,
             directoryDescriptorPoolFactory: directoryDescriptorPoolFactory,
+            usesDeferredBulkEntryFiltering: usesDeferredBulkEntryFiltering,
             usesWorkerSideLeafPreparation: usesWorkerSideLeafPreparation,
             workerSideLeafPreparationBatchLimit: workerSideLeafPreparationBatchLimit
         )
@@ -437,6 +440,7 @@ actor ScanEngine {
             atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
             atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval,
             directoryDescriptorPoolFactory: { ScanDirectoryDescriptorPool() },
+            usesDeferredBulkEntryFiltering: false,
             usesWorkerSideLeafPreparation: true,
             workerSideLeafPreparationBatchLimit: nil
         )
@@ -449,11 +453,13 @@ actor ScanEngine {
         atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?,
         atomicSummaryProgressEmissionInterval: TimeInterval,
         directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory,
+        usesDeferredBulkEntryFiltering: Bool,
         usesWorkerSideLeafPreparation: Bool,
         workerSideLeafPreparationBatchLimit: Int?
     ) {
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
+        self.usesDeferredBulkEntryFiltering = usesDeferredBulkEntryFiltering
         self.directoryNamespaceResolver = DirectoryNamespaceResolver()
         self.linkCountCapabilityCache = LinkCountCapabilityCache()
         self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
@@ -765,6 +771,7 @@ actor ScanEngine {
             metadataLoader: metadataLoader,
             directoryContents: directoryContents,
             usesBulkDirectoryEnumeration: usesBulkDirectoryEnumeration,
+            usesDeferredBulkEntryFiltering: usesDeferredBulkEntryFiltering,
             directoryNamespaceResolver: directoryNamespaceResolver,
             directoryDescriptorPool: usesBulkDirectoryEnumeration
                 ? directoryDescriptorPoolFactory()
@@ -994,6 +1001,7 @@ actor ScanEngine {
         )
         let directoryContentsProvider = directoryContents
         let usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
+        let usesDeferredBulkEntryFiltering = usesDeferredBulkEntryFiltering
         let directoryNamespaceResolver = directoryNamespaceResolver
         let directoryDescriptorPool = usesBulkDirectoryEnumeration
             ? directoryDescriptorPoolFactory()
@@ -1177,6 +1185,7 @@ actor ScanEngine {
                                     metadataLoader: scanMetadataLoader,
                                     directoryContents: directoryContentsProvider,
                                     usesBulkDirectoryEnumeration: usesBulkDirectoryEnumeration,
+                                    usesDeferredBulkEntryFiltering: usesDeferredBulkEntryFiltering,
                                     directoryNamespaceResolver: directoryNamespaceResolver,
                                     directoryDescriptorPool: directoryDescriptorPool,
                                     parentDirectoryLease: taskItem.parentDirectoryLease,
@@ -2116,6 +2125,7 @@ actor ScanEngine {
         metadataLoader: ScanMetadataLoader,
         directoryContents: DirectoryContentsProvider,
         usesBulkDirectoryEnumeration: Bool,
+        usesDeferredBulkEntryFiltering: Bool,
         directoryNamespaceResolver: DirectoryNamespaceResolver,
         directoryDescriptorPool: ScanDirectoryDescriptorPool?,
         parentDirectoryLease: ScanDirectoryDescriptorPool.Lease?,
@@ -2160,12 +2170,31 @@ actor ScanEngine {
                 directoryLease = nil
             }
             let cursor: BulkDirectoryEnumerator.Cursor
+            let entryInclusion: BulkDirectoryEnumerator.EntryInclusion?
+            let canExcludeNativeEntry = !exclusionMatcher.isEmpty
+                || shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
+            if usesDeferredBulkEntryFiltering && canExcludeNativeEntry {
+                let parentPath = url.path
+                entryInclusion = { childName, childPath, isDirectory in
+                    ScanDirectoryEntryFilter.includes(
+                        childName: childName,
+                        parentPath: parentPath,
+                        behavior: behavior
+                    ) && !exclusionMatcher.excludesKnownNormalizedPath(
+                        childPath,
+                        isDirectory: isDirectory
+                    )
+                }
+            } else {
+                entryInclusion = nil
+            }
             if let directoryLease {
                 cursor = try BulkDirectoryEnumerator.makeCursor(
                     at: url,
                     borrowing: directoryLease,
                     includeHiddenFiles: includeHiddenFiles,
                     metadataLoader: metadataLoader,
+                    entryInclusion: entryInclusion,
                     cancellationCheck: cancellationCheck
                 )
             } else {
@@ -2173,6 +2202,7 @@ actor ScanEngine {
                     at: url,
                     includeHiddenFiles: includeHiddenFiles,
                     metadataLoader: metadataLoader,
+                    entryInclusion: entryInclusion,
                     cancellationCheck: cancellationCheck
                 )
             }
@@ -2193,13 +2223,17 @@ actor ScanEngine {
                     enumerationNanoseconds += DispatchTime.now().uptimeNanoseconds - batchStart
                     let classificationStart = DispatchTime.now().uptimeNanoseconds
                     #endif
-                    let filteredEntries = try ScanDirectoryEntryFilter.filteredEntries(
-                        batch.entries,
-                        under: url,
-                        behavior: behavior,
-                        exclusionMatcher: exclusionMatcher,
-                        cancellationCheck: cancellationCheck
-                    )
+                    let filteredEntries = if entryInclusion != nil {
+                        batch.entries
+                    } else {
+                        try ScanDirectoryEntryFilter.filteredEntries(
+                            batch.entries,
+                            under: url,
+                            behavior: behavior,
+                            exclusionMatcher: exclusionMatcher,
+                            cancellationCheck: cancellationCheck
+                        )
+                    }
                     entries.append(contentsOf: filteredEntries)
                     enumeratedItemCount += batch.enumeratedItemCount
                     #if DEBUG

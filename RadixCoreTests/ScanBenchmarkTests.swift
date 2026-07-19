@@ -460,6 +460,85 @@ final class ScanBenchmarkTests: XCTestCase {
         }
     }
 
+    func testDeferredBulkEntryFilteringBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_DEFERRED_FILTERING"] == "1" else {
+            throw XCTSkip(
+                "Set RADIX_BENCH_DEFERRED_FILTERING=1 to run the deferred-filtering benchmark."
+            )
+        }
+
+        let fileCount = environment["RADIX_BENCH_DEFERRED_FILTERING_FILES"]
+            .flatMap(Int.init)
+            .map { max(1_000, $0) } ?? 30_000
+        let includedStride = environment["RADIX_BENCH_DEFERRED_FILTERING_INCLUDED_STRIDE"]
+            .flatMap(Int.init)
+            .map { max(2, $0) } ?? 10
+        let iterations = environment["RADIX_BENCH_DEFERRED_FILTERING_ITERATIONS"]
+            .flatMap(Int.init)
+            .map { max(3, $0) } ?? 7
+        let rootURL = try makeDeferredFilteringBenchmarkDirectory(
+            fileCount: fileCount,
+            includedStride: includedStride
+        )
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let configurations = [
+            DeferredFilteringBenchmarkConfiguration(name: "legacy", usesDeferredFiltering: false),
+            DeferredFilteringBenchmarkConfiguration(name: "deferred", usesDeferredFiltering: true),
+        ]
+        var referenceFingerprint: String?
+        for configuration in configurations {
+            let result = try await runDeferredFilteringBenchmark(
+                rootURL: rootURL,
+                fileCount: fileCount,
+                includedStride: includedStride,
+                configuration: configuration,
+                iteration: 0,
+                isWarmup: true
+            )
+            if let referenceFingerprint {
+                XCTAssertEqual(result.fingerprint, referenceFingerprint)
+            } else {
+                referenceFingerprint = result.fingerprint
+            }
+        }
+
+        var elapsedByConfiguration: [String: [Double]] = [:]
+        for iteration in 1...iterations {
+            let orderedConfigurations = iteration.isMultiple(of: 2)
+                ? configurations
+                : Array(configurations.reversed())
+            for configuration in orderedConfigurations {
+                let result = try await runDeferredFilteringBenchmark(
+                    rootURL: rootURL,
+                    fileCount: fileCount,
+                    includedStride: includedStride,
+                    configuration: configuration,
+                    iteration: iteration,
+                    isWarmup: false
+                )
+                XCTAssertEqual(result.fingerprint, referenceFingerprint)
+                elapsedByConfiguration[configuration.name, default: []].append(result.elapsedSeconds)
+            }
+        }
+
+        for configuration in configurations {
+            let elapsed = elapsedByConfiguration[configuration.name, default: []]
+            let average = elapsed.reduce(0, +) / Double(elapsed.count)
+            let median = elapsed.sorted()[elapsed.count / 2]
+            print(
+                "RADIX_BENCH_DEFERRED_FILTERING_SUMMARY "
+                    + "files=\(fileCount) included_stride=\(includedStride) "
+                    + "config=\(configuration.name) iterations=\(elapsed.count) "
+                    + "avg_elapsed=\(String(format: "%.6f", average))s "
+                    + "median_elapsed=\(String(format: "%.6f", median))s "
+                    + "min_elapsed=\(String(format: "%.6f", elapsed.min() ?? average))s "
+                    + "max_elapsed=\(String(format: "%.6f", elapsed.max() ?? average))s"
+            )
+        }
+    }
+
     func testFanoutWideDirectoryClassificationBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_WIDE_FANOUT"] == "1" else {
@@ -972,6 +1051,11 @@ final class ScanBenchmarkTests: XCTestCase {
         var workerDescription: String {
             atomicSummaryWorkerLimit.map(String.init) ?? "default"
         }
+    }
+
+    private struct DeferredFilteringBenchmarkConfiguration {
+        let name: String
+        let usesDeferredFiltering: Bool
     }
 
     private static func benchmarkConfigurationOrder(
@@ -1564,6 +1648,26 @@ final class ScanBenchmarkTests: XCTestCase {
         return rootURL
     }
 
+    private func makeDeferredFilteringBenchmarkDirectory(
+        fileCount: Int,
+        includedStride: Int
+    ) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory.appending(
+            path: "radix-deferred-filtering-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        let payload = Data([0x41])
+        for index in 0..<fileCount {
+            let suffix = index.isMultiple(of: includedStride) ? "dat" : "tmp"
+            try payload.write(
+                to: rootURL.appending(path: String(format: "file-%08d.%@", index, suffix))
+            )
+        }
+        return rootURL
+    }
+
     private func makeFanoutWideBenchmarkDirectory(
         childDirectoryCount: Int,
         filesPerDirectory: Int
@@ -1691,6 +1795,43 @@ final class ScanBenchmarkTests: XCTestCase {
         )
 
         return elapsedSeconds
+    }
+
+    private func runDeferredFilteringBenchmark(
+        rootURL: URL,
+        fileCount: Int,
+        includedStride: Int,
+        configuration: DeferredFilteringBenchmarkConfiguration,
+        iteration: Int,
+        isWarmup: Bool
+    ) async throws -> (elapsedSeconds: Double, fingerprint: String) {
+        var options = ScanOptions()
+        options.autoSummarizeDirectories = false
+        options.exclusionPatterns = ["*.tmp"]
+        let engine = ScanEngine(
+            usesDeferredBulkEntryFiltering: configuration.usesDeferredFiltering
+        )
+        let startedAt = ContinuousClock.now
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: engine
+        )
+        let elapsedSeconds = Self.elapsedSeconds(since: startedAt)
+        let expectedFileCount = (fileCount + includedStride - 1) / includedStride
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, expectedFileCount)
+        XCTAssertEqual(snapshot.root.descendantFileCount, expectedFileCount)
+        let fingerprint = Self.resultFingerprint(snapshot.treeStore)
+
+        print(
+            "RADIX_BENCH_DEFERRED_FILTERING_RESULT "
+                + "phase=\(isWarmup ? "warmup" : "measure") "
+                + "files=\(fileCount) included=\(expectedFileCount) "
+                + "config=\(configuration.name) iteration=\(iteration) "
+                + "elapsed=\(String(format: "%.6f", elapsedSeconds))s "
+                + "fingerprint=\(fingerprint)"
+        )
+        return (elapsedSeconds, fingerprint)
     }
 
     private func runPackageSummaryBenchmark(

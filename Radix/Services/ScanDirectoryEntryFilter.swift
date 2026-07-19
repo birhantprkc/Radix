@@ -73,7 +73,7 @@ nonisolated enum ScanDirectoryEntryFilter {
         )
     }
 
-    private static func includes(
+    static func includes(
         childName: String,
         parentPath: String,
         behavior: ScanEngine.ScanBehavior

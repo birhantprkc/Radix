@@ -493,13 +493,34 @@ final class ScanEngineTests: XCTestCase {
         try Data(repeating: 0x7F, count: 257).write(
             to: packageURL.appending(path: "Contents/Resources/asset.dat")
         )
+        try Data(repeating: 0x33, count: 4_096).write(
+            to: unicodeDirectoryURL.appending(path: "excluded.tmp")
+        )
+        let excludedDirectoryURL = rootURL.appending(
+            path: "Excluded",
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: excludedDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        try Data(repeating: 0x44, count: 8_192).write(
+            to: excludedDirectoryURL.appending(path: "payload.dat")
+        )
 
         var options = ScanOptions()
         options.includeHiddenFiles = true
         options.autoSummarizeDirectories = false
+        options.exclusionPatterns = ["*.tmp", "Excluded/"]
+        let legacy = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(usesDeferredBulkEntryFiltering: false)
+        )
         let optimized = try await finishedSnapshot(
             target: ScanTarget(url: rootURL),
-            options: options
+            options: options,
+            engine: ScanEngine(usesDeferredBulkEntryFiltering: true)
         )
         let foundation = try await finishedSnapshot(
             target: ScanTarget(url: rootURL),
@@ -524,10 +545,19 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(optimized.aggregateStats.directoryCount, foundation.aggregateStats.directoryCount)
         XCTAssertEqual(optimized.aggregateStats.accessibleItemCount, foundation.aggregateStats.accessibleItemCount)
         XCTAssertEqual(optimized.aggregateStats.inaccessibleItemCount, foundation.aggregateStats.inaccessibleItemCount)
+        XCTAssertEqual(optimized.treeStore.indexedNodeIDs(), legacy.treeStore.indexedNodeIDs())
+        XCTAssertEqual(optimized.treeStore.childIDsByID, legacy.treeStore.childIDsByID)
+        XCTAssertEqual(optimized.aggregateStats.totalAllocatedSize, legacy.aggregateStats.totalAllocatedSize)
+        XCTAssertEqual(optimized.aggregateStats.totalLogicalSize, legacy.aggregateStats.totalLogicalSize)
+        XCTAssertEqual(optimized.aggregateStats.fileCount, legacy.aggregateStats.fileCount)
+        XCTAssertEqual(optimized.aggregateStats.directoryCount, legacy.aggregateStats.directoryCount)
+        XCTAssertEqual(optimized.aggregateStats.accessibleItemCount, legacy.aggregateStats.accessibleItemCount)
+        XCTAssertEqual(optimized.aggregateStats.inaccessibleItemCount, legacy.aggregateStats.inaccessibleItemCount)
 
         for nodeID in optimized.treeStore.indexedNodeIDs() {
             let optimizedNode = try XCTUnwrap(optimized.treeStore.node(id: nodeID))
             let foundationNode = try XCTUnwrap(foundation.treeStore.node(id: nodeID))
+            XCTAssertEqual(optimizedNode, legacy.treeStore.node(id: nodeID), nodeID)
             XCTAssertEqual(optimizedNode.name, foundationNode.name, nodeID)
             XCTAssertEqual(optimizedNode.isDirectory, foundationNode.isDirectory, nodeID)
             XCTAssertEqual(optimizedNode.isSymbolicLink, foundationNode.isSymbolicLink, nodeID)

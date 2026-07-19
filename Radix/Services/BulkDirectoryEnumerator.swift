@@ -15,6 +15,14 @@ import Foundation
 /// the directory entry and the metadata Radix needs in the same kernel operation.
 /// Unsupported filesystems return `nil` so callers can transparently fall back.
 nonisolated enum BulkDirectoryEnumerator {
+    /// Runs only after the native entry payload and exact name have been validated.
+    /// Returning false skips URL and package-classification work for that entry.
+    typealias EntryInclusion = @Sendable (
+        _ childName: String,
+        _ childPath: String,
+        _ isDirectory: Bool
+    ) -> Bool
+
     /// A single validated child component, stored exactly as NUL-terminated
     /// filesystem bytes for descriptor-relative syscalls such as `openat(2)`.
     struct NativeName: Hashable, Sendable {
@@ -112,6 +120,7 @@ nonisolated enum BulkDirectoryEnumerator {
         private let includeHiddenFiles: Bool
         private let loadsPackageMetadata: Bool
         private let metadataLoader: ScanMetadataLoader
+        private let entryInclusion: EntryInclusion?
         private let lock = NSLock()
         private let directoryHandle: NativeDirectoryHandle?
         private let descriptorLease: ScanDirectoryDescriptorPool.Lease?
@@ -129,6 +138,7 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: Bool,
             loadsPackageMetadata: Bool,
             metadataLoader: ScanMetadataLoader,
+            entryInclusion: EntryInclusion?,
             directoryHandle: NativeDirectoryHandle? = nil,
             descriptorLease: ScanDirectoryDescriptorPool.Lease? = nil,
             forcedUnavailableAfterBatchCount: Int?
@@ -137,6 +147,7 @@ nonisolated enum BulkDirectoryEnumerator {
             self.includeHiddenFiles = includeHiddenFiles
             self.loadsPackageMetadata = loadsPackageMetadata
             self.metadataLoader = metadataLoader
+            self.entryInclusion = entryInclusion
             self.directoryHandle = directoryHandle
             self.descriptorLease = descriptorLease
             self.forcedUnavailableAfterBatchCount = forcedUnavailableAfterBatchCount
@@ -223,6 +234,7 @@ nonisolated enum BulkDirectoryEnumerator {
                     includeHiddenFiles: includeHiddenFiles,
                     loadsPackageMetadata: loadsPackageMetadata,
                     metadataLoader: metadataLoader,
+                    entryInclusion: entryInclusion,
                     entries: &entries,
                     enumeratedItemCount: &enumeratedItemCount,
                     nonASCIINativeNameByDecodedName: &nonASCIINativeNameByDecodedName,
@@ -272,6 +284,7 @@ nonisolated enum BulkDirectoryEnumerator {
         includeHiddenFiles: Bool,
         loadsPackageMetadata: Bool = true,
         metadataLoader: ScanMetadataLoader,
+        entryInclusion: EntryInclusion? = nil,
         cancellationCheck: CancellationCheck,
         forcedUnavailableAfterBatchCount: Int? = nil
     ) throws -> Result? {
@@ -282,6 +295,7 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: includeHiddenFiles,
             loadsPackageMetadata: loadsPackageMetadata,
             metadataLoader: metadataLoader,
+            entryInclusion: entryInclusion,
             cancellationCheck: cancellationCheck,
             forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
         )
@@ -304,6 +318,7 @@ nonisolated enum BulkDirectoryEnumerator {
         includeHiddenFiles: Bool,
         loadsPackageMetadata: Bool = true,
         metadataLoader: ScanMetadataLoader,
+        entryInclusion: EntryInclusion? = nil,
         cancellationCheck: CancellationCheck,
         forcedUnavailableAfterBatchCount: Int? = nil
     ) throws -> Cursor {
@@ -330,6 +345,7 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: includeHiddenFiles,
             loadsPackageMetadata: loadsPackageMetadata,
             metadataLoader: metadataLoader,
+            entryInclusion: entryInclusion,
             directoryHandle: NativeDirectoryHandle(owning: descriptor),
             forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
         )
@@ -343,6 +359,7 @@ nonisolated enum BulkDirectoryEnumerator {
         includeHiddenFiles: Bool,
         loadsPackageMetadata: Bool = true,
         metadataLoader: ScanMetadataLoader,
+        entryInclusion: EntryInclusion? = nil,
         cancellationCheck: CancellationCheck,
         forcedUnavailableAfterBatchCount: Int? = nil
     ) throws -> Cursor {
@@ -359,6 +376,7 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: includeHiddenFiles,
             loadsPackageMetadata: loadsPackageMetadata,
             metadataLoader: metadataLoader,
+            entryInclusion: entryInclusion,
             descriptorLease: descriptorLease,
             forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
         )
@@ -372,6 +390,7 @@ nonisolated enum BulkDirectoryEnumerator {
         includeHiddenFiles: Bool,
         loadsPackageMetadata: Bool = true,
         metadataLoader: ScanMetadataLoader,
+        entryInclusion: EntryInclusion? = nil,
         cancellationCheck: CancellationCheck,
         forcedUnavailableAfterBatchCount: Int? = nil
     ) throws -> Cursor {
@@ -389,6 +408,7 @@ nonisolated enum BulkDirectoryEnumerator {
             includeHiddenFiles: includeHiddenFiles,
             loadsPackageMetadata: loadsPackageMetadata,
             metadataLoader: metadataLoader,
+            entryInclusion: entryInclusion,
             directoryHandle: directoryHandle,
             forcedUnavailableAfterBatchCount: forcedUnavailableAfterBatchCount
         )
@@ -447,6 +467,16 @@ nonisolated enum BulkDirectoryEnumerator {
             returned.fileattr & requiredFileAttributes == requiredFileAttributes
     }
 
+    private struct ParsedEntry {
+        let decodedName: String
+        let nativeName: NativeName
+        let isHidden: Bool
+        let isDirectory: Bool
+        let hasFinderPackageFlag: Bool?
+        let entryError: Int32?
+        let metadata: NodeMetadata?
+    }
+
     private static func parseBatch(
         bufferAddress: UnsafeRawPointer,
         bufferByteCount: Int,
@@ -455,12 +485,14 @@ nonisolated enum BulkDirectoryEnumerator {
         includeHiddenFiles: Bool,
         loadsPackageMetadata: Bool,
         metadataLoader: ScanMetadataLoader,
+        entryInclusion: EntryInclusion?,
         entries: inout [DirectoryEntry],
         enumeratedItemCount: inout Int,
         nonASCIINativeNameByDecodedName: inout [String: NativeName],
         cancellationCheck: CancellationCheck
     ) throws -> Bool {
         let bufferEnd = bufferAddress.advanced(by: bufferByteCount)
+        let directoryPath = directoryURL.path
         var entryAddress = bufferAddress
 
         for index in 0..<entryCount {
@@ -479,10 +511,7 @@ nonisolated enum BulkDirectoryEnumerator {
             let entryEnd = entryAddress.advanced(by: entryLength)
             guard let parsed = parsedEntry(
                 at: entryAddress,
-                end: entryEnd,
-                directoryURL: directoryURL,
-                loadsPackageMetadata: loadsPackageMetadata,
-                metadataLoader: metadataLoader
+                end: entryEnd
             ) else {
                 return false
             }
@@ -498,21 +527,38 @@ nonisolated enum BulkDirectoryEnumerator {
             }
             enumeratedItemCount += 1
 
-            if includeHiddenFiles || !parsed.isHidden {
-                entries.append(parsed.entry)
+            let passesHiddenFilter = includeHiddenFiles || !parsed.isHidden
+            let passesEntryInclusion: Bool
+            if passesHiddenFilter, let entryInclusion {
+                passesEntryInclusion = entryInclusion(
+                    parsed.decodedName,
+                    knownNormalizedChildPath(
+                        parentPath: directoryPath,
+                        childName: parsed.decodedName
+                    ),
+                    parsed.isDirectory
+                )
+            } else {
+                passesEntryInclusion = passesHiddenFilter
+            }
+            if passesEntryInclusion {
+                entries.append(materializedEntry(
+                    parsed,
+                    under: directoryURL,
+                    loadsPackageMetadata: loadsPackageMetadata,
+                    metadataLoader: metadataLoader
+                ))
             }
             entryAddress = entryEnd
         }
+        try cancellationCheck()
         return true
     }
 
     private static func parsedEntry(
         at entryAddress: UnsafeRawPointer,
-        end entryEnd: UnsafeRawPointer,
-        directoryURL: URL,
-        loadsPackageMetadata: Bool,
-        metadataLoader: ScanMetadataLoader
-    ) -> (entry: DirectoryEntry, isHidden: Bool, decodedName: String, nativeName: NativeName)? {
+        end entryEnd: UnsafeRawPointer
+    ) -> ParsedEntry? {
         var cursor = AttributeCursor(
             current: entryAddress.advanced(by: MemoryLayout<UInt32>.size),
             end: entryEnd
@@ -573,8 +619,6 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let isDirectory = objectType == VDIR.rawValue
         let isSymbolicLink = objectType == VLNK.rawValue
-        let directoryHint: URL.DirectoryHint = isDirectory ? .isDirectory : .notDirectory
-        let url = directoryURL.appending(path: name, directoryHint: directoryHint)
         let isHidden = name.first == "." || (flags & UInt32(UF_HIDDEN)) != 0
         let hasFinderPackageFlag: Bool?
         if returned.commonattr & attrgroup_t(ATTR_CMN_FNDRINFO) != 0 {
@@ -585,17 +629,14 @@ nonisolated enum BulkDirectoryEnumerator {
 
         if entryError != 0 {
             guard entryError <= UInt32(Int32.max) else { return nil }
-            return (
-                DirectoryEntry(
-                    url: url,
-                    metadata: nil,
-                    localizedEnumerationError: posixError(Int32(entryError), url: url),
-                    isDirectoryHint: isDirectory,
-                    nativeName: parsedName.nativeName
-                ),
-                isHidden,
-                name,
-                parsedName.nativeName
+            return ParsedEntry(
+                decodedName: name,
+                nativeName: parsedName.nativeName,
+                isHidden: isHidden,
+                isDirectory: isDirectory,
+                hasFinderPackageFlag: hasFinderPackageFlag,
+                entryError: Int32(entryError),
+                metadata: nil
             )
         }
 
@@ -627,10 +668,7 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let metadata = NodeMetadata(
             isDirectory: isDirectory,
-            isPackage: isDirectory && loadsPackageMetadata && metadataLoader.isPackageDirectory(
-                at: url,
-                hasFinderPackageFlag: hasFinderPackageFlag
-            ),
+            isPackage: false,
             isSymbolicLink: isSymbolicLink,
             logicalSize: max(Int64(logicalSize), 0),
             allocatedSize: max(Int64(allocatedSize), 0),
@@ -645,11 +683,66 @@ nonisolated enum BulkDirectoryEnumerator {
             linkCount: isDirectory ? 1 : max(UInt64(fileLinkCount), 1),
             cloneIdentity: cloneIdentity
         )
-        return (
-            DirectoryEntry(url: url, metadata: metadata, nativeName: parsedName.nativeName),
-            isHidden,
-            name,
-            parsedName.nativeName
+        return ParsedEntry(
+            decodedName: name,
+            nativeName: parsedName.nativeName,
+            isHidden: isHidden,
+            isDirectory: isDirectory,
+            hasFinderPackageFlag: hasFinderPackageFlag,
+            entryError: nil,
+            metadata: metadata
+        )
+    }
+
+    /// `NativeName` rejects separators and dot components, so joining one validated
+    /// child preserves the normalized path produced by URL materialization.
+    static func knownNormalizedChildPath(parentPath: String, childName: String) -> String {
+        parentPath == "/" ? parentPath + childName : parentPath + "/" + childName
+    }
+
+    private static func materializedEntry(
+        _ parsed: ParsedEntry,
+        under directoryURL: URL,
+        loadsPackageMetadata: Bool,
+        metadataLoader: ScanMetadataLoader
+    ) -> DirectoryEntry {
+        let directoryHint: URL.DirectoryHint = parsed.isDirectory ? .isDirectory : .notDirectory
+        let url = directoryURL.appending(path: parsed.decodedName, directoryHint: directoryHint)
+        if let entryError = parsed.entryError {
+            return DirectoryEntry(
+                url: url,
+                metadata: nil,
+                localizedEnumerationError: posixError(entryError, url: url),
+                isDirectoryHint: parsed.isDirectory,
+                nativeName: parsed.nativeName
+            )
+        }
+
+        guard let metadata = parsed.metadata else {
+            preconditionFailure("A parsed native entry must have metadata or an entry error")
+        }
+        let isPackage = parsed.isDirectory && loadsPackageMetadata && metadataLoader.isPackageDirectory(
+            at: url,
+            hasFinderPackageFlag: parsed.hasFinderPackageFlag
+        )
+        let classifiedMetadata = NodeMetadata(
+            isDirectory: metadata.isDirectory,
+            isPackage: isPackage,
+            isSymbolicLink: metadata.isSymbolicLink,
+            logicalSize: metadata.logicalSize,
+            allocatedSize: metadata.allocatedSize,
+            dataAllocatedSize: metadata.dataAllocatedSize,
+            lastModified: metadata.lastModified,
+            isReadable: metadata.isReadable,
+            volumeCapacity: metadata.volumeCapacity,
+            fileIdentity: metadata.fileIdentity,
+            linkCount: metadata.linkCount,
+            cloneIdentity: metadata.cloneIdentity
+        )
+        return DirectoryEntry(
+            url: url,
+            metadata: classifiedMetadata,
+            nativeName: parsed.nativeName
         )
     }
 
