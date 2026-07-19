@@ -386,6 +386,27 @@ nonisolated struct FileTreeStore: Sendable {
         }
     }
 
+    private struct MaterializedDirectoryTotals {
+        var allocatedSize: Int64 = 0
+        var logicalSize: Int64 = 0
+        var descendantFileCount = 0
+        var childrenAreAccessible = true
+
+        mutating func include(_ child: FileNodeRecord) {
+            allocatedSize = FileTreeStore.saturatingAdd(allocatedSize, child.allocatedSize)
+            logicalSize = FileTreeStore.saturatingAdd(logicalSize, child.logicalSize)
+            childrenAreAccessible = childrenAreAccessible && child.isAccessible
+            if child.isDirectory {
+                descendantFileCount = FileTreeStore.saturatingAdd(
+                    descendantFileCount,
+                    child.descendantFileCount
+                )
+            } else if !child.isSymbolicLink && !child.isSynthetic {
+                descendantFileCount = FileTreeStore.saturatingAdd(descendantFileCount, 1)
+            }
+        }
+    }
+
     private enum StoreError: LocalizedError {
         case replacementIDCollision(String)
         case overlappingReplacementTargets(String, String)
@@ -578,7 +599,7 @@ nonisolated struct FileTreeStore: Sendable {
     /// and node index were validated while the records were materialized.
     nonisolated init(
         verifiedRootIndex rootIndex: FileTreeNodeIndex,
-        nodes: [FileNodeRecord],
+        nodes: inout [FileNodeRecord],
         indexByNodeID: [String: FileTreeNodeIndex],
         parentRawIndices: [UInt32],
         childSpans: [FileTreeChildSpan],
@@ -596,6 +617,19 @@ nonisolated struct FileTreeStore: Sendable {
         )
         let rootOffset = Int(rootIndex.rawValue)
         precondition(nodes.indices.contains(rootOffset), "Verified FileTreeStore root is missing.")
+
+        for nodeIndex in orderedNodeIndices.reversed() {
+            let offset = Int(nodeIndex.rawValue)
+            let span = childSpans[offset]
+            guard span.count > 0, nodes[offset].isDirectory else { continue }
+            let start = Int(span.start)
+            let end = start + Int(span.count)
+            nodes[offset] = Self.repairingDirectoryRecord(
+                nodes[offset],
+                childIndices: childIndices[start..<end],
+                nodes: nodes
+            )
+        }
 
         var statsAccumulator = AggregateStatsAccumulator()
         for offset in nodes.indices {
@@ -1911,38 +1945,47 @@ nonisolated struct FileTreeStore: Sendable {
         return repairedNodes
     }
 
+    private nonisolated static func repairingDirectoryRecord<Children: Sequence>(
+        _ node: FileNodeRecord,
+        children: Children
+    ) -> FileNodeRecord where Children.Element == FileNodeRecord {
+        var totals = MaterializedDirectoryTotals()
+        for child in children {
+            totals.include(child)
+        }
+        return repairingDirectoryRecord(node, totals: totals)
+    }
+
     private nonisolated static func repairingDirectoryRecord(
         _ node: FileNodeRecord,
-        children: [FileNodeRecord]
+        childIndices: ArraySlice<FileTreeNodeIndex>,
+        nodes: [FileNodeRecord]
     ) -> FileNodeRecord {
-        let allocatedSize = children.reduce(into: Int64(0)) { result, child in
-            result = saturatingAdd(result, child.allocatedSize)
+        var totals = MaterializedDirectoryTotals()
+        for childIndex in childIndices {
+            totals.include(nodes[Int(childIndex.rawValue)])
         }
-        let logicalSize = children.reduce(into: Int64(0)) { result, child in
-            result = saturatingAdd(result, child.logicalSize)
-        }
-        let descendantFileCount = children.reduce(into: 0) { result, child in
-            if child.isDirectory {
-                result = saturatingAdd(result, child.descendantFileCount)
-            } else if !child.isSymbolicLink && !child.isSynthetic {
-                result = saturatingAdd(result, 1)
-            }
-        }
+        return repairingDirectoryRecord(node, totals: totals)
+    }
 
+    private nonisolated static func repairingDirectoryRecord(
+        _ node: FileNodeRecord,
+        totals: MaterializedDirectoryTotals
+    ) -> FileNodeRecord {
         return FileNodeRecord(
             id: node.id,
             url: node.url,
             name: node.name,
             isDirectory: node.isDirectory,
             isSymbolicLink: node.isSymbolicLink,
-            allocatedSize: allocatedSize,
-            logicalSize: logicalSize,
-            descendantFileCount: descendantFileCount,
+            allocatedSize: totals.allocatedSize,
+            logicalSize: totals.logicalSize,
+            descendantFileCount: totals.descendantFileCount,
             lastModified: node.lastModified,
             fileIdentity: node.fileIdentity,
             linkCount: node.linkCount,
             isPackage: node.isPackage,
-            isAccessible: node.isSelfAccessible && children.allSatisfy(\.isAccessible),
+            isAccessible: node.isSelfAccessible && totals.childrenAreAccessible,
             isSelfAccessible: node.isSelfAccessible,
             isSynthetic: node.isSynthetic,
             isAutoSummarized: node.isAutoSummarized

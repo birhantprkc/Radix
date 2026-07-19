@@ -445,7 +445,7 @@ extension ScanArchiveService {
 
         return FileTreeStore(
             verifiedRootIndex: rootIndex,
-            nodes: nodes,
+            nodes: &nodes,
             indexByNodeID: indexByNodeID,
             parentRawIndices: parentRawIndices,
             childSpans: childSpans,

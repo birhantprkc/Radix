@@ -865,6 +865,32 @@ final class ScanArchiveServiceTests: XCTestCase {
         })
     }
 
+    func testImportRepairsMismatchedMaterializedDirectoryTotals() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeArchiveSnapshot()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let expectedFolder = try XCTUnwrap(snapshot.treeStore.node(id: "/archive/folder"))
+
+        let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
+            if archiveNodeName(node) == "folder" {
+                setArchiveNodeAllocatedSize(1, in: &node)
+            }
+        }
+        try rewriteManifestNodeChecksum(checksum, in: archiveURL)
+
+        let imported = try await service.importSnapshot(from: archiveURL).snapshot
+        let importedFolder = try XCTUnwrap(imported.treeStore.node(id: expectedFolder.id))
+
+        XCTAssertEqual(importedFolder.allocatedSize, expectedFolder.allocatedSize)
+        XCTAssertEqual(importedFolder.logicalSize, expectedFolder.logicalSize)
+        XCTAssertEqual(importedFolder.descendantFileCount, expectedFolder.descendantFileCount)
+    }
+
     func testLargeTopologyRoundTripsDeterministicOrder() async throws {
         let service = ScanArchiveService()
         let snapshot = makeLargeArchiveSnapshot(childCount: 1_500)
@@ -1179,6 +1205,15 @@ final class ScanArchiveServiceTests: XCTestCase {
             node["name"] = name
         } else {
             node["n"] = name
+        }
+    }
+
+    private func setArchiveNodeAllocatedSize(_ size: Int64, in node: inout [String: Any]) {
+        if var payload = node["v"] as? [String: Any] {
+            payload["a"] = size
+            node["v"] = payload
+        } else {
+            node["a"] = size
         }
     }
 
