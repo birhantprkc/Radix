@@ -1865,17 +1865,21 @@ actor ScanEngine {
 
             if completed.isTraversable {
                 // Traversable directories must still be materialized when empty.
-                let childKeys = childrenKeysByKey[key] ?? []
+                var sortedChildKeys = childrenKeysByKey[key] ?? []
                 childrenKeysByKey[key] = nil
-                var sortedChildKeys: [Int] = []
-                sortedChildKeys.reserveCapacity(childKeys.count)
-                for (offset, childKey) in childKeys.enumerated() {
+                var keptChildCount = 0
+                for offset in sortedChildKeys.indices {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
+                    let childKey = sortedChildKeys[offset]
                     if resolvedNodeByKey[childKey] != nil {
-                        sortedChildKeys.append(childKey)
+                        sortedChildKeys[keptChildCount] = childKey
+                        keptChildCount += 1
                     }
+                }
+                if keptChildCount < sortedChildKeys.count {
+                    sortedChildKeys.removeSubrange(keptChildCount..<sortedChildKeys.endIndex)
                 }
                 // Duplicate paths are rejected before keys are assigned in phase 1,
                 // so children are already unique here.
