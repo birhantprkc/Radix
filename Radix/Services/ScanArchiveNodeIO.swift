@@ -438,15 +438,21 @@ extension ScanArchiveService {
         rootOrdinal: Int,
         expectedTargetPath: String
     ) throws -> FileNodeRecord {
+        let hasValidatedRelativeLocation = ordinal != rootOrdinal &&
+            record.explicitID == nil &&
+            record.explicitPath == nil &&
+            record.relativePath != nil
         let node = try record.payload.modelNode(
             resolvedID: location.id,
             resolvedPath: location.path,
-            resolvedName: record.payload.name.isEmpty ? record.relativePath : nil
+            resolvedName: record.payload.name.isEmpty ? record.relativePath : nil,
+            locationAlreadyValidated: hasValidatedRelativeLocation
         )
         if ordinal == rootOrdinal, node.url.path != expectedTargetPath {
             throw ScanArchiveError.topology(localized: "root path does not match target path")
         }
-        if !node.isSynthetic,
+        if !hasValidatedRelativeLocation,
+           !node.isSynthetic,
            !Self.path(node.url.path, isContainedIn: expectedTargetPath) {
             throw ScanArchiveError.topology(localized: "node \(node.id) path is outside target")
         }
@@ -628,6 +634,7 @@ extension ScanArchiveService {
         nodes.reserveCapacity(expectedNodeCount)
         var indexByNodeID: [String: FileTreeNodeIndex] = [:]
         indexByNodeID.reserveCapacity(expectedNodeCount)
+        var explicitPathByOrdinal: [Int: String] = [:]
 
         try await readNodeBatches(
             from: url,
@@ -653,7 +660,7 @@ extension ScanArchiveService {
                     let parentNode = nodes[parentOrdinal]
                     parent = ScanArchiveNodeLocation(
                         id: parentNode.id,
-                        path: parentNode.url.path
+                        path: explicitPathByOrdinal[parentOrdinal] ?? parentNode.id
                     )
                 }
 
@@ -664,6 +671,9 @@ extension ScanArchiveService {
                     expectedRootID: expectedRootID,
                     parent: parent
                 )
+                if location.path != location.id {
+                    explicitPathByOrdinal[ordinal] = location.path
+                }
                 let node = try modelCompactNode(
                     record,
                     location: location,

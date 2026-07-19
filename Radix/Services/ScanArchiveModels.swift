@@ -290,7 +290,8 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
     func modelNode(
         resolvedID: String? = nil,
         resolvedPath: String? = nil,
-        resolvedName: String? = nil
+        resolvedName: String? = nil,
+        locationAlreadyValidated: Bool = false
     ) throws -> FileNodeRecord {
         let modelID = resolvedID ?? id
         guard !modelID.isEmpty else {
@@ -312,7 +313,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         }
 
         let nodeURL = URL(filePath: modelPath, directoryHint: isDirectory ? .isDirectory : .notDirectory)
-        guard isSynthetic || modelID == nodeURL.path else {
+        guard locationAlreadyValidated || isSynthetic || modelID == nodeURL.path else {
             throw ScanArchiveError.nodes(localized: "node \(modelID) path does not match ID")
         }
 

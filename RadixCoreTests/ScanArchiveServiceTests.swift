@@ -781,6 +781,26 @@ final class ScanArchiveServiceTests: XCTestCase {
         }
     }
 
+    func testImportRejectsUnsafeRelativePathComponent() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+
+        let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
+            if archiveNodeName(node) == "hard-link-a.bin" {
+                node["x"] = ".."
+            }
+        }
+        try rewriteManifestNodeChecksum(checksum, in: archiveURL)
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject unsafe relative path components.")
+        } catch ScanArchiveError.nodes(let detail) {
+            XCTAssertTrue(detail.contains("relative path"))
+        }
+    }
+
     func testImportRejectsTargetRootPathMismatch() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
