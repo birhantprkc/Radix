@@ -115,7 +115,7 @@ extension ScanArchiveService {
         return parentIDByID
     }
 
-    private static func path(_ childPath: String, isContainedIn parentPath: String) -> Bool {
+    static func path(_ childPath: String, isContainedIn parentPath: String) -> Bool {
         guard childPath != parentPath else { return true }
         if parentPath == "/" {
             return childPath.hasPrefix("/")

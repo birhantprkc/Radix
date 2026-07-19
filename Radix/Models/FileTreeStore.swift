@@ -21,7 +21,7 @@ nonisolated struct FileTreeSubtreeContents: Sendable {
     let childIDsByID: [String: [String]]
 }
 
-nonisolated private struct FileTreeChildSpan: Sendable {
+nonisolated struct FileTreeChildSpan: Sendable {
     var start: UInt32 = 0
     var count: UInt32 = 0
 }
@@ -141,6 +141,7 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
     init(
         verifiedRootIndex rootIndex: FileTreeNodeIndex,
         nodes: [FileNodeRecord],
+        indexByNodeID verifiedIndexByNodeID: [String: FileTreeNodeIndex]? = nil,
         parentRawIndices: [UInt32],
         childSpans: [FileTreeChildSpan],
         childIndices: [FileTreeNodeIndex],
@@ -153,14 +154,21 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
         assert(orderedNodeIndices.count == nodes.count)
         assert(childIndices.count == max(nodes.count - 1, 0))
 
-        var indexByNodeID: [String: FileTreeNodeIndex] = [:]
-        indexByNodeID.reserveCapacity(nodes.count)
-        for (offset, node) in nodes.enumerated() {
-            let previous = indexByNodeID.updateValue(
-                FileTreeNodeIndex(rawValue: UInt32(offset)),
-                forKey: node.id
-            )
-            precondition(previous == nil, "Verified FileTreeStore contains duplicate node IDs.")
+        let indexByNodeID: [String: FileTreeNodeIndex]
+        if let verifiedIndexByNodeID {
+            precondition(verifiedIndexByNodeID.count == nodes.count, "Verified node index count does not match nodes.")
+            indexByNodeID = verifiedIndexByNodeID
+        } else {
+            var rebuiltIndexByNodeID: [String: FileTreeNodeIndex] = [:]
+            rebuiltIndexByNodeID.reserveCapacity(nodes.count)
+            for (offset, node) in nodes.enumerated() {
+                let previous = rebuiltIndexByNodeID.updateValue(
+                    FileTreeNodeIndex(rawValue: UInt32(offset)),
+                    forKey: node.id
+                )
+                precondition(previous == nil, "Verified FileTreeStore contains duplicate node IDs.")
+            }
+            indexByNodeID = rebuiltIndexByNodeID
         }
 
         self.rootIndex = rootIndex
@@ -564,6 +572,44 @@ nonisolated struct FileTreeStore: Sendable {
         self.nodeRecords = nodes
         self.topologyArena = topologyArena
         self.precomputedAggregateStats = aggregateStats
+    }
+
+    /// Fast construction for imported compact archives whose ordinal topology
+    /// and node index were validated while the records were materialized.
+    nonisolated init(
+        verifiedRootIndex rootIndex: FileTreeNodeIndex,
+        nodes: [FileNodeRecord],
+        indexByNodeID: [String: FileTreeNodeIndex],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
+        orderedNodeIndices: [FileTreeNodeIndex]
+    ) {
+        let topologyArena = FileTreeTopologyArena(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices
+        )
+        let rootOffset = Int(rootIndex.rawValue)
+        precondition(nodes.indices.contains(rootOffset), "Verified FileTreeStore root is missing.")
+
+        var statsAccumulator = AggregateStatsAccumulator()
+        for offset in nodes.indices {
+            statsAccumulator.include(
+                nodes[offset],
+                hasMaterializedChildren: childSpans[offset].count > 0
+            )
+        }
+
+        self.contentID = UUID()
+        self.rootID = nodes[rootOffset].id
+        self.nodeRecords = nodes
+        self.topologyArena = topologyArena
+        self.precomputedAggregateStats = statsAccumulator.stats(root: nodes[rootOffset])
     }
 
     private nonisolated init(

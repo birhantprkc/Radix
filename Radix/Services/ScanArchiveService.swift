@@ -410,18 +410,6 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         ) { detail in
             ScanArchiveError.topology(detail)
         }
-        let nodePayload: ScanArchiveNodePayload
-        switch encodedNodePayload {
-        case .legacy(let payload):
-            nodePayload = payload
-        case .compact(let records):
-            nodePayload = try materializeCompactNodes(
-                records,
-                topology: archivedTopology,
-                expectedRootID: manifest.snapshot.rootID
-            )
-        }
-        let topology = try archivedTopology.resolvedTopology(orderedNodeIDs: nodePayload.orderedNodeIDs)
 
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingMetadata,
@@ -439,24 +427,39 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             phase: .rebuildingSnapshot,
             message: String(localized: "Rebuilding snapshot", comment: "Progress message while rebuilding an imported snapshot.")
         ))
-        try validateCounts(manifest: manifest, nodesByID: nodePayload.nodesByID, warnings: warnings)
-        let rebuiltParentIDs = try await validateTopology(
-            topology,
-            nodesByID: nodePayload.nodesByID,
-            expectedRootID: manifest.snapshot.rootID,
-            expectedTargetPath: manifest.snapshot.target.path,
-            progressReporter: progressReporter
-        )
-        let treeStore = FileTreeStore(
-            rootID: topology.rootID,
-            nodesByID: nodePayload.nodesByID,
-            childIDsByID: topology.childIDsByID,
-            parentIDByID: rebuiltParentIDs
-        )
+
+        let treeStore: FileTreeStore
+        switch encodedNodePayload {
+        case .legacy(let payload):
+            let topology = try archivedTopology.resolvedTopology(orderedNodeIDs: payload.orderedNodeIDs)
+            try validateCounts(manifest: manifest, nodesByID: payload.nodesByID, warnings: warnings)
+            let rebuiltParentIDs = try await validateTopology(
+                topology,
+                nodesByID: payload.nodesByID,
+                expectedRootID: manifest.snapshot.rootID,
+                expectedTargetPath: manifest.snapshot.target.path,
+                progressReporter: progressReporter
+            )
+            treeStore = FileTreeStore(
+                rootID: topology.rootID,
+                nodesByID: payload.nodesByID,
+                childIDsByID: topology.childIDsByID,
+                parentIDByID: rebuiltParentIDs
+            )
+        case .compact(let records):
+            try validateCounts(manifest: manifest, nodeCount: records.count, warnings: warnings)
+            treeStore = try await materializeCompactTreeStore(
+                records,
+                topology: archivedTopology,
+                expectedRootID: manifest.snapshot.rootID,
+                expectedTargetPath: manifest.snapshot.target.path,
+                progressReporter: progressReporter
+            )
+        }
         var importedWarnings = try warnings.map { try $0.modelWarning() }
         let computedStats = treeStore.aggregateStats
         if !archivedStats.matches(computedStats) {
-            importedWarnings.append(Self.repairedStatsWarning(rootID: topology.rootID))
+            importedWarnings.append(Self.repairedStatsWarning(rootID: treeStore.rootID))
         }
 
         let snapshot = ScanSnapshot(
@@ -589,8 +592,16 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         nodesByID: [String: FileNodeRecord],
         warnings: [ScanArchiveWarningV1]
     ) throws {
-        guard nodesByID.count == manifest.snapshot.nodeCount else {
-            throw ScanArchiveError.nodes(localized: "manifest expected \(manifest.snapshot.nodeCount) nodes, found \(nodesByID.count)")
+        try validateCounts(manifest: manifest, nodeCount: nodesByID.count, warnings: warnings)
+    }
+
+    private func validateCounts(
+        manifest: ScanArchiveDocument,
+        nodeCount: Int,
+        warnings: [ScanArchiveWarningV1]
+    ) throws {
+        guard nodeCount == manifest.snapshot.nodeCount else {
+            throw ScanArchiveError.nodes(localized: "manifest expected \(manifest.snapshot.nodeCount) nodes, found \(nodeCount)")
         }
         guard warnings.count == manifest.snapshot.warningCount else {
             throw ScanArchiveError.manifest(localized: "manifest expected \(manifest.snapshot.warningCount) warnings, found \(warnings.count)")
