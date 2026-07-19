@@ -3,6 +3,20 @@ import XCTest
 @testable import RadixCore
 
 final class IncrementalScanServiceTests: XCTestCase {
+    func testShallowRelistClassificationBudgetAccountsForConcurrentRelists() {
+        var options = ScanOptions()
+        options.directoryTraversalWorkerLimit = 4
+        options.directoryClassificationWorkerLimit = 8
+
+        let limit = ScanEngine.shallowRelistClassificationWorkerLimit(
+            for: options,
+            relistWorkerLimit: 4
+        )
+
+        XCTAssertGreaterThanOrEqual(limit, 1)
+        XCTAssertLessThan(limit, 8)
+    }
+
     func testRootShallowRelistAppliesMixedMembershipChanges() async throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

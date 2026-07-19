@@ -741,7 +741,8 @@ actor ScanEngine {
     nonisolated func shallowDirectoryListing(
         at directoryURL: URL,
         scanTarget: ScanTarget,
-        options: ScanOptions
+        options: ScanOptions,
+        classificationWorkerLimit: Int? = nil
     ) async throws -> ShallowDirectoryListing {
         let cancellationCheck: CancellationCheck = { try Task.checkCancellation() }
         let metadataLoader = ScanMetadataLoader(
@@ -779,9 +780,8 @@ actor ScanEngine {
             parentDirectoryLease: nil,
             nativeName: nil,
             expectedIdentity: directoryMetadata.fileIdentity,
-            classificationWorkerLimit: ScanConcurrencyPolicy.directoryClassificationWorkerLimit(
-                for: options
-            ),
+            classificationWorkerLimit: classificationWorkerLimit
+                ?? ScanConcurrencyPolicy.directoryClassificationWorkerLimit(for: options),
             cancellationCheck: cancellationCheck
         )
         contents.directoryLease?.close()
@@ -793,6 +793,18 @@ actor ScanEngine {
 
     nonisolated static func shallowRelistWorkerLimit(for options: ScanOptions) -> Int {
         ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
+    }
+
+    nonisolated static func shallowRelistClassificationWorkerLimit(
+        for options: ScanOptions,
+        relistWorkerLimit: Int
+    ) -> Int {
+        ScanConcurrencyPolicy.effectiveDirectoryClassificationWorkerLimit(
+            traversalWorkerLimit: relistWorkerLimit,
+            classificationWorkerLimit: ScanConcurrencyPolicy.directoryClassificationWorkerLimit(
+                for: options
+            )
+        )
     }
 
     nonisolated static func requiresDeepScanForAutoSummary(

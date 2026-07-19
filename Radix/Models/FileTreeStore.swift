@@ -15,6 +15,12 @@ nonisolated struct PreparedFileTreeNodeSet: Sendable {
     fileprivate let indices: Set<FileTreeNodeIndex>
 }
 
+nonisolated struct FileTreeSubtreeContents: Sendable {
+    let root: FileNodeRecord
+    let nodesByID: [String: FileNodeRecord]
+    let childIDsByID: [String: [String]]
+}
+
 nonisolated private struct FileTreeChildSpan: Sendable {
     var start: UInt32 = 0
     var count: UInt32 = 0
@@ -1668,12 +1674,45 @@ nonisolated struct FileTreeStore: Sendable {
         rootedAt targetID: String,
         cancellationCheck: () throws -> Void
     ) throws -> FileTreeStore? {
+        guard let contents = try subtreeContents(
+            rootedAt: targetID,
+            cancellationCheck: cancellationCheck
+        ) else { return nil }
+
+        var parentIDsByID: [String: String] = [:]
+        parentIDsByID.reserveCapacity(max(contents.nodesByID.count - 1, 0))
+        var visitedChildCount = 0
+        for (parentID, childIDs) in contents.childIDsByID {
+            for childID in childIDs {
+                if visitedChildCount.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                parentIDsByID[childID] = parentID
+                visitedChildCount += 1
+            }
+        }
+        let scopedStore = FileTreeStore(
+            rootID: targetID,
+            nodesByID: contents.nodesByID,
+            childIDsByID: contents.childIDsByID,
+            parentIDByID: parentIDsByID
+        )
+        return try HardLinkDeduplicator.rebalancedStore(scopedStore, cancellationCheck: cancellationCheck)
+    }
+
+    nonisolated func subtreeContents(rootedAt targetID: String) -> FileTreeSubtreeContents? {
+        try? subtreeContents(rootedAt: targetID, cancellationCheck: {})
+    }
+
+    nonisolated func subtreeContents(
+        rootedAt targetID: String,
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeSubtreeContents? {
         try cancellationCheck()
         guard let targetIndex = nodeIndex(id: targetID) else { return nil }
 
         var scopedNodes: [String: FileNodeRecord] = [:]
         var scopedChildIDs: [String: [String]] = [:]
-        var scopedParentIDs: [String: String] = [:]
         var stack = [targetIndex]
 
         while let currentIndex = stack.popLast() {
@@ -1693,7 +1732,6 @@ nonisolated struct FileTreeStore: Sendable {
                 }
                 guard let childID = self.node(at: childIndex)?.id else { continue }
                 scopedChildren.append(childID)
-                scopedParentIDs[childID] = currentID
                 stack.append(childIndex)
             }
 
@@ -1702,13 +1740,12 @@ nonisolated struct FileTreeStore: Sendable {
             }
         }
 
-        let scopedStore = FileTreeStore(
-            rootID: targetID,
+        guard let root = scopedNodes[targetID] else { return nil }
+        return FileTreeSubtreeContents(
+            root: root,
             nodesByID: scopedNodes,
-            childIDsByID: scopedChildIDs,
-            parentIDByID: scopedParentIDs
+            childIDsByID: scopedChildIDs
         )
-        return try HardLinkDeduplicator.rebalancedStore(scopedStore, cancellationCheck: cancellationCheck)
     }
 
     nonisolated func subtreeNodeIDs(rootedAt id: String) -> [String] {

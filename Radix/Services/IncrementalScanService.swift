@@ -165,6 +165,10 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                     ScanEngine.shallowRelistWorkerLimit(for: relistOptions),
                     relistDirectoryIDs.count
                 )
+                let classificationWorkerLimit = ScanEngine.shallowRelistClassificationWorkerLimit(
+                    for: relistOptions,
+                    relistWorkerLimit: workerLimit
+                )
                 var nextIndex = 0
                 func addNextRelist() {
                     guard nextIndex < relistDirectoryIDs.count else { return }
@@ -175,7 +179,8 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                             directoryID: nodeID,
                             target: target,
                             options: relistOptions,
-                            baseline: baseline
+                            baseline: baseline,
+                            classificationWorkerLimit: classificationWorkerLimit
                         )
                     }
                 }
@@ -297,9 +302,10 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         directoryID: String,
         target: ScanTarget,
         options: ScanOptions,
-        baseline: ScanSnapshot
+        baseline: ScanSnapshot,
+        classificationWorkerLimit: Int
     ) async throws -> ShallowReplacement {
-        guard let originalSubtree = baseline.treeStore.subtree(rootedAt: directoryID),
+        guard let originalSubtree = baseline.treeStore.subtreeContents(rootedAt: directoryID),
               originalSubtree.root.isDirectory,
               !originalSubtree.root.isSymbolicLink else {
             throw ShallowRelistError.invalidDirectory
@@ -323,7 +329,8 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         let listing = try await engine.shallowDirectoryListing(
             at: originalSubtree.root.url,
             scanTarget: target,
-            options: options
+            options: options,
+            classificationWorkerLimit: classificationWorkerLimit
         )
         guard listing.directoryMetadata.fileIdentity != nil,
               listing.directoryMetadata.fileIdentity == originalSubtree.root.fileIdentity else {
@@ -332,7 +339,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
 
         var nodesByID = originalSubtree.nodesByID
         var childIDsByID = originalSubtree.childIDsByID
-        let originalChildIDs = originalSubtree.childIDs(of: directoryID)
+        let originalChildIDs = originalSubtree.childIDsByID[directoryID] ?? []
         var currentChildIDs = Set<String>()
         currentChildIDs.reserveCapacity(listing.entries.count)
         var preservedSubtreeIDs = Set<String>()
@@ -350,7 +357,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             }
 
             if canPreserveDirectory(
-                baselineNode: originalSubtree.node(id: childID),
+                baselineNode: originalSubtree.nodesByID[childID],
                 metadata: metadata
             ) {
                 preservedSubtreeIDs.insert(childID)
@@ -359,7 +366,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
 
             removeSubtree(
                 rootedAt: childID,
-                from: originalSubtree,
+                originalChildIDsByID: originalSubtree.childIDsByID,
                 nodesByID: &nodesByID,
                 childIDsByID: &childIDsByID
             )
@@ -390,7 +397,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         for removedChildID in originalChildIDs where !currentChildIDs.contains(removedChildID) {
             removeSubtree(
                 rootedAt: removedChildID,
-                from: originalSubtree,
+                originalChildIDsByID: originalSubtree.childIDsByID,
                 nodesByID: &nodesByID,
                 childIDsByID: &childIDsByID
             )
@@ -481,11 +488,13 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
 
     private nonisolated func removeSubtree(
         rootedAt nodeID: String,
-        from originalSubtree: FileTreeStore,
+        originalChildIDsByID: [String: [String]],
         nodesByID: inout [String: FileNodeRecord],
         childIDsByID: inout [String: [String]]
     ) {
-        for removedID in originalSubtree.subtreeNodeIDs(rootedAt: nodeID) {
+        var stack = [nodeID]
+        while let removedID = stack.popLast() {
+            stack.append(contentsOf: originalChildIDsByID[removedID] ?? [])
             nodesByID.removeValue(forKey: removedID)
             childIDsByID.removeValue(forKey: removedID)
         }
