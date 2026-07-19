@@ -70,6 +70,14 @@ nonisolated enum ScanArchiveProgressPhase: String, Sendable {
     case openingSnapshot
 }
 
+nonisolated enum ScanArchiveImportProfilePhase: String, CaseIterable, Sendable {
+    case readArchiveMetadata = "read_archive_metadata"
+    case prepareTopology = "prepare_topology"
+    case readAndMaterializeNodes = "read_and_materialize_nodes"
+    case finalizeTreeStore = "finalize_tree_store"
+    case finishSnapshot = "finish_snapshot"
+}
+
 nonisolated struct ScanArchiveProgress: Equatable, Sendable {
     let phase: ScanArchiveProgressPhase
     let completedUnitCount: Int
@@ -242,12 +250,30 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private nonisolated static let maximumWarningsByteCount = 64 * 1_024 * 1_024
     private nonisolated static let sectionReadChunkByteCount = 64 * 1_024
 
-    init(fileManager: FileManager = .default) {
+    private let importProfileReporter: (@Sendable (ScanArchiveImportProfilePhase, Duration) -> Void)?
+
+    init(
+        fileManager: FileManager = .default,
+        importProfileReporter: (@Sendable (ScanArchiveImportProfilePhase, Duration) -> Void)? = nil
+    ) {
         _ = fileManager
+        self.importProfileReporter = importProfileReporter
     }
 
     private var fileManager: FileManager {
         .default
+    }
+
+    func importProfileStart() -> ContinuousClock.Instant? {
+        importProfileReporter == nil ? nil : ContinuousClock.now
+    }
+
+    func finishImportProfile(
+        _ phase: ScanArchiveImportProfilePhase,
+        startedAt: ContinuousClock.Instant?
+    ) {
+        guard let importProfileReporter, let startedAt else { return }
+        importProfileReporter(phase, startedAt.duration(to: .now))
     }
 
     func export(
@@ -355,6 +381,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         from sourceURL: URL,
         progressReporter: ScanArchiveProgressReporter? = nil
     ) async throws -> ScanArchiveImportResult {
+        let metadataStartedAt = importProfileStart()
         try Task.checkCancellation()
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingManifest,
@@ -402,6 +429,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         ) { detail in
             ScanArchiveError.topology(detail)
         }
+        finishImportProfile(.readArchiveMetadata, startedAt: metadataStartedAt)
 
         let compactTreeStore: FileTreeStore?
         let legacyNodePayload: ScanArchiveNodePayload?
@@ -417,6 +445,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             )
             legacyNodePayload = nil
         } else {
+            let nodeReadingStartedAt = importProfileStart()
             let encodedNodePayload = try await readNodes(
                 from: nodesURL,
                 expectedChecksum: manifest.integrity.nodes,
@@ -424,12 +453,15 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
                 formatVersion: manifest.formatVersion,
                 progressReporter: progressReporter
             )
+            finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
             guard case .legacy(let payload) = encodedNodePayload else {
                 throw ScanArchiveError.nodes(localized: "legacy node payload was not decoded")
             }
             compactTreeStore = nil
             legacyNodePayload = payload
         }
+
+        let snapshotFinalizationStartedAt = importProfileStart()
 
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingMetadata,
@@ -498,6 +530,8 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
                 liveActionCapability: manifest.snapshot.pathMode == .absolute ? .pathValidation : .disabled
             ))
         )
+
+        finishImportProfile(.finishSnapshot, startedAt: snapshotFinalizationStartedAt)
 
         return ScanArchiveImportResult(archiveURL: sourceURL, snapshot: snapshot, manifest: manifest)
     }

@@ -605,29 +605,36 @@ extension ScanArchiveService {
         expectedTargetPath: String,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> FileTreeStore {
+        let topologyPreparationStartedAt = importProfileStart()
         let topology = try prepareCompactTopology(
             archivedTopology,
             expectedNodeCount: expectedNodeCount
         )
+        finishImportProfile(.prepareTopology, startedAt: topologyPreparationStartedAt)
         guard topology.parentsPrecedeChildren else {
+            let nodeReadingStartedAt = importProfileStart()
             let records: [ScanArchiveCompactNode] = try await readNodeRecords(
                 from: url,
                 expectedChecksum: expectedChecksum,
                 expectedNodeCount: expectedNodeCount,
                 progressReporter: progressReporter
             )
+            finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
             guard records.count == expectedNodeCount else {
                 throw ScanArchiveError.nodes(localized:
                     "manifest expected \(expectedNodeCount) nodes, found \(records.count)"
                 )
             }
-            return try await materializeCompactTreeStore(
+            let treeFinalizationStartedAt = importProfileStart()
+            let treeStore = try await materializeCompactTreeStore(
                 records,
                 topology: topology,
                 expectedRootID: expectedRootID,
                 expectedTargetPath: expectedTargetPath,
                 progressReporter: progressReporter
             )
+            finishImportProfile(.finalizeTreeStore, startedAt: treeFinalizationStartedAt)
+            return treeStore
         }
 
         var nodes: [FileNodeRecord] = []
@@ -636,6 +643,7 @@ extension ScanArchiveService {
         indexByNodeID.reserveCapacity(expectedNodeCount)
         var explicitPathByOrdinal: [Int: String] = [:]
 
+        let nodeReadingStartedAt = importProfileStart()
         try await readNodeBatches(
             from: url,
             expectedChecksum: expectedChecksum,
@@ -693,6 +701,7 @@ extension ScanArchiveService {
                 nodes.append(node)
             }
         }
+        finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
 
         guard nodes.count == expectedNodeCount else {
             throw ScanArchiveError.nodes(localized:
@@ -700,7 +709,8 @@ extension ScanArchiveService {
             )
         }
         let rootIndex = FileTreeNodeIndex(rawValue: UInt32(topology.rootOrdinal))
-        return FileTreeStore(
+        let treeFinalizationStartedAt = importProfileStart()
+        let treeStore = FileTreeStore(
             verifiedRootIndex: rootIndex,
             nodes: &nodes,
             indexByNodeID: indexByNodeID,
@@ -709,6 +719,8 @@ extension ScanArchiveService {
             childIndices: topology.childIndices,
             orderedNodeIndices: topology.orderedNodeIndices
         )
+        finishImportProfile(.finalizeTreeStore, startedAt: treeFinalizationStartedAt)
+        return treeStore
     }
 
     private func readNodeRecords<Record: Decodable & Sendable>(

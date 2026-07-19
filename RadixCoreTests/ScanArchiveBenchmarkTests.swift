@@ -167,39 +167,29 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         }
 
         let archiveURL = URL(filePath: archivePath, directoryHint: .isDirectory)
-        let manifest = try Self.archiveJSONDecoder().decode(
-            ScanArchiveDocument.self,
-            from: Data(contentsOf: archiveURL.appending(path: "manifest.json"))
-        )
-        let service = ScanArchiveService()
-        let topologyDecode = try await Self.measureMemoryAndTime {
-            try Self.archiveJSONDecoder().decode(
-                ScanArchiveTopology.self,
-                from: Data(contentsOf: archiveURL.appending(path: manifest.sections.topology))
-            )
+        let importPhases = ImportPhaseRecorder()
+        let service = ScanArchiveService { phase, duration in
+            importPhases.record(phase, duration: duration)
         }
-        guard manifest.formatVersion == 4 else {
+        let imported = try await Self.measureMemoryAndTime {
+            try await service.importSnapshot(from: archiveURL)
+        }
+        guard imported.value.manifest.formatVersion == 4 else {
             throw XCTSkip("Real snapshot import profiling requires a compact v4 archive.")
         }
-        let pipeline = try await Self.measureMemoryAndTime {
-            try await service.readCompactTreeStore(
-                from: archiveURL.appending(path: manifest.sections.nodes),
-                expectedChecksum: manifest.integrity.nodes,
-                expectedNodeCount: manifest.snapshot.nodeCount,
-                topology: topologyDecode.value,
-                expectedRootID: manifest.snapshot.rootID,
-                expectedTargetPath: manifest.snapshot.target.path,
-                progressReporter: nil
-            )
-        }
 
-        XCTAssertEqual(pipeline.value.nodeCount, manifest.snapshot.nodeCount)
+        XCTAssertEqual(
+            imported.value.snapshot.treeStore.nodeCount,
+            imported.value.manifest.snapshot.nodeCount
+        )
+        let phaseSummary = importPhases.measurements().map { phase, duration in
+            "\(phase.rawValue)=\(Self.secondsString(Self.seconds(duration)))"
+        }.joined(separator: " ")
         print(
             """
-            RADIX_IMPORT_PROFILE_RESULT nodes=\(manifest.snapshot.nodeCount) \
-            topology_decode=\(Self.secondsString(topologyDecode.elapsedSeconds)) \
-            pipeline=\(Self.secondsString(pipeline.elapsedSeconds)) \
-            pipeline_peak_rss_delta=\(pipeline.peakDeltaRSS)
+            RADIX_IMPORT_PROFILE_RESULT nodes=\(imported.value.manifest.snapshot.nodeCount) \
+            import_seconds=\(Self.secondsString(imported.elapsedSeconds)) \
+            import_peak_rss_delta=\(imported.peakDeltaRSS) \(phaseSummary)
             """
         )
     }
@@ -305,6 +295,25 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             lock.lock()
             defer { lock.unlock() }
             return ScanComparisonProfilePhase.allCases.compactMap { phase in
+                durationsByPhase[phase].map { (phase, $0) }
+            }
+        }
+    }
+
+    private final class ImportPhaseRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var durationsByPhase: [ScanArchiveImportProfilePhase: Duration] = [:]
+
+        func record(_ phase: ScanArchiveImportProfilePhase, duration: Duration) {
+            lock.lock()
+            durationsByPhase[phase, default: .zero] += duration
+            lock.unlock()
+        }
+
+        func measurements() -> [(ScanArchiveImportProfilePhase, Duration)] {
+            lock.lock()
+            defer { lock.unlock() }
+            return ScanArchiveImportProfilePhase.allCases.compactMap { phase in
                 durationsByPhase[phase].map { (phase, $0) }
             }
         }
