@@ -756,6 +756,71 @@ actor ScanEngine {
         ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
     }
 
+    nonisolated static func requiresDeepScanForAutoSummary(
+        at directoryURL: URL,
+        scanTarget: ScanTarget,
+        options: ScanOptions
+    ) -> Bool {
+        guard options.autoSummarizeDirectories,
+              let depth = relativeDepth(of: directoryURL, under: scanTarget.url) else {
+            return false
+        }
+        let minimumDepth = options.autoSummarizeMinDepthForSummarization
+            ?? AtomicDirectoryThresholds.minDepthForSummarization
+        return canProbeForAutoSummary(
+            at: directoryURL,
+            depth: depth,
+            minimumDepth: minimumDepth,
+            isNodeDependencyLayout: AtomicDirectorySummarizer.isNodeDependencyLayoutDirectory(
+                at: directoryURL
+            )
+        )
+    }
+
+    nonisolated static func subtreeScanOptions(
+        _ options: ScanOptions,
+        at subtreeURL: URL,
+        scanTarget: ScanTarget
+    ) -> ScanOptions {
+        guard options.autoSummarizeDirectories,
+              let depth = relativeDepth(of: subtreeURL, under: scanTarget.url) else {
+            return options
+        }
+        var adjusted = options
+        let minimumDepth = options.autoSummarizeMinDepthForSummarization
+            ?? AtomicDirectoryThresholds.minDepthForSummarization
+        adjusted.autoSummarizeMinDepthForSummarization = max(minimumDepth - depth, 0)
+        if depth >= 1,
+           AtomicDirectorySummarizer.isNodeDependencyLayoutDirectory(at: subtreeURL) {
+            adjusted.autoSummarizeMinDepthForSummarization = 0
+        }
+        return adjusted
+    }
+
+    private nonisolated static func relativeDepth(
+        of directoryURL: URL,
+        under rootURL: URL
+    ) -> Int? {
+        let rootComponents = rootURL.standardizedFileURL.pathComponents
+        let directoryComponents = directoryURL.standardizedFileURL.pathComponents
+        guard directoryComponents.count >= rootComponents.count,
+              directoryComponents.prefix(rootComponents.count).elementsEqual(rootComponents) else {
+            return nil
+        }
+        return directoryComponents.count - rootComponents.count
+    }
+
+    private nonisolated static func canProbeForAutoSummary(
+        at directoryURL: URL,
+        depth: Int,
+        minimumDepth: Int,
+        isNodeDependencyLayout: Bool
+    ) -> Bool {
+        depth >= minimumDepth
+            || (depth >= 1 && isNodeDependencyLayout)
+            || AtomicDirectorySummarizer.isKnownGeneratedDirectory(at: directoryURL)
+    }
+
     // The scan path (`performScan` and the helpers it calls) is `nonisolated` on
     // purpose. `ScanEngine`'s stored properties are all `let`, so the scan holds no
     // actor-mutable state and isolation bought us nothing but serialization on the
@@ -1282,11 +1347,12 @@ actor ScanEngine {
 
                     // Check if this directory should be summarized as atomic (many small files)
                     let isNodeDependencyLayout = AtomicDirectorySummarizer.isNodeDependencyLayoutDirectory(at: item.url)
-                    let isKnownGeneratedDirectory = AtomicDirectorySummarizer.isKnownGeneratedDirectory(at: item.url)
-                    let canProbeForAutoSummary =
-                        item.depth >= autoSummarizeMinDepth ||
-                        (item.depth >= 1 && isNodeDependencyLayout) ||
-                        isKnownGeneratedDirectory
+                    let canProbeForAutoSummary = Self.canProbeForAutoSummary(
+                        at: item.url,
+                        depth: item.depth,
+                        minimumDepth: autoSummarizeMinDepth,
+                        isNodeDependencyLayout: isNodeDependencyLayout
+                    )
                     let candidate = AtomicDirectoryScanCandidate(
                         item: item,
                         itemKey: itemKey,

@@ -113,6 +113,49 @@ final class IncrementalScanServiceTests: XCTestCase {
         XCTAssertEqual(incremental.incrementalCheckpoint?.eventID, 20)
     }
 
+    func testShallowRelistPreservesAutoSummaryThresholdSemantics() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let parentURL = rootURL.appending(path: "Parent", directoryHint: .isDirectory)
+        let candidateURL = parentURL.appending(path: "Candidate", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: candidateURL, withIntermediateDirectories: true)
+        try Data([0x1]).write(to: candidateURL.appending(path: "before.dat"))
+        let createdURL = candidateURL.appending(path: "after.dat")
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20)],
+            events: [
+                FileSystemEventRecord(
+                    path: createdURL.path,
+                    eventID: 15,
+                    flags: [.itemCreated, .itemIsFile]
+                ),
+            ]
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        var options = ScanOptions()
+        options.autoSummarizeMinFileCount = 2
+        options.autoSummarizeMaxAverageFileSize = 1_000_000
+        options.autoSummarizeMinDepthForSummarization = 2
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+        XCTAssertEqual(baseline.treeStore.node(id: candidateURL.path)?.isAutoSummarized, false)
+
+        try Data([0x2]).write(to: createdURL)
+        let incremental = try await finishedIncrementalSnapshot(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+        let full = try await finishedIncrementalSnapshot(
+            from: ScanEngine().scan(target: target, options: options)
+        )
+
+        try assertEquivalent(incremental, full)
+        XCTAssertEqual(incremental.treeStore.node(id: candidateURL.path)?.isAutoSummarized, true)
+        XCTAssertEqual(incremental.incrementalCheckpoint?.eventID, 20)
+    }
+
     func testFullScanCapturesCheckpointAndIncrementalRescanRelistsChangedDirectory() async throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

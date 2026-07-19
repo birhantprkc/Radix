@@ -214,10 +214,15 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                 return
             }
             var replacementSnapshot: ScanSnapshot?
+            let adjustedSubtreeOptions = ScanEngine.subtreeScanOptions(
+                subtreeOptions,
+                at: node.url,
+                scanTarget: target
+            )
             do {
                 for try await event in engine.scan(
                     target: ScanTarget(url: node.url),
-                    options: subtreeOptions
+                    options: adjustedSubtreeOptions
                 ) {
                     switch event {
                     case .progress(var metrics):
@@ -299,6 +304,22 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
               !originalSubtree.root.isSymbolicLink else {
             throw ShallowRelistError.invalidDirectory
         }
+        if ScanEngine.requiresDeepScanForAutoSummary(
+            at: originalSubtree.root.url,
+            scanTarget: target,
+            options: options
+        ) {
+            let replacement = try await scannedReplacement(
+                at: originalSubtree.root.url,
+                scanTarget: target,
+                options: options
+            )
+            return ShallowReplacement(
+                directoryID: directoryID,
+                treeStore: replacement.treeStore,
+                warnings: replacement.scanWarnings
+            )
+        }
         let listing = try await engine.shallowDirectoryListing(
             at: originalSubtree.root.url,
             scanTarget: target,
@@ -345,6 +366,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             if metadata.isDirectory, !metadata.isSymbolicLink {
                 let childSnapshot = try await scannedReplacement(
                     at: entry.url,
+                    scanTarget: target,
                     options: options
                 )
                 for (replacementID, node) in childSnapshot.treeStore.nodesByID {
@@ -415,12 +437,18 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
 
     private nonisolated func scannedReplacement(
         at url: URL,
+        scanTarget: ScanTarget,
         options: ScanOptions
     ) async throws -> ScanSnapshot {
         var snapshot: ScanSnapshot?
+        let adjustedOptions = ScanEngine.subtreeScanOptions(
+            options,
+            at: url,
+            scanTarget: scanTarget
+        )
         for try await event in engine.scan(
             target: ScanTarget(url: url),
-            options: options
+            options: adjustedOptions
         ) {
             switch event {
             case .finished(let finished):
