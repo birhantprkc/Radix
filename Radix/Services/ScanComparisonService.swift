@@ -503,6 +503,16 @@ nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
 
 nonisolated struct ScanComparisonService: Sendable {
     func compare(before: ScanSnapshot, after: ScanSnapshot) async throws -> ScanComparison {
+        if before.treeStore.rootID == after.treeStore.rootID {
+            return try await compareSameRoot(before: before, after: after)
+        }
+        return try await compareByRelativePath(before: before, after: after)
+    }
+
+    private func compareByRelativePath(
+        before: ScanSnapshot,
+        after: ScanSnapshot
+    ) async throws -> ScanComparison {
         try Task.checkCancellation()
         async let beforeNodesTask = Self.indexedNodes(in: before)
         async let afterNodesTask = Self.indexedNodes(in: after)
@@ -513,11 +523,109 @@ nonisolated struct ScanComparisonService: Sendable {
             afterNodes: afterNodes
         )
 
-        var rows: [ScanComparisonRow] = []
         let pathPartition = Self.partitionPaths(
             beforeNodes: beforeNodes,
             afterNodes: afterNodes
         )
+        let allocatedSizes = await allocatedSizesTask
+        return try makeComparison(
+            before: before,
+            after: after,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes,
+            pathPartition: pathPartition,
+            allocatedSizes: allocatedSizes
+        )
+    }
+
+    private func compareSameRoot(
+        before: ScanSnapshot,
+        after: ScanSnapshot
+    ) async throws -> ScanComparison {
+        try Task.checkCancellation()
+        let rootID = before.treeStore.rootID
+        async let allocatedSizesTask = Self.normalizedAllocatedSizes(
+            before: before,
+            after: after
+        )
+        async let removedTask = Self.missingPathNodes(
+            in: before.treeStore,
+            absentFrom: after.treeStore,
+            rootID: rootID
+        )
+        async let addedTask = Self.missingPathNodes(
+            in: after.treeStore,
+            absentFrom: before.treeStore,
+            rootID: rootID
+        )
+
+        let (removed, added) = try await (removedTask, addedTask)
+        let allocatedSizes = await allocatedSizesTask
+        var beforeNodes = removed.nodes
+        var afterNodes = added.nodes
+        var sharedPaths: [String] = []
+
+        for nodeIndex in before.treeStore.indexedNodeIndices() {
+            let offset = Int(nodeIndex.rawValue)
+            if offset.isMultiple(of: 256) {
+                try Task.checkCancellation()
+            }
+            guard let beforeNode = before.treeStore.node(at: nodeIndex),
+                  beforeNode.id != rootID,
+                  let afterNode = after.treeStore.node(id: beforeNode.id),
+                  let relativePath = Self.relativePath(for: beforeNode.id, rootID: rootID) else {
+                continue
+            }
+            let beforeSize = allocatedSizes.before[relativePath] ?? beforeNode.allocatedSize
+            let afterSize = allocatedSizes.after[relativePath] ?? afterNode.allocatedSize
+            guard beforeSize != afterSize else { continue }
+            sharedPaths.append(relativePath)
+            beforeNodes[relativePath] = beforeNode
+            afterNodes[relativePath] = afterNode
+        }
+
+        let pathPartition = PathPartition(
+            added: added.paths,
+            removed: removed.paths,
+            shared: sharedPaths
+        )
+        let ancestorPaths = Self.changedPathAncestors(
+            addedPaths: added.paths,
+            removedPaths: removed.paths,
+            sharedPaths: sharedPaths
+        )
+        Self.addNodes(
+            at: ancestorPaths,
+            from: before.treeStore,
+            rootID: rootID,
+            to: &beforeNodes
+        )
+        Self.addNodes(
+            at: ancestorPaths,
+            from: after.treeStore,
+            rootID: rootID,
+            to: &afterNodes
+        )
+
+        return try makeComparison(
+            before: before,
+            after: after,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes,
+            pathPartition: pathPartition,
+            allocatedSizes: allocatedSizes
+        )
+    }
+
+    private func makeComparison(
+        before: ScanSnapshot,
+        after: ScanSnapshot,
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord],
+        pathPartition: PathPartition,
+        allocatedSizes: (before: [String: Int64], after: [String: Int64])
+    ) throws -> ScanComparison {
+        var rows: [ScanComparisonRow] = []
         let addedPaths = pathPartition.added
         let removedPaths = pathPartition.removed
         let sharedPaths = pathPartition.shared
@@ -529,7 +637,6 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeStore: before.treeStore,
             afterStore: after.treeStore
         )
-        let allocatedSizes = await allocatedSizesTask
         let visibleAddedPaths = Self.visibleTopLevelPaths(
             in: addedPaths,
             excludingDescendantsOf: materializationBoundaryPaths,
@@ -673,6 +780,11 @@ nonisolated struct ScanComparisonService: Sendable {
         var shared: [String]
     }
 
+    private struct MissingPathNodes: Sendable {
+        var paths: Set<String> = []
+        var nodes: [String: FileNodeRecord] = [:]
+    }
+
     /// Partitions paths without first materializing complete key sets for both
     /// snapshots. The after-path set becomes the final added set as matches are
     /// removed, while only removed paths need a second set.
@@ -695,6 +807,47 @@ nonisolated struct ScanComparisonService: Sendable {
         }
 
         return PathPartition(added: added, removed: removed, shared: shared)
+    }
+
+    private static func missingPathNodes(
+        in treeStore: FileTreeStore,
+        absentFrom otherStore: FileTreeStore,
+        rootID: String
+    ) throws -> MissingPathNodes {
+        var result = MissingPathNodes()
+        for (position, nodeIndex) in treeStore.indexedNodeIndices().enumerated() {
+            if position.isMultiple(of: 256) {
+                try Task.checkCancellation()
+            }
+            guard let node = treeStore.node(at: nodeIndex),
+                  node.id != rootID,
+                  otherStore.nodeIndex(id: node.id) == nil,
+                  let relativePath = relativePath(for: node.id, rootID: rootID) else {
+                continue
+            }
+            result.paths.insert(relativePath)
+            result.nodes[relativePath] = node
+        }
+        return result
+    }
+
+    private static func addNodes(
+        at relativePaths: Set<String>,
+        from treeStore: FileTreeStore,
+        rootID: String,
+        to nodes: inout [String: FileNodeRecord]
+    ) {
+        for relativePath in relativePaths where nodes[relativePath] == nil {
+            let id = nodeID(for: relativePath, rootID: rootID)
+            nodes[relativePath] = treeStore.node(id: id)
+        }
+    }
+
+    private static func nodeID(for relativePath: String, rootID: String) -> String {
+        if rootID == "/" {
+            return "/" + relativePath
+        }
+        return rootID + (rootID.hasSuffix("/") ? "" : "/") + relativePath
     }
 
     private static func indexedNodes(in snapshot: ScanSnapshot) throws -> [String: FileNodeRecord] {
@@ -1226,6 +1379,34 @@ nonisolated struct ScanComparisonService: Sendable {
         beforeStore: FileTreeStore,
         afterStore: FileTreeStore
     ) -> Set<String> {
+        let candidatePaths = changedPathAncestors(
+            addedPaths: addedPaths,
+            removedPaths: removedPaths,
+            sharedPaths: []
+        )
+
+        return Set(candidatePaths.filter { relativePath in
+            guard let beforeNode = beforeNodes[relativePath],
+                  let afterNode = afterNodes[relativePath],
+                  beforeNode.isDirectory,
+                  afterNode.isDirectory else {
+                return false
+            }
+
+            let beforeHasChildren = beforeStore.containsChildren(id: beforeNode.id)
+            let afterHasChildren = afterStore.containsChildren(id: afterNode.id)
+            guard beforeHasChildren != afterHasChildren else { return false }
+
+            return Self.isOpaqueDirectory(beforeNode, hasIndexedChildren: beforeHasChildren)
+                || Self.isOpaqueDirectory(afterNode, hasIndexedChildren: afterHasChildren)
+        })
+    }
+
+    private static func changedPathAncestors(
+        addedPaths: Set<String>,
+        removedPaths: Set<String>,
+        sharedPaths: [String]
+    ) -> Set<String> {
         var candidatePaths = Set<String>()
 
         func includeAncestors(of relativePath: String) {
@@ -1245,22 +1426,10 @@ nonisolated struct ScanComparisonService: Sendable {
         for relativePath in removedPaths {
             includeAncestors(of: relativePath)
         }
-
-        return Set(candidatePaths.filter { relativePath in
-            guard let beforeNode = beforeNodes[relativePath],
-                  let afterNode = afterNodes[relativePath],
-                  beforeNode.isDirectory,
-                  afterNode.isDirectory else {
-                return false
-            }
-
-            let beforeHasChildren = beforeStore.containsChildren(id: beforeNode.id)
-            let afterHasChildren = afterStore.containsChildren(id: afterNode.id)
-            guard beforeHasChildren != afterHasChildren else { return false }
-
-            return Self.isOpaqueDirectory(beforeNode, hasIndexedChildren: beforeHasChildren)
-                || Self.isOpaqueDirectory(afterNode, hasIndexedChildren: afterHasChildren)
-        })
+        for relativePath in sharedPaths {
+            includeAncestors(of: relativePath)
+        }
+        return candidatePaths
     }
 
     private static func isOpaqueDirectory(
@@ -1269,6 +1438,83 @@ nonisolated struct ScanComparisonService: Sendable {
     ) -> Bool {
         guard node.isDirectory, !hasIndexedChildren else { return false }
         return node.isAutoSummarized || node.isPackage || !node.isAccessible
+    }
+
+    private static func normalizedAllocatedSizes(
+        before: ScanSnapshot,
+        after: ScanSnapshot
+    ) async -> (
+        before: [String: Int64],
+        after: [String: Int64]
+    ) {
+        async let beforeIdentitiesTask = hardLinkIdentities(in: before.treeStore)
+        async let afterIdentitiesTask = hardLinkIdentities(in: after.treeStore)
+        let (beforeIdentities, afterIdentities) = await (
+            beforeIdentitiesTask,
+            afterIdentitiesTask
+        )
+        let identities = beforeIdentities.union(afterIdentities)
+        guard !identities.isEmpty else {
+            return ([:], [:])
+        }
+
+        async let beforeNodesTask = hardLinkNodes(in: before, identities: identities)
+        async let afterNodesTask = hardLinkNodes(in: after, identities: identities)
+        let (beforeNodes, afterNodes) = await (beforeNodesTask, afterNodesTask)
+        return await normalizedAllocatedSizes(
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
+    }
+
+    private static func hardLinkIdentities(in treeStore: FileTreeStore) -> Set<FileIdentity> {
+        var identities = Set<FileIdentity>()
+        for nodeIndex in treeStore.indexedNodeIndices() {
+            guard let node = treeStore.node(at: nodeIndex),
+                  !node.isDirectory,
+                  !node.isSymbolicLink,
+                  !node.isSynthetic,
+                  node.linkCount > 1,
+                  let identity = node.fileIdentity else {
+                continue
+            }
+            identities.insert(identity)
+        }
+        return identities
+    }
+
+    private static func hardLinkNodes(
+        in snapshot: ScanSnapshot,
+        identities: Set<FileIdentity>
+    ) -> [String: FileNodeRecord] {
+        var nodes: [String: FileNodeRecord] = [:]
+        for nodeIndex in snapshot.treeStore.indexedNodeIndices() {
+            guard let node = snapshot.treeStore.node(at: nodeIndex),
+                  !node.isDirectory,
+                  !node.isSymbolicLink,
+                  !node.isSynthetic,
+                  let identity = node.fileIdentity,
+                  identities.contains(identity),
+                  let relativePath = relativePath(
+                    for: node.id,
+                    rootID: snapshot.treeStore.rootID
+                  ) else {
+                continue
+            }
+            nodes[relativePath] = node
+        }
+        let ancestorPaths = changedPathAncestors(
+            addedPaths: Set(nodes.keys),
+            removedPaths: [],
+            sharedPaths: []
+        )
+        addNodes(
+            at: ancestorPaths,
+            from: snapshot.treeStore,
+            rootID: snapshot.treeStore.rootID,
+            to: &nodes
+        )
+        return nodes
     }
 
     private static func normalizedAllocatedSizes(

@@ -24,12 +24,12 @@ final class ScanComparisonServiceTests: XCTestCase {
     }
 
     func testAddedAndRemovedDirectoriesSuppressDescendantRows() async throws {
-        let removedChild = makeTestFileNode(id: "/before/removed/child.bin", name: "child.bin", size: 30)
-        let removedFolder = makeTestDirectoryNode(id: "/before/removed", name: "removed", children: [removedChild])
-        let sharedBefore = makeTestFileNode(id: "/before/shared.bin", name: "shared.bin", size: 10)
+        let removedChild = makeTestFileNode(id: "/root/removed/child.bin", name: "child.bin", size: 30)
+        let removedFolder = makeTestDirectoryNode(id: "/root/removed", name: "removed", children: [removedChild])
+        let sharedBefore = makeTestFileNode(id: "/root/shared.bin", name: "shared.bin", size: 10)
         let beforeRoot = makeTestDirectoryNode(
-            id: "/before",
-            name: "before",
+            id: "/root",
+            name: "root",
             children: [removedFolder, sharedBefore]
         )
         let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
@@ -38,12 +38,12 @@ final class ScanComparisonServiceTests: XCTestCase {
         ])
         let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
 
-        let addedChild = makeTestFileNode(id: "/after/added/child.bin", name: "child.bin", size: 80)
-        let addedFolder = makeTestDirectoryNode(id: "/after/added", name: "added", children: [addedChild])
-        let sharedAfter = makeTestFileNode(id: "/after/shared.bin", name: "shared.bin", size: 45)
+        let addedChild = makeTestFileNode(id: "/root/added/child.bin", name: "child.bin", size: 80)
+        let addedFolder = makeTestDirectoryNode(id: "/root/added", name: "added", children: [addedChild])
+        let sharedAfter = makeTestFileNode(id: "/root/shared.bin", name: "shared.bin", size: 45)
         let afterRoot = makeTestDirectoryNode(
-            id: "/after",
-            name: "after",
+            id: "/root",
+            name: "root",
             children: [addedFolder, sharedAfter]
         )
         let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
@@ -70,10 +70,10 @@ final class ScanComparisonServiceTests: XCTestCase {
     }
 
     func testNestedFileGrowthDoesNotEmitAncestorDirectoryRows() async throws {
-        let beforeLeaf = makeTestFileNode(id: "/before/a/b/file.bin", name: "file.bin", size: 10)
-        let beforeInner = makeTestDirectoryNode(id: "/before/a/b", name: "b", children: [beforeLeaf])
-        let beforeOuter = makeTestDirectoryNode(id: "/before/a", name: "a", children: [beforeInner])
-        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeOuter])
+        let beforeLeaf = makeTestFileNode(id: "/root/a/b/file.bin", name: "file.bin", size: 10)
+        let beforeInner = makeTestDirectoryNode(id: "/root/a/b", name: "b", children: [beforeLeaf])
+        let beforeOuter = makeTestDirectoryNode(id: "/root/a", name: "a", children: [beforeInner])
+        let beforeRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [beforeOuter])
         let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
             beforeRoot.id: [beforeOuter],
             beforeOuter.id: [beforeInner],
@@ -81,10 +81,10 @@ final class ScanComparisonServiceTests: XCTestCase {
         ])
         let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
 
-        let afterLeaf = makeTestFileNode(id: "/after/a/b/file.bin", name: "file.bin", size: 100)
-        let afterInner = makeTestDirectoryNode(id: "/after/a/b", name: "b", children: [afterLeaf])
-        let afterOuter = makeTestDirectoryNode(id: "/after/a", name: "a", children: [afterInner])
-        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterOuter])
+        let afterLeaf = makeTestFileNode(id: "/root/a/b/file.bin", name: "file.bin", size: 100)
+        let afterInner = makeTestDirectoryNode(id: "/root/a/b", name: "b", children: [afterLeaf])
+        let afterOuter = makeTestDirectoryNode(id: "/root/a", name: "a", children: [afterInner])
+        let afterRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [afterOuter])
         let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
             afterRoot.id: [afterOuter],
             afterOuter.id: [afterInner],
@@ -130,14 +130,14 @@ final class ScanComparisonServiceTests: XCTestCase {
     }
 
     func testExpandedVersionOfSummarizedDirectorySuppressesMaterializedDescendants() async throws {
-        let beforeCache = makeTestSummarizedDirectoryNode(id: "/before/cache", name: "cache", size: 100)
-        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeCache])
+        let beforeCache = makeTestSummarizedDirectoryNode(id: "/root/cache", name: "cache", size: 100)
+        let beforeRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [beforeCache])
         let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [beforeCache]])
         let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
 
-        let afterLeaf = makeTestFileNode(id: "/after/cache/file.bin", name: "file.bin", size: 100)
-        let afterCache = makeTestDirectoryNode(id: "/after/cache", name: "cache", children: [afterLeaf])
-        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterCache])
+        let afterLeaf = makeTestFileNode(id: "/root/cache/file.bin", name: "file.bin", size: 100)
+        let afterCache = makeTestDirectoryNode(id: "/root/cache", name: "cache", children: [afterLeaf])
+        let afterRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [afterCache])
         let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
             afterRoot.id: [afterCache],
             afterCache.id: [afterLeaf],
@@ -210,28 +210,28 @@ final class ScanComparisonServiceTests: XCTestCase {
     func testNewHardLinkDoesNotMoveAllocatedSizeFromSharedPath() async throws {
         let identity = FileIdentity(device: 1, inode: 42)
         let beforeShared = makeTestFileNode(
-            id: "/before/z.bin",
+            id: "/root/z.bin",
             name: "z.bin",
             size: 100,
             unduplicatedAllocatedSize: 100,
             fileIdentity: identity,
             linkCount: 1
         )
-        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeShared])
+        let beforeRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [beforeShared])
         let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [beforeRoot.id: [beforeShared]])
         let beforeSnapshot = makeTestSnapshot(root: beforeRoot, store: beforeStore)
 
         let afterNewLink = makeTestFileNode(
-            id: "/after/a/new.bin",
+            id: "/root/a/new.bin",
             name: "new.bin",
             size: 100,
             unduplicatedAllocatedSize: 100,
             fileIdentity: identity,
             linkCount: 2
         )
-        let afterFolder = makeTestDirectoryNode(id: "/after/a", name: "a", children: [afterNewLink])
+        let afterFolder = makeTestDirectoryNode(id: "/root/a", name: "a", children: [afterNewLink])
         let afterShared = makeTestFileNode(
-            id: "/after/z.bin",
+            id: "/root/z.bin",
             name: "z.bin",
             size: 0,
             unduplicatedAllocatedSize: 100,
@@ -239,8 +239,8 @@ final class ScanComparisonServiceTests: XCTestCase {
             linkCount: 2
         )
         let afterRoot = makeTestDirectoryNode(
-            id: "/after",
-            name: "after",
+            id: "/root",
+            name: "root",
             children: [afterFolder, afterShared]
         )
         let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
@@ -282,26 +282,26 @@ final class ScanComparisonServiceTests: XCTestCase {
         }
 
         let beforeFiles = [
-            hardLink(root: "/before", name: "a-one", size: 0, unduplicatedSize: 100, identity: firstIdentity),
-            hardLink(root: "/before", name: "z-one", size: 100, unduplicatedSize: 100, identity: firstIdentity),
-            hardLink(root: "/before", name: "a-two", size: 0, unduplicatedSize: 200, identity: secondIdentity),
-            hardLink(root: "/before", name: "z-two", size: 200, unduplicatedSize: 200, identity: secondIdentity),
+            hardLink(root: "/root", name: "a-one", size: 0, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/root", name: "z-one", size: 100, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/root", name: "a-two", size: 0, unduplicatedSize: 200, identity: secondIdentity),
+            hardLink(root: "/root", name: "z-two", size: 200, unduplicatedSize: 200, identity: secondIdentity),
         ]
-        let beforeFolder = makeTestDirectoryNode(id: "/before/folder", name: "folder", children: beforeFiles)
-        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeFolder])
+        let beforeFolder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: beforeFiles)
+        let beforeRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [beforeFolder])
         let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
             beforeRoot.id: [beforeFolder],
             beforeFolder.id: beforeFiles,
         ])
 
         let afterFiles = [
-            hardLink(root: "/after", name: "a-one", size: 100, unduplicatedSize: 100, identity: firstIdentity),
-            hardLink(root: "/after", name: "z-one", size: 0, unduplicatedSize: 100, identity: firstIdentity),
-            hardLink(root: "/after", name: "a-two", size: 200, unduplicatedSize: 200, identity: secondIdentity),
-            hardLink(root: "/after", name: "z-two", size: 0, unduplicatedSize: 200, identity: secondIdentity),
+            hardLink(root: "/root", name: "a-one", size: 100, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/root", name: "z-one", size: 0, unduplicatedSize: 100, identity: firstIdentity),
+            hardLink(root: "/root", name: "a-two", size: 200, unduplicatedSize: 200, identity: secondIdentity),
+            hardLink(root: "/root", name: "z-two", size: 0, unduplicatedSize: 200, identity: secondIdentity),
         ]
-        let afterFolder = makeTestDirectoryNode(id: "/after/folder", name: "folder", children: afterFiles)
-        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterFolder])
+        let afterFolder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: afterFiles)
+        let afterRoot = makeTestDirectoryNode(id: "/root", name: "root", children: [afterFolder])
         let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
             afterRoot.id: [afterFolder],
             afterFolder.id: afterFiles,
