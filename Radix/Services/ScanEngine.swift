@@ -1973,19 +1973,6 @@ actor ScanEngine {
         }
 
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
-        var orderedNodeIndices: [FileTreeNodeIndex] = []
-        orderedNodeIndices.reserveCapacity(nodes.count)
-        var orderedTraversalStack = [rootIndex]
-        while let nodeIndex = orderedTraversalStack.popLast() {
-            if orderedNodeIndices.count.isMultiple(of: 256) {
-                try Task.checkCancellation()
-            }
-            orderedNodeIndices.append(nodeIndex)
-            let children = childIndicesByIndex[Int(nodeIndex.rawValue)]
-            orderedTraversalStack.append(contentsOf: children.reversed())
-        }
-        assert(orderedNodeIndices.count == nodes.count)
-
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
         metrics.finalizationFraction = 1
         metrics.recalculateProgress()
@@ -1994,15 +1981,15 @@ actor ScanEngine {
         #if DEBUG
         let deduplicationStart = diagnostics?.start()
         #endif
-        let store = HardLinkDeduplicator.deduplicatedStore(
+        let store = try HardLinkDeduplicator.deduplicatedStore(
             rootIndex: rootIndex,
             nodes: nodes,
             childIndicesByIndex: childIndicesByIndex,
             parentIndices: parentIndices,
-            orderedNodeIndices: orderedNodeIndices,
             aggregateStats: aggregateStats.makeStats(root: rootNode),
             hardLinkAccumulator: hardLinkAccumulator,
-            minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
+            minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID,
+            cancellationCheck: Task.checkCancellation
         )
         #if DEBUG
         diagnostics?.record(

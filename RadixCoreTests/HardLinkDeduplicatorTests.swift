@@ -2,6 +2,31 @@ import XCTest
 @testable import RadixCore
 
 final class HardLinkDeduplicatorTests: XCTestCase {
+    func testIndexBasedStoreConstructionPreservesCancellation() {
+        let root = makeDirectory(id: "/root", allocatedSize: 0, descendantFileCount: 0)
+        let rootIndex = FileTreeNodeIndex(rawValue: 0)
+
+        XCTAssertThrowsError(try HardLinkDeduplicator.deduplicatedStore(
+            rootIndex: rootIndex,
+            nodes: [root],
+            childIndicesByIndex: [[]],
+            parentIndices: [nil],
+            aggregateStats: ScanAggregateStats(
+                totalAllocatedSize: 0,
+                totalLogicalSize: 0,
+                fileCount: 0,
+                directoryCount: 1,
+                accessibleItemCount: 1,
+                inaccessibleItemCount: 0
+            ),
+            hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(),
+            minimumAllocatedSizeByNodeID: [:],
+            cancellationCheck: { throw CancellationError() }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+    }
+
     func testIndexBasedHardLinkDedupRebuildsAncestorsWithoutStringTopologyInput() {
         let rootID = "/root"
         let parentID = "/root/Parent"
@@ -29,7 +54,6 @@ final class HardLinkDeduplicatorTests: XCTestCase {
                 []
             ],
             parentIndices: [nil, indices[0], indices[1], indices[1], indices[0]],
-            orderedNodeIndices: indices,
             aggregateStats: ScanAggregateStats(
                 totalAllocatedSize: 250,
                 totalLogicalSize: 250,
@@ -85,7 +109,6 @@ final class HardLinkDeduplicatorTests: XCTestCase {
             nodes: nodes,
             childIndicesByIndex: [[indices[1], indices[2]], [], []],
             parentIndices: [nil, indices[0], indices[0]],
-            orderedNodeIndices: indices,
             aggregateStats: ScanAggregateStats(
                 totalAllocatedSize: 220,
                 totalLogicalSize: 220,
