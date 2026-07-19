@@ -1035,7 +1035,7 @@ final class ScanBenchmarkTests: XCTestCase {
         }
 
         var leafPreparationDescription: String {
-            usesWorkerSideLeafPreparation ? "directory-worker" : "coordinator"
+            usesWorkerSideLeafPreparation ? "worker-batches" : "coordinator"
         }
 
         var leafPreparationBatchDescription: String {

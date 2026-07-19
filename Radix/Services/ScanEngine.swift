@@ -273,8 +273,6 @@ actor ScanEngine {
         let totalWeightUnits: Double
         let isNodeDependencyLayout: Bool
         let isAtomicSummaryCandidate: Bool
-        /// Aligned with `contents.entries`; nil slots still require coordinator handling.
-        let preparedOrdinaryLeaves: [PreparedOrdinaryLeaf?]
     }
 
     private struct DirectoryTraversalFailure: Sendable {
@@ -330,9 +328,25 @@ actor ScanEngine {
         let minimumAllocatedSize: Int64?
     }
 
-    private struct PreparedOrdinaryLeaf: Sendable {
+    private struct OrdinaryLeafPreparationRequest: Sendable {
+        let entries: [DirectoryEntry]
+        let range: Range<Int>
+        let parentKey: Int
+        let parentWeight: Double
+        let totalWeightUnits: Double
+    }
+
+    private struct PreparedOrdinaryLeafItem: Sendable {
+        let url: URL
+        let metadata: NodeMetadata
+        let weight: Double
         let node: FileNodeRecord
         let hardLinkClaim: HardLinkClaim?
+    }
+
+    private struct PreparedOrdinaryLeafBatch: Sendable {
+        let parentKey: Int
+        let items: [PreparedOrdinaryLeafItem]
     }
 
     private struct PackageSummaryResult: Sendable {
@@ -364,6 +378,7 @@ actor ScanEngine {
         case directory(DirectoryTraversalResult)
         case package(PackageSummaryResult)
         case atomicDirectory(AtomicDirectoryScanResult)
+        case ordinaryLeaves(PreparedOrdinaryLeafBatch)
     }
 
     /// A completed directory scan awaiting parent assembly.
@@ -603,7 +618,7 @@ actor ScanEngine {
 
     private enum ScanConcurrencyPolicy {
         static let directoryClassificationParallelThreshold = 128
-        /// Caps additional prepared-node storage per in-flight directory result.
+        /// Caps additional prepared-node storage per leaf-preparation task.
         static let ordinaryLeafPreparationBatchLimit = 2_048
         // Shared budget for concurrent child metadata reads across traversal and classification workers.
         static let directoryMetadataWorkerBudgetMaximum = 16
@@ -1094,13 +1109,16 @@ actor ScanEngine {
         try await withThrowingTaskGroup(of: ScanTaskResult.self) { group in
             var activeDirectoryTasks = 0
             var activePackageTasks = 0
+            var activeOrdinaryLeafTasks = 0
             let packageSummaryRequestLimit = max(1, atomicSummaryWorkerLimit * 2)
+            let ordinaryLeafPreparationWorkerLimit = max(1, directoryTraversalWorkerLimit)
             // Packages and atomic-summary candidates waiting for a summary-request slot.
             // They must not be summarized inline in the scheduling loop: awaiting a pool
             // job there stops the group from being drained, freezing progress bookkeeping
             // until the stack unwinds.
             var pendingPackageScans: [(item: ScanWorkItem, itemKey: Int, metadata: NodeMetadata)] = []
             var pendingAtomicScans: [AtomicDirectoryScanCandidate] = []
+            var pendingOrdinaryLeafRequests: [OrdinaryLeafPreparationRequest] = []
             let autoSummarizeMinFileCount = options.autoSummarizeMinFileCount ?? AtomicDirectoryThresholds.minFileCount
             let autoSummarizeMaxAverageFileSize = options.autoSummarizeMaxAverageFileSize ?? AtomicDirectoryThresholds.maxAverageFileSize
             let autoSummarizeMinDepth = options.autoSummarizeMinDepthForSummarization ?? AtomicDirectoryThresholds.minDepthForSummarization
@@ -1243,16 +1261,6 @@ actor ScanEngine {
                                 } else {
                                     isAtomicSummaryCandidate = false
                                 }
-                                let preparedOrdinaryLeaves: [PreparedOrdinaryLeaf?]
-                                if self.usesWorkerSideLeafPreparation, !isAtomicSummaryCandidate {
-                                    preparedOrdinaryLeaves = try self.prepareOrdinaryLeaves(
-                                        in: contents.entries,
-                                        batchLimit: self.workerSideLeafPreparationBatchLimit,
-                                        cancellationCheck: cancellationCheck
-                                    )
-                                } else {
-                                    preparedOrdinaryLeaves = []
-                                }
                                 return .directory(.success(DirectoryTraversalSuccess(
                                     item: taskItem,
                                     itemKey: taskItemKey,
@@ -1261,8 +1269,7 @@ actor ScanEngine {
                                     childDirectoryCount: childDirectoryCount,
                                     totalWeightUnits: totalWeightUnits,
                                     isNodeDependencyLayout: isNodeDependencyLayout,
-                                    isAtomicSummaryCandidate: isAtomicSummaryCandidate,
-                                    preparedOrdinaryLeaves: preparedOrdinaryLeaves
+                                    isAtomicSummaryCandidate: isAtomicSummaryCandidate
                                 )))
                             } catch is CancellationError {
                                 throw CancellationError()
@@ -1394,14 +1401,24 @@ actor ScanEngine {
                     }
                 }
 
-                guard activeDirectoryTasks + activePackageTasks > 0 else { break }
+                while activeOrdinaryLeafTasks < ordinaryLeafPreparationWorkerLimit,
+                      let request = pendingOrdinaryLeafRequests.popLast() {
+                    activeOrdinaryLeafTasks += 1
+                    group.addTask {
+                        .ordinaryLeaves(try self.prepareOrdinaryLeaves(
+                            request,
+                            cancellationCheck: cancellationCheck
+                        ))
+                    }
+                }
+
+                guard activeDirectoryTasks + activePackageTasks + activeOrdinaryLeafTasks > 0 else {
+                    break
+                }
                 guard let traversalResult = try await group.next() else { break }
                 // Set when a drained result yields an enumerated directory whose children
                 // should be expanded normally; handled once after the switch.
-                var directoryToExpand: (
-                    candidate: AtomicDirectoryScanCandidate,
-                    preparedOrdinaryLeaves: [PreparedOrdinaryLeaf?]
-                )?
+                var directoryToExpand: AtomicDirectoryScanCandidate?
 
                 switch traversalResult {
                 case .directory(.success(let success)):
@@ -1457,10 +1474,7 @@ actor ScanEngine {
                         // so the scheduling loop keeps draining results while it works.
                         pendingAtomicScans.append(candidate)
                     } else {
-                        directoryToExpand = (
-                            candidate: candidate,
-                            preparedOrdinaryLeaves: success.preparedOrdinaryLeaves
-                        )
+                        directoryToExpand = candidate
                     }
 
                 case .directory(.failure(let failure)):
@@ -1541,10 +1555,7 @@ actor ScanEngine {
                     let candidate = atomicResult.candidate
                     guard let summary = atomicResult.summary else {
                         // Probe declined: expand the directory normally.
-                        directoryToExpand = (
-                            candidate: candidate,
-                            preparedOrdinaryLeaves: []
-                        )
+                        directoryToExpand = candidate
                         break
                     }
                     let item = candidate.item
@@ -1599,10 +1610,28 @@ actor ScanEngine {
                         url: item.url,
                         isTraversable: false
                     )
+                case .ordinaryLeaves(let batch):
+                    activeOrdinaryLeafTasks -= 1
+                    for item in batch.items {
+                        recordPreparedOrdinaryLeaf(
+                            item,
+                            parentKey: batch.parentKey,
+                            nextKey: &nextKey,
+                            seenScannedNodeIDs: &seenScannedNodeIDs,
+                            hardLinkAccumulator: &hardLinkAccumulator,
+                            metrics: &metrics,
+                            warnings: &warnings,
+                            continuation: continuation,
+                            emissionState: &emissionState,
+                            summaryPool: atomicSummaryPool,
+                            completedByKey: &completedByKey,
+                            childrenKeysByKey: &childrenKeysByKey
+                        )
+                    }
                 }
 
                 guard let expansion = directoryToExpand else { continue }
-                let candidate = expansion.candidate
+                let candidate = expansion
                 let item = candidate.item
                 let itemKey = candidate.itemKey
                 let contents = candidate.contents
@@ -1615,85 +1644,70 @@ actor ScanEngine {
                 }
 
                 // Enqueue children onto the stack. Each child records its parent key.
+                var lastQueuedLeafChunkStart: Int?
                 for (offset, childEntry) in childEntries.enumerated() {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
-                    let childWeight = item.weight * Self.traversalWeightUnits(for: childEntry) / totalWeightUnits
 
                     // Bulk discovery has already fully classified ordinary files
-                    // and symlinks. Complete them here instead of allocating a work
-                    // item only to pop, reclassify, and pass it through an async leaf
-                    // function on the next loop iteration. Packages remain queued
-                    // because they may require recursive summary work.
-                    let preparedLeaf: PreparedOrdinaryLeaf?
-                    if offset < expansion.preparedOrdinaryLeaves.count {
-                        preparedLeaf = expansion.preparedOrdinaryLeaves[offset]
-                    } else if let childMetadata = childEntry.metadata,
-                              !childMetadata.isDirectory || childMetadata.isSymbolicLink {
-                        // Prepare the bounded suffix on the coordinator. The benchmark
-                        // legacy mode uses this path for the full directory.
+                    // and symlinks. Prepare them in bounded worker batches instead of
+                    // allocating work-stack items or serializing wide suffixes here.
+                    if let childMetadata = childEntry.metadata,
+                       !childMetadata.isDirectory || childMetadata.isSymbolicLink {
+                        if usesWorkerSideLeafPreparation {
+                            let batchLimit = workerSideLeafPreparationBatchLimit
+                            let chunkStart = (offset / batchLimit) * batchLimit
+                            if lastQueuedLeafChunkStart != chunkStart {
+                                pendingOrdinaryLeafRequests.append(
+                                    OrdinaryLeafPreparationRequest(
+                                        entries: childEntries,
+                                        range: chunkStart..<min(chunkStart + batchLimit, childEntries.count),
+                                        parentKey: itemKey,
+                                        parentWeight: item.weight,
+                                        totalWeightUnits: totalWeightUnits
+                                    )
+                                )
+                                lastQueuedLeafChunkStart = chunkStart
+                            }
+                            continue
+                        }
+
                         let childNode = makeFileNode(
                             url: childEntry.url,
                             metadata: childMetadata
                         )
-                        preparedLeaf = PreparedOrdinaryLeaf(
+                        let preparedItem = PreparedOrdinaryLeafItem(
+                            url: childEntry.url,
+                            metadata: childMetadata,
+                            weight: item.weight / totalWeightUnits,
                             node: childNode,
                             hardLinkClaim: HardLinkDeduplicator.claim(
                                 for: childMetadata,
                                 ownerNodeID: childNode.id,
-                                path: childEntry.url.path
+                                path: childNode.id
                             )
                         )
-                    } else {
-                        preparedLeaf = nil
-                    }
-
-                    if let preparedLeaf, let childMetadata = childEntry.metadata {
-                        let childPath = childEntry.url.path
-                        guard seenScannedNodeIDs.insert(childPath).inserted else {
-                            recordDuplicateNode(
-                                at: childEntry.url,
-                                weight: childWeight,
-                                metrics: &metrics,
-                                warnings: &warnings,
-                                continuation: continuation,
-                                emissionState: &emissionState,
-                                summaryPool: atomicSummaryPool
-                            )
-                            continue
-                        }
-
-                        let childKey = nextKey
-                        nextKey += 1
-                        completedByKey.append(nil)
-                        childrenKeysByKey.append(nil)
-                        if childrenKeysByKey[itemKey] == nil {
-                            childrenKeysByKey[itemKey] = []
-                        }
-                        childrenKeysByKey[itemKey]!.append(childKey)
-
-                        let childNode = preparedLeaf.node
-                        if let hardLinkClaim = preparedLeaf.hardLinkClaim {
-                            hardLinkAccumulator.record(hardLinkClaim)
-                        }
-                        metrics.currentPath = childPath
-                        applyLeafMetrics(childNode, weight: childWeight, metrics: &metrics)
-                        maybeEmitProgress(
+                        recordPreparedOrdinaryLeaf(
+                            preparedItem,
+                            parentKey: itemKey,
+                            nextKey: &nextKey,
+                            seenScannedNodeIDs: &seenScannedNodeIDs,
+                            hardLinkAccumulator: &hardLinkAccumulator,
                             metrics: &metrics,
+                            warnings: &warnings,
                             continuation: continuation,
                             emissionState: &emissionState,
-                            summaryPool: atomicSummaryPool
-                        )
-                        completedByKey[childKey] = CompletedDirScan(
-                            node: childNode,
-                            metadata: childMetadata,
-                            url: childEntry.url,
-                            isTraversable: false
+                            summaryPool: atomicSummaryPool,
+                            completedByKey: &completedByKey,
+                            childrenKeysByKey: &childrenKeysByKey
                         )
                         continue
                     }
 
+                    let childWeight = item.weight
+                        * Self.traversalWeightUnits(for: childEntry)
+                        / totalWeightUnits
                     workStack.append(
                         ScanWorkItem(
                             url: childEntry.url,
@@ -1927,32 +1941,92 @@ actor ScanEngine {
     // MARK: - Helpers
 
     private nonisolated func prepareOrdinaryLeaves(
-        in entries: [DirectoryEntry],
-        batchLimit: Int,
+        _ request: OrdinaryLeafPreparationRequest,
         cancellationCheck: CancellationCheck
-    ) throws -> [PreparedOrdinaryLeaf?] {
-        let batchCount = min(entries.count, batchLimit)
-        var prepared = [PreparedOrdinaryLeaf?](repeating: nil, count: batchCount)
-        for (offset, entry) in entries.prefix(batchCount).enumerated() {
-            if offset.isMultiple(of: 256) {
+    ) throws -> PreparedOrdinaryLeafBatch {
+        var items: [PreparedOrdinaryLeafItem] = []
+        items.reserveCapacity(request.range.count)
+        for index in request.range {
+            if index.isMultiple(of: 256) {
                 try cancellationCheck()
             }
+            let entry = request.entries[index]
             guard let metadata = entry.metadata,
                   !metadata.isDirectory || metadata.isSymbolicLink else {
                 continue
             }
             let node = makeFileNode(url: entry.url, metadata: metadata)
-            prepared[offset] = PreparedOrdinaryLeaf(
+            items.append(PreparedOrdinaryLeafItem(
+                url: entry.url,
+                metadata: metadata,
+                weight: request.parentWeight / request.totalWeightUnits,
                 node: node,
                 hardLinkClaim: HardLinkDeduplicator.claim(
                     for: metadata,
                     ownerNodeID: node.id,
-                    path: entry.url.path
+                    path: node.id
                 )
-            )
+            ))
         }
         try cancellationCheck()
-        return prepared
+        return PreparedOrdinaryLeafBatch(parentKey: request.parentKey, items: items)
+    }
+
+    private nonisolated func recordPreparedOrdinaryLeaf(
+        _ item: PreparedOrdinaryLeafItem,
+        parentKey: Int,
+        nextKey: inout Int,
+        seenScannedNodeIDs: inout Set<String>,
+        hardLinkAccumulator: inout HardLinkIdentityOwnerAccumulator,
+        metrics: inout ScanMetrics,
+        warnings: inout [ScanWarning],
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
+        emissionState: inout ScanEmissionState,
+        summaryPool: AtomicDirectorySummaryPool,
+        completedByKey: inout [CompletedDirScan?],
+        childrenKeysByKey: inout [[Int]?]
+    ) {
+        let childNode = item.node
+        let childPath = childNode.id
+        guard seenScannedNodeIDs.insert(childPath).inserted else {
+            recordDuplicateNode(
+                at: item.url,
+                weight: item.weight,
+                metrics: &metrics,
+                warnings: &warnings,
+                continuation: continuation,
+                emissionState: &emissionState,
+                summaryPool: summaryPool
+            )
+            return
+        }
+
+        let childKey = nextKey
+        nextKey += 1
+        completedByKey.append(nil)
+        childrenKeysByKey.append(nil)
+        if childrenKeysByKey[parentKey] == nil {
+            childrenKeysByKey[parentKey] = []
+        }
+        childrenKeysByKey[parentKey]!.append(childKey)
+
+        if let hardLinkClaim = item.hardLinkClaim {
+            hardLinkAccumulator.record(hardLinkClaim)
+        }
+        metrics.currentPath = childPath
+        applyLeafMetrics(childNode, weight: item.weight, metrics: &metrics)
+        maybeEmitProgress(
+            metrics: &metrics,
+            continuation: continuation,
+            emissionState: &emissionState,
+            summaryPool: summaryPool
+        )
+        completedByKey[childKey] = CompletedDirScan(
+            node: childNode,
+            metadata: item.metadata,
+            url: item.url,
+            isTraversable: false
+        )
     }
 
     private nonisolated func applyLeafMetrics(_ node: FileNodeRecord, weight: Double, metrics: inout ScanMetrics) {
