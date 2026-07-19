@@ -405,6 +405,7 @@ actor ScanEngine {
 
     typealias VolumeFileSystemTypeProvider = @Sendable (URL) -> String?
     typealias DirectoryDescriptorPoolFactory = @Sendable () -> ScanDirectoryDescriptorPool
+    typealias AutoSummaryProfileReporter = @Sendable (ScanAutoSummaryProfileEvent) -> Void
 
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
@@ -413,6 +414,7 @@ actor ScanEngine {
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
     private let atomicSummaryProgressEmissionInterval: TimeInterval
+    private let autoSummaryProfileReporter: AutoSummaryProfileReporter?
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let directoryDescriptorPoolFactory: DirectoryDescriptorPoolFactory
     private let usesWorkerSideLeafPreparation: Bool
@@ -427,7 +429,8 @@ actor ScanEngine {
         },
         usesDeferredBulkEntryFiltering: Bool = true,
         usesWorkerSideLeafPreparation: Bool = true,
-        workerSideLeafPreparationBatchLimit: Int? = nil
+        workerSideLeafPreparationBatchLimit: Int? = nil,
+        autoSummaryProfileReporter: AutoSummaryProfileReporter? = nil
     ) {
         self.init(
             enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
@@ -438,7 +441,8 @@ actor ScanEngine {
             directoryDescriptorPoolFactory: directoryDescriptorPoolFactory,
             usesDeferredBulkEntryFiltering: usesDeferredBulkEntryFiltering,
             usesWorkerSideLeafPreparation: usesWorkerSideLeafPreparation,
-            workerSideLeafPreparationBatchLimit: workerSideLeafPreparationBatchLimit
+            workerSideLeafPreparationBatchLimit: workerSideLeafPreparationBatchLimit,
+            autoSummaryProfileReporter: autoSummaryProfileReporter
         )
     }
 
@@ -457,7 +461,8 @@ actor ScanEngine {
             directoryDescriptorPoolFactory: { ScanDirectoryDescriptorPool() },
             usesDeferredBulkEntryFiltering: false,
             usesWorkerSideLeafPreparation: true,
-            workerSideLeafPreparationBatchLimit: nil
+            workerSideLeafPreparationBatchLimit: nil,
+            autoSummaryProfileReporter: nil
         )
     }
 
@@ -470,7 +475,8 @@ actor ScanEngine {
         directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory,
         usesDeferredBulkEntryFiltering: Bool,
         usesWorkerSideLeafPreparation: Bool,
-        workerSideLeafPreparationBatchLimit: Int?
+        workerSideLeafPreparationBatchLimit: Int?,
+        autoSummaryProfileReporter: AutoSummaryProfileReporter?
     ) {
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
@@ -479,6 +485,7 @@ actor ScanEngine {
         self.linkCountCapabilityCache = LinkCountCapabilityCache()
         self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
         self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
+        self.autoSummaryProfileReporter = autoSummaryProfileReporter
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.directoryDescriptorPoolFactory = directoryDescriptorPoolFactory
         self.usesWorkerSideLeafPreparation = usesWorkerSideLeafPreparation
@@ -1018,7 +1025,8 @@ actor ScanEngine {
         let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
             metadataLoader: scanMetadataLoader,
             diagnostics: diagnostics,
-            summaryPool: atomicSummaryPool
+            summaryPool: atomicSummaryPool,
+            profileReporter: autoSummaryProfileReporter
         )
         let directoryTraversalWorkerLimit = ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
         let directoryClassificationWorkerLimit = ScanConcurrencyPolicy.directoryClassificationWorkerLimit(for: options)

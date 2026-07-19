@@ -134,7 +134,8 @@ extension AtomicDirectorySummarizer {
             continuation: continuation,
             emissionState: &emissionState
         ) {
-            visitedItems = bulkResult.visitedItems
+            visitedItems = bulkResult.outcome.visitedItemCount
+            profile = bulkResult.outcome.profile
             return bulkResult.outcome
         }
 
@@ -149,7 +150,11 @@ extension AtomicDirectorySummarizer {
             options: enumeratorOptions,
             errorHandler: { _, _ in true }
         ) else {
-            return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+            return AtomicDirectoryProbeOutcome(
+                profile: profile,
+                resumeState: nil,
+                visitedItemCount: visitedItems
+            )
         }
 
         while let nextObject = enumerator.nextObject() {
@@ -165,7 +170,11 @@ extension AtomicDirectorySummarizer {
                 )
             }
             guard visitedItems <= maxVisitedItems else {
-                return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+                return AtomicDirectoryProbeOutcome(
+                    profile: profile,
+                    resumeState: nil,
+                    visitedItemCount: visitedItems
+                )
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
@@ -203,7 +212,11 @@ extension AtomicDirectorySummarizer {
                     if !isNodeDependencyLayout,
                        profile.observedFileCount == 0,
                        profile.observedDirectoryCount >= Self.directoryOnlyProbeLimit(minFileCount: minFileCount) {
-                        return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+                        return AtomicDirectoryProbeOutcome(
+                            profile: profile,
+                            resumeState: nil,
+                            visitedItemCount: visitedItems
+                        )
                     }
                     continue
                 }
@@ -219,18 +232,34 @@ extension AtomicDirectorySummarizer {
                     minFileCount: minFileCount,
                     maxAverageFileSize: maxAverageFileSize
                 ) {
-                    return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+                    return AtomicDirectoryProbeOutcome(
+                        profile: profile,
+                        resumeState: nil,
+                        visitedItemCount: visitedItems
+                    )
                 }
                 // Once minimum sample is large-file-biased, skip summary and keep full detail.
                 if profile.observedFileCount >= minFileCount {
-                    return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+                    return AtomicDirectoryProbeOutcome(
+                        profile: profile,
+                        resumeState: nil,
+                        visitedItemCount: visitedItems
+                    )
                 }
             } catch {
-                return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+                return AtomicDirectoryProbeOutcome(
+                    profile: profile,
+                    resumeState: nil,
+                    visitedItemCount: visitedItems
+                )
             }
         }
 
-        return AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil)
+        return AtomicDirectoryProbeOutcome(
+            profile: profile,
+            resumeState: nil,
+            visitedItemCount: visitedItems
+        )
     }
 
     /// Mirrors `FileManager.DirectoryEnumerator`'s depth-first probe using
@@ -354,14 +383,22 @@ extension AtomicDirectorySummarizer {
             }
             guard visitedItems <= maxVisitedItems else {
                 return (
-                    AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                    AtomicDirectoryProbeOutcome(
+                        profile: profile,
+                        resumeState: nil,
+                        visitedItemCount: visitedItems
+                    ),
                     visitedItems
                 )
             }
 
             guard let metadata = entry.metadata else {
                 return (
-                    AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                    AtomicDirectoryProbeOutcome(
+                        profile: profile,
+                        resumeState: nil,
+                        visitedItemCount: visitedItems
+                    ),
                     visitedItems
                 )
             }
@@ -384,7 +421,11 @@ extension AtomicDirectorySummarizer {
                    profile.observedFileCount == 0,
                    profile.observedDirectoryCount >= Self.directoryOnlyProbeLimit(minFileCount: minFileCount) {
                     return (
-                        AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                        AtomicDirectoryProbeOutcome(
+                            profile: profile,
+                            resumeState: nil,
+                            visitedItemCount: visitedItems
+                        ),
                         visitedItems
                     )
                 }
@@ -427,21 +468,30 @@ extension AtomicDirectorySummarizer {
                             partial: partial,
                             workItems: frames,
                             visitedItemCount: visitedItems
-                        )
+                        ),
+                        visitedItemCount: visitedItems
                     ),
                     visitedItems
                 )
             }
             if profile.observedFileCount >= minFileCount {
                 return (
-                    AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+                    AtomicDirectoryProbeOutcome(
+                        profile: profile,
+                        resumeState: nil,
+                        visitedItemCount: visitedItems
+                    ),
                     visitedItems
                 )
             }
         }
 
         return (
-            AtomicDirectoryProbeOutcome(profile: profile, resumeState: nil),
+            AtomicDirectoryProbeOutcome(
+                profile: profile,
+                resumeState: nil,
+                visitedItemCount: visitedItems
+            ),
             visitedItems
         )
     }

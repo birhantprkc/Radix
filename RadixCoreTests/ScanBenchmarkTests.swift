@@ -1,6 +1,58 @@
 import XCTest
 @testable import RadixCore
 
+private final class AutoSummaryBenchmarkProfile: @unchecked Sendable {
+    struct Snapshot {
+        let probeCount: Int
+        let acceptedProbeCount: Int
+        let probedItemCount: Int
+        let summarizedDirectoryCount: Int
+        let summarizedFileCount: Int
+        let reusedDirectoryCount: Int
+        let reusedEntryCount: Int
+    }
+
+    private let lock = NSLock()
+    private var probeCount = 0
+    private var acceptedProbeCount = 0
+    private var probedItemCount = 0
+    private var summarizedDirectoryCount = 0
+    private var summarizedFileCount = 0
+    private var reusedDirectoryCount = 0
+    private var reusedEntryCount = 0
+
+    func record(_ event: ScanAutoSummaryProfileEvent) {
+        lock.lock()
+        switch event {
+        case .probeCompleted(let visitedItemCount, let wasAccepted):
+            probeCount += 1
+            acceptedProbeCount += wasAccepted ? 1 : 0
+            probedItemCount += visitedItemCount
+        case .directorySummarized(let descendantFileCount):
+            summarizedDirectoryCount += 1
+            summarizedFileCount += descendantFileCount
+        case .reusedDirectoryListing(let entryCount):
+            reusedDirectoryCount += 1
+            reusedEntryCount += entryCount
+        }
+        lock.unlock()
+    }
+
+    func snapshot() -> Snapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return Snapshot(
+            probeCount: probeCount,
+            acceptedProbeCount: acceptedProbeCount,
+            probedItemCount: probedItemCount,
+            summarizedDirectoryCount: summarizedDirectoryCount,
+            summarizedFileCount: summarizedFileCount,
+            reusedDirectoryCount: reusedDirectoryCount,
+            reusedEntryCount: reusedEntryCount
+        )
+    }
+}
+
 final class ScanBenchmarkTests: XCTestCase {
     func testResultFingerprintCoversIdentityCloneAndModificationTime() {
         let baseline = Self.resultFingerprint(Self.fingerprintFixtureStore())
@@ -64,9 +116,21 @@ final class ScanBenchmarkTests: XCTestCase {
             throw XCTSkip("Benchmark path does not exist: \(targetURL.path)")
         }
 
-        let engine = ScanEngine()
+        let autoSummaryProfile = environment["RADIX_BENCH_AUTO_SUMMARY_PROFILE"] == "1"
+            ? AutoSummaryBenchmarkProfile()
+            : nil
+        let autoSummaryProfileReporter: ScanEngine.AutoSummaryProfileReporter?
+        if let autoSummaryProfile {
+            autoSummaryProfileReporter = { @Sendable event in
+                autoSummaryProfile.record(event)
+            }
+        } else {
+            autoSummaryProfileReporter = nil
+        }
+        let engine = ScanEngine(autoSummaryProfileReporter: autoSummaryProfileReporter)
         var options = ScanOptions()
         options.includeHiddenFiles = environment["RADIX_BENCH_INCLUDE_HIDDEN"] == "1"
+        options.autoSummarizeDirectories = environment["RADIX_BENCH_AUTO_SUMMARIZE"] != "0"
         if environment["RADIX_BENCH_COMMON_EXCLUSIONS"] == "1" {
             options.exclusionPatterns = ScanExclusionMatcher.commonPresetPatterns
         }
@@ -89,19 +153,29 @@ final class ScanBenchmarkTests: XCTestCase {
         let elapsed = startedAt.duration(to: .now)
         let snapshot = try XCTUnwrap(finalSnapshot)
         let elapsedSeconds = Double(elapsed.components.seconds) + (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        let profile = autoSummaryProfile?.snapshot()
 
         print(
             """
             RADIX_BENCH_RESULT path=\(targetURL.path)
             elapsed=\(String(format: "%.3f", elapsedSeconds))s
             include_hidden=\(options.includeHiddenFiles)
+            auto_summarize=\(options.autoSummarizeDirectories)
             exclusions=\(options.exclusionPatterns.count)
             files=\(snapshot.aggregateStats.fileCount)
             folders=\(snapshot.aggregateStats.directoryCount)
+            nodes=\(snapshot.treeStore.nodeCount)
             warnings=\(snapshot.scanWarnings.count)
             progress_events=\(progressEvents)
             discovered=\(snapshot.aggregateStats.totalAllocatedSize)
             fingerprint=\(Self.resultFingerprint(snapshot.treeStore))
+            auto_summary_probes=\(profile?.probeCount ?? 0)
+            auto_summary_accepted_probes=\(profile?.acceptedProbeCount ?? 0)
+            auto_summary_probed_items=\(profile?.probedItemCount ?? 0)
+            auto_summary_directories=\(profile?.summarizedDirectoryCount ?? 0)
+            auto_summary_files=\(profile?.summarizedFileCount ?? 0)
+            auto_summary_reused_directories=\(profile?.reusedDirectoryCount ?? 0)
+            auto_summary_reused_entries=\(profile?.reusedEntryCount ?? 0)
             """
         )
     }

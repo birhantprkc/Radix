@@ -129,6 +129,23 @@ nonisolated struct AtomicDirectoryProbeResumeState: @unchecked Sendable {
 nonisolated struct AtomicDirectoryProbeOutcome: @unchecked Sendable {
     var profile: AtomicDirectoryProbeProfile
     var resumeState: AtomicDirectoryProbeResumeState?
+    var visitedItemCount: Int
+
+    init(
+        profile: AtomicDirectoryProbeProfile,
+        resumeState: AtomicDirectoryProbeResumeState?,
+        visitedItemCount: Int = 0
+    ) {
+        self.profile = profile
+        self.resumeState = resumeState
+        self.visitedItemCount = visitedItemCount
+    }
+}
+
+nonisolated enum ScanAutoSummaryProfileEvent: Sendable {
+    case probeCompleted(visitedItemCount: Int, wasAccepted: Bool)
+    case directorySummarized(descendantFileCount: Int)
+    case reusedDirectoryListing(entryCount: Int)
 }
 
 nonisolated final class AtomicDirectorySummaryState {

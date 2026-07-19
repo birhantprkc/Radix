@@ -8,18 +8,23 @@
 import Foundation
 
 nonisolated struct AtomicDirectorySummarizer: Sendable {
+    typealias ProfileReporter = @Sendable (ScanAutoSummaryProfileEvent) -> Void
+
     let metadataLoader: ScanMetadataLoader
     let diagnostics: ScanDiagnosticsContext?
     let summaryPool: AtomicDirectorySummaryPool?
+    let profileReporter: ProfileReporter?
 
     init(
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
-        summaryPool: AtomicDirectorySummaryPool? = nil
+        summaryPool: AtomicDirectorySummaryPool? = nil,
+        profileReporter: ProfileReporter? = nil
     ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
         self.summaryPool = summaryPool
+        self.profileReporter = profileReporter
     }
 
     /// Cheap, synchronous pre-check mirroring `summaryIfNeeded`'s gating: whether the
@@ -123,6 +128,10 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 minFileCount: minFileCount,
                 maxAverageFileSize: maxAverageFileSize
             )
+            profileReporter?(.probeCompleted(
+                visitedItemCount: outcome.visitedItemCount,
+                wasAccepted: deepCandidate
+            ))
             probeResumeState = deepCandidate ? outcome.resumeState : nil
         }
 
@@ -137,7 +146,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         }
         let canReuseImmediateEntries = immediateCandidate && directDirectoryCount <= max(8, childEntries.count / 10)
         if canReuseImmediateEntries {
-            return try await summarizeReusingImmediateChildren(
+            let summary = try await summarizeReusingImmediateChildren(
                 at: url,
                 childEntries: childEntries,
                 rootMetadata: metadata,
@@ -151,6 +160,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 continuation: continuation,
                 emissionState: &emissionState
             )
+            reportCreatedSummary(summary)
+            return summary
         }
 
         guard let summary = try await summarize(
@@ -167,7 +178,15 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             emissionState: &emissionState,
             resumeState: probeResumeState
         ) else { return nil }
+        reportCreatedSummary(summary)
         return summary
+    }
+
+    private func reportCreatedSummary(_ summary: AtomicDirectorySummary?) {
+        guard let summary else { return }
+        profileReporter?(.directorySummarized(
+            descendantFileCount: summary.descendantFileCount
+        ))
     }
 
     /// Performs a fast recursive summary of a directory's size and file count.
