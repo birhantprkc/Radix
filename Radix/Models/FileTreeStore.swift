@@ -954,6 +954,12 @@ nonisolated struct FileTreeStore: Sendable {
         return !topologyArena.children(of: index).isEmpty
     }
 
+    nonisolated func childCount(of id: String?) -> Int {
+        let resolvedID = id ?? rootID
+        guard let index = nodeIndex(id: resolvedID) else { return 0 }
+        return topologyArena.children(of: index).count
+    }
+
     nonisolated func subtreeNodeCount(rootedAt nodeID: String) -> Int {
         guard let rootIndex = nodeIndex(id: nodeID) else { return 0 }
         var count = 0

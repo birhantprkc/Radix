@@ -91,13 +91,25 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         let topLevelNodeIDs = treeStore.topLevelNodeIDs(from: orderedCandidateNodeIDs)
         guard !topLevelNodeIDs.isEmpty else { return .noChanges }
 
+        let topLevelNodeIDSet = Set(topLevelNodeIDs)
+        var rootsWithNestedUpdates = Set<String>()
+        for candidateID in orderedCandidateNodeIDs where !topLevelNodeIDSet.contains(candidateID) {
+            var cursor = treeStore.parentID(of: candidateID)
+            while let ancestorID = cursor {
+                if topLevelNodeIDSet.contains(ancestorID) {
+                    rootsWithNestedUpdates.insert(ancestorID)
+                    break
+                }
+                cursor = treeStore.parentID(of: ancestorID)
+            }
+        }
+
         var relistDirectoryIDs: [String] = []
         var rescanSubtreeIDs: [String] = []
         for nodeID in topLevelNodeIDs {
-            let hasNestedUpdate = orderedCandidateNodeIDs.contains { candidateID in
-                candidateID != nodeID && treeStore.isAncestor(nodeID, of: candidateID)
-            }
-            let updateKind = hasNestedUpdate ? .rescanSubtree : updateKindByNodeID[nodeID]
+            let updateKind = rootsWithNestedUpdates.contains(nodeID)
+                ? .rescanSubtree
+                : updateKindByNodeID[nodeID]
             switch updateKind {
             case .relistDirectory:
                 relistDirectoryIDs.append(nodeID)
@@ -112,14 +124,19 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         }
         let updateRootCount = relistDirectoryIDs.count + rescanSubtreeIDs.count
         if updateRootCount >= Self.broadRelistDirectoryThreshold {
-            let relistedItemCount = relistDirectoryIDs.reduce(0) { count, directoryID in
-                count + treeStore.childIDs(of: directoryID).count + 1
+            let fullScanWorkThreshold = max(treeStore.nodeCount / 2, 1)
+            var incrementalWorkItemCount = 0
+            for directoryID in relistDirectoryIDs {
+                incrementalWorkItemCount += treeStore.childCount(of: directoryID) + 1
+                if incrementalWorkItemCount >= fullScanWorkThreshold {
+                    return .fullScan(reason: .incrementalWorkTooBroad)
+                }
             }
-            let rescannedItemCount = rescanSubtreeIDs.reduce(0) { count, subtreeID in
-                count + treeStore.subtreeNodeCount(rootedAt: subtreeID)
-            }
-            if relistedItemCount + rescannedItemCount >= max(treeStore.nodeCount / 2, 1) {
-                return .fullScan(reason: .incrementalWorkTooBroad)
+            for subtreeID in rescanSubtreeIDs {
+                incrementalWorkItemCount += treeStore.subtreeNodeCount(rootedAt: subtreeID)
+                if incrementalWorkItemCount >= fullScanWorkThreshold {
+                    return .fullScan(reason: .incrementalWorkTooBroad)
+                }
             }
         }
         return .update(

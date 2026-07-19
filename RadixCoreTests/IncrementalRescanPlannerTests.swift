@@ -146,6 +146,32 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         ))
     }
 
+    func testManyDisjointEventsRemainIndependentRelistsBelowBroadWorkThreshold() {
+        let directories = (0..<128).map { index in
+            directory("/scan/directory-\(index)", children: [])
+        }
+        let paddingFiles = (0..<512).map { index in
+            file("/scan/padding-\(index).dat")
+        }
+        let rootChildren = directories + paddingFiles
+        let root = directory("/scan", children: rootChildren)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: rootChildren])
+        let events = directories.map { directory in
+            event(directory.id + "/new.txt", flags: [.itemCreated, .itemIsFile])
+        }
+
+        let plan = IncrementalRescanPlanner().plan(
+            history: history(events),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: store
+        )
+
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: directories.map(\.id),
+            rescanSubtreeIDs: []
+        ))
+    }
+
     func testDroppedRootAndMountEventsRequireFullScan() {
         let fixture = makeFixture()
         let target = ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory))
