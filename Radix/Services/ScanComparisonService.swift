@@ -521,17 +521,14 @@ nonisolated struct ScanComparisonService: Sendable {
         let addedPaths = pathPartition.added
         let removedPaths = pathPartition.removed
         let sharedPaths = pathPartition.shared
-        let materializationBoundaryPaths = if addedPaths.isEmpty, removedPaths.isEmpty {
-            Set<String>()
-        } else {
-            Self.materializationBoundaryPaths(
-                sharedPaths: sharedPaths,
-                beforeNodes: beforeNodes,
-                afterNodes: afterNodes,
-                beforeStore: before.treeStore,
-                afterStore: after.treeStore
-            )
-        }
+        let materializationBoundaryPaths = Self.materializationBoundaryPaths(
+            addedPaths: addedPaths,
+            removedPaths: removedPaths,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes,
+            beforeStore: before.treeStore,
+            afterStore: after.treeStore
+        )
         let allocatedSizes = await allocatedSizesTask
         let visibleAddedPaths = Self.visibleTopLevelPaths(
             in: addedPaths,
@@ -1222,13 +1219,34 @@ nonisolated struct ScanComparisonService: Sendable {
     }
 
     private static func materializationBoundaryPaths(
-        sharedPaths: [String],
+        addedPaths: Set<String>,
+        removedPaths: Set<String>,
         beforeNodes: [String: FileNodeRecord],
         afterNodes: [String: FileNodeRecord],
         beforeStore: FileTreeStore,
         afterStore: FileTreeStore
     ) -> Set<String> {
-        Set(sharedPaths.filter { relativePath in
+        var candidatePaths = Set<String>()
+
+        func includeAncestors(of relativePath: String) {
+            var searchStart = relativePath.startIndex
+            while let slashIndex = relativePath[searchStart...].firstIndex(of: "/") {
+                let ancestorPath = String(relativePath[..<slashIndex])
+                if !ancestorPath.isEmpty {
+                    candidatePaths.insert(ancestorPath)
+                }
+                searchStart = relativePath.index(after: slashIndex)
+            }
+        }
+
+        for relativePath in addedPaths {
+            includeAncestors(of: relativePath)
+        }
+        for relativePath in removedPaths {
+            includeAncestors(of: relativePath)
+        }
+
+        return Set(candidatePaths.filter { relativePath in
             guard let beforeNode = beforeNodes[relativePath],
                   let afterNode = afterNodes[relativePath],
                   beforeNode.isDirectory,

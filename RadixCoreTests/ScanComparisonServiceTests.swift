@@ -151,6 +151,38 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.changedCount, 0)
     }
 
+    func testMaterializationBoundaryDiscoveryChecksEveryChangedPathAncestor() async throws {
+        let beforeCache = makeTestSummarizedDirectoryNode(
+            id: "/before/a/cache",
+            name: "cache",
+            size: 100
+        )
+        let beforeA = makeTestDirectoryNode(id: "/before/a", name: "a", children: [beforeCache])
+        let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeA])
+        let beforeStore = FileTreeStore(root: beforeRoot, childrenByID: [
+            beforeRoot.id: [beforeA],
+            beforeA.id: [beforeCache],
+        ])
+
+        let afterLeaf = makeTestFileNode(id: "/after/a/cache/file.bin", name: "file.bin", size: 100)
+        let afterCache = makeTestDirectoryNode(id: "/after/a/cache", name: "cache", children: [afterLeaf])
+        let afterA = makeTestDirectoryNode(id: "/after/a", name: "a", children: [afterCache])
+        let afterRoot = makeTestDirectoryNode(id: "/after", name: "after", children: [afterA])
+        let afterStore = FileTreeStore(root: afterRoot, childrenByID: [
+            afterRoot.id: [afterA],
+            afterA.id: [afterCache],
+            afterCache.id: [afterLeaf],
+        ])
+
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: beforeRoot, store: beforeStore),
+            after: makeTestSnapshot(root: afterRoot, store: afterStore)
+        )
+
+        XCTAssertTrue(comparison.rows.isEmpty)
+        XCTAssertEqual(comparison.summary.allocatedDelta, 0)
+    }
+
     func testExpandedVersionOfSummarizedDirectoryReportsOnlyBoundaryDelta() async throws {
         let beforeCache = makeTestSummarizedDirectoryNode(id: "/before/cache", name: "cache", size: 100)
         let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeCache])
