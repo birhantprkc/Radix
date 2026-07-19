@@ -1197,9 +1197,9 @@ nonisolated struct ScanComparisonService: Sendable {
         afterNodes: [String: FileNodeRecord]
     ) throws -> ScanComparisonChangeTree {
         guard !rows.isEmpty else { return .empty }
-        var accumulators: [String: AggregateAccumulator] = [:]
-        accumulators.reserveCapacity(rows.count)
         var pathInterner = RelativePathInterner()
+        var accumulators = [AggregateAccumulator(relativePath: "", parentPath: nil)]
+        accumulators.reserveCapacity(rows.count + 1)
 
         for row in rows {
             try Task.checkCancellation()
@@ -1209,22 +1209,22 @@ nonisolated struct ScanComparisonService: Sendable {
             for (index, component) in components.enumerated() {
                 let pathIndex = pathInterner.intern(component, under: parentIndex)
                 let path = pathInterner.path(at: pathIndex)
-                var accumulator = accumulators[path] ?? AggregateAccumulator(
-                    relativePath: path,
-                    parentPath: parentPath
-                )
-                accumulator.include(row, isDirect: index == components.count - 1)
-                accumulators[path] = accumulator
+                if pathIndex == accumulators.count {
+                    accumulators.append(AggregateAccumulator(
+                        relativePath: path,
+                        parentPath: parentPath
+                    ))
+                }
+                accumulators[pathIndex].include(row, isDirect: index == components.count - 1)
 
                 parentPath = path
                 parentIndex = pathIndex
             }
         }
 
-        func nodeSort(_ lhsPath: String, _ rhsPath: String) -> Bool {
-            guard let lhs = accumulators[lhsPath], let rhs = accumulators[rhsPath] else {
-                return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
-            }
+        func nodeSort(_ lhsIndex: Int, _ rhsIndex: Int) -> Bool {
+            let lhs = accumulators[lhsIndex]
+            let rhs = accumulators[rhsIndex]
             let lhsGross = ScanComparisonIntegerMath.addingClamped(
                 lhs.increasedAllocatedSize,
                 lhs.reclaimedAllocatedSize
@@ -1234,24 +1234,27 @@ nonisolated struct ScanComparisonService: Sendable {
                 rhs.reclaimedAllocatedSize
             )
             if lhsGross != rhsGross { return lhsGross > rhsGross }
-            return lhsPath.localizedStandardCompare(rhsPath) == .orderedAscending
+            return pathInterner.path(at: lhsIndex)
+                .localizedStandardCompare(pathInterner.path(at: rhsIndex)) == .orderedAscending
         }
 
         var nodesByPath: [String: ScanComparisonAggregateChange] = [:]
-        nodesByPath.reserveCapacity(accumulators.count)
+        nodesByPath.reserveCapacity(accumulators.count - 1)
         for nodeIndex in pathInterner.nodeIndices {
             try Task.checkCancellation()
             let path = pathInterner.path(at: nodeIndex)
-            guard let accumulator = accumulators[path] else { continue }
+            let accumulator = accumulators[nodeIndex]
             guard let representativeRowID = accumulator.representativeRowID else { continue }
             let displayNode = afterNodes[path] ?? beforeNodes[path]
-            let childPaths = pathInterner.childIndices(of: nodeIndex).map(pathInterner.path)
+            let childPaths = pathInterner.childIndices(of: nodeIndex)
+                .sorted(by: nodeSort)
+                .map(pathInterner.path)
             nodesByPath[path] = ScanComparisonAggregateChange(
                 id: path,
                 relativePath: path,
                 name: displayNode?.name ?? URL(filePath: path).lastPathComponent,
                 parentPath: accumulator.parentPath,
-                childPaths: childPaths.sorted(by: nodeSort),
+                childPaths: childPaths,
                 directRowID: accumulator.directRowID,
                 representativeRowID: representativeRowID,
                 beforeNode: beforeNodes[path],
@@ -1269,8 +1272,8 @@ nonisolated struct ScanComparisonService: Sendable {
         }
 
         let rootPaths = pathInterner.rootChildIndices
-            .map(pathInterner.path)
             .sorted(by: nodeSort)
+            .map(pathInterner.path)
         return ScanComparisonChangeTree(rootPaths: rootPaths, nodesByPath: nodesByPath)
     }
 
