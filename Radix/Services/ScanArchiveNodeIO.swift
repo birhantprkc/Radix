@@ -10,6 +10,7 @@ private nonisolated enum ScanArchiveNodeIOConstants {
     static let readChunkSize = 1024 * 1024
     static let maxNodeLineByteCount = 1024 * 1024
     static let maximumInitialRecordCapacity = 65_536
+    static let maximumConcurrentDecodes = 4
     static let newlineData = Data([0x0A])
 }
 
@@ -303,10 +304,51 @@ extension ScanArchiveService {
 
         var locations = Array<ScanArchiveNodeLocation?>(repeating: nil, count: records.count)
 
+        func makeLocation(at ordinal: Int, parent: ScanArchiveNodeLocation?) throws -> ScanArchiveNodeLocation {
+            let record = records[ordinal]
+            if ordinal == topology.rootOrdinal {
+                let id = record.explicitID ?? expectedRootID
+                guard id == expectedRootID else {
+                    throw ScanArchiveError.topology(localized: "root ID does not match manifest")
+                }
+                return ScanArchiveNodeLocation(id: id, path: record.explicitPath ?? id)
+            }
+            guard let parent else {
+                throw ScanArchiveError.topology(localized: "node ordinal \(ordinal) has an unresolved parent")
+            }
+            if let explicitID = record.explicitID {
+                return ScanArchiveNodeLocation(id: explicitID, path: record.explicitPath ?? explicitID)
+            }
+            guard let component = record.relativePath,
+                  !component.isEmpty,
+                  component != ".",
+                  component != "..",
+                  !component.contains("/") else {
+                throw ScanArchiveError.nodes(localized:
+                    "node ordinal \(ordinal) has an invalid relative path"
+                )
+            }
+            let separator = parent.path == "/" || parent.path.hasSuffix("/") ? "" : "/"
+            let path = parent.path + separator + component
+            return ScanArchiveNodeLocation(id: path, path: record.explicitPath ?? path)
+        }
+
         func resolveLocation(at ordinal: Int) throws -> ScanArchiveNodeLocation {
             if let location = locations[ordinal] {
                 return location
             }
+            if ordinal == topology.rootOrdinal {
+                let location = try makeLocation(at: ordinal, parent: nil)
+                locations[ordinal] = location
+                return location
+            }
+            let directParentOrdinal = Int(parentRawIndices[ordinal])
+            if let parent = locations[directParentOrdinal] {
+                let location = try makeLocation(at: ordinal, parent: parent)
+                locations[ordinal] = location
+                return location
+            }
+
             var chain: [Int] = []
             var chainOrdinals = Set<Int>()
             var cursor = ordinal
@@ -324,39 +366,10 @@ extension ScanArchiveService {
             }
 
             while let pendingOrdinal = chain.popLast() {
-                let record = records[pendingOrdinal]
-                let location: ScanArchiveNodeLocation
-                if pendingOrdinal == topology.rootOrdinal {
-                    let id = record.explicitID ?? expectedRootID
-                    guard id == expectedRootID else {
-                        throw ScanArchiveError.topology(localized: "root ID does not match manifest")
-                    }
-                    location = ScanArchiveNodeLocation(id: id, path: record.explicitPath ?? id)
-                } else {
-                    let parentOrdinal = Int(parentRawIndices[pendingOrdinal])
-                    guard let parent = locations[parentOrdinal] else {
-                        throw ScanArchiveError.topology(localized: "node ordinal \(pendingOrdinal) has an unresolved parent")
-                    }
-                    if let explicitID = record.explicitID {
-                        location = ScanArchiveNodeLocation(id: explicitID, path: record.explicitPath ?? explicitID)
-                    } else {
-                        guard let component = record.relativePath,
-                              !component.isEmpty,
-                              component != ".",
-                              component != "..",
-                              !component.contains("/") else {
-                            throw ScanArchiveError.nodes(localized:
-                                "node ordinal \(pendingOrdinal) has an invalid relative path"
-                            )
-                        }
-                        let separator = parent.path == "/" || parent.path.hasSuffix("/") ? "" : "/"
-                        let path = parent.path + separator + component
-                        location = ScanArchiveNodeLocation(
-                            id: path,
-                            path: record.explicitPath ?? path
-                        )
-                    }
-                }
+                let parent = pendingOrdinal == topology.rootOrdinal
+                    ? nil
+                    : locations[Int(parentRawIndices[pendingOrdinal])]
+                let location = try makeLocation(at: pendingOrdinal, parent: parent)
                 locations[pendingOrdinal] = location
             }
 
@@ -455,7 +468,6 @@ extension ScanArchiveService {
         }
         defer { try? fileHandle.close() }
 
-        let decoder = Self.makeJSONDecoder()
         var records: [Record] = []
         records.reserveCapacity(min(
             expectedNodeCount,
@@ -464,54 +476,87 @@ extension ScanArchiveService {
         var buffer = Data()
         var hasher = SHA256()
         var decodedNodeCount = 0
+        var nextBatchIndex = 0
+        var nextBatchToAppend = 0
+        var pendingBatches: [Int: [Record]] = [:]
+        var inFlightBatchCount = 0
+        let maximumConcurrentDecodes = min(
+            max(ProcessInfo.processInfo.activeProcessorCount, 1),
+            ScanArchiveNodeIOConstants.maximumConcurrentDecodes
+        )
 
-        while true {
-            try Task.checkCancellation()
-            let chunk: Data
-            do {
-                chunk = try fileHandle.read(upToCount: ScanArchiveNodeIOConstants.readChunkSize) ?? Data()
-            } catch let error as ScanArchiveError {
-                throw error
-            } catch {
-                throw ScanArchiveError.nodes(error.localizedDescription)
-            }
-            guard !chunk.isEmpty else { break }
-            hasher.update(data: chunk)
-            buffer.append(chunk)
-
-            var lineStartIndex = buffer.startIndex
-            while let newlineIndex = buffer[lineStartIndex...].firstIndex(of: 0x0A) {
-                let lineData = Data(buffer[lineStartIndex..<newlineIndex])
-                lineStartIndex = buffer.index(after: newlineIndex)
-                try validateNodeLineSize(lineData)
-                if let record: Record = try decodeNodeLine(lineData, decoder: decoder) {
-                    records.append(record)
-                    decodedNodeCount += 1
+        try await withThrowingTaskGroup(of: (Int, [Record]).self) { group in
+            func appendReadyBatches() throws -> Bool {
+                var appendedBatch = false
+                while let batch = pendingBatches.removeValue(forKey: nextBatchToAppend) {
+                    records.append(contentsOf: batch)
+                    decodedNodeCount += batch.count
                     try validateDecodedNodeCount(decodedNodeCount, expectedNodeCount: expectedNodeCount)
-                    if ScanArchiveProgressReporting.shouldReportProgress(decodedNodeCount) ||
-                        decodedNodeCount == expectedNodeCount {
-                        progressReporter?.report(ScanArchiveProgress(
-                            phase: .readingNodes,
-                            completedUnitCount: decodedNodeCount,
-                            totalUnitCount: expectedNodeCount,
-                            message: "Reading node records"
-                        ))
+                    nextBatchToAppend += 1
+                    appendedBatch = true
+                    progressReporter?.report(ScanArchiveProgress(
+                        phase: .readingNodes,
+                        completedUnitCount: decodedNodeCount,
+                        totalUnitCount: expectedNodeCount,
+                        message: "Reading node records"
+                    ))
+                }
+                return appendedBatch
+            }
+
+            func enqueue(_ batchData: Data) {
+                let batchIndex = nextBatchIndex
+                nextBatchIndex += 1
+                inFlightBatchCount += 1
+                group.addTask {
+                    let decoder = Self.makeJSONDecoder()
+                    return (batchIndex, try decodeNodeBatch(batchData, decoder: decoder))
+                }
+            }
+
+            while true {
+                try Task.checkCancellation()
+                while inFlightBatchCount + pendingBatches.count >= maximumConcurrentDecodes,
+                      let completedBatch = try await group.next() {
+                    inFlightBatchCount -= 1
+                    pendingBatches[completedBatch.0] = completedBatch.1
+                    if try appendReadyBatches() {
                         await Task.yield()
                     }
                 }
-            }
-            if lineStartIndex > buffer.startIndex {
-                buffer.removeSubrange(buffer.startIndex..<lineStartIndex)
-            }
-            try validateNodeLineSize(buffer)
-        }
 
-        if !buffer.isEmpty {
-            try validateNodeLineSize(buffer)
-            if let record: Record = try decodeNodeLine(buffer, decoder: decoder) {
-                records.append(record)
-                decodedNodeCount += 1
-                try validateDecodedNodeCount(decodedNodeCount, expectedNodeCount: expectedNodeCount)
+                let chunk: Data
+                do {
+                    chunk = try fileHandle.read(upToCount: ScanArchiveNodeIOConstants.readChunkSize) ?? Data()
+                } catch let error as ScanArchiveError {
+                    throw error
+                } catch {
+                    throw ScanArchiveError.nodes(error.localizedDescription)
+                }
+                guard !chunk.isEmpty else { break }
+                hasher.update(data: chunk)
+                buffer.append(chunk)
+
+                if let newlineIndex = buffer.lastIndex(of: 0x0A) {
+                    let lineEndIndex = buffer.index(after: newlineIndex)
+                    enqueue(Data(buffer[..<lineEndIndex]))
+                    buffer.removeSubrange(..<lineEndIndex)
+                }
+                try validateNodeLineSize(buffer)
+            }
+
+            if !buffer.isEmpty {
+                try validateNodeLineSize(buffer)
+                enqueue(buffer)
+                buffer = Data()
+            }
+
+            while let completedBatch = try await group.next() {
+                inFlightBatchCount -= 1
+                pendingBatches[completedBatch.0] = completedBatch.1
+                if try appendReadyBatches() {
+                    await Task.yield()
+                }
             }
         }
 
@@ -554,5 +599,29 @@ extension ScanArchiveService {
         } catch {
             throw ScanArchiveError.nodes(localized: "invalid JSONL node: \(error.localizedDescription)")
         }
+    }
+
+    private func decodeNodeBatch<Record: Decodable & Sendable>(
+        _ data: Data,
+        decoder: JSONDecoder
+    ) throws -> [Record] {
+        var result: [Record] = []
+        var lineStartIndex = data.startIndex
+        while let newlineIndex = data[lineStartIndex...].firstIndex(of: 0x0A) {
+            let lineData = data[lineStartIndex..<newlineIndex]
+            lineStartIndex = data.index(after: newlineIndex)
+            try validateNodeLineSize(lineData)
+            if let record: Record = try decodeNodeLine(lineData, decoder: decoder) {
+                result.append(record)
+            }
+        }
+        if lineStartIndex < data.endIndex {
+            let lineData = data[lineStartIndex...]
+            try validateNodeLineSize(lineData)
+            if let record: Record = try decodeNodeLine(lineData, decoder: decoder) {
+                result.append(record)
+            }
+        }
+        return result
     }
 }

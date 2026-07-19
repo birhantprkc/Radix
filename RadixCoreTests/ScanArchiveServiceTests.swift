@@ -85,6 +85,21 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertFalse(String(decoding: compactData, as: UTF8.self).contains("/large/"))
     }
 
+    func testImportPreservesNodeOrderAcrossDecodeBatches() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeLargeArchiveSnapshot(childCount: 40_000)
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+
+        let imported = try await service.importSnapshot(from: archiveURL)
+
+        XCTAssertEqual(imported.snapshot.treeStore.indexedNodeIDs(), snapshot.treeStore.indexedNodeIDs())
+    }
+
     func testImportSupportsLegacyVersionThreeFullPathNodes() async throws {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()

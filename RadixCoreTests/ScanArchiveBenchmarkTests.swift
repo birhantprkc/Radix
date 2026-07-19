@@ -160,6 +160,59 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         )
     }
 
+    func testRealSnapshotImportCostProfileBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let archivePath = environment["RADIX_BENCH_IMPORT_PATH"] else {
+            throw XCTSkip("Set RADIX_BENCH_IMPORT_PATH to profile a real snapshot import.")
+        }
+
+        let archiveURL = URL(filePath: archivePath, directoryHint: .isDirectory)
+        let manifest = try Self.archiveJSONDecoder().decode(
+            ScanArchiveDocument.self,
+            from: Data(contentsOf: archiveURL.appending(path: "manifest.json"))
+        )
+        let service = ScanArchiveService()
+        let nodeRead = try await Self.measureMemoryAndTime {
+            try await service.readNodes(
+                from: archiveURL.appending(path: manifest.sections.nodes),
+                expectedChecksum: manifest.integrity.nodes,
+                expectedNodeCount: manifest.snapshot.nodeCount,
+                formatVersion: manifest.formatVersion,
+                progressReporter: nil
+            )
+        }
+        let topologyDecode = try await Self.measureMemoryAndTime {
+            try Self.archiveJSONDecoder().decode(
+                ScanArchiveTopology.self,
+                from: Data(contentsOf: archiveURL.appending(path: manifest.sections.topology))
+            )
+        }
+        guard case .compact(let records) = nodeRead.value else {
+            throw XCTSkip("Real snapshot import profiling requires a compact v4 archive.")
+        }
+        let materialize = try await Self.measureMemoryAndTime {
+            try await service.materializeCompactTreeStore(
+                records,
+                topology: topologyDecode.value,
+                expectedRootID: manifest.snapshot.rootID,
+                expectedTargetPath: manifest.snapshot.target.path,
+                progressReporter: nil
+            )
+        }
+
+        XCTAssertEqual(materialize.value.nodeCount, manifest.snapshot.nodeCount)
+        print(
+            """
+            RADIX_IMPORT_PROFILE_RESULT nodes=\(manifest.snapshot.nodeCount) \
+            node_read=\(Self.secondsString(nodeRead.elapsedSeconds)) \
+            node_read_peak_rss_delta=\(nodeRead.peakDeltaRSS) \
+            topology_decode=\(Self.secondsString(topologyDecode.elapsedSeconds)) \
+            materialize=\(Self.secondsString(materialize.elapsedSeconds)) \
+            materialize_peak_rss_delta=\(materialize.peakDeltaRSS)
+            """
+        )
+    }
+
     func testRealSnapshotComparisonBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let beforePath = environment["RADIX_BENCH_COMPARISON_BEFORE"],
