@@ -19,6 +19,39 @@ final class ScanBenchmarkTests: XCTestCase {
         XCTAssertNotEqual(changedModificationTime, baseline)
     }
 
+    func testIncrementalRescanBenchmark() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_BENCH_INCREMENTAL"] == "1" else {
+            throw XCTSkip(
+                "Set RADIX_BENCH_INCREMENTAL=1 to run the incremental rescan benchmark."
+            )
+        }
+
+        let directoryCount = max(
+            environment["RADIX_BENCH_INCREMENTAL_DIRECTORIES"].flatMap(Int.init) ?? 100,
+            100
+        )
+        let filesPerDirectory = max(
+            environment["RADIX_BENCH_INCREMENTAL_FILES_PER_DIRECTORY"].flatMap(Int.init) ?? 100,
+            1
+        )
+
+        for mutation in IncrementalBenchmarkRootMutation.allCases {
+            try await runRootMutationBenchmark(
+                mutation,
+                directoryCount: directoryCount,
+                filesPerDirectory: filesPerDirectory
+            )
+        }
+        for changedDirectoryCount in [1, 10, 100] {
+            try await runScatteredChangesBenchmark(
+                changedDirectoryCount: changedDirectoryCount,
+                directoryCount: directoryCount,
+                filesPerDirectory: filesPerDirectory
+            )
+        }
+    }
+
     func testRealWorldScanBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH"] == "1" else {
@@ -941,6 +974,310 @@ final class ScanBenchmarkTests: XCTestCase {
         return fingerprint.description
     }
 
+    private func runRootMutationBenchmark(
+        _ mutation: IncrementalBenchmarkRootMutation,
+        directoryCount: Int,
+        filesPerDirectory: Int
+    ) async throws {
+        let rootURL = try makeIncrementalBenchmarkDirectory(
+            directoryCount: directoryCount,
+            filesPerDirectory: filesPerDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let existingFileURL = rootURL.appending(path: "root-existing.dat")
+        let createdFileURL = rootURL.appending(path: "root-created.dat")
+        let event: FileSystemEventRecord
+        let mutate: () throws -> Void
+        switch mutation {
+        case .create:
+            event = FileSystemEventRecord(
+                path: createdFileURL.path,
+                eventID: 15,
+                flags: [.itemCreated, .itemIsFile]
+            )
+            mutate = {
+                try Data(repeating: 0x43, count: 8_192).write(to: createdFileURL)
+            }
+        case .modify:
+            event = FileSystemEventRecord(
+                path: existingFileURL.path,
+                eventID: 15,
+                flags: [.itemModified, .itemIsFile]
+            )
+            mutate = {
+                try Data(repeating: 0x4D, count: 16_384).write(to: existingFileURL)
+            }
+        case .delete:
+            event = FileSystemEventRecord(
+                path: existingFileURL.path,
+                eventID: 15,
+                flags: [.itemRemoved, .itemIsFile]
+            )
+            mutate = {
+                try FileManager.default.removeItem(at: existingFileURL)
+            }
+        }
+
+        try await runIncrementalBenchmarkScenario(
+            name: "root_\(mutation.rawValue)",
+            rootURL: rootURL,
+            events: [event],
+            mutate: mutate
+        )
+    }
+
+    private func runScatteredChangesBenchmark(
+        changedDirectoryCount: Int,
+        directoryCount: Int,
+        filesPerDirectory: Int
+    ) async throws {
+        let rootURL = try makeIncrementalBenchmarkDirectory(
+            directoryCount: directoryCount,
+            filesPerDirectory: filesPerDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let changedFileURLs = (0..<changedDirectoryCount).map { directoryIndex in
+            incrementalBenchmarkDirectoryURL(rootURL: rootURL, index: directoryIndex)
+                .appending(path: "changed.dat")
+        }
+        let events = changedFileURLs.map { fileURL in
+            FileSystemEventRecord(
+                path: fileURL.path,
+                eventID: 15,
+                flags: [.itemCreated, .itemIsFile]
+            )
+        }
+
+        try await runIncrementalBenchmarkScenario(
+            name: "scattered_\(changedDirectoryCount)",
+            rootURL: rootURL,
+            events: events,
+            mutate: {
+                for fileURL in changedFileURLs {
+                    try Data(repeating: 0x53, count: 8_192).write(to: fileURL)
+                }
+            }
+        )
+    }
+
+    private func runIncrementalBenchmarkScenario(
+        name: String,
+        rootURL: URL,
+        events: [FileSystemEventRecord],
+        mutate: () throws -> Void
+    ) async throws {
+        let since = ScanIncrementalCheckpoint(volumeUUID: "benchmark-volume", eventID: 10)
+        let through = ScanIncrementalCheckpoint(volumeUUID: "benchmark-volume", eventID: 20)
+        let history = FileSystemEventHistory(since: since, through: through, events: events)
+        let provider = IncrementalBenchmarkHistoryProvider(
+            checkpoints: [
+                since,
+                through,
+                ScanIncrementalCheckpoint(volumeUUID: "benchmark-volume", eventID: 30),
+            ],
+            history: history
+        )
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let baseline = try await finishedSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        try mutate()
+        let matcher = ScanExclusionMatcher(
+            patterns: options.exclusionPatterns,
+            rootPath: options.exclusionRootPath ?? target.url.path,
+            includeCloudStorage: options.includeCloudStorage,
+            cloudStorageRootPath: options.cloudStorageRootPath,
+            iCloudDriveRootPath: options.iCloudDriveRootPath
+        )
+        let plan = IncrementalRescanPlanner().plan(
+            history: history,
+            target: target,
+            treeStore: baseline.treeStore,
+            exclusionMatcher: matcher
+        )
+
+        let incrementalStart = ContinuousClock.now
+        let incremental = try await finishedSnapshot(
+            from: service.rescan(
+                target: target,
+                options: options,
+                from: baseline
+            )
+        )
+        let incrementalSeconds = Self.elapsedSeconds(since: incrementalStart)
+
+        let fullStart = ContinuousClock.now
+        let full = try await finishedSnapshot(
+            target: target,
+            options: options,
+            engine: ScanEngine()
+        )
+        let fullSeconds = Self.elapsedSeconds(since: fullStart)
+
+        let incrementalFingerprint = Self.resultFingerprint(incremental.treeStore)
+        let fullFingerprint = Self.resultFingerprint(full.treeStore)
+        assertEquivalentScanResults(
+            incremental,
+            full,
+            incrementalFingerprint: incrementalFingerprint,
+            fullFingerprint: fullFingerprint,
+            scenario: name
+        )
+
+        print(
+            """
+            RADIX_BENCH_INCREMENTAL_RESULT scenario=\(name)
+            plan=\(Self.description(of: plan))
+            changed_paths=\(events.count)
+            baseline_nodes=\(baseline.treeStore.nodeCount)
+            result_nodes=\(incremental.treeStore.nodeCount)
+            incremental_elapsed=\(String(format: "%.6f", incrementalSeconds))s
+            full_elapsed=\(String(format: "%.6f", fullSeconds))s
+            full_to_incremental_ratio=\(String(format: "%.3f", fullSeconds / max(incrementalSeconds, 0.000_001)))
+            warnings=\(incremental.scanWarnings.count)
+            fingerprint=\(incrementalFingerprint)
+            """
+        )
+    }
+
+    private func makeIncrementalBenchmarkDirectory(
+        directoryCount: Int,
+        filesPerDirectory: Int
+    ) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory.appending(
+            path: "radix-incremental-benchmark-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let payload = Data(repeating: 0x42, count: 128)
+        try payload.write(to: rootURL.appending(path: "root-existing.dat"))
+
+        for directoryIndex in 0..<directoryCount {
+            let directoryURL = incrementalBenchmarkDirectoryURL(
+                rootURL: rootURL,
+                index: directoryIndex
+            )
+            try FileManager.default.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: false
+            )
+            for fileIndex in 0..<filesPerDirectory {
+                try payload.write(to: directoryURL.appending(
+                    path: String(format: "file-%06d.dat", fileIndex)
+                ))
+            }
+        }
+        return rootURL
+    }
+
+    private func incrementalBenchmarkDirectoryURL(rootURL: URL, index: Int) -> URL {
+        rootURL.appending(
+            path: String(format: "directory-%04d", index),
+            directoryHint: .isDirectory
+        )
+    }
+
+    private func assertEquivalentScanResults(
+        _ incremental: ScanSnapshot,
+        _ full: ScanSnapshot,
+        incrementalFingerprint: String,
+        fullFingerprint: String,
+        scenario: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            incrementalFingerprint,
+            fullFingerprint,
+            "\(scenario): \(Self.firstDifference(incremental.treeStore, full.treeStore) ?? "fingerprint only")",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            incremental.aggregateStats.totalAllocatedSize,
+            full.aggregateStats.totalAllocatedSize,
+            scenario,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            incremental.aggregateStats.totalLogicalSize,
+            full.aggregateStats.totalLogicalSize,
+            scenario,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            incremental.aggregateStats.fileCount,
+            full.aggregateStats.fileCount,
+            scenario,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            incremental.aggregateStats.directoryCount,
+            full.aggregateStats.directoryCount,
+            scenario,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            Self.warningSignatures(incremental.scanWarnings),
+            Self.warningSignatures(full.scanWarnings),
+            scenario,
+            file: file,
+            line: line
+        )
+    }
+
+    private static func warningSignatures(_ warnings: [ScanWarning]) -> [String] {
+        warnings.map { "\($0.category.rawValue)|\($0.path)|\($0.message)" }.sorted()
+    }
+
+    private static func firstDifference(
+        _ incremental: FileTreeStore,
+        _ full: FileTreeStore
+    ) -> String? {
+        let incrementalIDs = incremental.indexedNodeIDs()
+        let fullIDs = full.indexedNodeIDs()
+        if incrementalIDs != fullIDs {
+            let offset = zip(incrementalIDs, fullIDs).enumerated().first {
+                $0.element.0 != $0.element.1
+            }?.offset ?? min(incrementalIDs.count, fullIDs.count)
+            return "node order differs at \(offset)"
+        }
+        for nodeID in fullIDs {
+            let incrementalNode = incremental.node(id: nodeID)
+            let fullNode = full.node(id: nodeID)
+            if incrementalNode != fullNode {
+                if incrementalNode?.lastModified != fullNode?.lastModified {
+                    return "lastModified differs at \(nodeID) incremental=\(String(format: "%.9f", incrementalNode?.lastModified?.timeIntervalSinceReferenceDate ?? -1)) full=\(String(format: "%.9f", fullNode?.lastModified?.timeIntervalSinceReferenceDate ?? -1))"
+                }
+                return "node metadata differs at \(nodeID) incremental=\(String(reflecting: incrementalNode)) full=\(String(reflecting: fullNode))"
+            }
+            if incremental.childIDs(of: nodeID) != full.childIDs(of: nodeID) {
+                return "child order differs at \(nodeID)"
+            }
+        }
+        return nil
+    }
+
+    private static func description(of plan: IncrementalRescanPlan) -> String {
+        switch plan {
+        case .noChanges:
+            return "no_changes"
+        case .rescanSubtrees(let nodeIDs):
+            return "subtrees_\(nodeIDs.count)"
+        case .fullScan(let reason):
+            return "full_scan_\(reason.rawValue)"
+        }
+    }
+
     private static func fingerprintFixtureStore(
         fileIdentity: FileIdentity = FileIdentity(device: 1, inode: 2),
         cloneIdentity: CloneIdentity? = CloneIdentity(device: 1, cloneID: 3),
@@ -1345,6 +1682,18 @@ final class ScanBenchmarkTests: XCTestCase {
         return try XCTUnwrap(finalSnapshot)
     }
 
+    private func finishedSnapshot(
+        from stream: AsyncThrowingStream<ScanProgressEvent, Error>
+    ) async throws -> ScanSnapshot {
+        for try await event in stream {
+            if case .finished(let snapshot) = event {
+                return snapshot
+            }
+        }
+        XCTFail("Expected a finished scan snapshot")
+        throw CancellationError()
+    }
+
     private func assertWithinRelativeTolerance(
         _ first: Int64,
         _ second: Int64,
@@ -1362,6 +1711,47 @@ final class ScanBenchmarkTests: XCTestCase {
             file: file,
             line: line
         )
+    }
+}
+
+private enum IncrementalBenchmarkRootMutation: String, CaseIterable {
+    case create
+    case modify
+    case delete
+}
+
+private final class IncrementalBenchmarkHistoryProvider: FileSystemEventHistoryProviding,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var checkpoints: [ScanIncrementalCheckpoint]
+    private let storedHistory: FileSystemEventHistory
+
+    init(
+        checkpoints: [ScanIncrementalCheckpoint],
+        history: FileSystemEventHistory
+    ) {
+        self.checkpoints = checkpoints
+        self.storedHistory = history
+    }
+
+    func currentCheckpoint(for targetURL: URL) throws -> ScanIncrementalCheckpoint {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !checkpoints.isEmpty else {
+            throw FileSystemEventHistoryError.eventIDUnavailable(targetURL.path)
+        }
+        return checkpoints.removeFirst()
+    }
+
+    func history(
+        for targetURL: URL,
+        since: ScanIncrementalCheckpoint,
+        through: ScanIncrementalCheckpoint
+    ) async throws -> FileSystemEventHistory {
+        _ = targetURL
+        precondition(since == storedHistory.since)
+        precondition(through == storedHistory.through)
+        return storedHistory
     }
 }
 
