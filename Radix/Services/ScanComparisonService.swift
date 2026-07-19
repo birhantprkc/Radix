@@ -567,7 +567,7 @@ nonisolated struct ScanComparisonService: Sendable {
         let movedRemovedPaths = Set(movedPathPairs.map(\.beforeRelativePath))
         let movedAddedPaths = Set(movedPathPairs.map(\.afterRelativePath))
 
-        rows.reserveCapacity(addedPaths.count + removedPaths.count + sharedPaths.count)
+        rows.reserveCapacity(coveredAddedPaths.count + coveredRemovedPaths.count)
 
         for movedPathPair in movedPathPairs {
             try Task.checkCancellation()
