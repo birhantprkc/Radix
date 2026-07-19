@@ -3661,6 +3661,39 @@ final class ScanEngineTests: XCTestCase {
         )
     }
 
+    func testExhaustedAutoSummaryProbeSuppressesRedundantDescendantProbes() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let cacheURL = rootURL.appending(path: "projects/cache", directoryHint: .isDirectory)
+        for index in 0..<3 {
+            let nestedURL = cacheURL.appending(
+                path: "branch-\(index)/nested",
+                directoryHint: .isDirectory
+            )
+            try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
+            try Data(repeating: UInt8(index), count: 8_192)
+                .write(to: nestedURL.appending(path: "payload.bin"))
+        }
+
+        var options = ScanOptions()
+        options.autoSummarizeMinFileCount = 10
+        options.autoSummarizeMaxAverageFileSize = 256
+        options.autoSummarizeMinDepthForSummarization = 2
+        let profile = AutoSummaryEventProbe()
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(autoSummaryProfileReporter: profile.record)
+        )
+
+        XCTAssertEqual(profile.probeCount, 1)
+        XCTAssertEqual(profile.rejectedProbeCount, 1)
+        XCTAssertEqual(snapshot.aggregateStats.fileCount, 3)
+        XCTAssertTrue(snapshot.treeStore.indexedNodeIDs().contains { $0.hasSuffix("payload.bin") })
+    }
+
     func testNodeDependencyLayoutNotAutoSummarizedWhenFilesAreLarge() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -3962,9 +3995,14 @@ private final class CancellationAfterChecks: @unchecked Sendable {
 
 private final class AutoSummaryEventProbe: @unchecked Sendable {
     private let lock = NSLock()
+    private var probes = 0
     private var rejectedProbes = 0
     private var reusedDirectories = 0
     private var reusedEntries = 0
+
+    var probeCount: Int {
+        lock.withLock { probes }
+    }
 
     var rejectedProbeCount: Int {
         lock.withLock { rejectedProbes }
@@ -3982,6 +4020,7 @@ private final class AutoSummaryEventProbe: @unchecked Sendable {
         lock.withLock {
             switch event {
             case .probeCompleted(_, let wasAccepted):
+                probes += 1
                 if !wasAccepted {
                     rejectedProbes += 1
                 }

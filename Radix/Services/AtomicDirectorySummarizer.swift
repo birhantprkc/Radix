@@ -37,6 +37,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         isNodeDependencyLayout: Bool,
         minFileCount: Int,
         maxAverageFileSize: Int64,
+        allowsDescendantProbe: Bool = true,
         cancellationCheck: CancellationCheck
     ) throws -> Bool {
         guard !childEntries.isEmpty else { return false }
@@ -51,6 +52,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         if Self.isKnownGeneratedDirectory(at: url) {
             return true
         }
+        guard allowsDescendantProbe else { return false }
         return shouldRunDescendantAtomicProbe(
             childEntries: childEntries,
             minFileCount: minFileCount,
@@ -119,7 +121,11 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     ) async throws -> AtomicDirectorySummaryDecision {
         try cancellationCheck()
         guard !childEntries.isEmpty else {
-            return AtomicDirectorySummaryDecision(summary: nil, reusableDirectoryListings: [:])
+            return AtomicDirectorySummaryDecision(
+                summary: nil,
+                reusableDirectoryListings: [:],
+                descendantProbeFullyExhausted: false
+            )
         }
 
         let immediateCandidate: Bool
@@ -136,6 +142,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         let deepCandidate: Bool
         var probeResumeState: AtomicDirectoryProbeResumeState? = nil
         var reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:]
+        var descendantProbeFullyExhausted = false
         if immediateCandidate {
             deepCandidate = true
         } else if Self.isKnownGeneratedDirectory(at: url) {
@@ -146,7 +153,11 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 minFileCount: minFileCount,
                 isNodeDependencyLayout: isNodeDependencyLayout
             ) else {
-                return AtomicDirectorySummaryDecision(summary: nil, reusableDirectoryListings: [:])
+                return AtomicDirectorySummaryDecision(
+                    summary: nil,
+                    reusableDirectoryListings: [:],
+                    descendantProbeFullyExhausted: false
+                )
             }
             let outcome = try descendantAtomicProbeProfile(
                 at: url,
@@ -174,13 +185,15 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             probeResumeState = deepCandidate ? outcome.resumeState : nil
             if !deepCandidate {
                 reusableDirectoryListings = outcome.reusableDirectoryListings
+                descendantProbeFullyExhausted = outcome.fullyExhausted
             }
         }
 
         guard deepCandidate else {
             return AtomicDirectorySummaryDecision(
                 summary: nil,
-                reusableDirectoryListings: reusableDirectoryListings
+                reusableDirectoryListings: reusableDirectoryListings,
+                descendantProbeFullyExhausted: descendantProbeFullyExhausted
             )
         }
 
@@ -206,7 +219,11 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 emissionState: &emissionState
             )
             reportCreatedSummary(summary)
-            return AtomicDirectorySummaryDecision(summary: summary, reusableDirectoryListings: [:])
+            return AtomicDirectorySummaryDecision(
+                summary: summary,
+                reusableDirectoryListings: [:],
+                descendantProbeFullyExhausted: false
+            )
         }
 
         guard let summary = try await summarize(
@@ -223,10 +240,18 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             emissionState: &emissionState,
             resumeState: probeResumeState
         ) else {
-            return AtomicDirectorySummaryDecision(summary: nil, reusableDirectoryListings: [:])
+            return AtomicDirectorySummaryDecision(
+                summary: nil,
+                reusableDirectoryListings: [:],
+                descendantProbeFullyExhausted: false
+            )
         }
         reportCreatedSummary(summary)
-        return AtomicDirectorySummaryDecision(summary: summary, reusableDirectoryListings: [:])
+        return AtomicDirectorySummaryDecision(
+            summary: summary,
+            reusableDirectoryListings: [:],
+            descendantProbeFullyExhausted: false
+        )
     }
 
     private func reportCreatedSummary(_ summary: AtomicDirectorySummary?) {

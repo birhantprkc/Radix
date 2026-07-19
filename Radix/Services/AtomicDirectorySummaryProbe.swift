@@ -293,6 +293,7 @@ extension AtomicDirectorySummarizer {
         var partial = AtomicDirectorySummaryPartial()
         partial.updateAccessibility(rootMetadata.isReadable)
         var reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:]
+        var fullyEnumerated = true
         // The caller already enumerated and classified the root directory.
         // A successful probe hands these frames directly to the summary queue.
         var frames = [BulkAtomicProbeFrame(
@@ -357,6 +358,7 @@ extension AtomicDirectorySummarizer {
                         throw cancellation.underlyingError
                     } catch {
                         partial.recordWarning(for: frames[frameIndex].workItem.url, error: error)
+                        fullyEnumerated = false
                         frames.removeLast()
                         continue
                     }
@@ -532,7 +534,8 @@ extension AtomicDirectorySummarizer {
                 profile: profile,
                 resumeState: nil,
                 visitedItemCount: visitedItems,
-                reusableDirectoryListings: reusableDirectoryListings
+                reusableDirectoryListings: reusableDirectoryListings,
+                fullyExhausted: fullyEnumerated
             ),
             visitedItems
         )

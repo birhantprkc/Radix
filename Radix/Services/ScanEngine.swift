@@ -198,6 +198,7 @@ actor ScanEngine {
         let weight: Double
         let parentDirectoryLease: ScanDirectoryDescriptorPool.Lease?
         let nativeName: BulkDirectoryEnumerator.NativeName?
+        let skipsDescendantAutoSummaryProbe: Bool
 
         init(
             url: URL,
@@ -208,7 +209,8 @@ actor ScanEngine {
             depth: Int,
             weight: Double,
             parentDirectoryLease: ScanDirectoryDescriptorPool.Lease? = nil,
-            nativeName: BulkDirectoryEnumerator.NativeName? = nil
+            nativeName: BulkDirectoryEnumerator.NativeName? = nil,
+            skipsDescendantAutoSummaryProbe: Bool = false
         ) {
             self.url = url
             self.metadata = metadata
@@ -219,6 +221,7 @@ actor ScanEngine {
             self.weight = weight
             self.parentDirectoryLease = parentDirectoryLease
             self.nativeName = nativeName
+            self.skipsDescendantAutoSummaryProbe = skipsDescendantAutoSummaryProbe
         }
     }
 
@@ -1275,6 +1278,7 @@ actor ScanEngine {
                                         isNodeDependencyLayout: isNodeDependencyLayout,
                                         minFileCount: autoSummarizeMinFileCount,
                                         maxAverageFileSize: autoSummarizeMaxAverageFileSize,
+                                        allowsDescendantProbe: !taskItem.skipsDescendantAutoSummaryProbe,
                                         cancellationCheck: cancellationCheck
                                     )
                                 } else {
@@ -1438,6 +1442,7 @@ actor ScanEngine {
                 // Set when a drained result yields an enumerated directory whose children
                 // should be expanded normally; handled once after the switch.
                 var directoryToExpand: AtomicDirectoryScanCandidate?
+                var probeFullyExhaustedForExpansion = false
 
                 switch traversalResult {
                 case .directory(.success(let success)):
@@ -1585,6 +1590,8 @@ actor ScanEngine {
                         }
                         // Probe declined: expand the directory normally.
                         directoryToExpand = candidate
+                        probeFullyExhaustedForExpansion = atomicResult.decision
+                            .descendantProbeFullyExhausted
                         break
                     }
                     let item = candidate.item
@@ -1747,7 +1754,9 @@ actor ScanEngine {
                             depth: item.depth + 1,
                             weight: childWeight,
                             parentDirectoryLease: contents.directoryLease,
-                            nativeName: childEntry.nativeName
+                            nativeName: childEntry.nativeName,
+                            skipsDescendantAutoSummaryProbe: item.skipsDescendantAutoSummaryProbe
+                                || probeFullyExhaustedForExpansion
                         )
                     )
                 }

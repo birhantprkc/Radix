@@ -131,17 +131,20 @@ nonisolated struct AtomicDirectoryProbeOutcome: @unchecked Sendable {
     var resumeState: AtomicDirectoryProbeResumeState?
     var visitedItemCount: Int
     var reusableDirectoryListings: [String: AtomicDirectoryProbeListing]
+    var fullyExhausted: Bool
 
     init(
         profile: AtomicDirectoryProbeProfile,
         resumeState: AtomicDirectoryProbeResumeState?,
         visitedItemCount: Int = 0,
-        reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:]
+        reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:],
+        fullyExhausted: Bool = false
     ) {
         self.profile = profile
         self.resumeState = resumeState
         self.visitedItemCount = visitedItemCount
         self.reusableDirectoryListings = reusableDirectoryListings
+        self.fullyExhausted = fullyExhausted
     }
 }
 
@@ -153,6 +156,7 @@ nonisolated struct AtomicDirectoryProbeListing: Sendable {
 nonisolated struct AtomicDirectorySummaryDecision: Sendable {
     let summary: AtomicDirectorySummary?
     let reusableDirectoryListings: [String: AtomicDirectoryProbeListing]
+    let descendantProbeFullyExhausted: Bool
 }
 
 nonisolated enum ScanAutoSummaryProfileEvent: Sendable {
