@@ -618,24 +618,22 @@ nonisolated struct FileTreeStore: Sendable {
         let rootOffset = Int(rootIndex.rawValue)
         precondition(nodes.indices.contains(rootOffset), "Verified FileTreeStore root is missing.")
 
+        var statsAccumulator = AggregateStatsAccumulator()
         for nodeIndex in orderedNodeIndices.reversed() {
             let offset = Int(nodeIndex.rawValue)
             let span = childSpans[offset]
-            guard span.count > 0, nodes[offset].isDirectory else { continue }
-            let start = Int(span.start)
-            let end = start + Int(span.count)
-            nodes[offset] = Self.repairingDirectoryRecord(
-                nodes[offset],
-                childIndices: childIndices[start..<end],
-                nodes: nodes
-            )
-        }
-
-        var statsAccumulator = AggregateStatsAccumulator()
-        for offset in nodes.indices {
+            if span.count > 0, nodes[offset].isDirectory {
+                let start = Int(span.start)
+                let end = start + Int(span.count)
+                nodes[offset] = Self.repairingDirectoryRecord(
+                    nodes[offset],
+                    childIndices: childIndices[start..<end],
+                    nodes: nodes
+                )
+            }
             statsAccumulator.include(
                 nodes[offset],
-                hasMaterializedChildren: childSpans[offset].count > 0
+                hasMaterializedChildren: span.count > 0
             )
         }
 
