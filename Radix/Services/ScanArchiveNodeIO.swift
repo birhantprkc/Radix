@@ -778,7 +778,12 @@ extension ScanArchiveService {
                 while let batch = pendingBatches.removeValue(forKey: nextBatchToAppend) {
                     let updatedNodeCount = decodedNodeCount + batch.count
                     try validateDecodedNodeCount(updatedNodeCount, expectedNodeCount: expectedNodeCount)
+                    let materializationStartedAt = importProfileStart()
                     try consumeBatch(batch)
+                    finishImportProfile(
+                        .nodeMaterializationWork,
+                        startedAt: materializationStartedAt
+                    )
                     decodedNodeCount = updatedNodeCount
                     nextBatchToAppend += 1
                     appendedBatch = true
@@ -797,15 +802,20 @@ extension ScanArchiveService {
                 nextBatchIndex += 1
                 inFlightBatchCount += 1
                 group.addTask {
+                    let decodingStartedAt = importProfileStart()
                     let decoder = Self.makeJSONDecoder()
-                    return (batchIndex, try decodeNodeBatch(batchData, decoder: decoder))
+                    let records: [Record] = try decodeNodeBatch(batchData, decoder: decoder)
+                    finishImportProfile(.nodeDecodeWork, startedAt: decodingStartedAt)
+                    return (batchIndex, records)
                 }
             }
 
             while true {
                 try Task.checkCancellation()
-                while inFlightBatchCount + pendingBatches.count >= maximumConcurrentDecodes,
-                      let completedBatch = try await group.next() {
+                while inFlightBatchCount + pendingBatches.count >= maximumConcurrentDecodes {
+                    let decoderWaitStartedAt = importProfileStart()
+                    guard let completedBatch = try await group.next() else { break }
+                    finishImportProfile(.nodeDecodeWait, startedAt: decoderWaitStartedAt)
                     inFlightBatchCount -= 1
                     pendingBatches[completedBatch.0] = completedBatch.1
                     if try appendReadyBatches() {
@@ -813,6 +823,7 @@ extension ScanArchiveService {
                     }
                 }
 
+                let ioStartedAt = importProfileStart()
                 let chunk: Data
                 do {
                     chunk = try fileHandle.read(upToCount: ScanArchiveNodeIOConstants.readChunkSize) ?? Data()
@@ -821,7 +832,10 @@ extension ScanArchiveService {
                 } catch {
                     throw ScanArchiveError.nodes(error.localizedDescription)
                 }
-                guard !chunk.isEmpty else { break }
+                guard !chunk.isEmpty else {
+                    finishImportProfile(.nodeIOWork, startedAt: ioStartedAt)
+                    break
+                }
                 hasher.update(data: chunk)
                 buffer.append(chunk)
 
@@ -831,6 +845,7 @@ extension ScanArchiveService {
                     buffer.removeSubrange(..<lineEndIndex)
                 }
                 try validateNodeLineSize(buffer)
+                finishImportProfile(.nodeIOWork, startedAt: ioStartedAt)
             }
 
             if !buffer.isEmpty {
@@ -839,7 +854,10 @@ extension ScanArchiveService {
                 buffer = Data()
             }
 
-            while let completedBatch = try await group.next() {
+            while true {
+                let decoderWaitStartedAt = importProfileStart()
+                guard let completedBatch = try await group.next() else { break }
+                finishImportProfile(.nodeDecodeWait, startedAt: decoderWaitStartedAt)
                 inFlightBatchCount -= 1
                 pendingBatches[completedBatch.0] = completedBatch.1
                 if try appendReadyBatches() {

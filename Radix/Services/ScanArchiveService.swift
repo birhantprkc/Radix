@@ -74,6 +74,10 @@ nonisolated enum ScanArchiveImportProfilePhase: String, CaseIterable, Sendable {
     case readArchiveMetadata = "read_archive_metadata"
     case prepareTopology = "prepare_topology"
     case readAndMaterializeNodes = "read_and_materialize_nodes"
+    case nodeIOWork = "node_io_work"
+    case nodeDecodeWork = "node_decode_work"
+    case nodeDecodeWait = "node_decode_wait"
+    case nodeMaterializationWork = "node_materialization_work"
     case finalizeTreeStore = "finalize_tree_store"
     case finishSnapshot = "finish_snapshot"
 }
