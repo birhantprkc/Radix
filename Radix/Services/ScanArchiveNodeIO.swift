@@ -29,6 +29,15 @@ nonisolated private struct ScanArchiveNodeLocation {
     let path: String
 }
 
+nonisolated private struct ScanArchiveCompactTopology {
+    let rootOrdinal: Int
+    let parentRawIndices: [UInt32]
+    let childSpans: [FileTreeChildSpan]
+    let childIndices: [FileTreeNodeIndex]
+    let orderedNodeIndices: [FileTreeNodeIndex]
+    let parentsPrecedeChildren: Bool
+}
+
 nonisolated private struct ScanArchiveStreamingJSONWriter {
     private static let flushByteCount = 1024 * 1024
 
@@ -241,40 +250,64 @@ extension ScanArchiveService {
         return .compact(records)
     }
 
-    func materializeCompactTreeStore(
-        _ records: [ScanArchiveCompactNode],
-        topology: ScanArchiveTopology,
-        expectedRootID: String,
-        expectedTargetPath: String,
-        progressReporter: ScanArchiveProgressReporter?
-    ) async throws -> FileTreeStore {
-        guard records.count <= Int(UInt32.max) else {
-            throw ScanArchiveError.nodes(localized: "node payload exceeds the supported node count")
+    private func prepareCompactTopology(
+        _ topology: ScanArchiveTopology,
+        expectedNodeCount: Int
+    ) throws -> ScanArchiveCompactTopology {
+        guard expectedNodeCount > 0,
+              expectedNodeCount <= Int(UInt32.max) else {
+            throw ScanArchiveError.nodes(localized:
+                "manifest expected \(expectedNodeCount) nodes, exceeding the supported node count"
+            )
         }
-        guard records.indices.contains(topology.rootOrdinal) else {
+        guard (0..<expectedNodeCount).contains(topology.rootOrdinal) else {
             throw ScanArchiveError.topology(localized: "root ordinal \(topology.rootOrdinal) is out of range")
         }
 
-        let noParent = UInt32.max
-        var parentRawIndices = Array(repeating: noParent, count: records.count)
-        var childSpans = Array(repeating: FileTreeChildSpan(), count: records.count)
-        var childIndices: [FileTreeNodeIndex] = []
-        childIndices.reserveCapacity(max(records.count - 1, 0))
-
+        var edgeCount = 0
         for (parentKey, childOrdinals) in topology.childOrdinalsByOrdinal {
             try Task.checkCancellation()
-            guard let parentOrdinal = Int(parentKey), String(parentOrdinal) == parentKey,
-                  records.indices.contains(parentOrdinal) else {
+            guard let parentOrdinal = Int(parentKey),
+                  String(parentOrdinal) == parentKey,
+                  (0..<expectedNodeCount).contains(parentOrdinal) else {
                 throw ScanArchiveError.topology(localized: "parent ordinal \(parentKey) is invalid")
             }
-            guard childOrdinals.isEmpty || records[parentOrdinal].payload.isDirectory else {
-                throw ScanArchiveError.topology(localized: "non-directory node ordinal \(parentOrdinal) has children")
+            for childOrdinal in childOrdinals {
+                guard (0..<expectedNodeCount).contains(childOrdinal) else {
+                    throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) is out of range")
+                }
+                let (updatedEdgeCount, overflow) = edgeCount.addingReportingOverflow(1)
+                guard !overflow, updatedEdgeCount < expectedNodeCount else {
+                    throw ScanArchiveError.topology(localized: "topology contains too many child references")
+                }
+                edgeCount = updatedEdgeCount
             }
+        }
+        guard edgeCount == expectedNodeCount - 1 else {
+            try diagnoseMalformedCompactTopology(
+                topology,
+                rootOrdinal: topology.rootOrdinal,
+                edgeCount: edgeCount
+            )
+            throw ScanArchiveError.topology(localized:
+                "\(expectedNodeCount - edgeCount - 1) node(s) are not reachable from root"
+            )
+        }
 
+        let noParent = UInt32.max
+        var parentRawIndices = Array(repeating: noParent, count: expectedNodeCount)
+        var childSpans = Array(repeating: FileTreeChildSpan(), count: expectedNodeCount)
+        var childIndices: [FileTreeNodeIndex] = []
+        childIndices.reserveCapacity(edgeCount)
+        var parentsPrecedeChildren = true
+
+        for (parentKey, childOrdinals) in topology.childOrdinalsByOrdinal {
+            let parentOrdinal = Int(parentKey)!
             let childStart = childIndices.count
             for childOrdinal in childOrdinals {
-                guard records.indices.contains(childOrdinal) else {
-                    throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) is out of range")
+                if childOrdinal == parentOrdinal {
+                    let subject = childOrdinal == topology.rootOrdinal ? "root node" : "node ordinal \(childOrdinal)"
+                    throw ScanArchiveError.topology(localized: "\(subject) references itself as a child")
                 }
                 let previousParent = parentRawIndices[childOrdinal]
                 guard previousParent == noParent else {
@@ -283,6 +316,7 @@ extension ScanArchiveService {
                 }
                 parentRawIndices[childOrdinal] = UInt32(parentOrdinal)
                 childIndices.append(FileTreeNodeIndex(rawValue: UInt32(childOrdinal)))
+                parentsPrecedeChildren = parentsPrecedeChildren && parentOrdinal < childOrdinal
             }
             childSpans[parentOrdinal] = FileTreeChildSpan(
                 start: UInt32(childStart),
@@ -296,41 +330,169 @@ extension ScanArchiveService {
             }
             throw ScanArchiveError.topology(localized: "root node is referenced as a child")
         }
-        for ordinal in records.indices where ordinal != topology.rootOrdinal {
+        for ordinal in 0..<expectedNodeCount where ordinal != topology.rootOrdinal {
             guard parentRawIndices[ordinal] != noParent else {
                 throw ScanArchiveError.topology(localized: "node ordinal \(ordinal) is not reachable")
             }
         }
 
+        let rootIndex = FileTreeNodeIndex(rawValue: UInt32(topology.rootOrdinal))
+        var visited = Array(repeating: false, count: expectedNodeCount)
+        var orderedNodeIndices: [FileTreeNodeIndex] = []
+        orderedNodeIndices.reserveCapacity(expectedNodeCount)
+        var stack = [rootIndex]
+        while let nodeIndex = stack.popLast() {
+            if orderedNodeIndices.count.isMultiple(of: 256) {
+                try Task.checkCancellation()
+            }
+            let offset = Int(nodeIndex.rawValue)
+            guard !visited[offset] else {
+                throw ScanArchiveError.topology(localized: "cycle detected at node ordinal \(offset)")
+            }
+            visited[offset] = true
+            orderedNodeIndices.append(nodeIndex)
+            let span = childSpans[offset]
+            let start = Int(span.start)
+            let end = start + Int(span.count)
+            stack.append(contentsOf: childIndices[start..<end].reversed())
+        }
+        guard orderedNodeIndices.count == expectedNodeCount else {
+            throw ScanArchiveError.topology(localized:
+                "\(expectedNodeCount - orderedNodeIndices.count) node(s) are not reachable from root"
+            )
+        }
+
+        return ScanArchiveCompactTopology(
+            rootOrdinal: topology.rootOrdinal,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            parentsPrecedeChildren: parentsPrecedeChildren
+        )
+    }
+
+    private func diagnoseMalformedCompactTopology(
+        _ topology: ScanArchiveTopology,
+        rootOrdinal: Int,
+        edgeCount: Int
+    ) throws {
+        var parentByChild: [Int: Int] = [:]
+        parentByChild.reserveCapacity(min(edgeCount, ScanArchiveNodeIOConstants.maximumInitialRecordCapacity))
+        for (parentKey, childOrdinals) in topology.childOrdinalsByOrdinal {
+            let parentOrdinal = Int(parentKey)!
+            for childOrdinal in childOrdinals {
+                if childOrdinal == parentOrdinal {
+                    let subject = childOrdinal == rootOrdinal ? "root node" : "node ordinal \(childOrdinal)"
+                    throw ScanArchiveError.topology(localized: "\(subject) references itself as a child")
+                }
+                if let existingParent = parentByChild.updateValue(parentOrdinal, forKey: childOrdinal) {
+                    let detail = existingParent == parentOrdinal ? "is duplicated" : "has multiple parents"
+                    throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) \(detail)")
+                }
+            }
+        }
+        if parentByChild[rootOrdinal] != nil {
+            throw ScanArchiveError.topology(localized: "root node is referenced as a child")
+        }
+    }
+
+    private func compactNodeLocation(
+        _ record: ScanArchiveCompactNode,
+        ordinal: Int,
+        rootOrdinal: Int,
+        expectedRootID: String,
+        parent: ScanArchiveNodeLocation?
+    ) throws -> ScanArchiveNodeLocation {
+        if ordinal == rootOrdinal {
+            let id = record.explicitID ?? expectedRootID
+            guard id == expectedRootID else {
+                throw ScanArchiveError.topology(localized: "root ID does not match manifest")
+            }
+            return ScanArchiveNodeLocation(id: id, path: record.explicitPath ?? id)
+        }
+        guard let parent else {
+            throw ScanArchiveError.topology(localized: "node ordinal \(ordinal) has an unresolved parent")
+        }
+        if let explicitID = record.explicitID {
+            return ScanArchiveNodeLocation(id: explicitID, path: record.explicitPath ?? explicitID)
+        }
+        guard let component = record.relativePath,
+              !component.isEmpty,
+              component != ".",
+              component != "..",
+              !component.contains("/") else {
+            throw ScanArchiveError.nodes(localized:
+                "node ordinal \(ordinal) has an invalid relative path"
+            )
+        }
+        let separator = parent.path == "/" || parent.path.hasSuffix("/") ? "" : "/"
+        let path = parent.path + separator + component
+        return ScanArchiveNodeLocation(id: path, path: record.explicitPath ?? path)
+    }
+
+    private func modelCompactNode(
+        _ record: ScanArchiveCompactNode,
+        location: ScanArchiveNodeLocation,
+        ordinal: Int,
+        rootOrdinal: Int,
+        expectedTargetPath: String
+    ) throws -> FileNodeRecord {
+        let node = try record.payload.modelNode(
+            resolvedID: location.id,
+            resolvedPath: location.path,
+            resolvedName: record.payload.name.isEmpty ? record.relativePath : nil
+        )
+        if ordinal == rootOrdinal, node.url.path != expectedTargetPath {
+            throw ScanArchiveError.topology(localized: "root path does not match target path")
+        }
+        if !node.isSynthetic,
+           !Self.path(node.url.path, isContainedIn: expectedTargetPath) {
+            throw ScanArchiveError.topology(localized: "node \(node.id) path is outside target")
+        }
+        return node
+    }
+
+    func materializeCompactTreeStore(
+        _ records: [ScanArchiveCompactNode],
+        topology: ScanArchiveTopology,
+        expectedRootID: String,
+        expectedTargetPath: String,
+        progressReporter: ScanArchiveProgressReporter?
+    ) async throws -> FileTreeStore {
+        let compactTopology = try prepareCompactTopology(
+            topology,
+            expectedNodeCount: records.count
+        )
+        return try await materializeCompactTreeStore(
+            records,
+            topology: compactTopology,
+            expectedRootID: expectedRootID,
+            expectedTargetPath: expectedTargetPath,
+            progressReporter: progressReporter
+        )
+    }
+
+    private func materializeCompactTreeStore(
+        _ records: [ScanArchiveCompactNode],
+        topology: ScanArchiveCompactTopology,
+        expectedRootID: String,
+        expectedTargetPath: String,
+        progressReporter: ScanArchiveProgressReporter?
+    ) async throws -> FileTreeStore {
+        let noParent = UInt32.max
+
         var locations = Array<ScanArchiveNodeLocation?>(repeating: nil, count: records.count)
 
         func makeLocation(at ordinal: Int, parent: ScanArchiveNodeLocation?) throws -> ScanArchiveNodeLocation {
             let record = records[ordinal]
-            if ordinal == topology.rootOrdinal {
-                let id = record.explicitID ?? expectedRootID
-                guard id == expectedRootID else {
-                    throw ScanArchiveError.topology(localized: "root ID does not match manifest")
-                }
-                return ScanArchiveNodeLocation(id: id, path: record.explicitPath ?? id)
-            }
-            guard let parent else {
-                throw ScanArchiveError.topology(localized: "node ordinal \(ordinal) has an unresolved parent")
-            }
-            if let explicitID = record.explicitID {
-                return ScanArchiveNodeLocation(id: explicitID, path: record.explicitPath ?? explicitID)
-            }
-            guard let component = record.relativePath,
-                  !component.isEmpty,
-                  component != ".",
-                  component != "..",
-                  !component.contains("/") else {
-                throw ScanArchiveError.nodes(localized:
-                    "node ordinal \(ordinal) has an invalid relative path"
-                )
-            }
-            let separator = parent.path == "/" || parent.path.hasSuffix("/") ? "" : "/"
-            let path = parent.path + separator + component
-            return ScanArchiveNodeLocation(id: path, path: record.explicitPath ?? path)
+            return try compactNodeLocation(
+                record,
+                ordinal: ordinal,
+                rootOrdinal: topology.rootOrdinal,
+                expectedRootID: expectedRootID,
+                parent: parent
+            )
         }
 
         func resolveLocation(at ordinal: Int) throws -> ScanArchiveNodeLocation {
@@ -342,7 +504,7 @@ extension ScanArchiveService {
                 locations[ordinal] = location
                 return location
             }
-            let directParentOrdinal = Int(parentRawIndices[ordinal])
+            let directParentOrdinal = Int(topology.parentRawIndices[ordinal])
             if let parent = locations[directParentOrdinal] {
                 let location = try makeLocation(at: ordinal, parent: parent)
                 locations[ordinal] = location
@@ -358,7 +520,7 @@ extension ScanArchiveService {
                 }
                 chain.append(cursor)
                 guard cursor != topology.rootOrdinal else { break }
-                let parentOrdinal = parentRawIndices[cursor]
+                let parentOrdinal = topology.parentRawIndices[cursor]
                 guard parentOrdinal != noParent else {
                     throw ScanArchiveError.topology(localized: "node ordinal \(cursor) has an invalid parent")
                 }
@@ -368,7 +530,7 @@ extension ScanArchiveService {
             while let pendingOrdinal = chain.popLast() {
                 let parent = pendingOrdinal == topology.rootOrdinal
                     ? nil
-                    : locations[Int(parentRawIndices[pendingOrdinal])]
+                    : locations[Int(topology.parentRawIndices[pendingOrdinal])]
                 let location = try makeLocation(at: pendingOrdinal, parent: parent)
                 locations[pendingOrdinal] = location
             }
@@ -388,19 +550,15 @@ extension ScanArchiveService {
                 try Task.checkCancellation()
             }
             let location = try resolveLocation(at: ordinal)
-            let node = try records[ordinal].payload.modelNode(
-                resolvedID: location.id,
-                resolvedPath: location.path,
-                resolvedName: records[ordinal].payload.name.isEmpty
-                    ? records[ordinal].relativePath
-                    : nil
+            let node = try modelCompactNode(
+                records[ordinal],
+                location: location,
+                ordinal: ordinal,
+                rootOrdinal: topology.rootOrdinal,
+                expectedTargetPath: expectedTargetPath
             )
-            if ordinal == topology.rootOrdinal, node.url.path != expectedTargetPath {
-                throw ScanArchiveError.topology(localized: "root path does not match target path")
-            }
-            if !node.isSynthetic,
-               !Self.path(node.url.path, isContainedIn: expectedTargetPath) {
-                throw ScanArchiveError.topology(localized: "node \(node.id) path is outside target")
+            if topology.childSpans[ordinal].count > 0, !node.isDirectory {
+                throw ScanArchiveError.topology(localized: "non-directory node ordinal \(ordinal) has children")
             }
             let nodeIndex = FileTreeNodeIndex(rawValue: UInt32(ordinal))
             guard indexByNodeID.updateValue(nodeIndex, forKey: node.id) == nil else {
@@ -421,36 +579,125 @@ extension ScanArchiveService {
         }
 
         let rootIndex = FileTreeNodeIndex(rawValue: UInt32(topology.rootOrdinal))
-        var visited = Array(repeating: false, count: records.count)
-        var orderedNodeIndices: [FileTreeNodeIndex] = []
-        orderedNodeIndices.reserveCapacity(records.count)
-        var stack = [rootIndex]
-        while let nodeIndex = stack.popLast() {
-            let offset = Int(nodeIndex.rawValue)
-            guard !visited[offset] else {
-                throw ScanArchiveError.topology(localized: "cycle detected at node ordinal \(offset)")
-            }
-            visited[offset] = true
-            orderedNodeIndices.append(nodeIndex)
-            let span = childSpans[offset]
-            let start = Int(span.start)
-            let end = start + Int(span.count)
-            stack.append(contentsOf: childIndices[start..<end].reversed())
-        }
-        guard orderedNodeIndices.count == records.count else {
-            throw ScanArchiveError.topology(localized:
-                "\(records.count - orderedNodeIndices.count) node(s) are not reachable from root"
-            )
-        }
-
         return FileTreeStore(
             verifiedRootIndex: rootIndex,
             nodes: &nodes,
             indexByNodeID: indexByNodeID,
-            parentRawIndices: parentRawIndices,
-            childSpans: childSpans,
-            childIndices: childIndices,
-            orderedNodeIndices: orderedNodeIndices
+            parentRawIndices: topology.parentRawIndices,
+            childSpans: topology.childSpans,
+            childIndices: topology.childIndices,
+            orderedNodeIndices: topology.orderedNodeIndices
+        )
+    }
+
+    func readCompactTreeStore(
+        from url: URL,
+        expectedChecksum: String,
+        expectedNodeCount: Int,
+        topology archivedTopology: ScanArchiveTopology,
+        expectedRootID: String,
+        expectedTargetPath: String,
+        progressReporter: ScanArchiveProgressReporter?
+    ) async throws -> FileTreeStore {
+        let topology = try prepareCompactTopology(
+            archivedTopology,
+            expectedNodeCount: expectedNodeCount
+        )
+        guard topology.parentsPrecedeChildren else {
+            let records: [ScanArchiveCompactNode] = try await readNodeRecords(
+                from: url,
+                expectedChecksum: expectedChecksum,
+                expectedNodeCount: expectedNodeCount,
+                progressReporter: progressReporter
+            )
+            guard records.count == expectedNodeCount else {
+                throw ScanArchiveError.nodes(localized:
+                    "manifest expected \(expectedNodeCount) nodes, found \(records.count)"
+                )
+            }
+            return try await materializeCompactTreeStore(
+                records,
+                topology: topology,
+                expectedRootID: expectedRootID,
+                expectedTargetPath: expectedTargetPath,
+                progressReporter: progressReporter
+            )
+        }
+
+        var nodes: [FileNodeRecord] = []
+        nodes.reserveCapacity(expectedNodeCount)
+        var indexByNodeID: [String: FileTreeNodeIndex] = [:]
+        indexByNodeID.reserveCapacity(expectedNodeCount)
+
+        try await readNodeBatches(
+            from: url,
+            expectedChecksum: expectedChecksum,
+            expectedNodeCount: expectedNodeCount,
+            progressReporter: progressReporter
+        ) { (batch: [ScanArchiveCompactNode]) in
+            for record in batch {
+                let ordinal = nodes.count
+                if ordinal.isMultiple(of: 256) {
+                    try Task.checkCancellation()
+                }
+                let parent: ScanArchiveNodeLocation?
+                if ordinal == topology.rootOrdinal {
+                    parent = nil
+                } else {
+                    let parentOrdinal = Int(topology.parentRawIndices[ordinal])
+                    guard nodes.indices.contains(parentOrdinal) else {
+                        throw ScanArchiveError.topology(localized:
+                            "node ordinal \(ordinal) has an unresolved parent"
+                        )
+                    }
+                    let parentNode = nodes[parentOrdinal]
+                    parent = ScanArchiveNodeLocation(
+                        id: parentNode.id,
+                        path: parentNode.url.path
+                    )
+                }
+
+                let location = try compactNodeLocation(
+                    record,
+                    ordinal: ordinal,
+                    rootOrdinal: topology.rootOrdinal,
+                    expectedRootID: expectedRootID,
+                    parent: parent
+                )
+                let node = try modelCompactNode(
+                    record,
+                    location: location,
+                    ordinal: ordinal,
+                    rootOrdinal: topology.rootOrdinal,
+                    expectedTargetPath: expectedTargetPath
+                )
+                if topology.childSpans[ordinal].count > 0, !node.isDirectory {
+                    throw ScanArchiveError.topology(localized:
+                        "non-directory node ordinal \(ordinal) has children"
+                    )
+                }
+                let nodeIndex = FileTreeNodeIndex(rawValue: UInt32(ordinal))
+                guard indexByNodeID.updateValue(nodeIndex, forKey: node.id) == nil else {
+                    throw ScanArchiveError.nodes(localized: "duplicate node ID \(node.id)")
+                }
+                nodes.append(node)
+            }
+        }
+
+        guard nodes.count == expectedNodeCount else {
+            throw ScanArchiveError.nodes(localized:
+                "manifest expected \(expectedNodeCount) nodes, found \(nodes.count)"
+            )
+        }
+        let rootIndex = FileTreeNodeIndex(rawValue: UInt32(topology.rootOrdinal))
+        return FileTreeStore(
+            verifiedRootIndex: rootIndex,
+            nodes: &nodes,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: topology.parentRawIndices,
+            childSpans: topology.childSpans,
+            childIndices: topology.childIndices,
+            orderedNodeIndices: topology.orderedNodeIndices
         )
     }
 
@@ -460,6 +707,29 @@ extension ScanArchiveService {
         expectedNodeCount: Int,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> [Record] {
+        var records: [Record] = []
+        records.reserveCapacity(min(
+            expectedNodeCount,
+            ScanArchiveNodeIOConstants.maximumInitialRecordCapacity
+        ))
+        try await readNodeBatches(
+            from: url,
+            expectedChecksum: expectedChecksum,
+            expectedNodeCount: expectedNodeCount,
+            progressReporter: progressReporter
+        ) { batch in
+            records.append(contentsOf: batch)
+        }
+        return records
+    }
+
+    private func readNodeBatches<Record: Decodable & Sendable>(
+        from url: URL,
+        expectedChecksum: String,
+        expectedNodeCount: Int,
+        progressReporter: ScanArchiveProgressReporter?,
+        consumeBatch: ([Record]) throws -> Void
+    ) async throws {
         let fileHandle: FileHandle
         do {
             fileHandle = try FileHandle(forReadingFrom: url)
@@ -468,11 +738,6 @@ extension ScanArchiveService {
         }
         defer { try? fileHandle.close() }
 
-        var records: [Record] = []
-        records.reserveCapacity(min(
-            expectedNodeCount,
-            ScanArchiveNodeIOConstants.maximumInitialRecordCapacity
-        ))
         var buffer = Data()
         var hasher = SHA256()
         var decodedNodeCount = 0
@@ -489,9 +754,10 @@ extension ScanArchiveService {
             func appendReadyBatches() throws -> Bool {
                 var appendedBatch = false
                 while let batch = pendingBatches.removeValue(forKey: nextBatchToAppend) {
-                    records.append(contentsOf: batch)
-                    decodedNodeCount += batch.count
-                    try validateDecodedNodeCount(decodedNodeCount, expectedNodeCount: expectedNodeCount)
+                    let updatedNodeCount = decodedNodeCount + batch.count
+                    try validateDecodedNodeCount(updatedNodeCount, expectedNodeCount: expectedNodeCount)
+                    try consumeBatch(batch)
+                    decodedNodeCount = updatedNodeCount
                     nextBatchToAppend += 1
                     appendedBatch = true
                     progressReporter?.report(ScanArchiveProgress(
@@ -572,7 +838,6 @@ extension ScanArchiveService {
             throw ScanArchiveError.integrity(localized: "nodes checksum mismatch")
         }
 
-        return records
     }
 
     private func validateNodeLineSize(_ lineData: Data) throws {

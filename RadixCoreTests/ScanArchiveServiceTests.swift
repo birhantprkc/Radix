@@ -100,6 +100,58 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(imported.snapshot.treeStore.indexedNodeIDs(), snapshot.treeStore.indexedNodeIDs())
     }
 
+    func testImportSupportsCompactNodesStoredBeforeTheirParents() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeArchiveSnapshot()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+
+        let nodesURL = archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory)
+        let nodeLines = try Data(contentsOf: nodesURL).split(separator: 0x0A)
+        var reversedNodes = Data()
+        for line in nodeLines.reversed() {
+            reversedNodes.append(contentsOf: line)
+            reversedNodes.append(0x0A)
+        }
+        try reversedNodes.write(to: nodesURL, options: [.atomic])
+        try rewriteManifestNodeChecksum(
+            Data(SHA256.hash(data: reversedNodes)).base64EncodedString(),
+            in: archiveURL
+        )
+
+        let topologyURL = archiveURL.appending(path: "topology.json", directoryHint: .notDirectory)
+        let topology = try JSONDecoder().decode(
+            ScanArchiveTopology.self,
+            from: Data(contentsOf: topologyURL)
+        )
+        let lastOrdinal = nodeLines.count - 1
+        let reversedChildren = Dictionary(uniqueKeysWithValues:
+            topology.childOrdinalsByOrdinal.map { parentKey, children in
+                (String(lastOrdinal - Int(parentKey)!), children.map { lastOrdinal - $0 })
+            }
+        )
+        try encodeArchiveJSON(
+            ScanArchiveTopology(
+                rootOrdinal: lastOrdinal - topology.rootOrdinal,
+                childOrdinalsByOrdinal: reversedChildren
+            ),
+            to: topologyURL
+        )
+
+        let imported = try await service.importSnapshot(from: archiveURL).snapshot
+
+        XCTAssertEqual(imported.treeStore.childIDsByID, snapshot.treeStore.childIDsByID)
+        XCTAssertEqual(
+            imported.aggregateStats.totalAllocatedSize,
+            snapshot.aggregateStats.totalAllocatedSize
+        )
+        XCTAssertEqual(imported.aggregateStats.fileCount, snapshot.aggregateStats.fileCount)
+    }
+
     func testImportSupportsLegacyVersionThreeFullPathNodes() async throws {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()

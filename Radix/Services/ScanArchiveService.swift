@@ -391,14 +391,6 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         }
         try archivedStats.validate()
 
-        let encodedNodePayload = try await readNodes(
-            from: nodesURL,
-            expectedChecksum: manifest.integrity.nodes,
-            expectedNodeCount: manifest.snapshot.nodeCount,
-            formatVersion: manifest.formatVersion,
-            progressReporter: progressReporter
-        )
-
         progressReporter?.report(ScanArchiveProgress(
             phase: .readingTopology,
             message: String(localized: "Reading topology", comment: "Progress message while reading scan tree topology.")
@@ -409,6 +401,34 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             maximumByteCount: Self.maximumTopologySize(for: manifest.snapshot.nodeCount)
         ) { detail in
             ScanArchiveError.topology(detail)
+        }
+
+        let compactTreeStore: FileTreeStore?
+        let legacyNodePayload: ScanArchiveNodePayload?
+        if manifest.formatVersion == 4 {
+            compactTreeStore = try await readCompactTreeStore(
+                from: nodesURL,
+                expectedChecksum: manifest.integrity.nodes,
+                expectedNodeCount: manifest.snapshot.nodeCount,
+                topology: archivedTopology,
+                expectedRootID: manifest.snapshot.rootID,
+                expectedTargetPath: manifest.snapshot.target.path,
+                progressReporter: progressReporter
+            )
+            legacyNodePayload = nil
+        } else {
+            let encodedNodePayload = try await readNodes(
+                from: nodesURL,
+                expectedChecksum: manifest.integrity.nodes,
+                expectedNodeCount: manifest.snapshot.nodeCount,
+                formatVersion: manifest.formatVersion,
+                progressReporter: progressReporter
+            )
+            guard case .legacy(let payload) = encodedNodePayload else {
+                throw ScanArchiveError.nodes(localized: "legacy node payload was not decoded")
+            }
+            compactTreeStore = nil
+            legacyNodePayload = payload
         }
 
         progressReporter?.report(ScanArchiveProgress(
@@ -429,8 +449,14 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         ))
 
         let treeStore: FileTreeStore
-        switch encodedNodePayload {
-        case .legacy(let payload):
+        if let compactTreeStore {
+            try validateCounts(
+                manifest: manifest,
+                nodeCount: compactTreeStore.nodeCount,
+                warnings: warnings
+            )
+            treeStore = compactTreeStore
+        } else if let payload = legacyNodePayload {
             let topology = try archivedTopology.resolvedTopology(orderedNodeIDs: payload.orderedNodeIDs)
             try validateCounts(manifest: manifest, nodesByID: payload.nodesByID, warnings: warnings)
             let rebuiltParentIDs = try await validateTopology(
@@ -446,15 +472,8 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
                 childIDsByID: topology.childIDsByID,
                 parentIDByID: rebuiltParentIDs
             )
-        case .compact(let records):
-            try validateCounts(manifest: manifest, nodeCount: records.count, warnings: warnings)
-            treeStore = try await materializeCompactTreeStore(
-                records,
-                topology: archivedTopology,
-                expectedRootID: manifest.snapshot.rootID,
-                expectedTargetPath: manifest.snapshot.target.path,
-                progressReporter: progressReporter
-            )
+        } else {
+            throw ScanArchiveError.nodes(localized: "node payload was not decoded")
         }
         var importedWarnings = try warnings.map { try $0.modelWarning() }
         let computedStats = treeStore.aggregateStats
