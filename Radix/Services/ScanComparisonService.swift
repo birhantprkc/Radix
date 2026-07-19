@@ -501,7 +501,39 @@ nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
     }
 }
 
+nonisolated enum ScanComparisonProfilePhase: String, CaseIterable, Sendable {
+    case prepareInputs = "prepare_inputs"
+    case inspectSharedNodes = "inspect_shared_nodes"
+    case hydrateAncestors = "hydrate_ancestors"
+    case classifyPaths = "classify_paths"
+    case buildRows = "build_rows"
+    case sortRows = "sort_rows"
+    case buildChangeTree = "build_change_tree"
+    case buildTopLevelChanges = "build_top_level_changes"
+    case finalize
+}
+
 nonisolated struct ScanComparisonService: Sendable {
+    private let profileReporter: (@Sendable (ScanComparisonProfilePhase, Duration) -> Void)?
+
+    init(
+        profileReporter: (@Sendable (ScanComparisonProfilePhase, Duration) -> Void)? = nil
+    ) {
+        self.profileReporter = profileReporter
+    }
+
+    private func profileStart() -> ContinuousClock.Instant? {
+        profileReporter == nil ? nil : ContinuousClock.now
+    }
+
+    private func finishProfile(
+        _ phase: ScanComparisonProfilePhase,
+        startedAt: ContinuousClock.Instant?
+    ) {
+        guard let profileReporter, let startedAt else { return }
+        profileReporter(phase, startedAt.duration(to: .now))
+    }
+
     func compare(before: ScanSnapshot, after: ScanSnapshot) async throws -> ScanComparison {
         if before.treeStore.rootID == after.treeStore.rootID {
             return try await compareSameRoot(before: before, after: after)
@@ -513,6 +545,7 @@ nonisolated struct ScanComparisonService: Sendable {
         before: ScanSnapshot,
         after: ScanSnapshot
     ) async throws -> ScanComparison {
+        let preparationStartedAt = profileStart()
         try Task.checkCancellation()
         async let beforeNodesTask = Self.indexedNodes(in: before)
         async let afterNodesTask = Self.indexedNodes(in: after)
@@ -528,6 +561,7 @@ nonisolated struct ScanComparisonService: Sendable {
             afterNodes: afterNodes
         )
         let allocatedSizes = await allocatedSizesTask
+        finishProfile(.prepareInputs, startedAt: preparationStartedAt)
         return try makeComparison(
             before: before,
             after: after,
@@ -542,6 +576,7 @@ nonisolated struct ScanComparisonService: Sendable {
         before: ScanSnapshot,
         after: ScanSnapshot
     ) async throws -> ScanComparison {
+        let preparationStartedAt = profileStart()
         try Task.checkCancellation()
         let rootID = before.treeStore.rootID
         async let allocatedSizesTask = Self.normalizedAllocatedSizes(
@@ -561,10 +596,12 @@ nonisolated struct ScanComparisonService: Sendable {
 
         let (removed, added) = try await (removedTask, addedTask)
         let allocatedSizes = await allocatedSizesTask
+        finishProfile(.prepareInputs, startedAt: preparationStartedAt)
         var beforeNodes = removed.nodes
         var afterNodes = added.nodes
         var sharedPaths: [String] = []
 
+        let sharedInspectionStartedAt = profileStart()
         for nodeIndex in before.treeStore.indexedNodeIndices() {
             let offset = Int(nodeIndex.rawValue)
             if offset.isMultiple(of: 256) {
@@ -583,7 +620,9 @@ nonisolated struct ScanComparisonService: Sendable {
             beforeNodes[relativePath] = beforeNode
             afterNodes[relativePath] = afterNode
         }
+        finishProfile(.inspectSharedNodes, startedAt: sharedInspectionStartedAt)
 
+        let ancestorHydrationStartedAt = profileStart()
         let pathPartition = PathPartition(
             added: added.paths,
             removed: removed.paths,
@@ -606,6 +645,7 @@ nonisolated struct ScanComparisonService: Sendable {
             rootID: rootID,
             to: &afterNodes
         )
+        finishProfile(.hydrateAncestors, startedAt: ancestorHydrationStartedAt)
 
         return try makeComparison(
             before: before,
@@ -625,7 +665,7 @@ nonisolated struct ScanComparisonService: Sendable {
         pathPartition: PathPartition,
         allocatedSizes: (before: [String: Int64], after: [String: Int64])
     ) throws -> ScanComparison {
-        var rows: [ScanComparisonRow] = []
+        let pathClassificationStartedAt = profileStart()
         let addedPaths = pathPartition.added
         let removedPaths = pathPartition.removed
         let sharedPaths = pathPartition.shared
@@ -670,7 +710,10 @@ nonisolated struct ScanComparisonService: Sendable {
         )
         let movedRemovedPaths = Set(movedPathPairs.map(\.beforeRelativePath))
         let movedAddedPaths = Set(movedPathPairs.map(\.afterRelativePath))
+        finishProfile(.classifyPaths, startedAt: pathClassificationStartedAt)
 
+        let rowBuildingStartedAt = profileStart()
+        var rows: [ScanComparisonRow] = []
         rows.reserveCapacity(coveredAddedPaths.count + coveredRemovedPaths.count)
 
         for movedPathPair in movedPathPairs {
@@ -747,7 +790,10 @@ nonisolated struct ScanComparisonService: Sendable {
                 afterAllocatedSize: afterAllocatedSize
             ))
         }
+        finishProfile(.buildRows, startedAt: rowBuildingStartedAt)
+
         try Task.checkCancellation()
+        let rowSortingStartedAt = profileStart()
         let sortedRows = rows.sorted { lhs, rhs in
             ScanComparisonRowComparator.sortsBefore(
                 lhs,
@@ -755,23 +801,34 @@ nonisolated struct ScanComparisonService: Sendable {
                 using: ScanComparisonRowComparator.defaultSortOrder
             )
         }
+        finishProfile(.sortRows, startedAt: rowSortingStartedAt)
+
+        let changeTreeStartedAt = profileStart()
         let changeTree = try Self.changeTree(
             from: sortedRows,
             beforeNodes: beforeNodes,
             afterNodes: afterNodes
         )
+        finishProfile(.buildChangeTree, startedAt: changeTreeStartedAt)
+
+        let topLevelChangesStartedAt = profileStart()
         let topLevelChanges = Self.topLevelChanges(
             from: sortedRows,
             beforeNodes: beforeNodes,
             afterNodes: afterNodes
         )
-        return ScanComparison(
+        finishProfile(.buildTopLevelChanges, startedAt: topLevelChangesStartedAt)
+
+        let finalizationStartedAt = profileStart()
+        let comparison = ScanComparison(
             beforeSnapshot: before,
             afterSnapshot: after,
             rows: sortedRows,
             changeTree: changeTree,
             topLevelChanges: topLevelChanges
         )
+        finishProfile(.finalize, startedAt: finalizationStartedAt)
+        return comparison
     }
 
     private struct PathPartition {

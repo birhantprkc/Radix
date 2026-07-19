@@ -228,8 +228,12 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             let after = try await service.importSnapshot(from: afterURL)
             return (before, after)
         }
+        let comparisonPhases = ComparisonPhaseRecorder()
+        let comparisonService = ScanComparisonService { phase, duration in
+            comparisonPhases.record(phase, duration: duration)
+        }
         let comparison = try await Self.measureMemoryAndTime {
-            try await ScanComparisonService().compare(
+            try await comparisonService.compare(
                 before: imports.value.0.snapshot,
                 after: imports.value.1.snapshot
             )
@@ -263,6 +267,10 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             comparison_peak_rss_delta=\(comparison.peakDeltaRSS)
             """
         )
+        let phaseSummary = comparisonPhases.measurements().map { phase, duration in
+            "\(phase.rawValue)=\(Self.secondsString(Self.seconds(duration)))"
+        }.joined(separator: " ")
+        print("RADIX_COMPARISON_PROFILE_RESULT \(phaseSummary)")
     }
 
     private struct BenchmarkCase {
@@ -280,6 +288,25 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
 
         var peakDeltaRSS: UInt64 {
             peakRSS > startRSS ? peakRSS - startRSS : 0
+        }
+    }
+
+    private final class ComparisonPhaseRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var durationsByPhase: [ScanComparisonProfilePhase: Duration] = [:]
+
+        func record(_ phase: ScanComparisonProfilePhase, duration: Duration) {
+            lock.lock()
+            durationsByPhase[phase, default: .zero] += duration
+            lock.unlock()
+        }
+
+        func measurements() -> [(ScanComparisonProfilePhase, Duration)] {
+            lock.lock()
+            defer { lock.unlock() }
+            return ScanComparisonProfilePhase.allCases.compactMap { phase in
+                durationsByPhase[phase].map { (phase, $0) }
+            }
         }
     }
 
