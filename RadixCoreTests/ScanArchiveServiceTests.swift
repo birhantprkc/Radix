@@ -846,6 +846,49 @@ final class ScanArchiveServiceTests: XCTestCase {
         }
     }
 
+    func testImportRejectsRelativeChildOfSyntheticParentOutsideTarget() async throws {
+        let child = makeTestFileNode(
+            id: "/tmp/archive-synthetic/child.bin",
+            name: "child.bin",
+            size: 1
+        )
+        let syntheticParent = FileNodeRecord(
+            id: "/archive#synthetic-directory",
+            url: URL(filePath: "/tmp/archive-synthetic", directoryHint: .isDirectory),
+            name: "Synthetic Directory",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: 1,
+            logicalSize: 1,
+            descendantFileCount: 1,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: true,
+            isAutoSummarized: false
+        )
+        let root = makeTestDirectoryNode(id: "/archive", name: "archive", children: [syntheticParent])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [syntheticParent],
+            syntheticParent.id: [child],
+        ])
+        let archiveURL = try makeTemporaryArchiveURL()
+        let service = ScanArchiveService()
+        _ = try await service.export(
+            snapshot: makeTestSnapshot(root: root, store: store),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should reject relative children outside the target.")
+        } catch ScanArchiveError.topology(let detail) {
+            XCTAssertTrue(detail.contains("outside target"))
+        }
+    }
+
     func testImportRejectsUnsupportedVersion() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()

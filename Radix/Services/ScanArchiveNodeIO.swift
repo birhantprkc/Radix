@@ -451,9 +451,8 @@ extension ScanArchiveService {
         if ordinal == rootOrdinal, node.url.path != expectedTargetPath {
             throw ScanArchiveError.topology(localized: "root path does not match target path")
         }
-        if !hasValidatedRelativeLocation,
-           !node.isSynthetic,
-           !Self.path(node.url.path, isContainedIn: expectedTargetPath) {
+        if !node.isSynthetic,
+           !Self.path(node.id, isContainedIn: expectedTargetPath) {
             throw ScanArchiveError.topology(localized: "node \(node.id) path is outside target")
         }
         return node
