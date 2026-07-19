@@ -159,11 +159,13 @@ nonisolated struct AtomicDirectorySummaryDecision: Sendable {
     let descendantProbeFullyExhausted: Bool
 }
 
+#if DEBUG
 nonisolated enum ScanAutoSummaryProfileEvent: Sendable {
     case probeCompleted(visitedItemCount: Int, wasAccepted: Bool)
     case directorySummarized(descendantFileCount: Int)
     case reusedDirectoryListing(entryCount: Int)
 }
+#endif
 
 nonisolated final class AtomicDirectorySummaryState {
     var allocatedSize: Int64 = 0

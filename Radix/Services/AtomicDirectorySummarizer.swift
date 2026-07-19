@@ -8,24 +8,43 @@
 import Foundation
 
 nonisolated struct AtomicDirectorySummarizer: Sendable {
+    #if DEBUG
     typealias ProfileReporter = @Sendable (ScanAutoSummaryProfileEvent) -> Void
+    #endif
 
     let metadataLoader: ScanMetadataLoader
     let diagnostics: ScanDiagnosticsContext?
     let summaryPool: AtomicDirectorySummaryPool?
+    #if DEBUG
     let profileReporter: ProfileReporter?
+    #endif
 
     init(
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
+        summaryPool: AtomicDirectorySummaryPool? = nil
+    ) {
+        self.metadataLoader = metadataLoader
+        self.diagnostics = diagnostics
+        self.summaryPool = summaryPool
+        #if DEBUG
+        self.profileReporter = nil
+        #endif
+    }
+
+    #if DEBUG
+    init(
+        metadataLoader: ScanMetadataLoader,
+        diagnostics: ScanDiagnosticsContext? = nil,
         summaryPool: AtomicDirectorySummaryPool? = nil,
-        profileReporter: ProfileReporter? = nil
+        profileReporter: ProfileReporter?
     ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
         self.summaryPool = summaryPool
         self.profileReporter = profileReporter
     }
+    #endif
 
     /// Cheap, synchronous pre-check mirroring `summaryIfNeeded`'s gating: whether the
     /// directory is worth probing or summarizing at all. Runs no descendant I/O, so it
@@ -178,10 +197,12 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 minFileCount: minFileCount,
                 maxAverageFileSize: maxAverageFileSize
             )
+            #if DEBUG
             profileReporter?(.probeCompleted(
                 visitedItemCount: outcome.visitedItemCount,
                 wasAccepted: deepCandidate
             ))
+            #endif
             probeResumeState = deepCandidate ? outcome.resumeState : nil
             if !deepCandidate {
                 reusableDirectoryListings = outcome.reusableDirectoryListings
@@ -218,7 +239,9 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 continuation: continuation,
                 emissionState: &emissionState
             )
+            #if DEBUG
             reportCreatedSummary(summary)
+            #endif
             return AtomicDirectorySummaryDecision(
                 summary: summary,
                 reusableDirectoryListings: [:],
@@ -246,7 +269,9 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                 descendantProbeFullyExhausted: false
             )
         }
+        #if DEBUG
         reportCreatedSummary(summary)
+        #endif
         return AtomicDirectorySummaryDecision(
             summary: summary,
             reusableDirectoryListings: [:],
@@ -254,12 +279,14 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         )
     }
 
+    #if DEBUG
     private func reportCreatedSummary(_ summary: AtomicDirectorySummary?) {
         guard let summary else { return }
         profileReporter?(.directorySummarized(
             descendantFileCount: summary.descendantFileCount
         ))
     }
+    #endif
 
     /// Performs a fast recursive summary of a directory's size and file count.
     /// - Parameters:

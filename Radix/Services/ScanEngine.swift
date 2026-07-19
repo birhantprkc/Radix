@@ -259,6 +259,7 @@ actor ScanEngine {
         #if DEBUG
         let enumerationNanoseconds: UInt64
         let classificationNanoseconds: UInt64
+        let reusedProbeListing: Bool
         #endif
     }
 
@@ -407,7 +408,9 @@ actor ScanEngine {
 
     typealias VolumeFileSystemTypeProvider = @Sendable (URL) -> String?
     typealias DirectoryDescriptorPoolFactory = @Sendable () -> ScanDirectoryDescriptorPool
+    #if DEBUG
     typealias AutoSummaryProfileReporter = @Sendable (ScanAutoSummaryProfileEvent) -> Void
+    #endif
 
     private let directoryContents: DirectoryContentsProvider
     private let usesBulkDirectoryEnumeration: Bool
@@ -416,7 +419,9 @@ actor ScanEngine {
     private let linkCountCapabilityCache: LinkCountCapabilityCache
     private let atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?
     private let atomicSummaryProgressEmissionInterval: TimeInterval
+    #if DEBUG
     private let autoSummaryProfileReporter: AutoSummaryProfileReporter?
+    #endif
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let directoryDescriptorPoolFactory: DirectoryDescriptorPoolFactory
     private let usesWorkerSideLeafPreparation: Bool
@@ -431,8 +436,7 @@ actor ScanEngine {
         },
         usesDeferredBulkEntryFiltering: Bool = true,
         usesWorkerSideLeafPreparation: Bool = true,
-        workerSideLeafPreparationBatchLimit: Int? = nil,
-        autoSummaryProfileReporter: AutoSummaryProfileReporter? = nil
+        workerSideLeafPreparationBatchLimit: Int? = nil
     ) {
         self.init(
             enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
@@ -443,10 +447,44 @@ actor ScanEngine {
             directoryDescriptorPoolFactory: directoryDescriptorPoolFactory,
             usesDeferredBulkEntryFiltering: usesDeferredBulkEntryFiltering,
             usesWorkerSideLeafPreparation: usesWorkerSideLeafPreparation,
-            workerSideLeafPreparationBatchLimit: workerSideLeafPreparationBatchLimit,
-            autoSummaryProfileReporter: autoSummaryProfileReporter
+            workerSideLeafPreparationBatchLimit: workerSideLeafPreparationBatchLimit
         )
     }
+
+    #if DEBUG
+    init(
+        volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
+        atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver? = nil,
+        atomicSummaryProgressEmissionInterval: TimeInterval = 0.15,
+        directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory = {
+            ScanDirectoryDescriptorPool()
+        },
+        usesDeferredBulkEntryFiltering: Bool = true,
+        usesWorkerSideLeafPreparation: Bool = true,
+        workerSideLeafPreparationBatchLimit: Int? = nil,
+        autoSummaryProfileReporter: @escaping AutoSummaryProfileReporter
+    ) {
+        self.directoryContents = ScanEngine.defaultDirectoryContents
+        self.usesBulkDirectoryEnumeration = true
+        self.usesDeferredBulkEntryFiltering = usesDeferredBulkEntryFiltering
+        self.directoryNamespaceResolver = DirectoryNamespaceResolver()
+        self.linkCountCapabilityCache = LinkCountCapabilityCache()
+        self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
+        self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
+        self.autoSummaryProfileReporter = autoSummaryProfileReporter
+        self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
+        self.directoryDescriptorPoolFactory = directoryDescriptorPoolFactory
+        self.usesWorkerSideLeafPreparation = usesWorkerSideLeafPreparation
+        self.workerSideLeafPreparationBatchLimit = min(
+            max(
+                workerSideLeafPreparationBatchLimit
+                    ?? ScanConcurrencyPolicy.ordinaryLeafPreparationBatchLimit,
+                1
+            ),
+            ScanConcurrencyPolicy.ordinaryLeafPreparationBatchLimit
+        )
+    }
+    #endif
 
     init(
         enumeratedDirectoryContents: @escaping DirectoryContentsProvider,
@@ -463,8 +501,7 @@ actor ScanEngine {
             directoryDescriptorPoolFactory: { ScanDirectoryDescriptorPool() },
             usesDeferredBulkEntryFiltering: false,
             usesWorkerSideLeafPreparation: true,
-            workerSideLeafPreparationBatchLimit: nil,
-            autoSummaryProfileReporter: nil
+            workerSideLeafPreparationBatchLimit: nil
         )
     }
 
@@ -477,8 +514,7 @@ actor ScanEngine {
         directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory,
         usesDeferredBulkEntryFiltering: Bool,
         usesWorkerSideLeafPreparation: Bool,
-        workerSideLeafPreparationBatchLimit: Int?,
-        autoSummaryProfileReporter: AutoSummaryProfileReporter?
+        workerSideLeafPreparationBatchLimit: Int?
     ) {
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
@@ -487,7 +523,9 @@ actor ScanEngine {
         self.linkCountCapabilityCache = LinkCountCapabilityCache()
         self.atomicSummaryWorkerObserver = atomicSummaryWorkerObserver
         self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
-        self.autoSummaryProfileReporter = autoSummaryProfileReporter
+        #if DEBUG
+        self.autoSummaryProfileReporter = nil
+        #endif
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.directoryDescriptorPoolFactory = directoryDescriptorPoolFactory
         self.usesWorkerSideLeafPreparation = usesWorkerSideLeafPreparation
@@ -1027,12 +1065,20 @@ actor ScanEngine {
             progressEmissionInterval: atomicSummaryProgressEmissionInterval
         )
         atomicSummaryPool.start()
+        #if DEBUG
         let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
             metadataLoader: scanMetadataLoader,
             diagnostics: diagnostics,
             summaryPool: atomicSummaryPool,
             profileReporter: autoSummaryProfileReporter
         )
+        #else
+        let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
+            metadataLoader: scanMetadataLoader,
+            diagnostics: diagnostics,
+            summaryPool: atomicSummaryPool
+        )
+        #endif
         let directoryTraversalWorkerLimit = ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
         let directoryClassificationWorkerLimit = ScanConcurrencyPolicy.directoryClassificationWorkerLimit(for: options)
         let effectiveDirectoryClassificationWorkerLimit = ScanConcurrencyPolicy.effectiveDirectoryClassificationWorkerLimit(
@@ -1246,9 +1292,15 @@ actor ScanEngine {
                                     ) ? taskMetadata.fileIdentity : nil,
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
                                     preloadedListing: preloadedListing,
-                                    autoSummaryProfileReporter: self.autoSummaryProfileReporter,
                                     cancellationCheck: cancellationCheck
                                 )
+                                #if DEBUG
+                                if contents.reusedProbeListing {
+                                    scanAtomicDirectorySummarizer.profileReporter?(
+                                        .reusedDirectoryListing(entryCount: contents.entries.count)
+                                    )
+                                }
+                                #endif
                                 var childDirectoryCount = 0
                                 var totalWeightUnits = 0.0
                                 for (offset, childEntry) in contents.entries.enumerated() {
@@ -2257,7 +2309,6 @@ actor ScanEngine {
         expectedIdentity: FileIdentity?,
         classificationWorkerLimit: Int,
         preloadedListing: AtomicDirectoryProbeListing? = nil,
-        autoSummaryProfileReporter: AutoSummaryProfileReporter? = nil,
         cancellationCheck: @escaping CancellationCheck
     ) async throws -> DirectoryContentsScanResult {
         try cancellationCheck()
@@ -2306,14 +2357,14 @@ actor ScanEngine {
                     exclusionMatcher: exclusionMatcher,
                     cancellationCheck: cancellationCheck
                 )
-                autoSummaryProfileReporter?(.reusedDirectoryListing(entryCount: entries.count))
                 #if DEBUG
                 return DirectoryContentsScanResult(
                     entries: entries,
                     enumeratedItemCount: preloadedListing.enumeratedItemCount,
                     directoryLease: directoryLease,
                     enumerationNanoseconds: 0,
-                    classificationNanoseconds: DispatchTime.now().uptimeNanoseconds - classificationStart
+                    classificationNanoseconds: DispatchTime.now().uptimeNanoseconds - classificationStart,
+                    reusedProbeListing: true
                 )
                 #else
                 return DirectoryContentsScanResult(
@@ -2401,7 +2452,8 @@ actor ScanEngine {
                     enumeratedItemCount: enumeratedItemCount,
                     directoryLease: directoryLease,
                     enumerationNanoseconds: enumerationNanoseconds,
-                    classificationNanoseconds: classificationNanoseconds
+                    classificationNanoseconds: classificationNanoseconds,
+                    reusedProbeListing: false
                 )
                 #else
                 return DirectoryContentsScanResult(
@@ -2483,7 +2535,8 @@ actor ScanEngine {
             enumeratedItemCount: enumerationResult.urls.count + enumerationResult.localizedFailures.count,
             directoryLease: nil,
             enumerationNanoseconds: enumerationNanoseconds,
-            classificationNanoseconds: classificationNanoseconds
+            classificationNanoseconds: classificationNanoseconds,
+            reusedProbeListing: false
         )
         #else
         return DirectoryContentsScanResult(

@@ -1,6 +1,7 @@
 import XCTest
 @testable import RadixCore
 
+#if DEBUG
 private final class AutoSummaryBenchmarkProfile: @unchecked Sendable {
     struct Snapshot {
         let probeCount: Int
@@ -52,6 +53,7 @@ private final class AutoSummaryBenchmarkProfile: @unchecked Sendable {
         )
     }
 }
+#endif
 
 final class ScanBenchmarkTests: XCTestCase {
     func testResultFingerprintCoversIdentityCloneAndModificationTime() {
@@ -116,6 +118,7 @@ final class ScanBenchmarkTests: XCTestCase {
             throw XCTSkip("Benchmark path does not exist: \(targetURL.path)")
         }
 
+        #if DEBUG
         let autoSummaryProfile = environment["RADIX_BENCH_AUTO_SUMMARY_PROFILE"] == "1"
             ? AutoSummaryBenchmarkProfile()
             : nil
@@ -127,7 +130,14 @@ final class ScanBenchmarkTests: XCTestCase {
         } else {
             autoSummaryProfileReporter = nil
         }
-        let engine = ScanEngine(autoSummaryProfileReporter: autoSummaryProfileReporter)
+        let engine = if let autoSummaryProfileReporter {
+            ScanEngine(autoSummaryProfileReporter: autoSummaryProfileReporter)
+        } else {
+            ScanEngine()
+        }
+        #else
+        let engine = ScanEngine()
+        #endif
         var options = ScanOptions()
         options.includeHiddenFiles = environment["RADIX_BENCH_INCLUDE_HIDDEN"] == "1"
         options.autoSummarizeDirectories = environment["RADIX_BENCH_AUTO_SUMMARIZE"] != "0"
@@ -153,7 +163,20 @@ final class ScanBenchmarkTests: XCTestCase {
         let elapsed = startedAt.duration(to: .now)
         let snapshot = try XCTUnwrap(finalSnapshot)
         let elapsedSeconds = Double(elapsed.components.seconds) + (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        #if DEBUG
         let profile = autoSummaryProfile?.snapshot()
+        let autoSummaryProfileOutput = """
+            auto_summary_probes=\(profile?.probeCount ?? 0)
+            auto_summary_accepted_probes=\(profile?.acceptedProbeCount ?? 0)
+            auto_summary_probed_items=\(profile?.probedItemCount ?? 0)
+            auto_summary_directories=\(profile?.summarizedDirectoryCount ?? 0)
+            auto_summary_files=\(profile?.summarizedFileCount ?? 0)
+            auto_summary_reused_directories=\(profile?.reusedDirectoryCount ?? 0)
+            auto_summary_reused_entries=\(profile?.reusedEntryCount ?? 0)
+            """
+        #else
+        let autoSummaryProfileOutput = ""
+        #endif
 
         print(
             """
@@ -169,13 +192,7 @@ final class ScanBenchmarkTests: XCTestCase {
             progress_events=\(progressEvents)
             discovered=\(snapshot.aggregateStats.totalAllocatedSize)
             fingerprint=\(Self.resultFingerprint(snapshot.treeStore))
-            auto_summary_probes=\(profile?.probeCount ?? 0)
-            auto_summary_accepted_probes=\(profile?.acceptedProbeCount ?? 0)
-            auto_summary_probed_items=\(profile?.probedItemCount ?? 0)
-            auto_summary_directories=\(profile?.summarizedDirectoryCount ?? 0)
-            auto_summary_files=\(profile?.summarizedFileCount ?? 0)
-            auto_summary_reused_directories=\(profile?.reusedDirectoryCount ?? 0)
-            auto_summary_reused_entries=\(profile?.reusedEntryCount ?? 0)
+            \(autoSummaryProfileOutput)
             """
         )
     }

@@ -3612,11 +3612,16 @@ final class ScanEngineTests: XCTestCase {
         options.autoSummarizeMaxAverageFileSize = 256
         options.autoSummarizeMinDepthForSummarization = 2
 
+        #if DEBUG
         let profile = AutoSummaryEventProbe()
+        let enabledEngine = ScanEngine(autoSummaryProfileReporter: profile.record)
+        #else
+        let enabledEngine = ScanEngine()
+        #endif
         let enabledSnapshot = try await finishedSnapshot(
             target: ScanTarget(url: rootURL),
             options: options,
-            engine: ScanEngine(autoSummaryProfileReporter: profile.record)
+            engine: enabledEngine
         )
         options.autoSummarizeDirectories = false
         let disabledSnapshot = try await finishedSnapshot(
@@ -3624,9 +3629,11 @@ final class ScanEngineTests: XCTestCase {
             options: options
         )
 
+        #if DEBUG
         XCTAssertGreaterThan(profile.rejectedProbeCount, 0)
         XCTAssertGreaterThan(profile.reusedDirectoryCount, 0)
         XCTAssertGreaterThan(profile.reusedEntryCount, 0)
+        #endif
         let expectedNodeIDs = disabledSnapshot.treeStore.indexedNodeIDs()
         XCTAssertEqual(enabledSnapshot.treeStore.indexedNodeIDs(), expectedNodeIDs)
         for nodeID in expectedNodeIDs {
@@ -3661,6 +3668,7 @@ final class ScanEngineTests: XCTestCase {
         )
     }
 
+    #if DEBUG
     func testExhaustedAutoSummaryProbeSuppressesRedundantDescendantProbes() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -3693,6 +3701,7 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.aggregateStats.fileCount, 3)
         XCTAssertTrue(snapshot.treeStore.indexedNodeIDs().contains { $0.hasSuffix("payload.bin") })
     }
+    #endif
 
     func testNodeDependencyLayoutNotAutoSummarizedWhenFilesAreLarge() async throws {
         let rootURL = try makeTemporaryDirectory()
@@ -3993,6 +4002,7 @@ private final class CancellationAfterChecks: @unchecked Sendable {
     }
 }
 
+#if DEBUG
 private final class AutoSummaryEventProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var probes = 0
@@ -4033,6 +4043,7 @@ private final class AutoSummaryEventProbe: @unchecked Sendable {
         }
     }
 }
+#endif
 
 private final class SlowDirectoryObjectEnumerator: ScanEngine.DirectoryObjectEnumerating, @unchecked Sendable {
     let totalCount: Int
