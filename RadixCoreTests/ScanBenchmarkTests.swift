@@ -373,6 +373,24 @@ final class ScanBenchmarkTests: XCTestCase {
                 classificationWorkerLimit: nil
             ),
             WideDirectoryBenchmarkConfiguration(
+                name: "coordinator-leaf-preparation",
+                traversalWorkerLimit: nil,
+                classificationWorkerLimit: nil,
+                usesWorkerSideLeafPreparation: false
+            ),
+            WideDirectoryBenchmarkConfiguration(
+                name: "leaf-batch-256",
+                traversalWorkerLimit: nil,
+                classificationWorkerLimit: nil,
+                leafPreparationBatchLimit: 256
+            ),
+            WideDirectoryBenchmarkConfiguration(
+                name: "leaf-batch-1024",
+                traversalWorkerLimit: nil,
+                classificationWorkerLimit: nil,
+                leafPreparationBatchLimit: 1_024
+            ),
+            WideDirectoryBenchmarkConfiguration(
                 name: "serial",
                 traversalWorkerLimit: 1,
                 classificationWorkerLimit: 1
@@ -405,7 +423,10 @@ final class ScanBenchmarkTests: XCTestCase {
 
             var elapsedByConfiguration: [String: [Double]] = [:]
             for iteration in 1...iterations {
-                for configuration in configurations {
+                for configuration in Self.benchmarkConfigurationOrder(
+                    configurations,
+                    iteration: iteration
+                ) {
                     let elapsedSeconds = try await runWideDirectoryBenchmark(
                         rootURL: rootURL,
                         fileCount: fileCount,
@@ -427,6 +448,8 @@ final class ScanBenchmarkTests: XCTestCase {
                     config=\(configuration.name)
                     traversal_workers=\(configuration.traversalWorkerDescription)
                     requested_classification_workers=\(configuration.classificationWorkerDescription)
+                    leaf_preparation=\(configuration.leafPreparationDescription)
+                    leaf_batch_limit=\(configuration.leafPreparationBatchDescription)
                     iterations=\(elapsed.count)
                     avg_elapsed=\(String(format: "%.3f", average))s
                     min_elapsed=\(String(format: "%.3f", elapsed.min() ?? average))s
@@ -466,6 +489,24 @@ final class ScanBenchmarkTests: XCTestCase {
                 name: "default-policy",
                 traversalWorkerLimit: nil,
                 classificationWorkerLimit: nil
+            ),
+            WideDirectoryBenchmarkConfiguration(
+                name: "coordinator-leaf-preparation",
+                traversalWorkerLimit: nil,
+                classificationWorkerLimit: nil,
+                usesWorkerSideLeafPreparation: false
+            ),
+            WideDirectoryBenchmarkConfiguration(
+                name: "leaf-batch-256",
+                traversalWorkerLimit: nil,
+                classificationWorkerLimit: nil,
+                leafPreparationBatchLimit: 256
+            ),
+            WideDirectoryBenchmarkConfiguration(
+                name: "leaf-batch-1024",
+                traversalWorkerLimit: nil,
+                classificationWorkerLimit: nil,
+                leafPreparationBatchLimit: 1_024
             ),
             WideDirectoryBenchmarkConfiguration(
                 name: "serial",
@@ -510,7 +551,10 @@ final class ScanBenchmarkTests: XCTestCase {
 
                 var elapsedByConfiguration: [String: [Double]] = [:]
                 for iteration in 1...iterations {
-                    for configuration in configurations {
+                    for configuration in Self.benchmarkConfigurationOrder(
+                        configurations,
+                        iteration: iteration
+                    ) {
                         let elapsedSeconds = try await runWideDirectoryBenchmark(
                             rootURL: rootURL,
                             fileCount: fileCount,
@@ -534,6 +578,8 @@ final class ScanBenchmarkTests: XCTestCase {
                         config=\(configuration.name)
                         traversal_workers=\(configuration.traversalWorkerDescription)
                         requested_classification_workers=\(configuration.classificationWorkerDescription)
+                        leaf_preparation=\(configuration.leafPreparationDescription)
+                        leaf_batch_limit=\(configuration.leafPreparationBatchDescription)
                         iterations=\(elapsed.count)
                         avg_elapsed=\(String(format: "%.3f", average))s
                         min_elapsed=\(String(format: "%.3f", elapsed.min() ?? average))s
@@ -884,6 +930,22 @@ final class ScanBenchmarkTests: XCTestCase {
         let name: String
         let traversalWorkerLimit: Int?
         let classificationWorkerLimit: Int?
+        let usesWorkerSideLeafPreparation: Bool
+        let leafPreparationBatchLimit: Int?
+
+        init(
+            name: String,
+            traversalWorkerLimit: Int?,
+            classificationWorkerLimit: Int?,
+            usesWorkerSideLeafPreparation: Bool = true,
+            leafPreparationBatchLimit: Int? = nil
+        ) {
+            self.name = name
+            self.traversalWorkerLimit = traversalWorkerLimit
+            self.classificationWorkerLimit = classificationWorkerLimit
+            self.usesWorkerSideLeafPreparation = usesWorkerSideLeafPreparation
+            self.leafPreparationBatchLimit = leafPreparationBatchLimit
+        }
 
         var traversalWorkerDescription: String {
             traversalWorkerLimit.map(String.init) ?? "default"
@@ -891,6 +953,15 @@ final class ScanBenchmarkTests: XCTestCase {
 
         var classificationWorkerDescription: String {
             classificationWorkerLimit.map(String.init) ?? "default"
+        }
+
+        var leafPreparationDescription: String {
+            usesWorkerSideLeafPreparation ? "directory-worker" : "coordinator"
+        }
+
+        var leafPreparationBatchDescription: String {
+            guard usesWorkerSideLeafPreparation else { return "none" }
+            return leafPreparationBatchLimit.map(String.init) ?? "default"
         }
     }
 
@@ -901,6 +972,13 @@ final class ScanBenchmarkTests: XCTestCase {
         var workerDescription: String {
             atomicSummaryWorkerLimit.map(String.init) ?? "default"
         }
+    }
+
+    private static func benchmarkConfigurationOrder(
+        _ configurations: [WideDirectoryBenchmarkConfiguration],
+        iteration: Int
+    ) -> [WideDirectoryBenchmarkConfiguration] {
+        iteration.isMultiple(of: 2) ? configurations : Array(configurations.reversed())
     }
 
     private static func integerList(from value: String?, defaultValues: [Int]) -> [Int] {
@@ -1577,7 +1655,10 @@ final class ScanBenchmarkTests: XCTestCase {
         options.directoryTraversalWorkerLimit = configuration.traversalWorkerLimit
         options.directoryClassificationWorkerLimit = configuration.classificationWorkerLimit
 
-        let engine = ScanEngine()
+        let engine = ScanEngine(
+            usesWorkerSideLeafPreparation: configuration.usesWorkerSideLeafPreparation,
+            workerSideLeafPreparationBatchLimit: configuration.leafPreparationBatchLimit
+        )
         let startedAt = ContinuousClock.now
         var finalSnapshot: ScanSnapshot?
 
@@ -1603,6 +1684,8 @@ final class ScanBenchmarkTests: XCTestCase {
             iteration=\(iteration)
             traversal_workers=\(configuration.traversalWorkerDescription)
             requested_classification_workers=\(configuration.classificationWorkerDescription)
+            leaf_preparation=\(configuration.leafPreparationDescription)
+            leaf_batch_limit=\(configuration.leafPreparationBatchDescription)
             elapsed=\(String(format: "%.3f", elapsedSeconds))s
             """
         )

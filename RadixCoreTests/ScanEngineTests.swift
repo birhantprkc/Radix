@@ -94,6 +94,82 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(counters.currentOpenDescriptorCount, 0)
     }
 
+    func testBoundedWorkerSideLeafPreparationMatchesCoordinatorPreparation() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let firstDirectoryURL = rootURL.appending(path: "First", directoryHint: .isDirectory)
+        let secondDirectoryURL = rootURL.appending(path: "Second", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: firstDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondDirectoryURL, withIntermediateDirectories: true)
+
+        let originalURL = firstDirectoryURL.appending(path: "café.dat")
+        try Data(repeating: 0x41, count: 4_096).write(to: originalURL)
+        try FileManager.default.linkItem(
+            at: originalURL,
+            to: secondDirectoryURL.appending(path: "hard-link.dat")
+        )
+        try FileManager.default.createSymbolicLink(
+            at: firstDirectoryURL.appending(path: "alias.dat"),
+            withDestinationURL: originalURL
+        )
+        try Data(repeating: 0x42, count: 128).write(
+            to: secondDirectoryURL.appending(path: "ordinary.dat")
+        )
+
+        var options = ScanOptions()
+        options.autoSummarizeDirectories = false
+        options.directoryTraversalWorkerLimit = 4
+        let workerSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(workerSideLeafPreparationBatchLimit: 1)
+        )
+        let coordinatorSnapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: options,
+            engine: ScanEngine(usesWorkerSideLeafPreparation: false)
+        )
+
+        let nodeIDs = coordinatorSnapshot.treeStore.indexedNodeIDs()
+        XCTAssertEqual(workerSnapshot.treeStore.indexedNodeIDs(), nodeIDs)
+        XCTAssertEqual(
+            workerSnapshot.treeStore.childIDsByID,
+            coordinatorSnapshot.treeStore.childIDsByID
+        )
+        for nodeID in nodeIDs {
+            XCTAssertEqual(
+                workerSnapshot.treeStore.node(id: nodeID),
+                coordinatorSnapshot.treeStore.node(id: nodeID),
+                nodeID
+            )
+        }
+        XCTAssertEqual(
+            workerSnapshot.aggregateStats.totalAllocatedSize,
+            coordinatorSnapshot.aggregateStats.totalAllocatedSize
+        )
+        XCTAssertEqual(
+            workerSnapshot.aggregateStats.totalLogicalSize,
+            coordinatorSnapshot.aggregateStats.totalLogicalSize
+        )
+        XCTAssertEqual(
+            workerSnapshot.aggregateStats.fileCount,
+            coordinatorSnapshot.aggregateStats.fileCount
+        )
+        XCTAssertEqual(
+            workerSnapshot.aggregateStats.directoryCount,
+            coordinatorSnapshot.aggregateStats.directoryCount
+        )
+        XCTAssertEqual(
+            workerSnapshot.aggregateStats.accessibleItemCount,
+            coordinatorSnapshot.aggregateStats.accessibleItemCount
+        )
+        XCTAssertEqual(
+            workerSnapshot.aggregateStats.inaccessibleItemCount,
+            coordinatorSnapshot.aggregateStats.inaccessibleItemCount
+        )
+        XCTAssertEqual(workerSnapshot.scanWarnings, coordinatorSnapshot.scanWarnings)
+    }
+
     func testDirectorySymlinkSwapAfterDiscoveryIsRefused() async throws {
         let rootURL = try makeTemporaryDirectory()
         let outsideURL = try makeTemporaryDirectory()

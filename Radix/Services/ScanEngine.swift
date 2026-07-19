@@ -269,6 +269,12 @@ actor ScanEngine {
         let itemKey: Int
         let metadata: NodeMetadata
         let contents: DirectoryContentsScanResult
+        let childDirectoryCount: Int
+        let totalWeightUnits: Double
+        let isNodeDependencyLayout: Bool
+        let isAtomicSummaryCandidate: Bool
+        /// Aligned with `contents.entries`; nil slots still require coordinator handling.
+        let preparedOrdinaryLeaves: [PreparedOrdinaryLeaf?]
     }
 
     private struct DirectoryTraversalFailure: Sendable {
@@ -322,6 +328,11 @@ actor ScanEngine {
         let warnings: [ScanWarning]
         let hardLinkAccumulator: HardLinkIdentityOwnerAccumulator
         let minimumAllocatedSize: Int64?
+    }
+
+    private struct PreparedOrdinaryLeaf: Sendable {
+        let node: FileNodeRecord
+        let hardLinkClaim: HardLinkClaim?
     }
 
     private struct PackageSummaryResult: Sendable {
@@ -388,6 +399,8 @@ actor ScanEngine {
     private let atomicSummaryProgressEmissionInterval: TimeInterval
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let directoryDescriptorPoolFactory: DirectoryDescriptorPoolFactory
+    private let usesWorkerSideLeafPreparation: Bool
+    private let workerSideLeafPreparationBatchLimit: Int
 
     init(
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
@@ -395,7 +408,9 @@ actor ScanEngine {
         atomicSummaryProgressEmissionInterval: TimeInterval = 0.15,
         directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory = {
             ScanDirectoryDescriptorPool()
-        }
+        },
+        usesWorkerSideLeafPreparation: Bool = true,
+        workerSideLeafPreparationBatchLimit: Int? = nil
     ) {
         self.init(
             enumeratedDirectoryContents: ScanEngine.defaultDirectoryContents,
@@ -403,7 +418,9 @@ actor ScanEngine {
             usesBulkDirectoryEnumeration: true,
             atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
             atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval,
-            directoryDescriptorPoolFactory: directoryDescriptorPoolFactory
+            directoryDescriptorPoolFactory: directoryDescriptorPoolFactory,
+            usesWorkerSideLeafPreparation: usesWorkerSideLeafPreparation,
+            workerSideLeafPreparationBatchLimit: workerSideLeafPreparationBatchLimit
         )
     }
 
@@ -419,7 +436,9 @@ actor ScanEngine {
             usesBulkDirectoryEnumeration: false,
             atomicSummaryWorkerObserver: atomicSummaryWorkerObserver,
             atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval,
-            directoryDescriptorPoolFactory: { ScanDirectoryDescriptorPool() }
+            directoryDescriptorPoolFactory: { ScanDirectoryDescriptorPool() },
+            usesWorkerSideLeafPreparation: true,
+            workerSideLeafPreparationBatchLimit: nil
         )
     }
 
@@ -429,7 +448,9 @@ actor ScanEngine {
         usesBulkDirectoryEnumeration: Bool,
         atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver?,
         atomicSummaryProgressEmissionInterval: TimeInterval,
-        directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory
+        directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory,
+        usesWorkerSideLeafPreparation: Bool,
+        workerSideLeafPreparationBatchLimit: Int?
     ) {
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
@@ -439,6 +460,15 @@ actor ScanEngine {
         self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.directoryDescriptorPoolFactory = directoryDescriptorPoolFactory
+        self.usesWorkerSideLeafPreparation = usesWorkerSideLeafPreparation
+        self.workerSideLeafPreparationBatchLimit = min(
+            max(
+                workerSideLeafPreparationBatchLimit
+                    ?? ScanConcurrencyPolicy.ordinaryLeafPreparationBatchLimit,
+                1
+            ),
+            ScanConcurrencyPolicy.ordinaryLeafPreparationBatchLimit
+        )
     }
 
     init(
@@ -567,6 +597,8 @@ actor ScanEngine {
 
     private enum ScanConcurrencyPolicy {
         static let directoryClassificationParallelThreshold = 128
+        /// Caps additional prepared-node storage per in-flight directory result.
+        static let ordinaryLeafPreparationBatchLimit = 2_048
         // Shared budget for concurrent child metadata reads across traversal and classification workers.
         static let directoryMetadataWorkerBudgetMaximum = 16
 
@@ -1156,11 +1188,60 @@ actor ScanEngine {
                                     classificationWorkerLimit: effectiveDirectoryClassificationWorkerLimit,
                                     cancellationCheck: cancellationCheck
                                 )
+                                var childDirectoryCount = 0
+                                var totalWeightUnits = 0.0
+                                for (offset, childEntry) in contents.entries.enumerated() {
+                                    if offset.isMultiple(of: 256) {
+                                        try cancellationCheck()
+                                    }
+                                    if Self.isLikelyTraversableDirectory(entry: childEntry) {
+                                        childDirectoryCount += 1
+                                        totalWeightUnits += Self.directoryChildWeightUnits
+                                    } else {
+                                        totalWeightUnits += 1
+                                    }
+                                }
+                                let isNodeDependencyLayout = AtomicDirectorySummarizer
+                                    .isNodeDependencyLayoutDirectory(at: taskItem.url)
+                                let canProbeForAutoSummary = Self.canProbeForAutoSummary(
+                                    at: taskItem.url,
+                                    depth: taskItem.depth,
+                                    minimumDepth: autoSummarizeMinDepth,
+                                    isNodeDependencyLayout: isNodeDependencyLayout
+                                )
+                                let isAtomicSummaryCandidate: Bool
+                                if options.autoSummarizeDirectories, canProbeForAutoSummary {
+                                    isAtomicSummaryCandidate = try scanAtomicDirectorySummarizer.isAtomicSummaryCandidate(
+                                        url: taskItem.url,
+                                        childEntries: contents.entries,
+                                        isNodeDependencyLayout: isNodeDependencyLayout,
+                                        minFileCount: autoSummarizeMinFileCount,
+                                        maxAverageFileSize: autoSummarizeMaxAverageFileSize,
+                                        cancellationCheck: cancellationCheck
+                                    )
+                                } else {
+                                    isAtomicSummaryCandidate = false
+                                }
+                                let preparedOrdinaryLeaves: [PreparedOrdinaryLeaf?]
+                                if self.usesWorkerSideLeafPreparation, !isAtomicSummaryCandidate {
+                                    preparedOrdinaryLeaves = try self.prepareOrdinaryLeaves(
+                                        in: contents.entries,
+                                        batchLimit: self.workerSideLeafPreparationBatchLimit,
+                                        cancellationCheck: cancellationCheck
+                                    )
+                                } else {
+                                    preparedOrdinaryLeaves = []
+                                }
                                 return .directory(.success(DirectoryTraversalSuccess(
                                     item: taskItem,
                                     itemKey: taskItemKey,
                                     metadata: taskMetadata,
-                                    contents: contents
+                                    contents: contents,
+                                    childDirectoryCount: childDirectoryCount,
+                                    totalWeightUnits: totalWeightUnits,
+                                    isNodeDependencyLayout: isNodeDependencyLayout,
+                                    isAtomicSummaryCandidate: isAtomicSummaryCandidate,
+                                    preparedOrdinaryLeaves: preparedOrdinaryLeaves
                                 )))
                             } catch is CancellationError {
                                 throw CancellationError()
@@ -1296,7 +1377,10 @@ actor ScanEngine {
                 guard let traversalResult = try await group.next() else { break }
                 // Set when a drained result yields an enumerated directory whose children
                 // should be expanded normally; handled once after the switch.
-                var directoryToExpand: AtomicDirectoryScanCandidate?
+                var directoryToExpand: (
+                    candidate: AtomicDirectoryScanCandidate,
+                    preparedOrdinaryLeaves: [PreparedOrdinaryLeaf?]
+                )?
 
                 switch traversalResult {
                 case .directory(.success(let success)):
@@ -1326,16 +1410,8 @@ actor ScanEngine {
                     metrics.discoveredItems += childEntries.count
                     metrics.enumeratedDirectoryCount += 1
                     releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
-                    var childDirectoryCount = 0
-                    var totalWeightUnits = 0.0
-                    for childEntry in childEntries {
-                        if Self.isLikelyTraversableDirectory(entry: childEntry) {
-                            childDirectoryCount += 1
-                            totalWeightUnits += Self.directoryChildWeightUnits
-                        } else {
-                            totalWeightUnits += 1
-                        }
-                    }
+                    let childDirectoryCount = success.childDirectoryCount
+                    let totalWeightUnits = success.totalWeightUnits
                     metrics.discoveredDirectoryCount += childDirectoryCount
                     metrics.pendingDirectoryCount += childDirectoryCount
                     // Refresh the summary pool's base metrics unconditionally: the pool
@@ -1346,13 +1422,6 @@ actor ScanEngine {
                     atomicSummaryPool.updateProgress(&metrics, continuation: continuation)
 
                     // Check if this directory should be summarized as atomic (many small files)
-                    let isNodeDependencyLayout = AtomicDirectorySummarizer.isNodeDependencyLayoutDirectory(at: item.url)
-                    let canProbeForAutoSummary = Self.canProbeForAutoSummary(
-                        at: item.url,
-                        depth: item.depth,
-                        minimumDepth: autoSummarizeMinDepth,
-                        isNodeDependencyLayout: isNodeDependencyLayout
-                    )
                     let candidate = AtomicDirectoryScanCandidate(
                         item: item,
                         itemKey: itemKey,
@@ -1360,23 +1429,17 @@ actor ScanEngine {
                         contents: contents,
                         childDirectoryCount: childDirectoryCount,
                         totalWeightUnits: totalWeightUnits,
-                        isNodeDependencyLayout: isNodeDependencyLayout
+                        isNodeDependencyLayout: success.isNodeDependencyLayout
                     )
-                    if options.autoSummarizeDirectories,
-                       canProbeForAutoSummary,
-                       try scanAtomicDirectorySummarizer.isAtomicSummaryCandidate(
-                           url: item.url,
-                           childEntries: childEntries,
-                           isNodeDependencyLayout: isNodeDependencyLayout,
-                           minFileCount: autoSummarizeMinFileCount,
-                           maxAverageFileSize: autoSummarizeMaxAverageFileSize,
-                           cancellationCheck: cancellationCheck
-                       ) {
+                    if success.isAtomicSummaryCandidate {
                         // The probe/summary awaits a pooled job; run it as a group task
                         // so the scheduling loop keeps draining results while it works.
                         pendingAtomicScans.append(candidate)
                     } else {
-                        directoryToExpand = candidate
+                        directoryToExpand = (
+                            candidate: candidate,
+                            preparedOrdinaryLeaves: success.preparedOrdinaryLeaves
+                        )
                     }
 
                 case .directory(.failure(let failure)):
@@ -1457,7 +1520,10 @@ actor ScanEngine {
                     let candidate = atomicResult.candidate
                     guard let summary = atomicResult.summary else {
                         // Probe declined: expand the directory normally.
-                        directoryToExpand = candidate
+                        directoryToExpand = (
+                            candidate: candidate,
+                            preparedOrdinaryLeaves: []
+                        )
                         break
                     }
                     let item = candidate.item
@@ -1515,11 +1581,12 @@ actor ScanEngine {
                 }
 
                 guard let expansion = directoryToExpand else { continue }
-                let item = expansion.item
-                let itemKey = expansion.itemKey
-                let contents = expansion.contents
+                let candidate = expansion.candidate
+                let item = candidate.item
+                let itemKey = candidate.itemKey
+                let contents = candidate.contents
                 let childEntries = contents.entries
-                let totalWeightUnits = expansion.totalWeightUnits
+                let totalWeightUnits = candidate.totalWeightUnits
 
                 if childEntries.isEmpty {
                     // Nothing below this directory: its whole weight is done.
@@ -1538,8 +1605,30 @@ actor ScanEngine {
                     // item only to pop, reclassify, and pass it through an async leaf
                     // function on the next loop iteration. Packages remain queued
                     // because they may require recursive summary work.
-                    if let childMetadata = childEntry.metadata,
-                       !childMetadata.isDirectory || childMetadata.isSymbolicLink {
+                    let preparedLeaf: PreparedOrdinaryLeaf?
+                    if offset < expansion.preparedOrdinaryLeaves.count {
+                        preparedLeaf = expansion.preparedOrdinaryLeaves[offset]
+                    } else if let childMetadata = childEntry.metadata,
+                              !childMetadata.isDirectory || childMetadata.isSymbolicLink {
+                        // Prepare the bounded suffix on the coordinator. The benchmark
+                        // legacy mode uses this path for the full directory.
+                        let childNode = makeFileNode(
+                            url: childEntry.url,
+                            metadata: childMetadata
+                        )
+                        preparedLeaf = PreparedOrdinaryLeaf(
+                            node: childNode,
+                            hardLinkClaim: HardLinkDeduplicator.claim(
+                                for: childMetadata,
+                                ownerNodeID: childNode.id,
+                                path: childEntry.url.path
+                            )
+                        )
+                    } else {
+                        preparedLeaf = nil
+                    }
+
+                    if let preparedLeaf, let childMetadata = childEntry.metadata {
                         let childPath = childEntry.url.path
                         guard seenScannedNodeIDs.insert(childPath).inserted else {
                             recordDuplicateNode(
@@ -1563,15 +1652,8 @@ actor ScanEngine {
                         }
                         childrenKeysByKey[itemKey]!.append(childKey)
 
-                        let childNode = makeFileNode(
-                            url: childEntry.url,
-                            metadata: childMetadata
-                        )
-                        if let hardLinkClaim = HardLinkDeduplicator.claim(
-                            for: childMetadata,
-                            ownerNodeID: childNode.id,
-                            path: childPath
-                        ) {
+                        let childNode = preparedLeaf.node
+                        if let hardLinkClaim = preparedLeaf.hardLinkClaim {
                             hardLinkAccumulator.record(hardLinkClaim)
                         }
                         metrics.currentPath = childPath
@@ -1608,7 +1690,7 @@ actor ScanEngine {
                 // Register this directory so phase 2 can assemble it.
                 completedByKey[itemKey] = CompletedDirScan(
                     node: nil,
-                    metadata: expansion.metadata,
+                    metadata: candidate.metadata,
                     url: item.url,
                     isTraversable: true
                 )
@@ -1822,6 +1904,35 @@ actor ScanEngine {
     }
 
     // MARK: - Helpers
+
+    private nonisolated func prepareOrdinaryLeaves(
+        in entries: [DirectoryEntry],
+        batchLimit: Int,
+        cancellationCheck: CancellationCheck
+    ) throws -> [PreparedOrdinaryLeaf?] {
+        let batchCount = min(entries.count, batchLimit)
+        var prepared = [PreparedOrdinaryLeaf?](repeating: nil, count: batchCount)
+        for (offset, entry) in entries.prefix(batchCount).enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            guard let metadata = entry.metadata,
+                  !metadata.isDirectory || metadata.isSymbolicLink else {
+                continue
+            }
+            let node = makeFileNode(url: entry.url, metadata: metadata)
+            prepared[offset] = PreparedOrdinaryLeaf(
+                node: node,
+                hardLinkClaim: HardLinkDeduplicator.claim(
+                    for: metadata,
+                    ownerNodeID: node.id,
+                    path: entry.url.path
+                )
+            )
+        }
+        try cancellationCheck()
+        return prepared
+    }
 
     private nonisolated func applyLeafMetrics(_ node: FileNodeRecord, weight: Double, metrics: inout ScanMetrics) {
         if node.isDirectory {
