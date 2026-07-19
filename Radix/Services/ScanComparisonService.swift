@@ -504,9 +504,14 @@ nonisolated struct ScanComparison: Identifiable, Equatable, Sendable {
 nonisolated struct ScanComparisonService: Sendable {
     func compare(before: ScanSnapshot, after: ScanSnapshot) async throws -> ScanComparison {
         try Task.checkCancellation()
-        let beforeNodes = try Self.indexedNodes(in: before)
-        let afterNodes = try Self.indexedNodes(in: after)
+        async let beforeNodesTask = Self.indexedNodes(in: before)
+        async let afterNodesTask = Self.indexedNodes(in: after)
+        let (beforeNodes, afterNodes) = try await (beforeNodesTask, afterNodesTask)
         try Task.checkCancellation()
+        async let allocatedSizesTask = Self.normalizedAllocatedSizes(
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        )
 
         var rows: [ScanComparisonRow] = []
         let pathPartition = Self.partitionPaths(
@@ -516,17 +521,18 @@ nonisolated struct ScanComparisonService: Sendable {
         let addedPaths = pathPartition.added
         let removedPaths = pathPartition.removed
         let sharedPaths = pathPartition.shared
-        let materializationBoundaryPaths = Self.materializationBoundaryPaths(
-            sharedPaths: sharedPaths,
-            beforeNodes: beforeNodes,
-            afterNodes: afterNodes,
-            beforeStore: before.treeStore,
-            afterStore: after.treeStore
-        )
-        let allocatedSizes = Self.normalizedAllocatedSizes(
-            beforeNodes: beforeNodes,
-            afterNodes: afterNodes
-        )
+        let materializationBoundaryPaths = if addedPaths.isEmpty, removedPaths.isEmpty {
+            Set<String>()
+        } else {
+            Self.materializationBoundaryPaths(
+                sharedPaths: sharedPaths,
+                beforeNodes: beforeNodes,
+                afterNodes: afterNodes,
+                beforeStore: before.treeStore,
+                afterStore: after.treeStore
+            )
+        }
+        let allocatedSizes = await allocatedSizesTask
         let visibleAddedPaths = Self.visibleTopLevelPaths(
             in: addedPaths,
             excludingDescendantsOf: materializationBoundaryPaths,
@@ -604,6 +610,10 @@ nonisolated struct ScanComparisonService: Sendable {
                   let afterNode = afterNodes[relativePath] else {
                 continue
             }
+            let beforeAllocatedSize = allocatedSizes.before[relativePath] ?? beforeNode.allocatedSize
+            let afterAllocatedSize = allocatedSizes.after[relativePath] ?? afterNode.allocatedSize
+            let delta = afterAllocatedSize - beforeAllocatedSize
+            guard delta != 0 else { continue }
             // A normal materialized directory's aggregate is already represented by descendant
             // additions, removals, and size changes. This includes a directory that was empty
             // in one snapshot and gained or lost indexed children in the other; emitting its
@@ -624,10 +634,6 @@ nonisolated struct ScanComparisonService: Sendable {
                 && !afterIsOpaque
                 && (beforeHasIndexedChildren || afterHasIndexedChildren)
             guard !isRedundantDirectory else { continue }
-            let beforeAllocatedSize = allocatedSizes.before[relativePath] ?? beforeNode.allocatedSize
-            let afterAllocatedSize = allocatedSizes.after[relativePath] ?? afterNode.allocatedSize
-            let delta = afterAllocatedSize - beforeAllocatedSize
-            guard delta != 0 else { continue }
             rows.append(ScanComparisonRow(
                 relativePath: relativePath,
                 kind: delta > 0 ? .grew : .shrank,
@@ -637,7 +643,6 @@ nonisolated struct ScanComparisonService: Sendable {
                 afterAllocatedSize: afterAllocatedSize
             ))
         }
-
         try Task.checkCancellation()
         let sortedRows = rows.sorted { lhs, rhs in
             ScanComparisonRowComparator.sortsBefore(
@@ -1251,17 +1256,30 @@ nonisolated struct ScanComparisonService: Sendable {
     private static func normalizedAllocatedSizes(
         beforeNodes: [String: FileNodeRecord],
         afterNodes: [String: FileNodeRecord]
-    ) -> (
+    ) async -> (
         before: [String: Int64],
         after: [String: Int64]
     ) {
-        let identities = hardLinkIdentities(in: beforeNodes).union(hardLinkIdentities(in: afterNodes))
+        async let beforeIdentitiesTask = hardLinkIdentities(in: beforeNodes)
+        async let afterIdentitiesTask = hardLinkIdentities(in: afterNodes)
+        let (beforeIdentities, afterIdentities) = await (
+            beforeIdentitiesTask,
+            afterIdentitiesTask
+        )
+        let identities = beforeIdentities.union(afterIdentities)
         guard !identities.isEmpty else {
             return ([:], [:])
         }
 
-        let beforeGroups = hardLinkPathsByIdentity(in: beforeNodes, identities: identities)
-        let afterGroups = hardLinkPathsByIdentity(in: afterNodes, identities: identities)
+        async let beforeGroupsTask = hardLinkPathsByIdentity(
+            in: beforeNodes,
+            identities: identities
+        )
+        async let afterGroupsTask = hardLinkPathsByIdentity(
+            in: afterNodes,
+            identities: identities
+        )
+        let (beforeGroups, afterGroups) = await (beforeGroupsTask, afterGroupsTask)
         // Most scans contain few hard links compared with their total node count.
         // Keep only sizes changed by normalization instead of duplicating every
         // path and allocated-size value from both snapshots.
