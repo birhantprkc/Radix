@@ -14,37 +14,6 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
         XCTAssertNil(BulkDirectoryEnumerator.NativeName(fileSystemBytes: [0x81]))
     }
 
-    func testKnownNormalizedChildPathMatchesURLMaterialization() throws {
-        let parentURLs = [
-            URL(filePath: "/", directoryHint: .isDirectory),
-            URL(filePath: "/tmp/Parent Folder", directoryHint: .isDirectory),
-            URL(filePath: "/tmp/caf\u{00E9}/100%", directoryHint: .isDirectory),
-        ]
-        let childNames = [
-            "plain.txt",
-            "space and #.txt",
-            "100%.dat",
-            "Ångström-文件-🙂",
-            "e\u{0301}.txt",
-        ]
-
-        for parentURL in parentURLs {
-            for childName in childNames {
-                XCTAssertNotNil(BulkDirectoryEnumerator.NativeName(
-                    fileSystemBytes: Array(childName.utf8)
-                ))
-                XCTAssertEqual(
-                    BulkDirectoryEnumerator.knownNormalizedChildPath(
-                        parentPath: parentURL.path,
-                        childName: childName
-                    ),
-                    parentURL.appending(path: childName).path,
-                    "\(parentURL.path) + \(childName)"
-                )
-            }
-        }
-    }
-
     func testUnicodeNativeNamesOpenExactChildrenRelativeToDescriptor() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -98,13 +67,13 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
             at: rootURL,
             includeHiddenFiles: true,
             metadataLoader: ScanMetadataLoader(),
-            entryInclusion: { _, _, _ in false },
+            entryInclusion: { _, _ in false },
             cancellationCheck: {}
         )
         XCTAssertNil(result)
     }
 
-    func testCanonicallyCollidingNativeNamesDisableBulkDirectoryWhenFilesystemPermitsThem() throws {
+    func testCanonicallyCollidingNativeNamesOnlyDisableBulkWhenIncluded() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
         let parentDescriptor = try openDirectoryDescriptor(at: rootURL)
@@ -127,11 +96,20 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
             Darwin.close(childDescriptor)
         }
 
+        let excludedResult = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: ScanMetadataLoader(),
+            entryInclusion: { _, _ in false },
+            cancellationCheck: {}
+        ))
+        XCTAssertTrue(excludedResult.entries.isEmpty)
+
         XCTAssertNil(try BulkDirectoryEnumerator.directoryEntries(
             at: rootURL,
             includeHiddenFiles: true,
             metadataLoader: ScanMetadataLoader(),
-            entryInclusion: { _, _, _ in false },
+            entryInclusion: { _, _ in true },
             cancellationCheck: {}
         ))
     }

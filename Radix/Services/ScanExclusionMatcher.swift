@@ -84,20 +84,47 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         return excludes(normalizedPath: path, isDirectory: isDirectory)
     }
 
+    /// Matches a validated child name without constructing its full path when
+    /// all active rules are basename-only.
+    func excludesKnownNormalizedChild(
+        named childName: String,
+        under parentPath: String,
+        isDirectory: Bool
+    ) -> Bool {
+        guard hasActiveRule else { return false }
+        if excludesBasename(childName, isDirectory: isDirectory) {
+            return true
+        }
+        guard !cloudLocations.isEmpty || !pathPatterns.isEmpty else {
+            return false
+        }
+        let childPath = parentPath == "/"
+            ? parentPath + childName
+            : parentPath + "/" + childName
+        return excludesPathRules(normalizedPath: childPath, isDirectory: isDirectory)
+    }
+
     private func excludes(normalizedPath: String, isDirectory: Bool) -> Bool {
+        let basename = Self.basename(fromNormalizedPath: normalizedPath)
+        if excludesBasename(basename, isDirectory: isDirectory) {
+            return true
+        }
+        return excludesPathRules(normalizedPath: normalizedPath, isDirectory: isDirectory)
+    }
+
+    private func excludesBasename<Value: StringProtocol>(
+        _ basename: Value,
+        isDirectory: Bool
+    ) -> Bool {
+        basenamePatterns.contains {
+            $0.matches(value: basename, isDirectory: isDirectory)
+        }
+    }
+
+    private func excludesPathRules(normalizedPath: String, isDirectory: Bool) -> Bool {
         if excludesCloudStorage(path: normalizedPath) {
             return true
         }
-
-        if !basenamePatterns.isEmpty {
-            let basename = Self.basename(fromNormalizedPath: normalizedPath)
-            if basenamePatterns.contains(where: {
-                $0.matches(value: basename, isDirectory: isDirectory)
-            }) {
-                return true
-            }
-        }
-
         guard !pathPatterns.isEmpty,
               let relativePath = relativePath(forNormalizedPath: normalizedPath),
               !relativePath.isEmpty else {

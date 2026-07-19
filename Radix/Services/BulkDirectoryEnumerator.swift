@@ -16,10 +16,10 @@ import Foundation
 /// Unsupported filesystems return `nil` so callers can transparently fall back.
 nonisolated enum BulkDirectoryEnumerator {
     /// Runs only after the native entry payload and exact name have been validated.
-    /// Returning false skips URL and package-classification work for that entry.
+    /// Returning false skips native-name copying, metadata construction, URL
+    /// materialization, and package classification for that entry.
     typealias EntryInclusion = @Sendable (
         _ childName: String,
-        _ childPath: String,
         _ isDirectory: Bool
     ) -> Bool
 
@@ -29,6 +29,23 @@ nonisolated enum BulkDirectoryEnumerator {
         private let nullTerminatedBytes: [UInt8]
 
         init?<Bytes: Collection>(fileSystemBytes bytes: Bytes) where Bytes.Element == UInt8 {
+            guard Self.validatedDecodedName(fileSystemBytes: bytes) != nil else {
+                return nil
+            }
+            self.init(validatedFileSystemBytes: bytes)
+        }
+
+        fileprivate init<Bytes: Collection>(
+            validatedFileSystemBytes bytes: Bytes
+        ) where Bytes.Element == UInt8 {
+            var storage = Array(bytes)
+            storage.append(0)
+            nullTerminatedBytes = storage
+        }
+
+        fileprivate static func validatedDecodedName<Bytes: Collection>(
+            fileSystemBytes bytes: Bytes
+        ) -> String? where Bytes.Element == UInt8 {
             guard !bytes.isEmpty,
                   !bytes.contains(0),
                   !bytes.contains(UInt8(ascii: "/")),
@@ -38,8 +55,7 @@ nonisolated enum BulkDirectoryEnumerator {
                   decodedName.utf8.elementsEqual(bytes) else {
                 return nil
             }
-
-            nullTerminatedBytes = Array(bytes) + [0]
+            return decodedName
         }
 
         /// The body must not retain the pointer after returning.
@@ -467,14 +483,29 @@ nonisolated enum BulkDirectoryEnumerator {
             returned.fileattr & requiredFileAttributes == requiredFileAttributes
     }
 
+    private struct ParsedEntryMetadata {
+        let isSymbolicLink: Bool
+        let logicalSize: Int64
+        let allocatedSize: Int64
+        let dataAllocatedSize: Int64
+        let modificationTime: timespec
+        let isReadable: Bool
+        let device: UInt64
+        let inode: UInt64
+        let linkCount: UInt64
+        let cloneID: UInt64?
+    }
+
     private struct ParsedEntry {
         let decodedName: String
-        let nativeName: NativeName
+        /// Borrows the current `getattrlistbulk` buffer and must be copied before
+        /// the cursor advances to another kernel batch.
+        let nativeNameBytes: UnsafeBufferPointer<UInt8>
         let isHidden: Bool
         let isDirectory: Bool
         let hasFinderPackageFlag: Bool?
         let entryError: Int32?
-        let metadata: NodeMetadata?
+        let metadata: ParsedEntryMetadata?
     }
 
     private static func parseBatch(
@@ -492,7 +523,6 @@ nonisolated enum BulkDirectoryEnumerator {
         cancellationCheck: CancellationCheck
     ) throws -> Bool {
         let bufferEnd = bufferAddress.advanced(by: bufferByteCount)
-        let directoryPath = directoryURL.path
         var entryAddress = bufferAddress
 
         for index in 0..<entryCount {
@@ -515,40 +545,37 @@ nonisolated enum BulkDirectoryEnumerator {
             ) else {
                 return false
             }
-            if parsed.decodedName.utf8.contains(where: { $0 >= 0x80 }) {
+            enumeratedItemCount += 1
+
+            let passesHiddenFilter = includeHiddenFiles || !parsed.isHidden
+            let passesEntryInclusion = passesHiddenFilter && (
+                entryInclusion?(parsed.decodedName, parsed.isDirectory) ?? true
+            )
+            guard passesEntryInclusion else {
+                entryAddress = entryEnd
+                continue
+            }
+
+            let nativeName = NativeName(
+                validatedFileSystemBytes: parsed.nativeNameBytes
+            )
+            if !parsed.nativeNameBytes.allSatisfy({ $0 < 0x80 }) {
                 if let previousName = nonASCIINativeNameByDecodedName[parsed.decodedName],
-                   previousName != parsed.nativeName {
+                   previousName != nativeName {
                     // Canonically equivalent Unicode names compare equal as Swift
                     // strings. Distinct native bytes would collide in path-keyed
                     // scan state, so abandon bulk parsing for this directory.
                     return false
                 }
-                nonASCIINativeNameByDecodedName[parsed.decodedName] = parsed.nativeName
+                nonASCIINativeNameByDecodedName[parsed.decodedName] = nativeName
             }
-            enumeratedItemCount += 1
-
-            let passesHiddenFilter = includeHiddenFiles || !parsed.isHidden
-            let passesEntryInclusion: Bool
-            if passesHiddenFilter, let entryInclusion {
-                passesEntryInclusion = entryInclusion(
-                    parsed.decodedName,
-                    knownNormalizedChildPath(
-                        parentPath: directoryPath,
-                        childName: parsed.decodedName
-                    ),
-                    parsed.isDirectory
-                )
-            } else {
-                passesEntryInclusion = passesHiddenFilter
-            }
-            if passesEntryInclusion {
-                entries.append(materializedEntry(
-                    parsed,
-                    under: directoryURL,
-                    loadsPackageMetadata: loadsPackageMetadata,
-                    metadataLoader: metadataLoader
-                ))
-            }
+            entries.append(materializedEntry(
+                parsed,
+                nativeName: nativeName,
+                under: directoryURL,
+                loadsPackageMetadata: loadsPackageMetadata,
+                metadataLoader: metadataLoader
+            ))
             entryAddress = entryEnd
         }
         try cancellationCheck()
@@ -631,7 +658,7 @@ nonisolated enum BulkDirectoryEnumerator {
             guard entryError <= UInt32(Int32.max) else { return nil }
             return ParsedEntry(
                 decodedName: name,
-                nativeName: parsedName.nativeName,
+                nativeNameBytes: parsedName.nativeNameBytes,
                 isHidden: isHidden,
                 isDirectory: isDirectory,
                 hasFinderPackageFlag: hasFinderPackageFlag,
@@ -647,45 +674,31 @@ nonisolated enum BulkDirectoryEnumerator {
         let logicalSize: off_t = isDirectory ? 0 : fileLogicalSize
         let allocatedSize: off_t = isDirectory ? 0 : fileAllocatedSize
         let dataAllocatedSize: off_t = isDirectory ? 0 : fileDataAllocatedSize
-        let cloneIdentity: CloneIdentity?
+        let parsedCloneID: UInt64?
         if !isDirectory,
            !isSymbolicLink,
            returned.forkattr & requestedExtendedCommonAttributes == requestedExtendedCommonAttributes,
            cloneID > 0,
            cloneReferenceCount > 1 {
-            cloneIdentity = CloneIdentity(
-                device: UInt64(truncatingIfNeeded: deviceID),
-                cloneID: cloneID
-            )
+            parsedCloneID = cloneID
         } else {
-            cloneIdentity = nil
+            parsedCloneID = nil
         }
-        let lastModified = Date(
-            timeIntervalSinceReferenceDate: Double(modificationTime.tv_sec) -
-                Date.timeIntervalBetween1970AndReferenceDate +
-                Double(modificationTime.tv_nsec) / 1_000_000_000
-        )
-
-        let metadata = NodeMetadata(
-            isDirectory: isDirectory,
-            isPackage: false,
+        let metadata = ParsedEntryMetadata(
             isSymbolicLink: isSymbolicLink,
             logicalSize: max(Int64(logicalSize), 0),
             allocatedSize: max(Int64(allocatedSize), 0),
             dataAllocatedSize: max(Int64(dataAllocatedSize), 0),
-            lastModified: lastModified,
+            modificationTime: modificationTime,
             isReadable: (userAccess & UInt32(R_OK)) != 0,
-            volumeCapacity: nil,
-            fileIdentity: FileIdentity(
-                device: UInt64(truncatingIfNeeded: deviceID),
-                inode: fileID
-            ),
+            device: UInt64(truncatingIfNeeded: deviceID),
+            inode: fileID,
             linkCount: isDirectory ? 1 : max(UInt64(fileLinkCount), 1),
-            cloneIdentity: cloneIdentity
+            cloneID: parsedCloneID
         )
         return ParsedEntry(
             decodedName: name,
-            nativeName: parsedName.nativeName,
+            nativeNameBytes: parsedName.nativeNameBytes,
             isHidden: isHidden,
             isDirectory: isDirectory,
             hasFinderPackageFlag: hasFinderPackageFlag,
@@ -694,14 +707,9 @@ nonisolated enum BulkDirectoryEnumerator {
         )
     }
 
-    /// `NativeName` rejects separators and dot components, so joining one validated
-    /// child preserves the normalized path produced by URL materialization.
-    static func knownNormalizedChildPath(parentPath: String, childName: String) -> String {
-        parentPath == "/" ? parentPath + childName : parentPath + "/" + childName
-    }
-
     private static func materializedEntry(
         _ parsed: ParsedEntry,
+        nativeName: NativeName,
         under directoryURL: URL,
         loadsPackageMetadata: Bool,
         metadataLoader: ScanMetadataLoader
@@ -714,7 +722,7 @@ nonisolated enum BulkDirectoryEnumerator {
                 metadata: nil,
                 localizedEnumerationError: posixError(entryError, url: url),
                 isDirectoryHint: parsed.isDirectory,
-                nativeName: parsed.nativeName
+                nativeName: nativeName
             )
         }
 
@@ -725,24 +733,31 @@ nonisolated enum BulkDirectoryEnumerator {
             at: url,
             hasFinderPackageFlag: parsed.hasFinderPackageFlag
         )
+        let lastModified = Date(
+            timeIntervalSinceReferenceDate: Double(metadata.modificationTime.tv_sec) -
+                Date.timeIntervalBetween1970AndReferenceDate +
+                Double(metadata.modificationTime.tv_nsec) / 1_000_000_000
+        )
         let classifiedMetadata = NodeMetadata(
-            isDirectory: metadata.isDirectory,
+            isDirectory: parsed.isDirectory,
             isPackage: isPackage,
             isSymbolicLink: metadata.isSymbolicLink,
             logicalSize: metadata.logicalSize,
             allocatedSize: metadata.allocatedSize,
             dataAllocatedSize: metadata.dataAllocatedSize,
-            lastModified: metadata.lastModified,
+            lastModified: lastModified,
             isReadable: metadata.isReadable,
-            volumeCapacity: metadata.volumeCapacity,
-            fileIdentity: metadata.fileIdentity,
+            volumeCapacity: nil,
+            fileIdentity: FileIdentity(device: metadata.device, inode: metadata.inode),
             linkCount: metadata.linkCount,
-            cloneIdentity: metadata.cloneIdentity
+            cloneIdentity: metadata.cloneID.map {
+                CloneIdentity(device: metadata.device, cloneID: $0)
+            }
         )
         return DirectoryEntry(
             url: url,
             metadata: classifiedMetadata,
-            nativeName: parsed.nativeName
+            nativeName: nativeName
         )
     }
 
@@ -751,7 +766,10 @@ nonisolated enum BulkDirectoryEnumerator {
         referenceAddress: UnsafeRawPointer,
         entryAddress: UnsafeRawPointer,
         entryEnd: UnsafeRawPointer
-    ) -> (compatibilityName: String, nativeName: NativeName)? {
+    ) -> (
+        compatibilityName: String,
+        nativeNameBytes: UnsafeBufferPointer<UInt8>
+    )? {
         guard reference.attr_dataoffset >= 0 else { return nil }
         let dataOffset = Int(reference.attr_dataoffset)
         guard dataOffset <= referenceAddress.distance(to: entryEnd) else { return nil }
@@ -766,9 +784,13 @@ nonisolated enum BulkDirectoryEnumerator {
 
         let bytes = UnsafeRawBufferPointer(start: start, count: byteCount)
         let stringByteCount = bytes.last == 0 ? byteCount - 1 : byteCount
-        let nameBytes = bytes.prefix(stringByteCount)
-        guard let nativeName = NativeName(fileSystemBytes: nameBytes),
-              let compatibilityName = String(bytes: nameBytes, encoding: .utf8) else {
+        let nameBytes = UnsafeRawBufferPointer(
+            start: start,
+            count: stringByteCount
+        ).bindMemory(to: UInt8.self)
+        guard let compatibilityName = NativeName.validatedDecodedName(
+            fileSystemBytes: nameBytes
+        ) else {
             // A lossy compatibility URL could collide with another child ID.
             // Abandon native parsing for this directory and let Foundation
             // apply its filesystem-specific path representation instead.
@@ -776,7 +798,7 @@ nonisolated enum BulkDirectoryEnumerator {
         }
         return (
             compatibilityName: compatibilityName,
-            nativeName: nativeName
+            nativeNameBytes: nameBytes
         )
     }
 

@@ -21,6 +21,46 @@ final class ScanExclusionMatcherTests: XCTestCase {
         XCTAssertFalse(matcher.excludesKnownNormalizedPath("\(rootPath)/Sources/App.swift", isDirectory: false))
     }
 
+    func testKnownChildMatchingPreservesBasenamePathAndCloudRules() {
+        let rootPath = "/Users/alex"
+        let matcher = ScanExclusionMatcher(
+            patterns: ["*.log", "Sources/**/generated.swift"],
+            rootPath: rootPath,
+            includeCloudStorage: false,
+            cloudStorageRootPath: "/Users/alex/Library/CloudStorage",
+            iCloudDriveRootPath: "/Users/alex/Library/Mobile Documents"
+        )
+        let cases = [
+            ("debug.log", "/Users/alex/Logs", false, true),
+            ("generated.swift", "/Users/alex/Sources/Module", false, true),
+            ("Dropbox", "/Users/alex/Library/CloudStorage", true, true),
+            ("App.swift", "/Users/alex/Sources", false, false),
+        ]
+
+        for (name, parentPath, isDirectory, expected) in cases {
+            XCTAssertEqual(
+                matcher.excludesKnownNormalizedChild(
+                    named: name,
+                    under: parentPath,
+                    isDirectory: isDirectory
+                ),
+                expected,
+                parentPath == "/" ? "/\(name)" : "\(parentPath)/\(name)"
+            )
+        }
+
+        let filesystemRootMatcher = ScanExclusionMatcher(
+            patterns: ["System/**"],
+            rootPath: "/",
+            includeCloudStorage: true
+        )
+        XCTAssertTrue(filesystemRootMatcher.excludesKnownNormalizedChild(
+            named: "System",
+            under: "/",
+            isDirectory: true
+        ))
+    }
+
     func testSimpleBasenameGlobStrategiesPreserveWildcardSemantics() {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(

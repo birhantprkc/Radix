@@ -2261,13 +2261,14 @@ actor ScanEngine {
                 || shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
             if usesDeferredBulkEntryFiltering && canExcludeNativeEntry {
                 let parentPath = url.path
-                entryInclusion = { childName, childPath, isDirectory in
+                entryInclusion = { childName, isDirectory in
                     ScanDirectoryEntryFilter.includes(
                         childName: childName,
                         parentPath: parentPath,
                         behavior: behavior
-                    ) && !exclusionMatcher.excludesKnownNormalizedPath(
-                        childPath,
+                    ) && !exclusionMatcher.excludesKnownNormalizedChild(
+                        named: childName,
+                        under: parentPath,
                         isDirectory: isDirectory
                     )
                 }
