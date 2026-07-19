@@ -244,6 +244,11 @@ actor ScanEngine {
         }
     }
 
+    struct ShallowDirectoryListing: Sendable {
+        let directoryMetadata: NodeMetadata
+        let entries: [DirectoryEntry]
+    }
+
     private struct DirectoryContentsScanResult: Sendable {
         let entries: [DirectoryEntry]
         let enumeratedItemCount: Int
@@ -693,6 +698,62 @@ actor ScanEngine {
                 task.cancel()
             }
         }
+    }
+
+    nonisolated func shallowDirectoryListing(
+        at directoryURL: URL,
+        scanTarget: ScanTarget,
+        options: ScanOptions
+    ) async throws -> ShallowDirectoryListing {
+        let cancellationCheck: CancellationCheck = { try Task.checkCancellation() }
+        let metadataLoader = ScanMetadataLoader(
+            linkCountCapabilityCache: linkCountCapabilityCache
+        )
+        let directoryMetadata = try metadataLoader.metadata(for: directoryURL)
+        guard shouldTraverseDirectory(metadata: directoryMetadata, options: options) else {
+            throw ScanEngineError.missingRootNode
+        }
+        let behavior = ScanBehavior(
+            excludesStartupVolumeInternals: scanTarget.kind == .volume
+                && scanTarget.url.path == "/"
+        )
+        let exclusionMatcher = ScanExclusionMatcher(
+            patterns: options.exclusionPatterns,
+            rootPath: options.exclusionRootPath ?? scanTarget.url.path,
+            includeCloudStorage: options.includeCloudStorage,
+            cloudStorageRootPath: options.cloudStorageRootPath,
+            iCloudDriveRootPath: options.iCloudDriveRootPath
+        )
+        let contents = try await Self.directoryEntries(
+            of: directoryURL,
+            includeHiddenFiles: options.includeHiddenFiles,
+            behavior: behavior,
+            exclusionMatcher: exclusionMatcher,
+            resourceKeys: ScanMetadataLoader.scanResourceKeys,
+            metadataLoader: metadataLoader,
+            directoryContents: directoryContents,
+            usesBulkDirectoryEnumeration: usesBulkDirectoryEnumeration,
+            directoryNamespaceResolver: directoryNamespaceResolver,
+            directoryDescriptorPool: usesBulkDirectoryEnumeration
+                ? directoryDescriptorPoolFactory()
+                : nil,
+            parentDirectoryLease: nil,
+            nativeName: nil,
+            expectedIdentity: directoryMetadata.fileIdentity,
+            classificationWorkerLimit: ScanConcurrencyPolicy.directoryClassificationWorkerLimit(
+                for: options
+            ),
+            cancellationCheck: cancellationCheck
+        )
+        contents.directoryLease?.close()
+        return ShallowDirectoryListing(
+            directoryMetadata: directoryMetadata,
+            entries: contents.entries
+        )
+    }
+
+    nonisolated static func shallowRelistWorkerLimit(for options: ScanOptions) -> Int {
+        ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
     }
 
     // The scan path (`performScan` and the helpers it calls) is `nonisolated` on
@@ -2201,7 +2262,7 @@ actor ScanEngine {
             || !TrashSafetyPolicy.isStartupVolumeFirmlinkRoot(url)
     }
 
-    private nonisolated func makeFileNode(
+    nonisolated func makeFileNode(
         url: URL,
         metadata: NodeMetadata
     ) -> FileNodeRecord {

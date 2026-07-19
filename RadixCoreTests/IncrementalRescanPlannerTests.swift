@@ -36,10 +36,13 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         )
 
         XCTAssertEqual(cutoff, through)
-        XCTAssertEqual(plan, .rescanSubtrees(nodeIDs: [fixture.folder.id]))
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [fixture.folder.id],
+            rescanSubtreeIDs: []
+        ))
     }
 
-    func testFileEventRescansContainingDirectory() {
+    func testFileEventRelistsContainingDirectory() {
         let fixture = makeFixture()
         let plan = IncrementalRescanPlanner().plan(
             history: history([
@@ -49,7 +52,81 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             treeStore: fixture.store
         )
 
-        XCTAssertEqual(plan, .rescanSubtrees(nodeIDs: [fixture.folder.id]))
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [fixture.folder.id],
+            rescanSubtreeIDs: []
+        ))
+    }
+
+    func testRootLevelFileEventRelistsScanRoot() {
+        let fixture = makeFixture()
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event("/scan/new.txt", flags: [.itemCreated, .itemIsFile]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: fixture.store
+        )
+
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [fixture.store.rootID],
+            rescanSubtreeIDs: []
+        ))
+    }
+
+    func testDisjointRelistAndSubtreeRescanShareOnePlan() {
+        let fixture = makeFixture()
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event("/scan/folder/new.txt", flags: [.itemCreated, .itemIsFile]),
+                event(
+                    "/scan/Tool.app/Contents/MacOS/Tool",
+                    flags: [.itemModified, .itemIsFile]
+                ),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: fixture.store
+        )
+
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [fixture.folder.id],
+            rescanSubtreeIDs: [fixture.package.id]
+        ))
+    }
+
+    func testAncestorRelistWithNestedUpdateFallsBackAtScanRoot() {
+        let fixture = makeFixture()
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event("/scan/new.txt", flags: [.itemCreated, .itemIsFile]),
+                event("/scan/folder/new.txt", flags: [.itemCreated, .itemIsFile]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: fixture.store
+        )
+
+        XCTAssertEqual(plan, .fullScan(reason: .changedScanRoot))
+    }
+
+    func testBroadRelistPlanFallsBackToFullScan() {
+        let directories = (0..<32).map { index in
+            directory("/scan/directory-\(index)", children: [])
+        }
+        let root = directory("/scan", children: directories)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: directories])
+        let events = directories.map { directory in
+            event(
+                directory.id + "/new.txt",
+                flags: [.itemCreated, .itemIsFile]
+            )
+        }
+        let plan = IncrementalRescanPlanner().plan(
+            history: history(events),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: store
+        )
+
+        XCTAssertEqual(plan, .fullScan(reason: .incrementalWorkTooBroad))
     }
 
     func testNestedEventsCoalesceToTopLevelChangedSubtree() {
@@ -63,7 +140,10 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             treeStore: fixture.store
         )
 
-        XCTAssertEqual(plan, .rescanSubtrees(nodeIDs: [fixture.folder.id]))
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [],
+            rescanSubtreeIDs: [fixture.folder.id]
+        ))
     }
 
     func testDroppedRootAndMountEventsRequireFullScan() {
@@ -97,7 +177,10 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             treeStore: fixture.store
         )
 
-        XCTAssertEqual(plan, .rescanSubtrees(nodeIDs: [fixture.package.id]))
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [],
+            rescanSubtreeIDs: [fixture.package.id]
+        ))
     }
 
     func testEventInsideAutoSummaryFallsBackToFullScan() {

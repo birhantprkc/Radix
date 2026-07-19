@@ -1271,8 +1271,8 @@ final class ScanBenchmarkTests: XCTestCase {
         switch plan {
         case .noChanges:
             return "no_changes"
-        case .rescanSubtrees(let nodeIDs):
-            return "subtrees_\(nodeIDs.count)"
+        case .update(let relistDirectoryIDs, let rescanSubtreeIDs):
+            return "relist_\(relistDirectoryIDs.count)_subtrees_\(rescanSubtreeIDs.count)"
         case .fullScan(let reason):
             return "full_scan_\(reason.rawValue)"
         }

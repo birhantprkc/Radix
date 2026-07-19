@@ -89,11 +89,15 @@ nonisolated enum IncrementalRescanFallbackReason: String, Codable, Hashable, Sen
     case eventOutsideTarget
     case noMaterializedAncestor
     case autoSummarizedBoundary
+    case incrementalWorkTooBroad
 }
 
 nonisolated enum IncrementalRescanPlan: Equatable, Sendable {
     case noChanges
-    case rescanSubtrees(nodeIDs: [String])
+    case update(
+        relistDirectoryIDs: [String],
+        rescanSubtreeIDs: [String]
+    )
     case fullScan(reason: IncrementalRescanFallbackReason)
 }
 

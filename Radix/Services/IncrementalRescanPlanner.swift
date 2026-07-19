@@ -5,9 +5,16 @@
 
 import Foundation
 
-/// Converts advisory filesystem events into conservative, existing subtree
-/// roots that can be scanned and spliced into a prior `FileTreeStore`.
+/// Converts advisory filesystem events into conservative directory relists and
+/// subtree rescans that can be spliced into a prior `FileTreeStore`.
 nonisolated struct IncrementalRescanPlanner: Sendable {
+    private static let broadRelistDirectoryThreshold = 32
+
+    private enum UpdateKind {
+        case relistDirectory
+        case rescanSubtree
+    }
+
     func plan(
         history: FileSystemEventHistory,
         target: ScanTarget,
@@ -15,7 +22,8 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         exclusionMatcher: ScanExclusionMatcher? = nil
     ) -> IncrementalRescanPlan {
         let targetPath = Self.normalizedDirectoryPath(target.url.path)
-        var candidateNodeIDs: [String] = []
+        var orderedCandidateNodeIDs: [String] = []
+        var updateKindByNodeID: [String: UpdateKind] = [:]
 
         for event in history.events {
             if let fallback = fallbackReason(for: event.flags) {
@@ -64,19 +72,83 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
             guard let matchedNode else {
                 return .fullScan(reason: .noMaterializedAncestor)
             }
-            if matchedNode.id == treeStore.rootID || matchedNode.id == targetPath {
-                return .fullScan(reason: .changedScanRoot)
-            }
             if matchedNode.isAutoSummarized {
                 return .fullScan(reason: .autoSummarizedBoundary)
             }
-            candidateNodeIDs.append(matchedNode.id)
+            let updateKind = updateKind(
+                for: event,
+                matchedNode: matchedNode
+            )
+            if updateKindByNodeID[matchedNode.id] == nil {
+                orderedCandidateNodeIDs.append(matchedNode.id)
+            }
+            if updateKind == .rescanSubtree
+                || updateKindByNodeID[matchedNode.id] == nil {
+                updateKindByNodeID[matchedNode.id] = updateKind
+            }
         }
 
-        let topLevelNodeIDs = treeStore.topLevelNodeIDs(from: candidateNodeIDs)
-        return topLevelNodeIDs.isEmpty
-            ? .noChanges
-            : .rescanSubtrees(nodeIDs: topLevelNodeIDs)
+        let topLevelNodeIDs = treeStore.topLevelNodeIDs(from: orderedCandidateNodeIDs)
+        guard !topLevelNodeIDs.isEmpty else { return .noChanges }
+
+        var relistDirectoryIDs: [String] = []
+        var rescanSubtreeIDs: [String] = []
+        for nodeID in topLevelNodeIDs {
+            let hasNestedUpdate = orderedCandidateNodeIDs.contains { candidateID in
+                candidateID != nodeID && treeStore.isAncestor(nodeID, of: candidateID)
+            }
+            let updateKind = hasNestedUpdate ? .rescanSubtree : updateKindByNodeID[nodeID]
+            switch updateKind {
+            case .relistDirectory:
+                relistDirectoryIDs.append(nodeID)
+            case .rescanSubtree:
+                if nodeID == treeStore.rootID || nodeID == targetPath {
+                    return .fullScan(reason: .changedScanRoot)
+                }
+                rescanSubtreeIDs.append(nodeID)
+            case nil:
+                continue
+            }
+        }
+        let updateRootCount = relistDirectoryIDs.count + rescanSubtreeIDs.count
+        if updateRootCount >= Self.broadRelistDirectoryThreshold {
+            let relistedItemCount = relistDirectoryIDs.reduce(0) { count, directoryID in
+                count + treeStore.childIDs(of: directoryID).count + 1
+            }
+            let rescannedItemCount = rescanSubtreeIDs.reduce(0) { count, subtreeID in
+                count + treeStore.subtreeNodeCount(rootedAt: subtreeID)
+            }
+            if relistedItemCount + rescannedItemCount >= max(treeStore.nodeCount / 2, 1) {
+                return .fullScan(reason: .incrementalWorkTooBroad)
+            }
+        }
+        return .update(
+            relistDirectoryIDs: relistDirectoryIDs,
+            rescanSubtreeIDs: rescanSubtreeIDs
+        )
+    }
+
+    private func updateKind(
+        for event: FileSystemEventRecord,
+        matchedNode: FileNodeRecord
+    ) -> UpdateKind {
+        if event.flags.contains(.mustScanSubdirectories) || matchedNode.isPackage {
+            return .rescanSubtree
+        }
+        let changesMembership = !event.flags.intersection([
+            .itemCreated,
+            .itemRemoved,
+            .itemRenamed,
+        ]).isEmpty
+        if event.flags.contains(.itemIsDirectory), !changesMembership {
+            return .rescanSubtree
+        }
+        if !changesMembership,
+           event.flags.intersection([.itemIsFile, .itemIsSymbolicLink]).isEmpty,
+           event.path == matchedNode.id {
+            return .rescanSubtree
+        }
+        return .relistDirectory
     }
 
     private func fallbackReason(

@@ -954,6 +954,17 @@ nonisolated struct FileTreeStore: Sendable {
         return !topologyArena.children(of: index).isEmpty
     }
 
+    nonisolated func subtreeNodeCount(rootedAt nodeID: String) -> Int {
+        guard let rootIndex = nodeIndex(id: nodeID) else { return 0 }
+        var count = 0
+        var stack = [rootIndex]
+        while let nodeIndex = stack.popLast() {
+            count += 1
+            stack.append(contentsOf: topologyArena.children(of: nodeIndex))
+        }
+        return count
+    }
+
     nonisolated func indexedNodeIDs(excludingRoot: Bool = false) -> [String] {
         topologyArena.orderedNodeIndices.compactMap { nodeIndex in
             guard !excludingRoot || nodeIndex != topologyArena.rootIndex else { return nil }
@@ -1414,6 +1425,14 @@ nonisolated struct FileTreeStore: Sendable {
     ) throws -> FileTreeStore? {
         try cancellationCheck()
         guard !replacements.isEmpty else { return self }
+        if replacements.count == 1,
+           let replacement = replacements[rootID],
+           replacement.rootID == rootID {
+            return try HardLinkDeduplicator.rebalancedStore(
+                replacement,
+                cancellationCheck: cancellationCheck
+            )
+        }
 
         let existingParentIDs = parentIDByID
         let existingChildIDs = childIDsByID
@@ -1686,7 +1705,7 @@ nonisolated struct FileTreeStore: Sendable {
         return try HardLinkDeduplicator.rebalancedStore(scopedStore, cancellationCheck: cancellationCheck)
     }
 
-    private nonisolated func subtreeNodeIDs(rootedAt id: String) -> [String] {
+    nonisolated func subtreeNodeIDs(rootedAt id: String) -> [String] {
         (try? subtreeNodeIDs(rootedAt: id, cancellationCheck: {})) ?? []
     }
 

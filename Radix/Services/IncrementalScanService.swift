@@ -9,6 +9,20 @@ import Foundation
 /// Any uncertainty delegates to a full scan; partial subtree results are never
 /// published before the complete batch splice succeeds.
 nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked Sendable {
+    private enum ShallowRelistError: Error {
+        case invalidDirectory
+        case incompleteMetadata
+        case duplicateEntry
+        case identityChanged
+        case replacementCollision
+    }
+
+    private struct ShallowReplacement: Sendable {
+        let directoryID: String
+        let treeStore: FileTreeStore
+        let warnings: [ScanWarning]
+    }
+
     private let engine: ScanEngine
     private let eventHistoryProvider: any FileSystemEventHistoryProviding
     private let planner: IncrementalRescanPlanner
@@ -106,13 +120,14 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                         )
                         continuation.yield(.finished(finished))
                         continuation.finish()
-                    case .rescanSubtrees(let nodeIDs):
+                    case .update(let relistDirectoryIDs, let rescanSubtreeIDs):
                         try await self.performIncrementalScan(
                             target: target,
                             options: options,
                             baseline: baseline,
                             cutoff: cutoff,
-                            nodeIDs: nodeIDs,
+                            relistDirectoryIDs: relistDirectoryIDs,
+                            rescanSubtreeIDs: rescanSubtreeIDs,
                             continuation: continuation
                         )
                     }
@@ -131,7 +146,8 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         options: ScanOptions,
         baseline: ScanSnapshot,
         cutoff: ScanIncrementalCheckpoint,
-        nodeIDs: [String],
+        relistDirectoryIDs: [String],
+        rescanSubtreeIDs: [String],
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
     ) async throws {
         let startedAt = Date()
@@ -141,8 +157,53 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         if subtreeOptions.exclusionRootPath == nil {
             subtreeOptions.exclusionRootPath = target.url.path
         }
+        let relistOptions = subtreeOptions
 
-        for (index, nodeID) in nodeIDs.enumerated() {
+        do {
+            try await withThrowingTaskGroup(of: ShallowReplacement.self) { group in
+                let workerLimit = min(
+                    ScanEngine.shallowRelistWorkerLimit(for: relistOptions),
+                    relistDirectoryIDs.count
+                )
+                var nextIndex = 0
+                func addNextRelist() {
+                    guard nextIndex < relistDirectoryIDs.count else { return }
+                    let nodeID = relistDirectoryIDs[nextIndex]
+                    nextIndex += 1
+                    group.addTask {
+                        try await self.shallowReplacement(
+                            directoryID: nodeID,
+                            target: target,
+                            options: relistOptions,
+                            baseline: baseline
+                        )
+                    }
+                }
+                for _ in 0..<workerLimit {
+                    addNextRelist()
+                }
+                while let replacement = try await group.next() {
+                    replacements[replacement.directoryID] = replacement.treeStore
+                    replacementWarnings.append(contentsOf: replacement.warnings)
+                    addNextRelist()
+                }
+            }
+            for warning in replacementWarnings {
+                continuation.yield(.warning(warning))
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try await forwardFullScan(
+                target: target,
+                options: options,
+                continuation: continuation
+            )
+            return
+        }
+
+        let updateCount = relistDirectoryIDs.count + rescanSubtreeIDs.count
+        for (subtreeIndex, nodeID) in rescanSubtreeIDs.enumerated() {
             try Task.checkCancellation()
             guard let node = baseline.treeStore.node(id: nodeID) else {
                 try await forwardFullScan(
@@ -162,7 +223,10 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                     case .progress(var metrics):
                         let localFraction = min(max(metrics.progressFraction, 0), 1)
                         metrics.progressFraction = min(
-                            (Double(index) + localFraction) / Double(max(nodeIDs.count, 1)) * 0.95,
+                            (
+                                Double(relistDirectoryIDs.count + subtreeIndex)
+                                    + localFraction
+                            ) / Double(max(updateCount, 1)) * 0.95,
                             0.95
                         )
                         continuation.yield(.progress(metrics))
@@ -222,6 +286,185 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         )
         continuation.yield(.finished(finished))
         continuation.finish()
+    }
+
+    private nonisolated func shallowReplacement(
+        directoryID: String,
+        target: ScanTarget,
+        options: ScanOptions,
+        baseline: ScanSnapshot
+    ) async throws -> ShallowReplacement {
+        guard let originalSubtree = baseline.treeStore.subtree(rootedAt: directoryID),
+              originalSubtree.root.isDirectory,
+              !originalSubtree.root.isSymbolicLink else {
+            throw ShallowRelistError.invalidDirectory
+        }
+        let listing = try await engine.shallowDirectoryListing(
+            at: originalSubtree.root.url,
+            scanTarget: target,
+            options: options
+        )
+        guard listing.directoryMetadata.fileIdentity != nil,
+              listing.directoryMetadata.fileIdentity == originalSubtree.root.fileIdentity else {
+            throw ShallowRelistError.identityChanged
+        }
+
+        var nodesByID = originalSubtree.nodesByID
+        var childIDsByID = originalSubtree.childIDsByID
+        let originalChildIDs = originalSubtree.childIDs(of: directoryID)
+        var currentChildIDs = Set<String>()
+        currentChildIDs.reserveCapacity(listing.entries.count)
+        var preservedSubtreeIDs = Set<String>()
+        var replacementWarnings: [ScanWarning] = []
+
+        for entry in listing.entries {
+            try Task.checkCancellation()
+            guard entry.localizedEnumerationError == nil,
+                  let metadata = entry.metadata else {
+                throw ShallowRelistError.incompleteMetadata
+            }
+            let childID = entry.url.path
+            guard currentChildIDs.insert(childID).inserted else {
+                throw ShallowRelistError.duplicateEntry
+            }
+
+            if canPreserveDirectory(
+                baselineNode: originalSubtree.node(id: childID),
+                metadata: metadata
+            ) {
+                preservedSubtreeIDs.insert(childID)
+                continue
+            }
+
+            removeSubtree(
+                rootedAt: childID,
+                from: originalSubtree,
+                nodesByID: &nodesByID,
+                childIDsByID: &childIDsByID
+            )
+            if metadata.isDirectory, !metadata.isSymbolicLink {
+                let childSnapshot = try await scannedReplacement(
+                    at: entry.url,
+                    options: options
+                )
+                for (replacementID, node) in childSnapshot.treeStore.nodesByID {
+                    guard nodesByID[replacementID] == nil else {
+                        throw ShallowRelistError.replacementCollision
+                    }
+                    nodesByID[replacementID] = node
+                }
+                for (replacementID, childIDs) in childSnapshot.treeStore.childIDsByID {
+                    childIDsByID[replacementID] = childIDs
+                }
+                replacementWarnings.append(contentsOf: childSnapshot.scanWarnings)
+            } else {
+                nodesByID[childID] = engine.makeFileNode(
+                    url: entry.url,
+                    metadata: metadata
+                )
+            }
+        }
+
+        for removedChildID in originalChildIDs where !currentChildIDs.contains(removedChildID) {
+            removeSubtree(
+                rootedAt: removedChildID,
+                from: originalSubtree,
+                nodesByID: &nodesByID,
+                childIDsByID: &childIDsByID
+            )
+        }
+
+        let children = FileTreeStore.sortedChildren(
+            currentChildIDs.compactMap { nodesByID[$0] }
+        )
+        guard children.count == currentChildIDs.count else {
+            throw ShallowRelistError.incompleteMetadata
+        }
+        nodesByID[directoryID] = FileNodeRecord.directory(
+            id: directoryID,
+            url: originalSubtree.root.url,
+            name: originalSubtree.root.name,
+            children: children,
+            lastModified: listing.directoryMetadata.lastModified,
+            fileIdentity: listing.directoryMetadata.fileIdentity,
+            linkCount: listing.directoryMetadata.linkCount,
+            isPackage: listing.directoryMetadata.isPackage,
+            isAccessible: listing.directoryMetadata.isReadable,
+            childrenAreSorted: true
+        )
+        if children.isEmpty {
+            childIDsByID.removeValue(forKey: directoryID)
+        } else {
+            childIDsByID[directoryID] = children.map(\.id)
+        }
+        replacementWarnings.append(contentsOf: baseline.scanWarnings.filter { warning in
+            preservedSubtreeIDs.contains { subtreeID in
+                Self.path(warning.path, isContainedIn: subtreeID)
+            }
+        })
+        return ShallowReplacement(
+            directoryID: directoryID,
+            treeStore: FileTreeStore(
+                rootID: directoryID,
+                nodesByID: nodesByID,
+                childIDsByID: childIDsByID
+            ),
+            warnings: replacementWarnings
+        )
+    }
+
+    private nonisolated func scannedReplacement(
+        at url: URL,
+        options: ScanOptions
+    ) async throws -> ScanSnapshot {
+        var snapshot: ScanSnapshot?
+        for try await event in engine.scan(
+            target: ScanTarget(url: url),
+            options: options
+        ) {
+            switch event {
+            case .finished(let finished):
+                snapshot = finished
+            case .progress, .warning:
+                break
+            }
+        }
+        guard let snapshot else { throw ShallowRelistError.invalidDirectory }
+        return snapshot
+    }
+
+    private nonisolated func canPreserveDirectory(
+        baselineNode: FileNodeRecord?,
+        metadata: NodeMetadata
+    ) -> Bool {
+        guard let baselineNode,
+              baselineNode.isDirectory,
+              !baselineNode.isSymbolicLink,
+              metadata.isDirectory,
+              !metadata.isSymbolicLink,
+              baselineNode.isPackage == metadata.isPackage,
+              baselineNode.isSelfAccessible == metadata.isReadable,
+              let fileIdentity = metadata.fileIdentity,
+              baselineNode.fileIdentity == fileIdentity else {
+            return false
+        }
+        return true
+    }
+
+    private nonisolated func removeSubtree(
+        rootedAt nodeID: String,
+        from originalSubtree: FileTreeStore,
+        nodesByID: inout [String: FileNodeRecord],
+        childIDsByID: inout [String: [String]]
+    ) {
+        for removedID in originalSubtree.subtreeNodeIDs(rootedAt: nodeID) {
+            nodesByID.removeValue(forKey: removedID)
+            childIDsByID.removeValue(forKey: removedID)
+        }
+    }
+
+    private nonisolated static func path(_ path: String, isContainedIn rootPath: String) -> Bool {
+        path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
     private nonisolated func forwardFullScan(
