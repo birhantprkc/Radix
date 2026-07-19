@@ -383,7 +383,6 @@ actor ScanEngine {
     private let atomicSummaryProgressEmissionInterval: TimeInterval
     private let volumeFileSystemTypeProvider: VolumeFileSystemTypeProvider
     private let directoryDescriptorPoolFactory: DirectoryDescriptorPoolFactory
-    private let diagnostics: ScanDiagnosticsContext?
 
     init(
         volumeFileSystemTypeProvider: @escaping VolumeFileSystemTypeProvider = ScanEngine.defaultVolumeFileSystemType,
@@ -427,11 +426,6 @@ actor ScanEngine {
         atomicSummaryProgressEmissionInterval: TimeInterval,
         directoryDescriptorPoolFactory: @escaping DirectoryDescriptorPoolFactory
     ) {
-        #if DEBUG
-        let diagnostics = ScanDiagnostics.makeIfEnabled()
-        #else
-        let diagnostics: ScanDiagnosticsContext? = nil
-        #endif
         self.directoryContents = enumeratedDirectoryContents
         self.usesBulkDirectoryEnumeration = usesBulkDirectoryEnumeration
         self.directoryNamespaceResolver = DirectoryNamespaceResolver()
@@ -440,7 +434,6 @@ actor ScanEngine {
         self.atomicSummaryProgressEmissionInterval = max(atomicSummaryProgressEmissionInterval, 0)
         self.volumeFileSystemTypeProvider = volumeFileSystemTypeProvider
         self.directoryDescriptorPoolFactory = directoryDescriptorPoolFactory
-        self.diagnostics = diagnostics
     }
 
     init(
@@ -715,6 +708,12 @@ actor ScanEngine {
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
     ) async throws -> ScanSnapshot {
         let startedAt = Date()
+        #if DEBUG
+        let diagnostics = ScanDiagnostics.makeIfEnabled()
+        let processCPUTimeAtStart = diagnostics?.processCPUTime()
+        #else
+        let diagnostics: ScanDiagnosticsContext? = nil
+        #endif
         var metrics = ScanMetrics()
         var warnings: [ScanWarning] = []
         var emissionState = ScanEmissionState()
@@ -738,7 +737,8 @@ actor ScanEngine {
             metrics: &metrics,
             warnings: &warnings,
             continuation: continuation,
-            emissionState: &emissionState
+            emissionState: &emissionState,
+            diagnostics: diagnostics
         )
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
         metrics.currentPath = "Summarizing results…"
@@ -777,7 +777,11 @@ actor ScanEngine {
         continuation.yield(.progress(metrics))
         #if DEBUG
         if let diagnostics {
-            print(diagnostics.makeReport(targetPath: target.url.path, elapsedSeconds: Date().timeIntervalSince(startedAt)))
+            print(diagnostics.makeReport(
+                targetPath: target.url.path,
+                elapsedSeconds: Date().timeIntervalSince(startedAt),
+                processCPUTimeAtStart: processCPUTimeAtStart
+            ))
         }
         #endif
         return snapshot
@@ -795,7 +799,8 @@ actor ScanEngine {
         metrics: inout ScanMetrics,
         warnings: inout [ScanWarning],
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
+        emissionState: inout ScanEmissionState,
+        diagnostics: ScanDiagnosticsContext?
     ) async throws -> FileTreeStore {
         try Task.checkCancellation()
         let cancellationCheck: CancellationCheck = { try Task.checkCancellation() }
@@ -905,6 +910,9 @@ actor ScanEngine {
         var seenScannedNodeIDs = Set<String>()
         var nextKey = 0
 
+        #if DEBUG
+        let traversalStart = diagnostics?.start()
+        #endif
         try await withThrowingTaskGroup(of: ScanTaskResult.self) { group in
             var activeDirectoryTasks = 0
             var activePackageTasks = 0
@@ -1479,6 +1487,14 @@ actor ScanEngine {
                 )
             }
         }
+        #if DEBUG
+        diagnostics?.record(
+            operation: "scan.traverse",
+            url: target.url,
+            startedAt: traversalStart,
+            itemCount: nextKey
+        )
+        #endif
 
         // Phase 2: Assemble the tree bottom-up from completed results.
         // Process keys in reverse order (children always have higher keys than parents).
@@ -1607,15 +1623,6 @@ actor ScanEngine {
                 )
             }
         }
-        #if DEBUG
-        diagnostics?.record(
-            operation: "scan.finalize",
-            url: target.url,
-            startedAt: finalizationStart,
-            itemCount: finalizedItems
-        )
-        #endif
-
         guard let rootNode = resolvedNodeByKey[0] else {
             throw ScanEngineError.missingRootNode
         }
@@ -1650,6 +1657,9 @@ actor ScanEngine {
         metrics.recalculateProgress()
         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
+        #if DEBUG
+        let deduplicationStart = diagnostics?.start()
+        #endif
         let store = HardLinkDeduplicator.deduplicatedStore(
             rootIndex: rootIndex,
             nodes: nodes,
@@ -1660,6 +1670,20 @@ actor ScanEngine {
             hardLinkAccumulator: hardLinkAccumulator,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
         )
+        #if DEBUG
+        diagnostics?.record(
+            operation: "scan.deduplicate",
+            url: target.url,
+            startedAt: deduplicationStart,
+            itemCount: nodes.count
+        )
+        diagnostics?.record(
+            operation: "scan.finalize",
+            url: target.url,
+            startedAt: finalizationStart,
+            itemCount: finalizedItems
+        )
+        #endif
         await atomicSummaryPool.finish()
         directoryDescriptorPool?.invalidate()
         return store

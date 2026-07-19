@@ -29,6 +29,20 @@ final class ScanDiagnosticsTests: XCTestCase {
         XCTAssertEqual(operations, ["op40", "op30", "op20"])
     }
 
+    func testReportIncludesProcessCPUWhenMeasurementWasRequested() throws {
+        let diagnostics = ScanDiagnostics()
+        let start = try XCTUnwrap(diagnostics.processCPUTime())
+
+        let report = diagnostics.makeReport(
+            targetPath: "/tmp",
+            elapsedSeconds: 1,
+            processCPUTimeAtStart: start
+        )
+
+        XCTAssertTrue(report.contains(" process_user_cpu="))
+        XCTAssertTrue(report.contains(" process_system_cpu="))
+    }
+
     private func slowEventLines(in report: String) -> [String] {
         let lines = report.components(separatedBy: "\n")
         guard let headerIndex = lines.firstIndex(of: "RADIX_SCAN_DIAGNOSTICS slow_events") else {

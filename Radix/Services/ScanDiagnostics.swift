@@ -1,8 +1,14 @@
 #if DEBUG
+import Darwin
 import Dispatch
 import Foundation
 
 nonisolated final class ScanDiagnostics: @unchecked Sendable {
+    struct ProcessCPUTime: Sendable {
+        let userSeconds: Double
+        let systemSeconds: Double
+    }
+
     private struct OperationStats {
         var count = 0
         var totalNanoseconds: UInt64 = 0
@@ -43,6 +49,15 @@ nonisolated final class ScanDiagnostics: @unchecked Sendable {
         DispatchTime.now().uptimeNanoseconds
     }
 
+    func processCPUTime() -> ProcessCPUTime? {
+        var usage = rusage()
+        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return nil }
+        return ProcessCPUTime(
+            userSeconds: Self.seconds(usage.ru_utime),
+            systemSeconds: Self.seconds(usage.ru_stime)
+        )
+    }
+
     func record(
         operation: String,
         url: URL,
@@ -76,14 +91,21 @@ nonisolated final class ScanDiagnostics: @unchecked Sendable {
         )
     }
 
-    func makeReport(targetPath: String, elapsedSeconds: Double) -> String {
+    func makeReport(
+        targetPath: String,
+        elapsedSeconds: Double,
+        processCPUTimeAtStart: ProcessCPUTime? = nil
+    ) -> String {
+        let processCPUTimeAtEnd = processCPUTimeAtStart == nil ? nil : processCPUTime()
         lock.lock()
         defer { lock.unlock() }
 
-        var lines: [String] = [
-            "RADIX_SCAN_DIAGNOSTICS target=\(targetPath) elapsed=\(Self.format(seconds: elapsedSeconds))s",
-            "RADIX_SCAN_DIAGNOSTICS operations"
-        ]
+        var summary = "RADIX_SCAN_DIAGNOSTICS target=\(targetPath) elapsed=\(Self.format(seconds: elapsedSeconds))s"
+        if let processCPUTimeAtStart, let processCPUTimeAtEnd {
+            summary += " process_user_cpu=\(Self.format(seconds: max(0, processCPUTimeAtEnd.userSeconds - processCPUTimeAtStart.userSeconds)))s"
+            summary += " process_system_cpu=\(Self.format(seconds: max(0, processCPUTimeAtEnd.systemSeconds - processCPUTimeAtStart.systemSeconds)))s"
+        }
+        var lines = [summary, "RADIX_SCAN_DIAGNOSTICS operations"]
 
         for (operation, stats) in sortedStats(statsByOperation) {
             lines.append(
@@ -188,6 +210,10 @@ nonisolated final class ScanDiagnostics: @unchecked Sendable {
 
     private static func format(seconds: Double) -> String {
         String(format: "%.3f", seconds)
+    }
+
+    private static func seconds(_ value: timeval) -> Double {
+        Double(value.tv_sec) + Double(value.tv_usec) / 1_000_000
     }
 }
 #endif
