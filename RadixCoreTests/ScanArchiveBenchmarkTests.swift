@@ -172,27 +172,20 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             from: Data(contentsOf: archiveURL.appending(path: "manifest.json"))
         )
         let service = ScanArchiveService()
-        let nodeRead = try await Self.measureMemoryAndTime {
-            try await service.readNodes(
-                from: archiveURL.appending(path: manifest.sections.nodes),
-                expectedChecksum: manifest.integrity.nodes,
-                expectedNodeCount: manifest.snapshot.nodeCount,
-                formatVersion: manifest.formatVersion,
-                progressReporter: nil
-            )
-        }
         let topologyDecode = try await Self.measureMemoryAndTime {
             try Self.archiveJSONDecoder().decode(
                 ScanArchiveTopology.self,
                 from: Data(contentsOf: archiveURL.appending(path: manifest.sections.topology))
             )
         }
-        guard case .compact(let records) = nodeRead.value else {
+        guard manifest.formatVersion == 4 else {
             throw XCTSkip("Real snapshot import profiling requires a compact v4 archive.")
         }
-        let materialize = try await Self.measureMemoryAndTime {
-            try await service.materializeCompactTreeStore(
-                records,
+        let pipeline = try await Self.measureMemoryAndTime {
+            try await service.readCompactTreeStore(
+                from: archiveURL.appending(path: manifest.sections.nodes),
+                expectedChecksum: manifest.integrity.nodes,
+                expectedNodeCount: manifest.snapshot.nodeCount,
                 topology: topologyDecode.value,
                 expectedRootID: manifest.snapshot.rootID,
                 expectedTargetPath: manifest.snapshot.target.path,
@@ -200,15 +193,13 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(materialize.value.nodeCount, manifest.snapshot.nodeCount)
+        XCTAssertEqual(pipeline.value.nodeCount, manifest.snapshot.nodeCount)
         print(
             """
             RADIX_IMPORT_PROFILE_RESULT nodes=\(manifest.snapshot.nodeCount) \
-            node_read=\(Self.secondsString(nodeRead.elapsedSeconds)) \
-            node_read_peak_rss_delta=\(nodeRead.peakDeltaRSS) \
             topology_decode=\(Self.secondsString(topologyDecode.elapsedSeconds)) \
-            materialize=\(Self.secondsString(materialize.elapsedSeconds)) \
-            materialize_peak_rss_delta=\(materialize.peakDeltaRSS)
+            pipeline=\(Self.secondsString(pipeline.elapsedSeconds)) \
+            pipeline_peak_rss_delta=\(pipeline.peakDeltaRSS)
             """
         )
     }
