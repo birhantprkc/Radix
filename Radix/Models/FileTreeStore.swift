@@ -442,7 +442,10 @@ nonisolated struct FileTreeStore: Sendable {
 
         for nodeIndex in topologyArena.orderedNodeIndices {
             guard let node = node(at: nodeIndex) else { continue }
-            accumulator.include(node, hasMaterializedChildren: containsChildren(id: node.id))
+            accumulator.include(
+                node,
+                hasMaterializedChildren: !topologyArena.children(of: nodeIndex).isEmpty
+            )
         }
 
         return accumulator.stats(root: root)
