@@ -636,7 +636,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(pathMatches.map(\.id), [cache.id])
     }
 
-    func testSearchServiceDoesNotReuseIndexForDifferentTreeWithSameSnapshotID() async throws {
+    func testSearchServiceReplacesIndexForDifferentTreeWithSameSnapshotID() async throws {
         let snapshotID = UUID()
         let originalFile = makeTestFileNode(
             id: "/root/file.txt",
@@ -680,9 +680,17 @@ final class FileBrowserModelTests: XCTestCase {
             includesPath: false,
             sortOrder: []
         )
+        let restoredOriginalMatches = try await service.search(
+            snapshotID: snapshotID,
+            treeStore: originalStore,
+            normalizedQuery: "alpha",
+            includesPath: false,
+            sortOrder: []
+        )
 
         XCTAssertEqual(originalMatches.map(\.name), ["alpha.txt"])
         XCTAssertEqual(replacementMatches.map(\.name), ["beta.txt"])
+        XCTAssertEqual(restoredOriginalMatches.map(\.name), ["alpha.txt"])
     }
 
     @MainActor

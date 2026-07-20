@@ -43,7 +43,7 @@ actor CurrentContentsSearchService {
 }
 
 actor FileSearchService: FileSearching {
-    private var indexes: [FileSearchIndexKey: FileSearchIndex] = [:]
+    private var cachedIndex: CachedFileSearchIndex?
 
     func search(
         snapshotID: UUID,
@@ -58,18 +58,18 @@ actor FileSearchService: FileSearching {
             snapshotID: snapshotID,
             treeContentID: treeStore.contentID
         )
-        var index: FileSearchIndex
-        if let cachedIndex = indexes[indexKey] {
-            index = cachedIndex
-        } else {
-            index = try await makeIndex(treeStore: treeStore)
-            indexes[indexKey] = index
+        if cachedIndex?.key != indexKey {
+            cachedIndex = CachedFileSearchIndex(
+                key: indexKey,
+                index: try makeIndex(treeStore: treeStore)
+            )
         }
+        guard let entries = cachedIndex?.index.entries else { return [] }
 
         var matchedNodes: [FileNodeRecord] = []
-        matchedNodes.reserveCapacity(min(index.entries.count, 256))
+        matchedNodes.reserveCapacity(min(entries.count, 256))
 
-        for (offset, entry) in index.entries.enumerated() {
+        for (offset, entry) in entries.enumerated() {
             if offset.isMultiple(of: 256) {
                 try Task.checkCancellation()
             }
@@ -84,11 +84,11 @@ actor FileSearchService: FileSearching {
             guard includesPath else { continue }
 
             let normalizedPath: String
-            if let cachedPath = index.normalizedPathsByID[entry.id] {
+            if let cachedPath = cachedIndex?.index.normalizedPathsByID[entry.id] {
                 normalizedPath = cachedPath
             } else {
                 normalizedPath = SearchNormalizer.normalize(treeStore.node(id: entry.id)?.url.path ?? "")
-                index.normalizedPathsByID[entry.id] = normalizedPath
+                cachedIndex?.index.normalizedPathsByID[entry.id] = normalizedPath
             }
 
             if normalizedPath.contains(normalizedQuery) {
@@ -97,11 +97,6 @@ actor FileSearchService: FileSearching {
                 }
             }
         }
-
-        if includesPath {
-            indexes[indexKey] = index
-        }
-
         try Task.checkCancellation()
         let sortedNodes = try FileBrowserResults.sorted(
             matchedNodes,
@@ -117,14 +112,16 @@ actor FileSearchService: FileSearching {
 
     func pruneIndexes(keeping snapshotID: UUID?) {
         guard let snapshotID else {
-            indexes.removeAll()
+            cachedIndex = nil
             return
         }
 
-        indexes = indexes.filter { $0.key.snapshotID == snapshotID }
+        if cachedIndex?.key.snapshotID != snapshotID {
+            cachedIndex = nil
+        }
     }
 
-    private func makeIndex(treeStore: FileTreeStore) async throws -> FileSearchIndex {
+    private func makeIndex(treeStore: FileTreeStore) throws -> FileSearchIndex {
         var entries: [FileSearchEntry] = []
         entries.reserveCapacity(max(treeStore.nodeCount - 1, 0))
 
@@ -181,6 +178,11 @@ enum SearchNormalizer {
 private struct FileSearchIndex {
     let entries: [FileSearchEntry]
     var normalizedPathsByID: [FileNodeRecord.ID: String]
+}
+
+private struct CachedFileSearchIndex {
+    let key: FileSearchIndexKey
+    var index: FileSearchIndex
 }
 
 private nonisolated struct FileSearchIndexKey: Hashable, Sendable {
