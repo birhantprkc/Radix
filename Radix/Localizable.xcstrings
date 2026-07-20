@@ -1609,74 +1609,6 @@
         }
       }
     },
-    "Add Pattern" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muster hinzufügen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir patrón"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter un modèle"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi modello"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加模式"
-          }
-        }
-      }
-    },
-    "Add Preset" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voreinstellung hinzufügen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir ajuste predefinido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter un préréglage"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi preimpostazione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加预设"
-          }
-        }
-      }
-    },
     "Add Cloud Item to Discard Pile?" : {
       "comment" : "Confirmation title before adding one cloud-stored item to the Discard Pile.",
       "localizations" : {
@@ -1747,8 +1679,76 @@
         }
       }
     },
+    "Add Pattern" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muster hinzufügen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir patrón"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un modèle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi modello"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加模式"
+          }
+        }
+      }
+    },
+    "Add Preset" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voreinstellung hinzufügen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir ajuste predefinido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un préréglage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi preimpostazione"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加预设"
+          }
+        }
+      }
+    },
     "Add to Discard Pile" : {
-      "comment" : "Action for marking one selected item for possible deletion.",
+      "comment" : "Action for marking one selected item for possible deletion.\nConfirmation button for adding a cloud-stored item to the Discard Pile.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -3538,6 +3538,41 @@
         }
       }
     },
+    "Cloud Storage" : {
+      "comment" : "Fallback title for a cloud-storage confirmation dialog.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud-Speicher"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almacenamiento en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stockage cloud"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archiviazione cloud"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云存储"
+          }
+        }
+      }
+    },
     "Comparable: same location, matching scan settings, and complete scans." : {
       "comment" : "Comparison coverage message when both scans are directly comparable.",
       "localizations" : {
@@ -3882,42 +3917,8 @@
         }
       }
     },
-    "Cloud Storage" : {
-      "comment" : "Fallback title for a cloud-storage confirmation dialog.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cloud-Speicher"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Almacenamiento en la nube"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stockage cloud"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archiviazione cloud"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "云存储"
-          }
-        }
-      }
-    },
     "Continue" : {
+      "comment" : "Fallback action title for a cloud-file confirmation dialog.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -8742,7 +8743,7 @@
       }
     },
     "Move to Trash" : {
-      "comment" : "Destructive file action that moves the selected item to the Trash.",
+      "comment" : "Confirmation button for moving a cloud-stored item to the Trash.\nDestructive file action that moves the selected item to the Trash.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -15841,41 +15842,6 @@
         }
       }
     },
-    "The selected item is stored only in cloud storage and has no on-disk data to scan." : {
-      "comment" : "Error shown when the user tries to scan a cloud-only placeholder.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das ausgewählte Objekt ist nur im Cloud-Speicher abgelegt und enthält keine lokalen Daten zum Scannen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El elemento seleccionado solo está almacenado en la nube y no contiene datos locales que analizar."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L’élément sélectionné est stocké uniquement dans le cloud et ne contient aucune donnée locale à analyser."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L’elemento selezionato è archiviato solo nel cloud e non contiene dati locali da analizzare."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "所选项目仅存储在云端，没有可供扫描的本地数据。"
-          }
-        }
-      }
-    },
     "The scan could not assemble a root node." : {
       "comment" : "Error shown when a completed scan has no root node.",
       "localizations" : {
@@ -15942,6 +15908,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "扫描目标现在位于另一个宗卷上。"
+          }
+        }
+      }
+    },
+    "The selected item is stored only in cloud storage and has no on-disk data to scan." : {
+      "comment" : "Error shown when the user tries to scan a cloud-only placeholder.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das ausgewählte Objekt ist nur im Cloud-Speicher abgelegt und enthält keine lokalen Daten zum Scannen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El elemento seleccionado solo está almacenado en la nube y no contiene datos locales que analizar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’élément sélectionné est stocké uniquement dans le cloud et ne contient aucune donnée locale à analyser."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’elemento selezionato è archiviato solo nel cloud e non contiene dati locali da analizzare."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选项目仅存储在云端，没有可供扫描的本地数据。"
           }
         }
       }
@@ -16150,6 +16151,181 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "这会从待处理列表中移除所有标记项目。磁盘上的文件不会更改。"
+          }
+        }
+      }
+    },
+    "This selection contains a cloud storage folder. If you later move it to the Trash, cloud files inside it may also be deleted from the cloud and other synced devices." : {
+      "comment" : "Warning shown before adding an ancestor of a cloud storage folder to the Discard Pile.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Auswahl enthält einen Cloud-Speicherordner. Wenn Sie sie später in den Papierkorb bewegen, werden darin enthaltene Cloud-Dateien möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta selección contiene una carpeta de almacenamiento en la nube. Si más adelante la mueve a la papelera, los archivos en la nube que contiene también pueden eliminarse de la nube y de otros dispositivos sincronizados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sélection contient un dossier de stockage cloud. Si vous la placez ensuite dans la corbeille, les fichiers cloud qu’il contient peuvent également être supprimés du cloud et des autres appareils synchronisés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa selezione contiene una cartella di archiviazione cloud. Se in seguito la sposti nel Cestino, anche i file cloud al suo interno potrebbero essere eliminati dal cloud e dagli altri dispositivi sincronizzati."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此选择内容包含一个云存储文件夹。如果之后将其移到废纸篓，其中的云文件也可能会从云端和其他同步设备中删除。"
+          }
+        }
+      }
+    },
+    "This selection contains a cloud storage folder. Moving it to the Trash may also delete cloud files inside it from the cloud and other synced devices." : {
+      "comment" : "Second warning shown before moving an ancestor of a cloud storage folder to the Trash.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Auswahl enthält einen Cloud-Speicherordner. Beim Bewegen in den Papierkorb werden darin enthaltene Cloud-Dateien möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta selección contiene una carpeta de almacenamiento en la nube. Al moverla a la papelera, los archivos en la nube que contiene también pueden eliminarse de la nube y de otros dispositivos sincronizados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sélection contient un dossier de stockage cloud. La placer dans la corbeille peut également supprimer du cloud et des autres appareils synchronisés les fichiers cloud qu’elle contient."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa selezione contiene una cartella di archiviazione cloud. Spostandola nel Cestino, anche i file cloud al suo interno potrebbero essere eliminati dal cloud e dagli altri dispositivi sincronizzati."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此选择内容包含一个云存储文件夹。将其移到废纸篓也可能会从云端和其他同步设备中删除其中的云文件。"
+          }
+        }
+      }
+    },
+    "This selection is stored in cloud storage." : {
+      "comment" : "Fallback warning for a cloud-file confirmation dialog.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Auswahl wird im Cloud-Speicher gespeichert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta selección está almacenada en la nube."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sélection est stockée dans le cloud."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa selezione è archiviata nel cloud."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此选择内容存储在云端。"
+          }
+        }
+      }
+    },
+    "This selection is stored in cloud storage. If you later move it to the Trash, it may also be deleted from the cloud and other synced devices." : {
+      "comment" : "Warning shown before adding cloud-stored items to the Discard Pile.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Auswahl wird im Cloud-Speicher gespeichert. Wenn Sie sie später in den Papierkorb bewegen, wird sie möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta selección está almacenada en la nube. Si más adelante la mueve a la papelera, también puede eliminarse de la nube y de otros dispositivos sincronizados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sélection est stockée dans le cloud. Si vous la placez ensuite dans la corbeille, elle peut également être supprimée du cloud et des autres appareils synchronisés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa selezione è archiviata nel cloud. Se in seguito la sposti nel Cestino, potrebbe essere eliminata anche dal cloud e dagli altri dispositivi sincronizzati."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此选择内容存储在云端。如果之后将其移到废纸篓，它也可能会从云端和其他同步设备中删除。"
+          }
+        }
+      }
+    },
+    "This selection is stored in cloud storage. Moving it to the Trash may also delete it from the cloud and other synced devices." : {
+      "comment" : "Second warning shown before moving cloud-stored items to the Trash.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Auswahl wird im Cloud-Speicher gespeichert. Beim Bewegen in den Papierkorb wird sie möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta selección está almacenada en la nube. Al moverla a la papelera, también puede eliminarse de la nube y de otros dispositivos sincronizados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette sélection est stockée dans le cloud. La placer dans la corbeille peut également la supprimer du cloud et des autres appareils synchronisés."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa selezione è archiviata nel cloud. Se la sposti nel Cestino, potrebbe essere eliminata anche dal cloud e dagli altri dispositivi sincronizzati."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此选择内容存储在云端。将它移到废纸篓也可能会从云端和其他同步设备中删除它。"
           }
         }
       }
@@ -17010,181 +17186,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启用后，包含数千个小文件（如 node_modules 或缓存）的目录会汇总显示，而不会展开每个文件，从而显著提高扫描速度。"
-          }
-        }
-      }
-    },
-    "This selection contains a cloud storage folder. If you later move it to the Trash, cloud files inside it may also be deleted from the cloud and other synced devices." : {
-      "comment" : "Warning shown before adding an ancestor of a cloud storage folder to the Discard Pile.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diese Auswahl enthält einen Cloud-Speicherordner. Wenn Sie sie später in den Papierkorb bewegen, werden darin enthaltene Cloud-Dateien möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta selección contiene una carpeta de almacenamiento en la nube. Si más adelante la mueve a la papelera, los archivos en la nube que contiene también pueden eliminarse de la nube y de otros dispositivos sincronizados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette sélection contient un dossier de stockage cloud. Si vous la placez ensuite dans la corbeille, les fichiers cloud qu’il contient peuvent également être supprimés du cloud et des autres appareils synchronisés."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questa selezione contiene una cartella di archiviazione cloud. Se in seguito la sposti nel Cestino, anche i file cloud al suo interno potrebbero essere eliminati dal cloud e dagli altri dispositivi sincronizzati."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此选择内容包含一个云存储文件夹。如果之后将其移到废纸篓，其中的云文件也可能会从云端和其他同步设备中删除。"
-          }
-        }
-      }
-    },
-    "This selection contains a cloud storage folder. Moving it to the Trash may also delete cloud files inside it from the cloud and other synced devices." : {
-      "comment" : "Second warning shown before moving an ancestor of a cloud storage folder to the Trash.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diese Auswahl enthält einen Cloud-Speicherordner. Beim Bewegen in den Papierkorb werden darin enthaltene Cloud-Dateien möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta selección contiene una carpeta de almacenamiento en la nube. Al moverla a la papelera, los archivos en la nube que contiene también pueden eliminarse de la nube y de otros dispositivos sincronizados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette sélection contient un dossier de stockage cloud. La placer dans la corbeille peut également supprimer du cloud et des autres appareils synchronisés les fichiers cloud qu’elle contient."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questa selezione contiene una cartella di archiviazione cloud. Spostandola nel Cestino, anche i file cloud al suo interno potrebbero essere eliminati dal cloud e dagli altri dispositivi sincronizzati."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此选择内容包含一个云存储文件夹。将其移到废纸篓也可能会从云端和其他同步设备中删除其中的云文件。"
-          }
-        }
-      }
-    },
-    "This selection is stored in cloud storage." : {
-      "comment" : "Fallback warning for a cloud-file confirmation dialog.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diese Auswahl wird im Cloud-Speicher gespeichert."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta selección está almacenada en la nube."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette sélection est stockée dans le cloud."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questa selezione è archiviata nel cloud."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此选择内容存储在云端。"
-          }
-        }
-      }
-    },
-    "This selection is stored in cloud storage. If you later move it to the Trash, it may also be deleted from the cloud and other synced devices." : {
-      "comment" : "Warning shown before adding cloud-stored items to the Discard Pile.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diese Auswahl wird im Cloud-Speicher gespeichert. Wenn Sie sie später in den Papierkorb bewegen, wird sie möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta selección está almacenada en la nube. Si más adelante la mueve a la papelera, también puede eliminarse de la nube y de otros dispositivos sincronizados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette sélection est stockée dans le cloud. Si vous la placez ensuite dans la corbeille, elle peut également être supprimée du cloud et des autres appareils synchronisés."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questa selezione è archiviata nel cloud. Se in seguito la sposti nel Cestino, potrebbe essere eliminata anche dal cloud e dagli altri dispositivi sincronizzati."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此选择内容存储在云端。如果之后将其移到废纸篓，它也可能会从云端和其他同步设备中删除。"
-          }
-        }
-      }
-    },
-    "This selection is stored in cloud storage. Moving it to the Trash may also delete it from the cloud and other synced devices." : {
-      "comment" : "Second warning shown before moving cloud-stored items to the Trash.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diese Auswahl wird im Cloud-Speicher gespeichert. Beim Bewegen in den Papierkorb wird sie möglicherweise auch aus der Cloud und von anderen synchronisierten Geräten gelöscht."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esta selección está almacenada en la nube. Al moverla a la papelera, también puede eliminarse de la nube y de otros dispositivos sincronizados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cette sélection est stockée dans le cloud. La placer dans la corbeille peut également la supprimer du cloud et des autres appareils synchronisés."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questa selezione è archiviata nel cloud. Se la sposti nel Cestino, potrebbe essere eliminata anche dal cloud e dagli altri dispositivi sincronizzati."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此选择内容存储在云端。将它移到废纸篓也可能会从云端和其他同步设备中删除它。"
           }
         }
       }
