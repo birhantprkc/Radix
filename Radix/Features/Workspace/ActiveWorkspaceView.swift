@@ -90,6 +90,7 @@ struct ActiveWorkspaceView: View {
                     activeTarget: scanState.selectedTarget,
                     trashSafetyPolicy: scanState.trashSafetyPolicy,
                     snapshotSource: scanState.snapshotSource,
+                    focusedWorkspaceTarget: $focusedWorkspaceTarget,
                     selectedNodeID: navigation.selectedNodeID,
                     selectedAncestorIDs: navigation.selectedAncestorIDs,
                     depthLimit: maxRenderedDepth,
@@ -109,6 +110,7 @@ struct ActiveWorkspaceView: View {
                     activeTarget: scanState.selectedTarget,
                     trashSafetyPolicy: scanState.trashSafetyPolicy,
                     snapshotSource: scanState.snapshotSource,
+                    focusedWorkspaceTarget: $focusedWorkspaceTarget,
                     selectedNodeID: navigation.selectedNodeID,
                     depthLimit: maxRenderedDepth,
                     layoutID: layoutID,
@@ -120,9 +122,6 @@ struct ActiveWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .focusable()
-        .focusEffectDisabled()
-        .focused($focusedWorkspaceTarget, equals: .chart)
         .onChange(of: filterRequest, initial: true) { _, request in
             visualizationFilter.update(
                 baseInput: baseVisualizationInput,

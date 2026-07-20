@@ -13,6 +13,7 @@ struct TreemapChartView: View {
     let activeTarget: ScanTarget?
     let trashSafetyPolicy: TrashSafetyPolicy
     let snapshotSource: ScanSnapshotSource
+    @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
     let selectedNodeID: String?
     let depthLimit: Int
     let layoutID: String
@@ -34,6 +35,7 @@ struct TreemapChartView: View {
         activeTarget: ScanTarget?,
         trashSafetyPolicy: TrashSafetyPolicy,
         snapshotSource: ScanSnapshotSource,
+        focusedWorkspaceTarget: FocusState<WorkspaceFocusTarget?>.Binding,
         selectedNodeID: String?,
         depthLimit: Int,
         layoutID: String,
@@ -49,6 +51,7 @@ struct TreemapChartView: View {
         self.activeTarget = activeTarget
         self.trashSafetyPolicy = trashSafetyPolicy
         self.snapshotSource = snapshotSource
+        self._focusedWorkspaceTarget = focusedWorkspaceTarget
         self.selectedNodeID = selectedNodeID
         self.depthLimit = depthLimit
         self.layoutID = layoutID
@@ -128,6 +131,7 @@ struct TreemapChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard !isDiskMapPending else { return }
+                        focusedWorkspaceTarget = .chart
                         handleClick(at: location, in: chartFrame, clickCount: clickCount)
                     },
                     discardPileDragItem: { location in
@@ -137,6 +141,11 @@ struct TreemapChartView: View {
                 )
                 .accessibilityHidden(true)
                 .allowsHitTesting(!isDiskMapPending)
+
+                ChartSpatialSelectionKeyboardMonitor(
+                    isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
+                    onMove: handleSpatialMove
+                )
             }
             .clipped()
             .accessibilityElement(children: .ignore)
@@ -167,6 +176,9 @@ struct TreemapChartView: View {
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedWorkspaceTarget, equals: .chart)
             .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
                 await updateLoadingDiskMapProgress(
                     isPending: isDiskMapPending,
@@ -182,6 +194,16 @@ struct TreemapChartView: View {
                     layoutID: layoutTaskID.requestID
                 )
             }
+        }
+    }
+
+    private func handleSpatialMove(_ direction: ChartSpatialSelectionDirection) {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
+        if let nodeID = chartModel.spatialSelectionNodeID(
+            from: selectedNodeID,
+            moving: direction
+        ) {
+            onSelect(nodeID)
         }
     }
 

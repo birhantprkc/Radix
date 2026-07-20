@@ -46,6 +46,7 @@ let package = Package(
                 "Services/AtomicDirectorySummaryModels.swift",
                 "Services/BulkDirectoryEnumerator.swift",
                 "Services/ChartLayoutRequestCoordinator.swift",
+                "Services/ChartSpatialSelection.swift",
                 "Services/AppDependencies.swift",
                 "Services/AppPreferencesStore.swift",
                 "Services/AppSystemActions.swift",

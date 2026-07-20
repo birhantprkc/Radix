@@ -6,6 +6,7 @@
 import Combine
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 protocol SunburstLayouting: Sendable {
     func segments(
@@ -68,6 +69,33 @@ final class SunburstChartModel: ObservableObject {
 
     func segment(at point: CGPoint, in size: CGSize) -> SunburstSegment? {
         renderState.segment(at: point, in: size)
+    }
+
+    func spatialSelectionNodeID(
+        from selectedNodeID: String?,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> String? {
+        let candidates = renderedSegments.compactMap { segment -> ChartSpatialSelectionCandidate? in
+            guard let nodeID = segment.nodeID,
+                  !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
+                return nil
+            }
+
+            let angle = ((segment.startAngle.radians + segment.endAngle.radians) / 2) - (.pi / 2)
+            let radius = (segment.innerRadius + segment.outerRadius) / 2
+            return ChartSpatialSelectionCandidate(
+                nodeID: nodeID,
+                center: CGPoint(
+                    x: cos(angle) * radius,
+                    y: sin(angle) * radius
+                )
+            )
+        }
+        return ChartSpatialSelection.nextNodeID(
+            from: selectedNodeID,
+            moving: direction,
+            among: candidates
+        )
     }
 
     func selectionOverlaySegments(

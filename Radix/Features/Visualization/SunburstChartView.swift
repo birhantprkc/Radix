@@ -12,6 +12,7 @@ struct SunburstChartView: View {
     let activeTarget: ScanTarget?
     let trashSafetyPolicy: TrashSafetyPolicy
     let snapshotSource: ScanSnapshotSource
+    @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
     let selectedNodeID: String?
     let selectedAncestorIDs: Set<String>
     let depthLimit: Int
@@ -38,6 +39,7 @@ struct SunburstChartView: View {
         activeTarget: ScanTarget?,
         trashSafetyPolicy: TrashSafetyPolicy,
         snapshotSource: ScanSnapshotSource,
+        focusedWorkspaceTarget: FocusState<WorkspaceFocusTarget?>.Binding,
         selectedNodeID: String?,
         selectedAncestorIDs: Set<String>,
         depthLimit: Int,
@@ -57,6 +59,7 @@ struct SunburstChartView: View {
         self.activeTarget = activeTarget
         self.trashSafetyPolicy = trashSafetyPolicy
         self.snapshotSource = snapshotSource
+        self._focusedWorkspaceTarget = focusedWorkspaceTarget
         self.selectedNodeID = selectedNodeID
         self.selectedAncestorIDs = selectedAncestorIDs
         self.depthLimit = depthLimit
@@ -186,6 +189,7 @@ struct SunburstChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard !isDiskMapPending else { return }
+                        focusedWorkspaceTarget = .chart
                         handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
                     },
                     onPan: { delta in
@@ -209,6 +213,11 @@ struct SunburstChartView: View {
                 )
                 .accessibilityHidden(true)
                 .allowsHitTesting(!isDiskMapPending)
+
+                ChartSpatialSelectionKeyboardMonitor(
+                    isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
+                    onMove: handleSpatialMove
+                )
             }
             .clipped()
             .accessibilityElement(children: .ignore)
@@ -267,6 +276,9 @@ struct SunburstChartView: View {
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(centerHoverAnimation, value: isHoveringCenter)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedWorkspaceTarget, equals: .chart)
             .onChange(of: baseChartFrame) { _, nextFrame in
                 viewportTransform = viewportTransform.constrained(to: nextFrame)
             }
@@ -287,6 +299,16 @@ struct SunburstChartView: View {
                     layoutID: layoutRequestID
                 )
             }
+        }
+    }
+
+    private func handleSpatialMove(_ direction: ChartSpatialSelectionDirection) {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
+        if let nodeID = chartModel.spatialSelectionNodeID(
+            from: selectedNodeID,
+            moving: direction
+        ) {
+            onSelect(nodeID)
         }
     }
 

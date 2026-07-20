@@ -76,6 +76,27 @@ final class TreemapChartModel: ObservableObject {
         renderState.segment(nodeID: nodeID)
     }
 
+    func spatialSelectionNodeID(
+        from selectedNodeID: String?,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> String? {
+        let candidates = renderedSegments.compactMap { segment -> ChartSpatialSelectionCandidate? in
+            guard let nodeID = segment.nodeID,
+                  !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
+                return nil
+            }
+            return ChartSpatialSelectionCandidate(
+                nodeID: nodeID,
+                center: CGPoint(x: segment.rect.midX, y: segment.rect.midY)
+            )
+        }
+        return ChartSpatialSelection.nextNodeID(
+            from: selectedNodeID,
+            moving: direction,
+            among: candidates
+        )
+    }
+
     @discardableResult
     func loadLayout(
         treeStore: DiskMapTreeStore,
