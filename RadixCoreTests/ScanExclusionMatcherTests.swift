@@ -6,8 +6,7 @@ final class ScanExclusionMatcherTests: XCTestCase {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(
             patterns: ScanExclusionMatcher.commonPresetPatterns,
-            rootPath: rootPath,
-            includeCloudStorage: true
+            rootPath: rootPath
         )
 
         XCTAssertTrue(matcher.excludesKnownNormalizedPath("\(rootPath)/Packages/node_modules", isDirectory: true))
@@ -21,19 +20,15 @@ final class ScanExclusionMatcherTests: XCTestCase {
         XCTAssertFalse(matcher.excludesKnownNormalizedPath("\(rootPath)/Sources/App.swift", isDirectory: false))
     }
 
-    func testKnownChildMatchingPreservesBasenamePathAndCloudRules() {
+    func testKnownChildMatchingPreservesBasenameAndPathRules() {
         let rootPath = "/Users/alex"
         let matcher = ScanExclusionMatcher(
             patterns: ["*.log", "Sources/**/generated.swift"],
-            rootPath: rootPath,
-            includeCloudStorage: false,
-            cloudStorageRootPath: "/Users/alex/Library/CloudStorage",
-            iCloudDriveRootPath: "/Users/alex/Library/Mobile Documents"
+            rootPath: rootPath
         )
         let cases = [
             ("debug.log", "/Users/alex/Logs", false, true),
             ("generated.swift", "/Users/alex/Sources/Module", false, true),
-            ("Dropbox", "/Users/alex/Library/CloudStorage", true, true),
             ("App.swift", "/Users/alex/Sources", false, false),
         ]
 
@@ -51,8 +46,7 @@ final class ScanExclusionMatcherTests: XCTestCase {
 
         let filesystemRootMatcher = ScanExclusionMatcher(
             patterns: ["System/**"],
-            rootPath: "/",
-            includeCloudStorage: true
+            rootPath: "/"
         )
         XCTAssertTrue(filesystemRootMatcher.excludesKnownNormalizedChild(
             named: "System",
@@ -65,8 +59,7 @@ final class ScanExclusionMatcherTests: XCTestCase {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(
             patterns: ["debug-*", "*-cache", "*temporary*", "file?.txt"],
-            rootPath: rootPath,
-            includeCloudStorage: true
+            rootPath: rootPath
         )
 
         XCTAssertTrue(matcher.excludesKnownNormalizedPath("\(rootPath)/debug-output", isDirectory: false))
@@ -80,8 +73,7 @@ final class ScanExclusionMatcherTests: XCTestCase {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(
             patterns: ["Library/*"],
-            rootPath: rootPath,
-            includeCloudStorage: true
+            rootPath: rootPath
         )
 
         XCTAssertTrue(matcher.excludesKnownNormalizedPath("\(rootPath)/Library/Caches", isDirectory: true))
@@ -92,8 +84,7 @@ final class ScanExclusionMatcherTests: XCTestCase {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(
             patterns: ["**/cache/**/file?.txt", "*a*a*a*a*a*a*a*a*b"],
-            rootPath: rootPath,
-            includeCloudStorage: true
+            rootPath: rootPath
         )
 
         XCTAssertTrue(matcher.excludesKnownNormalizedPath(
@@ -110,61 +101,6 @@ final class ScanExclusionMatcherTests: XCTestCase {
         ))
     }
 
-    func testSingleUserCloudRuleCompilesConcreteBoundaryAwarePrefixes() {
-        let matcher = ScanExclusionMatcher(
-            patterns: [],
-            rootPath: "/Users/alex",
-            includeCloudStorage: false,
-            cloudStorageRootPath: "/CustomHomes/colin/Library/CloudStorage",
-            iCloudDriveRootPath: "/CustomHomes/colin/Library/Mobile Documents"
-        )
-
-        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
-            "/Users/alex/Library/CloudStorage/Dropbox/file.bin",
-            isDirectory: false
-        ))
-        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
-            "/Users/alex/Library/Mobile Documents/com~apple~CloudDocs/file.bin",
-            isDirectory: false
-        ))
-        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
-            "/Users/alex/Library/CloudStorageBackup/file.bin",
-            isDirectory: false
-        ))
-        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
-            "/Users/alexander/Library/CloudStorage/file.bin",
-            isDirectory: false
-        ))
-    }
-
-    func testRootCloudRuleRejectsMalformedAndNearPrefixPaths() {
-        let matcher = ScanExclusionMatcher(
-            patterns: [],
-            rootPath: "/",
-            includeCloudStorage: false,
-            cloudStorageRootPath: "/CustomHomes/colin/Library/CloudStorage",
-            iCloudDriveRootPath: "/CustomHomes/colin/Library/Mobile Documents"
-        )
-
-        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
-            "/Users/alex/Library/CloudStorage/file.bin",
-            isDirectory: false
-        ))
-        XCTAssertTrue(matcher.excludesKnownNormalizedPath(
-            "/Users/blair/Library/Mobile Documents/file.bin",
-            isDirectory: false
-        ))
-        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
-            "/Users//Library/CloudStorage/file.bin",
-            isDirectory: false
-        ))
-        XCTAssertFalse(matcher.excludesKnownNormalizedPath("/Users/alex", isDirectory: true))
-        XCTAssertFalse(matcher.excludesKnownNormalizedPath(
-            "/Users/alex/Library/Mobile Documents Backup/file.bin",
-            isDirectory: false
-        ))
-    }
-
     func testMatcherHandlesManyExcludedChildren() {
         let rootPath = "/tmp/RadixProject"
         let matcher = ScanExclusionMatcher(
@@ -173,9 +109,7 @@ final class ScanExclusionMatcherTests: XCTestCase {
                 "*.log",
                 "Library/Caches/**"
             ],
-            rootPath: rootPath,
-            includeCloudStorage: false,
-            cloudStorageRootPath: "\(rootPath)/Library/CloudStorage"
+            rootPath: rootPath
         )
 
         for index in 0..<512 {
@@ -199,17 +133,48 @@ final class ScanExclusionMatcherTests: XCTestCase {
                 isDirectory: false
             )
         )
-        XCTAssertTrue(
-            matcher.excludes(
-                URL(filePath: "\(rootPath)/Library/CloudStorage/Dropbox/remote.bin"),
-                isDirectory: false
-            )
-        )
         XCTAssertFalse(
             matcher.excludes(
                 URL(filePath: "\(rootPath)/Sources/App.swift"),
                 isDirectory: false
             )
         )
+    }
+
+    func testCloudStorageLocationRecognizesManagedRootsWithoutNearPrefixMatches() {
+        XCTAssertTrue(CloudStorageLocation.contains(path: "/Users/alex/Library/CloudStorage/Dropbox/file.bin"))
+        XCTAssertTrue(CloudStorageLocation.contains(path: "/Users/blair/Library/Mobile Documents/com~apple~CloudDocs/file.bin"))
+        XCTAssertFalse(CloudStorageLocation.contains(path: "/Users/alex/Library/CloudStorageBackup/file.bin"))
+        XCTAssertFalse(CloudStorageLocation.contains(path: "/Users/alex/Library/Mobile Documents Backup/file.bin"))
+        XCTAssertFalse(CloudStorageLocation.contains(path: "/Library/CloudStorage/file.bin"))
+    }
+
+    func testCloudStorageLocationClassifiesDirectItemsWithoutRootLookup() {
+        let impact = CloudStorageLocation.impact(
+            of: URL(filePath: "/Users/alex/Library/CloudStorage/Dropbox/file.bin"),
+            cloudRootExists: { _ in
+                XCTFail("Direct cloud items should not require a root existence check.")
+                return false
+            }
+        )
+
+        XCTAssertEqual(impact, .storedInCloud)
+    }
+
+    func testCloudStorageLocationOnlyClassifiesAncestorsWhenManagedRootExists() {
+        let libraryURL = URL(filePath: "/Users/alex/Library", directoryHint: .isDirectory)
+
+        XCTAssertNil(CloudStorageLocation.impact(of: libraryURL, cloudRootExists: { _ in false }))
+        XCTAssertEqual(
+            CloudStorageLocation.impact(
+                of: libraryURL,
+                cloudRootExists: { $0.path == "/Users/alex/Library/CloudStorage" }
+            ),
+            .containsCloudStorage
+        )
+        XCTAssertNil(CloudStorageLocation.impact(
+            of: URL(filePath: "/Users/alex/Documents"),
+            cloudRootExists: { _ in true }
+        ))
     }
 }

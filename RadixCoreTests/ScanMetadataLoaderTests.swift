@@ -3,6 +3,48 @@ import XCTest
 @testable import RadixCore
 
 final class ScanMetadataLoaderTests: XCTestCase {
+    func testDatalessFlagClassification() {
+        XCTAssertTrue(ScanMetadataLoader.isDataless(fileFlags: UInt32(SF_DATALESS)))
+        XCTAssertFalse(ScanMetadataLoader.isDataless(fileFlags: nil))
+        XCTAssertFalse(ScanMetadataLoader.isDataless(fileFlags: 0))
+        XCTAssertFalse(ScanMetadataLoader.isDataless(fileFlags: UInt32(UF_HIDDEN)))
+    }
+
+    func testMetadataCarriesDatalessFlag() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let fileURL = rootURL.appending(path: "placeholder.bin")
+        try Data([0xA5]).write(to: fileURL)
+        let loader = ScanMetadataLoader(
+            fileStatusProvider: { requestedURL in
+                XCTAssertEqual(requestedURL, fileURL)
+                return ScanMetadataLoader.FileStatus(
+                    fileFlags: UInt32(SF_DATALESS),
+                    isDirectory: false
+                )
+            }
+        )
+
+        XCTAssertTrue(try loader.metadata(for: fileURL).isDataless)
+    }
+
+    func testDatalessStatusUsesFileTypeFromLstatProvider() {
+        let urlWithoutDirectoryHint = URL(filePath: "/virtual/cloud-folder", directoryHint: .notDirectory)
+        let loader = ScanMetadataLoader(
+            fileStatusProvider: { requestedURL in
+                XCTAssertEqual(requestedURL, urlWithoutDirectoryHint)
+                return ScanMetadataLoader.FileStatus(
+                    fileFlags: UInt32(SF_DATALESS),
+                    isDirectory: true
+                )
+            }
+        )
+
+        XCTAssertFalse(urlWithoutDirectoryHint.hasDirectoryPath)
+        XCTAssertTrue(loader.datalessStatus(at: urlWithoutDirectoryHint)?.isDirectory == true)
+    }
+
     func testLogicalSizeIncludesResourceForkData() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

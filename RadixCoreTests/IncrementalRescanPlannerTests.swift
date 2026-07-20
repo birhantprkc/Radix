@@ -226,8 +226,7 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         let fixture = makeFixture()
         let matcher = ScanExclusionMatcher(
             patterns: ["*.log"],
-            rootPath: "/scan",
-            includeCloudStorage: true
+            rootPath: "/scan"
         )
         let plan = IncrementalRescanPlanner().plan(
             history: history([

@@ -129,10 +129,13 @@ actor ScanEngine {
     }
 
     private enum ScanEngineError: LocalizedError {
+        case cloudOnlyRoot
         case missingRootNode
 
         var errorDescription: String? {
             switch self {
+            case .cloudOnlyRoot:
+                return String(localized: "The selected item is stored only in cloud storage and has no on-disk data to scan.", comment: "Error shown when the user tries to scan a cloud-only placeholder.")
             case .missingRootNode:
                 return String(localized: "The scan could not assemble a root node.", comment: "Error shown when a completed scan has no root node.")
             }
@@ -823,10 +826,7 @@ actor ScanEngine {
         )
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: options.exclusionPatterns,
-            rootPath: options.exclusionRootPath ?? scanTarget.url.path,
-            includeCloudStorage: options.includeCloudStorage,
-            cloudStorageRootPath: options.cloudStorageRootPath,
-            iCloudDriveRootPath: options.iCloudDriveRootPath
+            rootPath: options.exclusionRootPath ?? scanTarget.url.path
         )
         let contents = try await Self.directoryEntries(
             of: directoryURL,
@@ -964,10 +964,7 @@ actor ScanEngine {
         )
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: options.exclusionPatterns,
-            rootPath: options.exclusionRootPath ?? target.url.path,
-            includeCloudStorage: options.includeCloudStorage,
-            cloudStorageRootPath: options.cloudStorageRootPath,
-            iCloudDriveRootPath: options.iCloudDriveRootPath
+            rootPath: options.exclusionRootPath ?? target.url.path
         )
 
         let treeStore = try await scanDirectory(
@@ -1051,6 +1048,9 @@ actor ScanEngine {
             linkCountCapabilityCache: linkCountCapabilityCache
         )
         let rootMetadata = try scanMetadataLoader.metadata(for: target.url, includeVolumeDetails: includeVolumeDetails)
+        guard !rootMetadata.isDataless else {
+            throw ScanEngineError.cloudOnlyRoot
+        }
         metrics.discoveredItems = 1
         metrics.volumeCapacity = target.kind == .volume ? rootMetadata.volumeCapacity : nil
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
@@ -2651,6 +2651,9 @@ actor ScanEngine {
                 for: childURL,
                 prefetchedResourceValues: childURL.resourceValues(forKeys: resourceKeys)
             )
+            guard childMetadata?.isDataless != true else {
+                continue
+            }
             guard !exclusionMatcher.excludes(
                 childURL,
                 isDirectory: childMetadata?.isDirectory ?? childURL.hasDirectoryPath
@@ -2864,6 +2867,7 @@ actor ScanEngine {
     private nonisolated func shouldTraverseDirectory(metadata: NodeMetadata, options: ScanOptions) -> Bool {
         guard metadata.isDirectory else { return false }
         guard !metadata.isSymbolicLink else { return false }
+        guard !metadata.isDataless else { return false }
         return !metadata.isPackage || options.treatPackagesAsDirectories
     }
 

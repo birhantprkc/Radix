@@ -503,6 +503,7 @@ nonisolated enum BulkDirectoryEnumerator {
         let nativeNameBytes: UnsafeBufferPointer<UInt8>
         let isHidden: Bool
         let isDirectory: Bool
+        let isDataless: Bool
         let hasFinderPackageFlag: Bool?
         let entryError: Int32?
         let metadata: ParsedEntryMetadata?
@@ -546,6 +547,11 @@ nonisolated enum BulkDirectoryEnumerator {
                 return false
             }
             enumeratedItemCount += 1
+
+            guard !parsed.isDataless else {
+                entryAddress = entryEnd
+                continue
+            }
 
             let passesHiddenFilter = includeHiddenFiles || !parsed.isHidden
             let passesEntryInclusion = passesHiddenFilter && (
@@ -647,6 +653,7 @@ nonisolated enum BulkDirectoryEnumerator {
         let isDirectory = objectType == VDIR.rawValue
         let isSymbolicLink = objectType == VLNK.rawValue
         let isHidden = name.first == "." || (flags & UInt32(UF_HIDDEN)) != 0
+        let isDataless = ScanMetadataLoader.isDataless(fileFlags: flags)
         let hasFinderPackageFlag: Bool?
         if returned.commonattr & attrgroup_t(ATTR_CMN_FNDRINFO) != 0 {
             hasFinderPackageFlag = finderPackageBit
@@ -661,6 +668,7 @@ nonisolated enum BulkDirectoryEnumerator {
                 nativeNameBytes: parsedName.nativeNameBytes,
                 isHidden: isHidden,
                 isDirectory: isDirectory,
+                isDataless: isDataless,
                 hasFinderPackageFlag: hasFinderPackageFlag,
                 entryError: Int32(entryError),
                 metadata: nil
@@ -701,6 +709,7 @@ nonisolated enum BulkDirectoryEnumerator {
             nativeNameBytes: parsedName.nativeNameBytes,
             isHidden: isHidden,
             isDirectory: isDirectory,
+            isDataless: isDataless,
             hasFinderPackageFlag: hasFinderPackageFlag,
             entryError: nil,
             metadata: metadata

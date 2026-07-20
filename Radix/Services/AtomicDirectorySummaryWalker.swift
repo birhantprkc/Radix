@@ -131,6 +131,7 @@ extension AtomicDirectorySummarizer {
             ) else {
                 continue
             }
+            guard !childMetadata.isDataless else { continue }
 
             try await accumulateAtomicSummary(
                 for: childEntry.url,
@@ -164,6 +165,7 @@ extension AtomicDirectorySummarizer {
         emissionState: inout ScanEmissionState
     ) async throws {
         try cancellationCheck()
+        guard !metadata.isDataless else { return }
         updateAtomicAccessibility(metadata.isReadable, in: state)
 
         if metadata.isDirectory {

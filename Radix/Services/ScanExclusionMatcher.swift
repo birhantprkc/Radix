@@ -17,53 +17,28 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     private let rootPath: String
     private let basenamePatterns: [CompiledPattern]
     private let pathPatterns: [CompiledPattern]
-    private let cloudLocations: [CloudLocation]
     private let hasActiveRule: Bool
 
     init(
         patterns: [String],
-        rootURL: URL,
-        includeCloudStorage: Bool,
-        cloudStorageRootPath: String = ScanOptions.defaultCloudStorageRootPath,
-        iCloudDriveRootPath: String = ScanOptions.defaultICloudDriveRootPath
+        rootURL: URL
     ) {
         self.init(
             patterns: patterns,
-            rootPath: rootURL.standardizedFileURL.path,
-            includeCloudStorage: includeCloudStorage,
-            cloudStorageRootPath: cloudStorageRootPath,
-            iCloudDriveRootPath: iCloudDriveRootPath
+            rootPath: rootURL.standardizedFileURL.path
         )
     }
 
     init(
         patterns: [String],
-        rootPath: String,
-        includeCloudStorage: Bool,
-        cloudStorageRootPath: String = ScanOptions.defaultCloudStorageRootPath,
-        iCloudDriveRootPath: String = ScanOptions.defaultICloudDriveRootPath
+        rootPath: String
     ) {
         let normalizedRootPath = Self.normalizedRootPath(rootPath)
         let compiledPatterns = Self.normalizedPatterns(patterns).compactMap(CompiledPattern.init(rawPattern:))
-        let activeCloudLocations = [
-            Self.cloudLocation(
-                configuredRootPath: cloudStorageRootPath,
-                userRelativePath: "Library/CloudStorage",
-                scanRootPath: normalizedRootPath,
-                includeCloudStorage: includeCloudStorage
-            ),
-            Self.cloudLocation(
-                configuredRootPath: iCloudDriveRootPath,
-                userRelativePath: "Library/Mobile Documents",
-                scanRootPath: normalizedRootPath,
-                includeCloudStorage: includeCloudStorage
-            )
-        ].filter(\.isActive)
         self.rootPath = normalizedRootPath
         self.basenamePatterns = compiledPatterns.filter(\.matchesBasename)
         self.pathPatterns = compiledPatterns.filter { !$0.matchesBasename }
-        self.cloudLocations = activeCloudLocations
-        self.hasActiveRule = !compiledPatterns.isEmpty || !activeCloudLocations.isEmpty
+        self.hasActiveRule = !compiledPatterns.isEmpty
     }
 
     var isEmpty: Bool {
@@ -95,7 +70,7 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         if excludesBasename(childName, isDirectory: isDirectory) {
             return true
         }
-        guard !cloudLocations.isEmpty || !pathPatterns.isEmpty else {
+        guard !pathPatterns.isEmpty else {
             return false
         }
         let childPath = parentPath == "/"
@@ -122,9 +97,6 @@ nonisolated struct ScanExclusionMatcher: Sendable {
     }
 
     private func excludesPathRules(normalizedPath: String, isDirectory: Bool) -> Bool {
-        if excludesCloudStorage(path: normalizedPath) {
-            return true
-        }
         guard !pathPatterns.isEmpty,
               let relativePath = relativePath(forNormalizedPath: normalizedPath),
               !relativePath.isEmpty else {
@@ -159,81 +131,6 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         URL(fileURLWithPath: path, isDirectory: true)
             .standardizedFileURL
             .path
-    }
-
-    private func excludesCloudStorage(path: String) -> Bool {
-        guard path != rootPath else { return false }
-        return cloudLocations.contains { $0.excludes(path: path) }
-    }
-
-    private static func cloudLocation(
-        configuredRootPath: String,
-        userRelativePath: String,
-        scanRootPath: String,
-        includeCloudStorage: Bool
-    ) -> CloudLocation {
-        let normalizedConfiguredRootPath = normalizedRootPath(configuredRootPath)
-        let scanUserRootPath = usersRootPath(containing: scanRootPath)
-        let scanUserCloudPath = scanUserRootPath.map { "\($0)/\(userRelativePath)" }
-        let explicitlyScanning = path(
-            scanRootPath,
-            isEqualToOrDescendantOf: normalizedConfiguredRootPath
-        ) || isUsersCloudPath(scanRootPath, userRelativePath: userRelativePath)
-
-        guard !includeCloudStorage, !explicitlyScanning else {
-            return CloudLocation(excludedRoots: [], anyUserPathSuffix: nil)
-        }
-
-        let excludesAnyUser = scanRootPath == "/" || scanRootPath == "/Users"
-        var excludedRoots: [String] = []
-        if !excludesAnyUser, pathsOverlap(scanRootPath, normalizedConfiguredRootPath) {
-            excludedRoots.append(normalizedConfiguredRootPath)
-        }
-        if !excludesAnyUser,
-           let scanUserCloudPath,
-           pathsOverlap(scanRootPath, scanUserCloudPath),
-           !excludedRoots.contains(scanUserCloudPath) {
-            excludedRoots.append(scanUserCloudPath)
-        }
-        return CloudLocation(
-            excludedRoots: excludedRoots,
-            anyUserPathSuffix: excludesAnyUser ? "/\(userRelativePath)" : nil
-        )
-    }
-
-    private static func usersRootPath(containing path: String) -> Substring? {
-        let usersPrefix = "/Users/"
-        guard path.hasPrefix(usersPrefix) else { return nil }
-        let userStart = path.index(path.startIndex, offsetBy: usersPrefix.count)
-        guard userStart < path.endIndex else { return nil }
-        let userEnd = path[userStart...].firstIndex(of: "/") ?? path.endIndex
-        guard userEnd > userStart else { return nil }
-        return path[..<userEnd]
-    }
-
-    fileprivate static func isUsersCloudPath(
-        _ path: String,
-        userRelativePath: String
-    ) -> Bool {
-        guard let usersRootPath = usersRootPath(containing: path) else { return false }
-        return self.path(
-            path,
-            isEqualToOrDescendantOf: "\(usersRootPath)/\(userRelativePath)"
-        )
-    }
-
-    private static func pathsOverlap(_ firstPath: String, _ secondPath: String) -> Bool {
-        path(firstPath, isEqualToOrDescendantOf: secondPath)
-            || path(secondPath, isEqualToOrDescendantOf: firstPath)
-    }
-
-    private static func path(_ path: String, isEqualToOrDescendantOf ancestorPath: String) -> Bool {
-        if path == ancestorPath {
-            return true
-        }
-
-        let ancestorPrefix = ancestorPath.hasSuffix("/") ? ancestorPath : "\(ancestorPath)/"
-        return path.hasPrefix(ancestorPrefix)
     }
 
     private static func pathMatchPortion(of pattern: String) -> String {
@@ -289,55 +186,6 @@ nonisolated struct ScanExclusionMatcher: Sendable {
         let rootPrefix = rootPath.hasSuffix("/") ? rootPath : "\(rootPath)/"
         guard path.hasPrefix(rootPrefix) else { return nil }
         return path.dropFirst(rootPrefix.count)
-    }
-}
-
-nonisolated private struct CloudLocation: Sendable {
-    let excludedRoots: [CloudPathPrefix]
-    let anyUserPathSuffix: String?
-    let anyUserDescendantPrefix: String?
-
-    init(excludedRoots: [String], anyUserPathSuffix: String?) {
-        self.excludedRoots = excludedRoots.map(CloudPathPrefix.init)
-        self.anyUserPathSuffix = anyUserPathSuffix
-        self.anyUserDescendantPrefix = anyUserPathSuffix.map { "\($0)/" }
-    }
-
-    var isActive: Bool {
-        !excludedRoots.isEmpty || anyUserPathSuffix != nil
-    }
-
-    func excludes(path: String) -> Bool {
-        if excludedRoots.contains(where: { $0.excludes(path) }) {
-            return true
-        }
-        guard let anyUserPathSuffix,
-              let anyUserDescendantPrefix,
-              path.hasPrefix("/Users/") else {
-            return false
-        }
-        let userStart = path.index(path.startIndex, offsetBy: "/Users/".count)
-        guard let relativeStart = path[userStart...].firstIndex(of: "/"),
-              relativeStart > userStart else {
-            return false
-        }
-        let relativePath = path[relativeStart...]
-        return relativePath == anyUserPathSuffix
-            || relativePath.hasPrefix(anyUserDescendantPrefix)
-    }
-}
-
-nonisolated private struct CloudPathPrefix: Sendable {
-    let root: String
-    let descendantPrefix: String
-
-    init(_ root: String) {
-        self.root = root
-        self.descendantPrefix = root.hasSuffix("/") ? root : "\(root)/"
-    }
-
-    func excludes(_ path: String) -> Bool {
-        path == root || path.hasPrefix(descendantPrefix)
     }
 }
 

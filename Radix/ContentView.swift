@@ -239,6 +239,31 @@ struct ContentView: View {
         } message: {
             Text(pendingTrashMessage)
         }
+        .confirmationDialog(
+            cloudFileConfirmationTitle,
+            isPresented: Binding(
+                get: {
+                    appModel.presentationCoordinator.activeDialog == .cloudFileConfirmation &&
+                        appModel.pendingCloudFileAction != nil
+                },
+                set: { newValue in
+                    if !newValue {
+                        appModel.cancelPendingCloudFileAction()
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(cloudFileConfirmationButtonTitle, role: cloudFileConfirmationButtonRole) {
+                appModel.confirmPendingCloudFileAction()
+            }
+
+            Button("Cancel", role: .cancel) {
+                appModel.cancelPendingCloudFileAction()
+            }
+        } message: {
+            Text(cloudFileConfirmationMessage)
+        }
         .onDisappear {
             discardPileDragDidEnd()
             appModel.setWorkspaceWindowNumber(nil)
@@ -863,5 +888,55 @@ private extension ContentView {
         let remainingCount = nodes.count - 3
         let remainingText = remainingCount > 0 ? "\n+\(remainingCount) more" : ""
         return String(localized: "Radix will ask macOS to move \(nodes.count) selected items to the Trash:\n\(shownPaths)\(remainingText)", comment: "Confirmation message listing multiple selected items that will be moved to the Trash.")
+    }
+
+    var cloudFileConfirmationTitle: String {
+        guard let action = appModel.pendingCloudFileAction else {
+            return String(localized: "Cloud Storage", comment: "Fallback title for a cloud-storage confirmation dialog.")
+        }
+        switch (action.kind, action.nodes.count == 1) {
+        case (.addToDiscardPile, true):
+            return String(localized: "Add Cloud Item to Discard Pile?", comment: "Confirmation title before adding one cloud-stored item to the Discard Pile.")
+        case (.addToDiscardPile, false):
+            return String(localized: "Add Cloud Items to Discard Pile?", comment: "Confirmation title before adding multiple cloud-stored items to the Discard Pile.")
+        case (.moveToTrash, true):
+            return String(localized: "Move Cloud Item to Trash?", comment: "Second confirmation title before moving one cloud-stored item to the Trash.")
+        case (.moveToTrash, false):
+            return String(localized: "Move Cloud Items to Trash?", comment: "Second confirmation title before moving multiple cloud-stored items to the Trash.")
+        }
+    }
+
+    var cloudFileConfirmationButtonTitle: String {
+        switch appModel.pendingCloudFileAction?.kind {
+        case .addToDiscardPile:
+            String(localized: "Add to Discard Pile", comment: "Confirmation button for adding a cloud-stored item to the Discard Pile.")
+        case .moveToTrash:
+            String(localized: "Move to Trash", comment: "Confirmation button for moving a cloud-stored item to the Trash.")
+        case nil:
+            String(localized: "Continue", comment: "Fallback action title for a cloud-file confirmation dialog.")
+        }
+    }
+
+    var cloudFileConfirmationButtonRole: ButtonRole? {
+        guard case .moveToTrash = appModel.pendingCloudFileAction?.kind else {
+            return nil
+        }
+        return .destructive
+    }
+
+    var cloudFileConfirmationMessage: String {
+        guard let action = appModel.pendingCloudFileAction else {
+            return String(localized: "This selection is stored in cloud storage.", comment: "Fallback warning for a cloud-file confirmation dialog.")
+        }
+        switch (action.kind, action.cloudImpact) {
+        case (.addToDiscardPile, .storedInCloud):
+            return String(localized: "This selection is stored in cloud storage. If you later move it to the Trash, it may also be deleted from the cloud and other synced devices.", comment: "Warning shown before adding cloud-stored items to the Discard Pile.")
+        case (.moveToTrash, .storedInCloud):
+            return String(localized: "This selection is stored in cloud storage. Moving it to the Trash may also delete it from the cloud and other synced devices.", comment: "Second warning shown before moving cloud-stored items to the Trash.")
+        case (.addToDiscardPile, .containsCloudStorage):
+            return String(localized: "This selection contains a cloud storage folder. If you later move it to the Trash, cloud files inside it may also be deleted from the cloud and other synced devices.", comment: "Warning shown before adding an ancestor of a cloud storage folder to the Discard Pile.")
+        case (.moveToTrash, .containsCloudStorage):
+            return String(localized: "This selection contains a cloud storage folder. Moving it to the Trash may also delete cloud files inside it from the cloud and other synced devices.", comment: "Second warning shown before moving an ancestor of a cloud storage folder to the Trash.")
+        }
     }
 }

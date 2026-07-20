@@ -229,6 +229,69 @@ final class ScanArchiveServiceTests: XCTestCase {
         }
     }
 
+    func testImportPreservesLegacyCloudOptionsFingerprint() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+
+        let legacyOptionsJSON = """
+        {
+          "autoSummarizeDirectories" : true,
+          "cloudStorageRootPath" : "/Users/legacy/Library/CloudStorage",
+          "exclusionPatterns" : [
+            "*.tmp"
+          ],
+          "iCloudDriveRootPath" : "/Users/legacy/Library/Mobile Documents",
+          "includeCloudStorage" : false,
+          "includeHiddenFiles" : true,
+          "treatPackagesAsDirectories" : true
+        }
+        """
+        let legacyOptionsData = Data(legacyOptionsJSON.utf8)
+        let legacyFingerprint = Data(SHA256.hash(data: legacyOptionsData)).base64EncodedString()
+        XCTAssertEqual(legacyFingerprint, "mm+r4ABNaL/7D66PDeo294NIIBeqAdsGH7crblteDRE=")
+
+        let legacyOptionsObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: legacyOptionsData) as? [String: Any]
+        )
+        let manifestURL = archiveURL.appending(path: "manifest.json", directoryHint: .notDirectory)
+        try rewriteJSONObject(at: manifestURL) { object in
+            var snapshot = object["snapshot"] as? [String: Any] ?? [:]
+            snapshot["scanOptions"] = legacyOptionsObject
+            snapshot["scanOptionsFingerprint"] = legacyFingerprint
+            object["snapshot"] = snapshot
+        }
+
+        let importResult = try await service.importSnapshot(from: archiveURL)
+        let importedOptions = try XCTUnwrap(importResult.snapshot.scanOptions)
+
+        XCTAssertEqual(
+            try ScanArchiveService.scanOptionsFingerprint(importedOptions),
+            legacyFingerprint
+        )
+        XCTAssertNotEqual(importedOptions, makeArchiveSnapshot().scanOptions)
+    }
+
+    func testCurrentScanOptionsEncodingOmitsRetiredCloudKeys() throws {
+        let data = try JSONEncoder().encode(ScanOptions())
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertNil(object["includeCloudStorage"])
+        XCTAssertNil(object["cloudStorageRootPath"])
+        XCTAssertNil(object["iCloudDriveRootPath"])
+    }
+
+    func testCurrentScanOptionsFingerprintRemainsStable() throws {
+        XCTAssertEqual(
+            try ScanArchiveService.scanOptionsFingerprint(makeArchiveSnapshot().scanOptions),
+            "vrZHfBWHKFSVW/Wj90PXwF3ZDHHCphJAdnb1LmzfeT0="
+        )
+    }
+
     func testPreviewReadsManifestAndStatsMetadata() async throws {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()

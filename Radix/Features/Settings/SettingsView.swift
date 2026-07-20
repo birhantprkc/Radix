@@ -44,7 +44,6 @@ private struct GeneralSettingsPane: View {
                 Toggle("Show hidden files while scanning", isOn: $appModel.showHiddenFiles)
                 Toggle("Treat app bundles and packages as folders", isOn: $appModel.treatPackagesAsDirectories)
                 Toggle("Automatically summarize folders with many small files", isOn: $appModel.autoSummarizeDirectories)
-                Toggle("Scan cloud storage folders", isOn: $appModel.scanCloudStorageFolders)
 
                 Text("Hidden files are included by default. Mounted volume scans always include them automatically.")
                     .font(.caption)
@@ -54,9 +53,6 @@ private struct GeneralSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text("When off, Radix skips ~/Library/CloudStorage (Google Drive, Dropbox, OneDrive, and similar sync folders) and iCloud Drive at ~/Library/Mobile Documents.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Exclusions") {

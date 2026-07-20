@@ -186,6 +186,12 @@ extension AtomicDirectorySummarizer {
 
             let hintedIsDirectory = childURL.hasDirectoryPath
             let childPath = childURL.path
+            if let datalessStatus = metadataLoader.datalessStatus(at: childURL) {
+                if datalessStatus.isDirectory {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
             if exclusionMatcher.excludesKnownNormalizedPath(
                 childPath,
                 isDirectory: hintedIsDirectory
@@ -435,6 +441,7 @@ extension AtomicDirectorySummarizer {
                     visitedItems
                 )
             }
+            guard !metadata.isDataless else { continue }
             let entryPath = entry.url.path
             guard !exclusionMatcher.excludesKnownNormalizedPath(
                 entryPath,

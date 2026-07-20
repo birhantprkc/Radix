@@ -104,9 +104,6 @@ nonisolated struct ScanOptions: Hashable, Codable, Sendable {
     var includeHiddenFiles = false
     var treatPackagesAsDirectories = false
     var autoSummarizeDirectories = true
-    var includeCloudStorage = false
-    var cloudStorageRootPath = ScanOptions.defaultCloudStorageRootPath
-    var iCloudDriveRootPath = ScanOptions.defaultICloudDriveRootPath
     var exclusionPatterns: [String] = []
     var exclusionRootPath: String?
     /// Override for the minimum file count to trigger auto-summarization.
@@ -128,13 +125,102 @@ nonisolated struct ScanOptions: Hashable, Codable, Sendable {
     /// When nil, the ScanEngine chooses a hardware-aware default.
     var directoryTraversalWorkerLimit: Int?
 
-    nonisolated static let defaultCloudStorageRootPath = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: "Library/CloudStorage", directoryHint: .isDirectory)
-        .standardizedFileURL
-        .path
+    /// Archive-only compatibility values. New scans leave these nil, so the
+    /// synthesized encoder omits the retired keys. Legacy archives preserve
+    /// their exact values and fingerprints, and remain unequal to scans with
+    /// different cloud-storage coverage.
+    private var includeCloudStorage: Bool?
+    private var cloudStorageRootPath: String?
+    private var iCloudDriveRootPath: String?
 
-    nonisolated static let defaultICloudDriveRootPath = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: "Library/Mobile Documents", directoryHint: .isDirectory)
-        .standardizedFileURL
-        .path
+    init(
+        includeHiddenFiles: Bool = false,
+        treatPackagesAsDirectories: Bool = false,
+        autoSummarizeDirectories: Bool = true,
+        exclusionPatterns: [String] = [],
+        exclusionRootPath: String? = nil,
+        autoSummarizeMinFileCount: Int? = nil,
+        autoSummarizeMaxAverageFileSize: Int64? = nil,
+        autoSummarizeMinDepthForSummarization: Int? = nil,
+        atomicSummaryWorkerLimit: Int? = nil,
+        directoryClassificationWorkerLimit: Int? = nil,
+        directoryTraversalWorkerLimit: Int? = nil
+    ) {
+        self.includeHiddenFiles = includeHiddenFiles
+        self.treatPackagesAsDirectories = treatPackagesAsDirectories
+        self.autoSummarizeDirectories = autoSummarizeDirectories
+        self.exclusionPatterns = exclusionPatterns
+        self.exclusionRootPath = exclusionRootPath
+        self.autoSummarizeMinFileCount = autoSummarizeMinFileCount
+        self.autoSummarizeMaxAverageFileSize = autoSummarizeMaxAverageFileSize
+        self.autoSummarizeMinDepthForSummarization = autoSummarizeMinDepthForSummarization
+        self.atomicSummaryWorkerLimit = atomicSummaryWorkerLimit
+        self.directoryClassificationWorkerLimit = directoryClassificationWorkerLimit
+        self.directoryTraversalWorkerLimit = directoryTraversalWorkerLimit
+        self.includeCloudStorage = nil
+        self.cloudStorageRootPath = nil
+        self.iCloudDriveRootPath = nil
+    }
+}
+
+nonisolated enum CloudStorageLocation {
+    enum Impact: Equatable, Sendable {
+        case storedInCloud
+        case containsCloudStorage
+    }
+
+    private static let userRelativeRoots = [
+        "Library/CloudStorage",
+        "Library/Mobile Documents"
+    ]
+
+    static func contains(path: String) -> Bool {
+        let normalizedPath = normalize(path)
+        if managedRootsForCurrentUser.contains(where: { isEqualOrDescendant(normalizedPath, of: $0) }) {
+            return true
+        }
+        return genericUserRoots(for: normalizedPath).contains {
+            isEqualOrDescendant(normalizedPath, of: $0)
+        }
+    }
+
+    static func impact(
+        of url: URL,
+        cloudRootExists: (URL) -> Bool
+    ) -> Impact? {
+        let normalizedPath = normalize(url.standardizedFileURL.path)
+        let roots = Array(Set(managedRootsForCurrentUser + genericUserRoots(for: normalizedPath)))
+        if roots.contains(where: { isEqualOrDescendant(normalizedPath, of: $0) }) {
+            return .storedInCloud
+        }
+        let containsExistingRoot = roots.contains { root in
+            isEqualOrDescendant(root, of: normalizedPath)
+                && cloudRootExists(URL(filePath: root, directoryHint: .isDirectory))
+        }
+        return containsExistingRoot ? .containsCloudStorage : nil
+    }
+
+    private static let managedRootsForCurrentUser = userRelativeRoots.map { relativePath in
+        normalize(
+            FileManager.default.homeDirectoryForCurrentUser
+                .appending(path: relativePath, directoryHint: .isDirectory)
+                .path
+        )
+    }
+
+    private static func genericUserRoots(for path: String) -> [String] {
+        let components = path
+            .split(separator: "/", omittingEmptySubsequences: true)
+        guard components.count >= 2, components[0] == "Users" else { return [] }
+        let homePath = "/Users/\(components[1])"
+        return userRelativeRoots.map { "\(homePath)/\($0)" }
+    }
+
+    private static func isEqualOrDescendant(_ path: String, of root: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
+    }
+
+    private static func normalize(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
 }

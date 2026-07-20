@@ -95,10 +95,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
 
                     let matcher = ScanExclusionMatcher(
                         patterns: options.exclusionPatterns,
-                        rootPath: options.exclusionRootPath ?? target.url.path,
-                        includeCloudStorage: options.includeCloudStorage,
-                        cloudStorageRootPath: options.cloudStorageRootPath,
-                        iCloudDriveRootPath: options.iCloudDriveRootPath
+                        rootPath: options.exclusionRootPath ?? target.url.path
                     )
                     switch self.planner.plan(
                         history: history,
@@ -553,8 +550,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
               baseline.target.kind == target.kind,
               baseline.target.url.standardizedFileURL.path == target.url.standardizedFileURL.path,
               baseline.scanOptions == options,
-              baseline.incrementalCheckpoint != nil,
-              !options.includeCloudStorage else {
+              baseline.incrementalCheckpoint != nil else {
             return false
         }
         let liveIdentity = try? ScanMetadataLoader().metadata(for: target.url).fileIdentity
@@ -567,7 +563,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         options: ScanOptions
     ) -> ScanIncrementalCheckpoint? {
         _ = snapshot
-        return options.includeCloudStorage ? nil : checkpoint
+        return checkpoint
     }
 
     private nonisolated func snapshot(

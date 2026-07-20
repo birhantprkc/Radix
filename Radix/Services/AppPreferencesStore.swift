@@ -19,7 +19,6 @@ nonisolated struct AppScanPreferences: Equatable {
     var autoSummarizeDirectories: Bool
     var showFreeSpaceInDiskMaps: Bool
     var visualizationMode: ScanVisualizationMode
-    var scanCloudStorageFolders: Bool
     var useScanExclusions: Bool
     var exclusionPatterns: [String]
 
@@ -30,7 +29,6 @@ nonisolated struct AppScanPreferences: Equatable {
         autoSummarizeDirectories: true,
         showFreeSpaceInDiskMaps: false,
         visualizationMode: .sunburst,
-        scanCloudStorageFolders: false,
         useScanExclusions: false,
         exclusionPatterns: ScanExclusionMatcher.commonPresetPatterns
     )
@@ -63,7 +61,6 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
         // Keep the persisted key stable for existing installations.
         static let showFreeSpaceInDiskMaps = "showFreeSpaceInSunburst"
         static let visualizationMode = "scanVisualizationMode"
-        static let scanCloudStorageFolders = "scanCloudStorageFolders"
         static let useScanExclusions = "useScanExclusions"
         static let exclusionPatterns = "exclusionPatterns"
     }
@@ -92,13 +89,6 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
             autoSummarizeDirectories = AppScanPreferences.defaults.autoSummarizeDirectories
         } else {
             autoSummarizeDirectories = defaults.bool(forKey: Key.autoSummarizeDirectories)
-        }
-
-        let scanCloudStorageFolders: Bool
-        if defaults.object(forKey: Key.scanCloudStorageFolders) == nil {
-            scanCloudStorageFolders = AppScanPreferences.defaults.scanCloudStorageFolders
-        } else {
-            scanCloudStorageFolders = defaults.bool(forKey: Key.scanCloudStorageFolders)
         }
 
         let showFreeSpaceInDiskMaps: Bool
@@ -130,7 +120,6 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
                 autoSummarizeDirectories: autoSummarizeDirectories,
                 showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
                 visualizationMode: visualizationMode,
-                scanCloudStorageFolders: scanCloudStorageFolders,
                 useScanExclusions: useScanExclusions,
                 exclusionPatterns: exclusionPatterns
             ),
@@ -145,7 +134,6 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
         defaults.set(preferences.autoSummarizeDirectories, forKey: Key.autoSummarizeDirectories)
         defaults.set(preferences.showFreeSpaceInDiskMaps, forKey: Key.showFreeSpaceInDiskMaps)
         defaults.set(preferences.visualizationMode.rawValue, forKey: Key.visualizationMode)
-        defaults.set(preferences.scanCloudStorageFolders, forKey: Key.scanCloudStorageFolders)
         defaults.set(preferences.useScanExclusions, forKey: Key.useScanExclusions)
         defaults.set(preferences.exclusionPatterns, forKey: Key.exclusionPatterns)
     }

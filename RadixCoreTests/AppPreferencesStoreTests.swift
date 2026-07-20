@@ -20,7 +20,6 @@ final class AppPreferencesStoreTests: XCTestCase {
             autoSummarizeDirectories: false,
             showFreeSpaceInDiskMaps: true,
             visualizationMode: .treemap,
-            scanCloudStorageFolders: true,
             useScanExclusions: true,
             exclusionPatterns: ["node_modules", "*.log"]
         )
@@ -47,7 +46,6 @@ final class AppPreferencesStoreTests: XCTestCase {
         defaults.set(false, forKey: "autoSummarizeDirectories")
         defaults.set(true, forKey: "showFreeSpaceInSunburst")
         defaults.set("treemap", forKey: "scanVisualizationMode")
-        defaults.set(true, forKey: "scanCloudStorageFolders")
         defaults.set(true, forKey: "useScanExclusions")
         defaults.set([".DS_Store"], forKey: "exclusionPatterns")
 
@@ -59,7 +57,6 @@ final class AppPreferencesStoreTests: XCTestCase {
         XCTAssertFalse(preferences.autoSummarizeDirectories)
         XCTAssertTrue(preferences.showFreeSpaceInDiskMaps)
         XCTAssertEqual(preferences.visualizationMode, .treemap)
-        XCTAssertTrue(preferences.scanCloudStorageFolders)
         XCTAssertTrue(preferences.useScanExclusions)
         XCTAssertEqual(preferences.exclusionPatterns, [".DS_Store"])
     }

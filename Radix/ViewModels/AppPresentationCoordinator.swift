@@ -37,11 +37,13 @@ final class AppPresentationCoordinator: ObservableObject {
     enum Dialog: Hashable {
         case error
         case trashConfirmation
+        case cloudFileConfirmation
 
         fileprivate var kind: DestinationKind {
             switch self {
             case .error: .error
             case .trashConfirmation: .trashConfirmation
+            case .cloudFileConfirmation: .cloudFileConfirmation
             }
         }
     }
@@ -70,6 +72,7 @@ final class AppPresentationCoordinator: ObservableObject {
         case comparisonSetup
         case error
         case trashConfirmation
+        case cloudFileConfirmation
     }
 
     private enum QueueEntry: Hashable {

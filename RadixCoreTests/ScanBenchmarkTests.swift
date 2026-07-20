@@ -1342,10 +1342,7 @@ final class ScanBenchmarkTests: XCTestCase {
         try mutate()
         let matcher = ScanExclusionMatcher(
             patterns: options.exclusionPatterns,
-            rootPath: options.exclusionRootPath ?? target.url.path,
-            includeCloudStorage: options.includeCloudStorage,
-            cloudStorageRootPath: options.cloudStorageRootPath,
-            iCloudDriveRootPath: options.iCloudDriveRootPath
+            rootPath: options.exclusionRootPath ?? target.url.path
         )
         let plan = IncrementalRescanPlanner().plan(
             history: history,
@@ -1654,8 +1651,7 @@ final class ScanBenchmarkTests: XCTestCase {
         let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: [],
-            rootURL: rootURL,
-            includeCloudStorage: true
+            rootURL: rootURL
         )
         var progressContinuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
         let progressStream = AsyncThrowingStream<ScanProgressEvent, Error> { continuation in

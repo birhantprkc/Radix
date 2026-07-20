@@ -101,6 +101,17 @@ final class AppModel: ObservableObject {
         }
     }
 
+    struct PendingCloudFileAction {
+        enum Kind: Equatable {
+            case addToDiscardPile
+            case moveToTrash(allowsHiddenNodes: Bool)
+        }
+
+        let kind: Kind
+        let nodes: [FileNodeRecord]
+        let cloudImpact: CloudStorageLocation.Impact
+    }
+
     private enum NavigationAction: Sendable {
         case select(FileNodeRecord.ID?)
         case selectMultiple(Set<FileNodeRecord.ID>, primary: FileNodeRecord.ID?)
@@ -181,7 +192,6 @@ final class AppModel: ObservableObject {
         }
     }
     @Published var scanVisualizationMode = ScanVisualizationMode.sunburst
-    @Published var scanCloudStorageFolders = false
     @Published var useScanExclusions = false
     @Published var exclusionPatterns = AppScanPreferences.defaults.exclusionPatterns
     @Published private(set) var availableTargets: [ScanTarget] = [] {
@@ -234,6 +244,11 @@ final class AppModel: ObservableObject {
     @Published var pendingTrashSelection: PendingTrashSelection? {
         didSet {
             synchronizeTrashConfirmationPresentation()
+        }
+    }
+    @Published private(set) var pendingCloudFileAction: PendingCloudFileAction? {
+        didSet {
+            synchronizeCloudFileConfirmationPresentation()
         }
     }
     @Published private(set) var discardPile = DiscardPileState()
@@ -306,7 +321,6 @@ final class AppModel: ObservableObject {
         autoSummarizeDirectories = preferences.scan.autoSummarizeDirectories
         showFreeSpaceInDiskMaps = preferences.scan.showFreeSpaceInDiskMaps
         scanVisualizationMode = preferences.scan.visualizationMode
-        scanCloudStorageFolders = preferences.scan.scanCloudStorageFolders
         useScanExclusions = preferences.scan.useScanExclusions
         exclusionPatterns = preferences.scan.exclusionPatterns
         lastPersistedScanPreferences = preferences.scan
@@ -579,6 +593,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func synchronizeCloudFileConfirmationPresentation() {
+        if pendingCloudFileAction != nil {
+            presentationCoordinator.present(.dialog(.cloudFileConfirmation))
+        } else {
+            resumeDeferredArchiveImport(
+                presentationCoordinator.cancel(.dialog(.cloudFileConfirmation))
+            )
+        }
+    }
+
     private func resumeDeferredArchiveImport(_ sourceURL: URL?) {
         guard let sourceURL else { return }
         guard !isArchiveOperationInProgress else {
@@ -622,7 +646,6 @@ final class AppModel: ObservableObject {
         autoSummarizeDirectories = AppScanPreferences.defaults.autoSummarizeDirectories
         showFreeSpaceInDiskMaps = AppScanPreferences.defaults.showFreeSpaceInDiskMaps
         scanVisualizationMode = AppScanPreferences.defaults.visualizationMode
-        scanCloudStorageFolders = AppScanPreferences.defaults.scanCloudStorageFolders
         useScanExclusions = AppScanPreferences.defaults.useScanExclusions
         exclusionPatterns = AppScanPreferences.defaults.exclusionPatterns
     }
@@ -2099,16 +2122,16 @@ final class AppModel: ObservableObject {
             }) else {
                 throw FileActionError.unsupported
             }
-            guard let snapshot = scanCoordinator.snapshot,
-                  let fileTreeStore = scanCoordinator.fileTreeStore else {
-                throw FileActionError.unsupported
+            let discardNodes = topLevelTrashNodes(from: nodes)
+            if let cloudImpact = cloudStorageImpact(of: discardNodes) {
+                pendingCloudFileAction = PendingCloudFileAction(
+                    kind: .addToDiscardPile,
+                    nodes: discardNodes,
+                    cloudImpact: cloudImpact
+                )
+                return true
             }
-
-            addDiscardPileNodes(
-                topLevelTrashNodes(from: nodes),
-                snapshot: snapshot,
-                fileTreeStore: fileTreeStore
-            )
+            try commitDiscardPileAddition(discardNodes)
             return true
         } catch {
             presentError(error)
@@ -2170,6 +2193,76 @@ final class AppModel: ObservableObject {
             }
         }
 
+        if let cloudImpact = cloudStorageImpact(of: nodes) {
+            pendingCloudFileAction = PendingCloudFileAction(
+                kind: .moveToTrash(allowsHiddenNodes: allowsHiddenNodes),
+                nodes: nodes,
+                cloudImpact: cloudImpact
+            )
+            return
+        }
+
+        performConfirmedTrashMove(nodes)
+    }
+
+    func confirmPendingCloudFileAction() {
+        guard let action = pendingCloudFileAction else { return }
+        pendingCloudFileAction = nil
+
+        do {
+            switch action.kind {
+            case .addToDiscardPile:
+                let nodes = try validatedNodesForDiscardPile(action.nodes)
+                try commitDiscardPileAddition(topLevelTrashNodes(from: nodes))
+            case .moveToTrash(let allowsHiddenNodes):
+                let nodes = try validatedNodesForMutation(
+                    action.nodes,
+                    allowingHiddenNodes: allowsHiddenNodes
+                )
+                performConfirmedTrashMove(nodes)
+            }
+        } catch {
+            presentError(error)
+        }
+    }
+
+    func cancelPendingCloudFileAction() {
+        pendingCloudFileAction = nil
+    }
+
+    private func commitDiscardPileAddition(_ nodes: [FileNodeRecord]) throws {
+        guard let snapshot = scanCoordinator.snapshot,
+              let fileTreeStore = scanCoordinator.fileTreeStore else {
+            throw FileActionError.unsupported
+        }
+        addDiscardPileNodes(
+            nodes,
+            snapshot: snapshot,
+            fileTreeStore: fileTreeStore
+        )
+    }
+
+    private func cloudStorageImpact(
+        of nodes: [FileNodeRecord]
+    ) -> CloudStorageLocation.Impact? {
+        var containsCloudStorage = false
+        for node in nodes {
+            switch CloudStorageLocation.impact(
+                of: node.url,
+                cloudRootExists: dependencies.systemActions.fileExists
+            ) {
+            case .storedInCloud:
+                return .storedInCloud
+            case .containsCloudStorage:
+                containsCloudStorage = true
+            case nil:
+                continue
+            }
+        }
+        return containsCloudStorage ? .containsCloudStorage : nil
+    }
+
+    private func performConfirmedTrashMove(_ nodes: [FileNodeRecord]) {
         let originalSnapshotID = scanCoordinator.snapshot?.id
         let statsFileTreeStore = scanCoordinator.fileTreeStore
 
@@ -2842,6 +2935,7 @@ final class AppModel: ObservableObject {
         pendingImportPreview = nil
         pendingTrashNode = nil
         pendingTrashSelection = nil
+        pendingCloudFileAction = nil
         discardPile = DiscardPileState()
         clearOptimisticTrashVisibility()
         sidebarModel.setActiveTargetID(target.id)
@@ -2875,6 +2969,7 @@ final class AppModel: ObservableObject {
         pendingImportPreview = nil
         pendingTrashNode = nil
         pendingTrashSelection = nil
+        pendingCloudFileAction = nil
         discardPile = DiscardPileState()
         clearOptimisticTrashVisibility()
         sidebarModel.setActiveTargetID(nil)
@@ -2891,7 +2986,6 @@ final class AppModel: ObservableObject {
             includeHiddenFiles: showHiddenFiles || target.kind == .volume,
             treatPackagesAsDirectories: treatPackagesAsDirectories,
             autoSummarizeDirectories: autoSummarizeDirectories ?? self.autoSummarizeDirectories,
-            includeCloudStorage: scanCloudStorageFolders,
             exclusionPatterns: exclusionPatterns,
             exclusionRootPath: exclusionRootPath(
                 for: target,
@@ -3126,11 +3220,10 @@ final class AppModel: ObservableObject {
     }
 
     private func observePreferences() {
-        Publishers.CombineLatest4(
+        Publishers.CombineLatest3(
             $showHiddenFiles,
             $treatPackagesAsDirectories,
-            $maxRenderedDepth,
-            $scanCloudStorageFolders
+            $maxRenderedDepth
         )
             .combineLatest(Publishers.CombineLatest4(
                 $autoSummarizeDirectories,
@@ -3159,7 +3252,6 @@ final class AppModel: ObservableObject {
             autoSummarizeDirectories: autoSummarizeDirectories,
             showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
             visualizationMode: scanVisualizationMode,
-            scanCloudStorageFolders: scanCloudStorageFolders,
             useScanExclusions: useScanExclusions,
             exclusionPatterns: exclusionPatterns
         )
@@ -3176,7 +3268,7 @@ final class AppModel: ObservableObject {
     }
 
     private static func scanPreferences(
-        _ scanBasics: (Bool, Bool, Int, Bool),
+        _ scanBasics: (Bool, Bool, Int),
         _ scanFilters: (Bool, Bool, Bool, [String]),
         _ visualizationMode: ScanVisualizationMode
     ) -> AppScanPreferences {
@@ -3187,7 +3279,6 @@ final class AppModel: ObservableObject {
             autoSummarizeDirectories: scanFilters.0,
             showFreeSpaceInDiskMaps: scanFilters.1,
             visualizationMode: visualizationMode,
-            scanCloudStorageFolders: scanBasics.3,
             useScanExclusions: scanFilters.2,
             exclusionPatterns: scanFilters.3
         )
@@ -3230,6 +3321,7 @@ extension AppModel: AppQuickLookControllerDelegate {
             !canUseWorkspaceCommands ||
             pendingTrashNode != nil ||
             pendingTrashSelection != nil ||
+            pendingCloudFileAction != nil ||
             navigationModel.selectedNodeIDs.count > 1
     }
 

@@ -399,6 +399,7 @@ extension AtomicDirectorySummarizer {
                     ) else {
                 continue
             }
+            guard !childMetadata.isDataless else { continue }
 
             partial.updateAccessibility(childMetadata.isReadable)
             guard childMetadata.isDirectory else {
@@ -712,6 +713,7 @@ extension AtomicDirectorySummarizer {
                     ) else {
                 continue
             }
+            guard !childMetadata.isDataless else { continue }
 
             partial.updateAccessibility(childMetadata.isReadable)
             guard childMetadata.isDirectory else {
@@ -814,6 +816,7 @@ extension AtomicDirectorySummarizer {
                     ) else {
                 continue
             }
+            guard !childMetadata.isDataless else { continue }
 
             partial.updateAccessibility(childMetadata.isReadable)
 

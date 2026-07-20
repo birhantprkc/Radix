@@ -18,7 +18,6 @@ final class AppModelDependencyTests: XCTestCase {
                     autoSummarizeDirectories: false,
                     showFreeSpaceInDiskMaps: true,
                     visualizationMode: .treemap,
-                    scanCloudStorageFolders: true,
                     useScanExclusions: true,
                     exclusionPatterns: ["*.log"]
                 ),
@@ -48,7 +47,6 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertFalse(model.autoSummarizeDirectories)
         XCTAssertTrue(model.showFreeSpaceInDiskMaps)
         XCTAssertEqual(model.scanVisualizationMode, .treemap)
-        XCTAssertTrue(model.scanCloudStorageFolders)
         XCTAssertTrue(model.useScanExclusions)
         XCTAssertEqual(model.exclusionPatterns, ["*.log"])
         XCTAssertFalse(model.showsOnboarding)
@@ -110,7 +108,6 @@ final class AppModelDependencyTests: XCTestCase {
             autoSummarizeDirectories: false,
             showFreeSpaceInDiskMaps: true,
             visualizationMode: .treemap,
-            scanCloudStorageFolders: true,
             useScanExclusions: true,
             exclusionPatterns: ["node_modules"]
         )
@@ -121,7 +118,6 @@ final class AppModelDependencyTests: XCTestCase {
         model.autoSummarizeDirectories = false
         model.showFreeSpaceInDiskMaps = true
         model.scanVisualizationMode = .treemap
-        model.scanCloudStorageFolders = true
         model.useScanExclusions = true
         model.exclusionPatterns = ["node_modules"]
 
@@ -181,7 +177,6 @@ final class AppModelDependencyTests: XCTestCase {
             autoSummarizeDirectories: AppScanPreferences.defaults.autoSummarizeDirectories,
             showFreeSpaceInDiskMaps: AppScanPreferences.defaults.showFreeSpaceInDiskMaps,
             visualizationMode: AppScanPreferences.defaults.visualizationMode,
-            scanCloudStorageFolders: AppScanPreferences.defaults.scanCloudStorageFolders,
             useScanExclusions: AppScanPreferences.defaults.useScanExclusions,
             exclusionPatterns: AppScanPreferences.defaults.exclusionPatterns
         )
@@ -1116,6 +1111,79 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertEqual(model.pendingTrashSelection?.nodes.map(\.id), [folder.id])
         XCTAssertEqual(model.pendingTrashNode?.id, folder.id)
+    }
+
+    @MainActor
+    func testAddingResidentCloudFileToDiscardPileRequiresConfirmation() {
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let cloudFile = makeTestFileNode(
+            id: "/Users/alex/Library/CloudStorage/Dropbox/file.bin",
+            name: "file.bin"
+        )
+        let root = makeTestDirectoryNode(
+            id: "/Users/alex/Library/CloudStorage/Dropbox",
+            name: "Dropbox",
+            children: [cloudFile]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [cloudFile]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+
+        XCTAssertTrue(model.addNodesToDiscardPile([cloudFile]))
+
+        XCTAssertTrue(model.discardPile.isEmpty)
+        XCTAssertEqual(model.pendingCloudFileAction?.kind, .addToDiscardPile)
+        XCTAssertEqual(model.pendingCloudFileAction?.nodes.map(\.id), [cloudFile.id])
+        XCTAssertEqual(model.pendingCloudFileAction?.cloudImpact, .storedInCloud)
+
+        model.confirmPendingCloudFileAction()
+
+        XCTAssertEqual(model.discardPile.nodeIDs, [cloudFile.id])
+        XCTAssertNil(model.pendingCloudFileAction)
+    }
+
+    @MainActor
+    func testMovingResidentCloudFileToTrashRequiresSecondConfirmation() {
+        let recorder = AppModelActionRecorder()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.moveToTrash = { recorder.movedToTrashURLs.append($0.url); return .matches }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let cloudFile = makeTestFileNode(
+            id: "/Users/alex/Library/CloudStorage/Dropbox/file.bin",
+            name: "file.bin"
+        )
+        let root = makeTestDirectoryNode(
+            id: "/Users/alex/Library/CloudStorage/Dropbox",
+            name: "Dropbox",
+            children: [cloudFile]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [cloudFile]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.scanState.selectedTarget = snapshot.target
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+
+        XCTAssertTrue(model.requestMoveNodesToTrash([cloudFile]))
+
+        model.confirmMovePendingSelectionToTrash()
+
+        XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
+        XCTAssertNil(model.pendingTrashSelection)
+        XCTAssertEqual(
+            model.pendingCloudFileAction?.kind,
+            .moveToTrash(allowsHiddenNodes: false)
+        )
+        XCTAssertEqual(model.pendingCloudFileAction?.cloudImpact, .storedInCloud)
+
+        model.confirmPendingCloudFileAction()
+
+        XCTAssertEqual(recorder.movedToTrashURLs, [cloudFile.url])
+        XCTAssertNil(model.pendingCloudFileAction)
     }
 
     @MainActor
