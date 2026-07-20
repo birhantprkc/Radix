@@ -47,6 +47,30 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.aggregateStats.fileCount, Int.max)
     }
 
+    func testComputedAggregateCountsHybridPackageSummaryOnce() {
+        let summarizedPackage = FileNodeRecord(
+            id: "/root/Hybrid.pkg",
+            url: URL(filePath: "/root/Hybrid.pkg", directoryHint: .isDirectory),
+            name: "Hybrid.pkg",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: 100,
+            logicalSize: 100,
+            descendantFileCount: 7,
+            lastModified: nil,
+            isPackage: true,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: true
+        )
+
+        let store = FileTreeStore(root: summarizedPackage)
+
+        XCTAssertEqual(store.aggregateStats.fileCount, 7)
+        XCTAssertEqual(store.aggregateStats.directoryCount, 1)
+    }
+
     func testPathAndAncestorLookup() {
         let leaf = makeFileNode(id: "/root/folder/file.txt", name: "file.txt", size: 12)
         let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])

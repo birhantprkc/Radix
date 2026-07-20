@@ -357,10 +357,7 @@ nonisolated struct FileTreeStore: Sendable {
         mutating func include(_ node: FileNodeRecord, hasMaterializedChildren: Bool) {
             if node.isDirectory {
                 directoryCount += 1
-                if node.isPackage && !hasMaterializedChildren {
-                    fileCount = FileTreeStore.saturatingAdd(fileCount, node.descendantFileCount)
-                }
-                if node.isAutoSummarized {
+                if !hasMaterializedChildren && (node.isPackage || node.isAutoSummarized) {
                     fileCount = FileTreeStore.saturatingAdd(fileCount, node.descendantFileCount)
                 }
             } else if !node.isSymbolicLink && !node.isSynthetic {
