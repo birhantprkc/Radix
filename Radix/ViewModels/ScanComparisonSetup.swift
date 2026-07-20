@@ -133,15 +133,30 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
         if before.scanDate > after.scanDate {
             return "The earlier scan must precede the later scan."
         }
-        if let beforeOptions = before.scanOptions,
-           let afterOptions = after.scanOptions,
-           beforeOptions != afterOptions {
-            return "Choose scans made with the same scan settings."
-        }
-        if (before.scanOptions == nil) != (after.scanOptions == nil) {
-            return "One scan is missing its settings, so these scans cannot be compared safely."
-        }
         return nil
+    }
+
+    var coverageWarningMessage: String? {
+        guard let before,
+              let after,
+              validationMessage == nil else {
+            return nil
+        }
+
+        switch (before.scanOptions, after.scanOptions) {
+        case let (beforeOptions?, afterOptions?) where beforeOptions != afterOptions:
+            return String(
+                localized: "Coverage warning: Scan settings differ, so added or removed items may reflect coverage changes rather than disk changes.",
+                comment: "Non-blocking warning shown before comparing scans made with different settings."
+            )
+        case (nil, _), (_, nil):
+            return String(
+                localized: "Coverage warning: Scan settings are unavailable for one or both scans, so some changes may be caused by different scan coverage.",
+                comment: "Non-blocking warning shown before comparing scans whose settings are unavailable."
+            )
+        default:
+            return nil
+        }
     }
 
     var resolvedCandidates: (before: ScanComparisonCandidate, after: ScanComparisonCandidate)? {

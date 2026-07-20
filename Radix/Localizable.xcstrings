@@ -3198,36 +3198,36 @@
         }
       }
     },
-    "Choose two scans of the same location with matching scan settings." : {
+    "Choose two scans of the same location. Coverage differences will be identified." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wählen Sie zwei Scans desselben Standorts mit übereinstimmenden Scan-Einstellungen aus."
+            "value" : "Wählen Sie zwei Scans desselben Standorts aus. Unterschiede in der Abdeckung werden gekennzeichnet."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elige dos análisis de la misma ubicación con los mismos ajustes."
+            "value" : "Elige dos análisis de la misma ubicación. Se indicarán las diferencias de cobertura."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choisissez deux analyses du même emplacement avec les mêmes réglages."
+            "value" : "Choisissez deux analyses du même emplacement. Les différences de couverture seront signalées."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scegli due scansioni della stessa posizione con impostazioni corrispondenti."
+            "value" : "Scegli due scansioni della stessa posizione. Le differenze di copertura verranno segnalate."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择同一位置且扫描设置匹配的两个扫描。"
+            "value" : "选择同一位置的两个扫描。覆盖范围差异会予以标明。"
           }
         }
       }
@@ -4121,6 +4121,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法创建拓扑部分"
+          }
+        }
+      }
+    },
+    "Coverage warning: Scan settings are unavailable for one or both scans, so some changes may be caused by different scan coverage." : {
+      "comment" : "Non-blocking warning shown before comparing scans whose settings are unavailable.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abdeckungswarnung: Die Scan-Einstellungen sind für einen oder beide Scans nicht verfügbar. Einige Änderungen können daher durch eine unterschiedliche Scan-Abdeckung verursacht werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advertencia de cobertura: los ajustes no están disponibles para uno o ambos análisis, por lo que algunos cambios pueden deberse a una cobertura de análisis diferente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avertissement de couverture : les réglages sont indisponibles pour l’une ou les deux analyses. Certaines modifications peuvent donc provenir d’une couverture différente."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avviso sulla copertura: le impostazioni non sono disponibili per una o entrambe le scansioni, quindi alcune modifiche potrebbero dipendere da una diversa copertura della scansione."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆盖范围警告：一个或两个扫描的设置不可用，因此部分变化可能是由不同的扫描覆盖范围造成的。"
+          }
+        }
+      }
+    },
+    "Coverage warning: Scan settings differ, so added or removed items may reflect coverage changes rather than disk changes." : {
+      "comment" : "Non-blocking warning shown before comparing scans made with different settings.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abdeckungswarnung: Die Scan-Einstellungen unterscheiden sich. Hinzugefügte oder entfernte Elemente können daher Änderungen der Abdeckung statt Änderungen auf dem Datenträger widerspiegeln."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advertencia de cobertura: los ajustes difieren, por lo que los elementos añadidos o eliminados pueden reflejar cambios de cobertura en lugar de cambios en el disco."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avertissement de couverture : les réglages diffèrent. Les éléments ajoutés ou supprimés peuvent donc refléter des changements de couverture plutôt que des changements sur le disque."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avviso sulla copertura: le impostazioni differiscono, quindi gli elementi aggiunti o rimossi potrebbero riflettere variazioni della copertura anziché modifiche sul disco."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆盖范围警告：扫描设置不同，因此新增或移除的项目可能反映的是覆盖范围变化，而非磁盘变化。"
           }
         }
       }

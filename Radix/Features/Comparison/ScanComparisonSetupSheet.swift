@@ -15,17 +15,13 @@ struct ScanComparisonSetupSheet: View {
         setup.loadingSlot != nil
     }
 
-    private var statusMessage: String? {
-        setup.errorMessage ?? setup.validationMessage
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Compare Scans")
                     .font(.title3.weight(.semibold))
 
-                Text("Choose two scans of the same location with matching scan settings.")
+                Text("Choose two scans of the same location. Coverage differences will be identified.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -75,11 +71,16 @@ struct ScanComparisonSetupSheet: View {
 
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if let statusMessage {
-                        Label(statusMessage, systemImage: "exclamationmark.triangle.fill")
+                    if let blockingMessage = setup.errorMessage ?? setup.validationMessage {
+                        Label(blockingMessage, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.red)
                             .lineLimit(2)
+                    } else if let coverageWarningMessage = setup.coverageWarningMessage {
+                        Label(coverageWarningMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                 }
