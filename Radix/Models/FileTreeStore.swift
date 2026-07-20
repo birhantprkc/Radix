@@ -604,6 +604,36 @@ nonisolated struct FileTreeStore: Sendable {
         parentRawIndices: [UInt32],
         childSpans: [FileTreeChildSpan],
         childIndices: [FileTreeNodeIndex],
+        aggregateStats: ScanAggregateStats,
+        cancellationCheck: () throws -> Void
+    ) rethrows {
+        let orderedNodeIndices = try FileTreeTopologyArena.preorderNodeIndices(
+            rootIndex: rootIndex,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            capacity: nodes.count,
+            cancellationCheck: cancellationCheck
+        )
+        self.init(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: aggregateStats
+        )
+    }
+
+    /// Fast construction for scanner output with a precomputed traversal order.
+    nonisolated init(
+        verifiedRootIndex rootIndex: FileTreeNodeIndex,
+        nodes: [FileNodeRecord],
+        indexByNodeID: [String: FileTreeNodeIndex],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
         orderedNodeIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats
     ) {

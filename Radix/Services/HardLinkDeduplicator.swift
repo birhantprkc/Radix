@@ -179,22 +179,15 @@ nonisolated struct HardLinkDeduplicator {
     ) rethrows -> FileTreeStore {
         let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
-            let orderedNodeIndices = try preorderNodeIndices(
-                rootIndex: rootIndex,
-                childSpans: childSpans,
-                childIndices: inputChildIndices,
-                capacity: inputNodes.count,
-                cancellationCheck: cancellationCheck
-            )
-            return FileTreeStore(
+            return try FileTreeStore(
                 verifiedRootIndex: rootIndex,
                 nodes: inputNodes,
                 indexByNodeID: indexByNodeID,
                 parentRawIndices: parentRawIndices,
                 childSpans: childSpans,
                 childIndices: inputChildIndices,
-                orderedNodeIndices: orderedNodeIndices,
-                aggregateStats: aggregateStats
+                aggregateStats: aggregateStats,
+                cancellationCheck: cancellationCheck
             )
         }
 
@@ -207,9 +200,11 @@ nonisolated struct HardLinkDeduplicator {
             guard let rawNodeIndex = indexByNodeID[nodeID]?.rawValue else { continue }
             let nodeIndex = Int(rawNodeIndex)
             let node = nodes[nodeIndex]
-            let minimumAllocatedSize = minimumAllocatedSizeByNodeID[nodeID] ?? 0
-            let allocatedSize = max(minimumAllocatedSize, node.allocatedSize - duplicateAllocatedSize)
-            nodes[nodeIndex] = node.replacingAllocatedSize(allocatedSize)
+            nodes[nodeIndex] = deduplicatedNode(
+                node,
+                duplicateAllocatedSize: duplicateAllocatedSize,
+                minimumAllocatedSize: minimumAllocatedSizeByNodeID[nodeID] ?? 0
+            )
             changedNodeIndices.insert(nodeIndex)
         }
 
@@ -221,13 +216,6 @@ nonisolated struct HardLinkDeduplicator {
             parentRawIndices: parentRawIndices
         )
 
-        let orderedNodeIndices = try preorderNodeIndices(
-            rootIndex: rootIndex,
-            childSpans: childSpans,
-            childIndices: childIndices,
-            capacity: nodes.count,
-            cancellationCheck: cancellationCheck
-        )
         let root = nodes[Int(rootIndex.rawValue)]
         let deduplicatedStats = ScanAggregateStats(
             totalAllocatedSize: root.allocatedSize,
@@ -238,16 +226,29 @@ nonisolated struct HardLinkDeduplicator {
             inaccessibleItemCount: aggregateStats.inaccessibleItemCount
         )
 
-        return FileTreeStore(
+        return try FileTreeStore(
             verifiedRootIndex: rootIndex,
             nodes: nodes,
             indexByNodeID: indexByNodeID,
             parentRawIndices: parentRawIndices,
             childSpans: childSpans,
             childIndices: childIndices,
-            orderedNodeIndices: orderedNodeIndices,
-            aggregateStats: deduplicatedStats
+            aggregateStats: deduplicatedStats,
+            cancellationCheck: cancellationCheck
         )
+    }
+
+    nonisolated static func deduplicatedNode(
+        _ node: FileNodeRecord,
+        duplicateAllocatedSize: Int64,
+        minimumAllocatedSize: Int64
+    ) -> FileNodeRecord {
+        let allocatedSize = max(
+            minimumAllocatedSize,
+            node.allocatedSize - duplicateAllocatedSize
+        )
+        guard allocatedSize != node.allocatedSize else { return node }
+        return node.replacingAllocatedSize(allocatedSize)
     }
 
     nonisolated static func rebalancedStore(
@@ -398,29 +399,6 @@ nonisolated struct HardLinkDeduplicator {
             )
             childIndices.replaceSubrange(start..<end, with: sortedChildIndices)
         }
-    }
-
-    private nonisolated static func preorderNodeIndices(
-        rootIndex: FileTreeNodeIndex,
-        childSpans: [FileTreeChildSpan],
-        childIndices: [FileTreeNodeIndex],
-        capacity: Int,
-        cancellationCheck: () throws -> Void
-    ) rethrows -> [FileTreeNodeIndex] {
-        var result: [FileTreeNodeIndex] = []
-        result.reserveCapacity(capacity)
-        var stack = [rootIndex]
-        while let nodeIndex = stack.popLast() {
-            if result.count.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            result.append(nodeIndex)
-            let span = childSpans[Int(nodeIndex.rawValue)]
-            let start = Int(span.start)
-            let end = start + Int(span.count)
-            stack.append(contentsOf: childIndices[start..<end].reversed())
-        }
-        return result
     }
 
     private nonisolated static func claim(for node: FileNodeRecord) -> HardLinkClaim? {

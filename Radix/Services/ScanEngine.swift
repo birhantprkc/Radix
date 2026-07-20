@@ -1863,6 +1863,18 @@ actor ScanEngine {
         // Cap stream traffic to roughly 200 assembly updates on very large scans.
         let finalizationProgressInterval = max(512, finalizationTotal / 200)
         var finalizedItems = 0
+        #if DEBUG
+        let correctionResolutionStart = diagnostics?.start()
+        #endif
+        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        #if DEBUG
+        diagnostics?.record(
+            operation: "scan.finalize.resolve_corrections",
+            url: target.url,
+            startedAt: correctionResolutionStart,
+            itemCount: duplicateAllocatedSizeByOwner.count
+        )
+        #endif
         var nodes: [FileNodeRecord] = []
         nodes.reserveCapacity(nextKey)
         var parentRawIndices: [UInt32] = []
@@ -1960,10 +1972,15 @@ actor ScanEngine {
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
             } else if let onlyChild = completed.node {
                 // Leaf node or inaccessible directory: use the child directly.
-                nodes.append(onlyChild)
+                let correctedChild = HardLinkDeduplicator.deduplicatedNode(
+                    onlyChild,
+                    duplicateAllocatedSize: duplicateAllocatedSizeByOwner[onlyChild.id] ?? 0,
+                    minimumAllocatedSize: minimumAllocatedSizeByNodeID[onlyChild.id] ?? 0
+                )
+                nodes.append(correctedChild)
                 parentRawIndices.append(UInt32.max)
                 childSpans.append(FileTreeChildSpan())
-                aggregateStats.include(onlyChild, hasChildren: false)
+                aggregateStats.include(correctedChild, hasChildren: false)
             } else {
                 assertionFailure("Missing finalized node for scan key \(key).")
                 throw ScanEngineError.missingRootNode
@@ -2012,25 +2029,23 @@ actor ScanEngine {
         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
         #if DEBUG
-        let deduplicationStart = diagnostics?.start()
+        let storeConstructionStart = diagnostics?.start()
         #endif
-        let store = try HardLinkDeduplicator.deduplicatedStore(
-            rootIndex: rootIndex,
+        let store = try FileTreeStore(
+            verifiedRootIndex: rootIndex,
             nodes: nodes,
             indexByNodeID: indexByNodeID,
             parentRawIndices: parentRawIndices,
             childSpans: childSpans,
             childIndices: childIndices,
             aggregateStats: aggregateStats.makeStats(root: rootNode),
-            hardLinkAccumulator: hardLinkAccumulator,
-            minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID,
             cancellationCheck: Task.checkCancellation
         )
         #if DEBUG
         diagnostics?.record(
-            operation: "scan.deduplicate",
+            operation: "scan.finalize.store",
             url: target.url,
-            startedAt: deduplicationStart,
+            startedAt: storeConstructionStart,
             itemCount: nodes.count
         )
         diagnostics?.record(
