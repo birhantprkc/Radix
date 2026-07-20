@@ -1171,7 +1171,10 @@ actor ScanEngine {
         var completedByKey: [CompletedDirScan?] = []
         // Maps parent key → child keys, built during phase 1.
         var childrenKeysByKey: [[Int]?] = []
-        var seenScannedNodeIDs = Set<String>()
+        // Retain the scan key assigned to each accepted path. Besides rejecting
+        // duplicate discoveries, this becomes the compact store's node index
+        // without hashing every path again during finalization.
+        var scanKeyByNodeID: [String: Int] = [:]
         var nextKey = 0
 
         #if DEBUG
@@ -1201,7 +1204,9 @@ actor ScanEngine {
                       let item = workStack.popLast() {
                     try Task.checkCancellation()
 
-                    guard seenScannedNodeIDs.insert(item.url.path).inserted else {
+                    let itemPath = item.url.path
+                    if let previousKey = scanKeyByNodeID.updateValue(nextKey, forKey: itemPath) {
+                        scanKeyByNodeID[itemPath] = previousKey
                         releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
                         recordDuplicateNode(
                             at: item.url,
@@ -1717,7 +1722,7 @@ actor ScanEngine {
                             item,
                             parentKey: batch.parentKey,
                             nextKey: &nextKey,
-                            seenScannedNodeIDs: &seenScannedNodeIDs,
+                            scanKeyByNodeID: &scanKeyByNodeID,
                             hardLinkAccumulator: &hardLinkAccumulator,
                             metrics: &metrics,
                             warnings: &warnings,
@@ -1792,7 +1797,7 @@ actor ScanEngine {
                             preparedItem,
                             parentKey: itemKey,
                             nextKey: &nextKey,
-                            seenScannedNodeIDs: &seenScannedNodeIDs,
+                            scanKeyByNodeID: &scanKeyByNodeID,
                             hardLinkAccumulator: &hardLinkAccumulator,
                             metrics: &metrics,
                             warnings: &warnings,
@@ -1858,9 +1863,12 @@ actor ScanEngine {
         // Cap stream traffic to roughly 200 assembly updates on very large scans.
         let finalizationProgressInterval = max(512, finalizationTotal / 200)
         var finalizedItems = 0
-        var resolvedNodeByKey = Array<FileNodeRecord?>(repeating: nil, count: nextKey)
-        var parentRawIndices = Array(repeating: UInt32.max, count: nextKey)
-        var childSpans = Array(repeating: FileTreeChildSpan(), count: nextKey)
+        var nodes: [FileNodeRecord] = []
+        nodes.reserveCapacity(nextKey)
+        var parentRawIndices: [UInt32] = []
+        parentRawIndices.reserveCapacity(nextKey)
+        var childSpans: [FileTreeChildSpan] = []
+        childSpans.reserveCapacity(nextKey)
         var childIndices: [FileTreeNodeIndex] = []
         childIndices.reserveCapacity(max(nextKey - 1, 0))
         var aggregateStats = AggregateStatsAccumulator()
@@ -1871,35 +1879,24 @@ actor ScanEngine {
             if finalizedItems.isMultiple(of: 256) {
                 try Task.checkCancellation()
             }
-            guard let completed = completedByKey[key] else { continue }
+            guard let completed = completedByKey[key] else {
+                assertionFailure("Missing completed scan result for key \(key).")
+                throw ScanEngineError.missingRootNode
+            }
             completedByKey[key] = nil
             finalizedItems += 1
+            let nodeOffset = nodes.count
+            assert(nodeOffset == nextKey - key - 1)
 
             if completed.isTraversable {
                 // Traversable directories must still be materialized when empty.
                 var sortedChildKeys = childrenKeysByKey[key] ?? []
                 childrenKeysByKey[key] = nil
-                var keptChildCount = 0
-                for offset in sortedChildKeys.indices {
-                    if offset.isMultiple(of: 256) {
-                        try Task.checkCancellation()
-                    }
-                    let childKey = sortedChildKeys[offset]
-                    if resolvedNodeByKey[childKey] != nil {
-                        sortedChildKeys[keptChildCount] = childKey
-                        keptChildCount += 1
-                    }
-                }
-                if keptChildCount < sortedChildKeys.count {
-                    sortedChildKeys.removeSubrange(keptChildCount..<sortedChildKeys.endIndex)
-                }
                 // Duplicate paths are rejected before keys are assigned in phase 1,
                 // so children are already unique here.
                 sortedChildKeys.sort { lhsKey, rhsKey in
-                    guard let lhs = resolvedNodeByKey[lhsKey],
-                          let rhs = resolvedNodeByKey[rhsKey] else {
-                        return lhsKey < rhsKey
-                    }
+                    let lhs = nodes[nextKey - lhsKey - 1]
+                    let rhs = nodes[nextKey - rhsKey - 1]
                     if lhs.allocatedSize == rhs.allocatedSize {
                         return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
                     }
@@ -1916,7 +1913,8 @@ actor ScanEngine {
                     if offset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
-                    guard let child = resolvedNodeByKey[childKey] else { continue }
+                    let childOffset = nextKey - childKey - 1
+                    let child = nodes[childOffset]
                     allocatedSize = ScanIntegerMath.addingClamped(allocatedSize, child.allocatedSize)
                     logicalSize = ScanIntegerMath.addingClamped(logicalSize, child.logicalSize)
                     childrenAreAccessible = childrenAreAccessible && child.isAccessible
@@ -1928,9 +1926,9 @@ actor ScanEngine {
                     } else if !child.isSymbolicLink && !child.isSynthetic {
                         descendantFileCount = ScanIntegerMath.addingClamped(descendantFileCount, 1)
                     }
-                    let childIndex = FileTreeNodeIndex(rawValue: UInt32(childKey))
+                    let childIndex = FileTreeNodeIndex(rawValue: UInt32(childOffset))
                     childIndices.append(childIndex)
-                    parentRawIndices[childKey] = UInt32(key)
+                    parentRawIndices[childOffset] = UInt32(nodeOffset)
                 }
 
                 let assembled = FileNodeRecord(
@@ -1951,19 +1949,24 @@ actor ScanEngine {
                     isSynthetic: false,
                     isAutoSummarized: false
                 )
-                resolvedNodeByKey[key] = assembled
-                aggregateStats.include(assembled, hasChildren: childIndices.count > childSpanStart)
-
-                childSpans[key] = FileTreeChildSpan(
+                nodes.append(assembled)
+                parentRawIndices.append(UInt32.max)
+                childSpans.append(FileTreeChildSpan(
                     start: UInt32(childSpanStart),
                     count: UInt32(childIndices.count - childSpanStart)
-                )
+                ))
+                aggregateStats.include(assembled, hasChildren: childIndices.count > childSpanStart)
 
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
             } else if let onlyChild = completed.node {
                 // Leaf node or inaccessible directory: use the child directly.
-                resolvedNodeByKey[key] = onlyChild
+                nodes.append(onlyChild)
+                parentRawIndices.append(UInt32.max)
+                childSpans.append(FileTreeChildSpan())
                 aggregateStats.include(onlyChild, hasChildren: false)
+            } else {
+                assertionFailure("Missing finalized node for scan key \(key).")
+                throw ScanEngineError.missingRootNode
             }
 
             if finalizedItems.isMultiple(of: finalizationProgressInterval) || finalizedItems == finalizationTotal {
@@ -1977,7 +1980,7 @@ actor ScanEngine {
                 )
             }
         }
-        guard let rootNode = resolvedNodeByKey[0] else {
+        guard let rootNode = nodes.last else {
             throw ScanEngineError.missingRootNode
         }
         #if DEBUG
@@ -1987,36 +1990,22 @@ actor ScanEngine {
             startedAt: finalizationStart,
             itemCount: finalizedItems
         )
-        let materializationStart = diagnostics?.start()
+        let indexStart = diagnostics?.start()
         #endif
 
-        var nodes: [FileNodeRecord] = []
-        nodes.reserveCapacity(resolvedNodeByKey.count)
-        var indexByNodeID: [String: FileTreeNodeIndex] = [:]
-        indexByNodeID.reserveCapacity(resolvedNodeByKey.count)
-        for key in resolvedNodeByKey.indices {
-            guard let node = resolvedNodeByKey[key] else {
-                assertionFailure("Missing finalized node for scan key \(key).")
-                throw ScanEngineError.missingRootNode
-            }
-            resolvedNodeByKey[key] = nil
-            nodes.append(node)
-            let previous = indexByNodeID.updateValue(
-                FileTreeNodeIndex(rawValue: UInt32(key)),
-                forKey: node.id
-            )
-            assert(previous == nil)
+        let indexByNodeID = scanKeyByNodeID.mapValues { scanKey in
+            FileTreeNodeIndex(rawValue: UInt32(nextKey - scanKey - 1))
         }
         #if DEBUG
         diagnostics?.record(
-            operation: "scan.finalize.materialize",
+            operation: "scan.finalize.index",
             url: target.url,
-            startedAt: materializationStart,
+            startedAt: indexStart,
             itemCount: nodes.count
         )
         #endif
 
-        let rootIndex = FileTreeNodeIndex(rawValue: 0)
+        let rootIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count - 1))
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
         metrics.finalizationFraction = 1
         metrics.recalculateProgress()
@@ -2099,7 +2088,7 @@ actor ScanEngine {
         _ item: PreparedOrdinaryLeafItem,
         parentKey: Int,
         nextKey: inout Int,
-        seenScannedNodeIDs: inout Set<String>,
+        scanKeyByNodeID: inout [String: Int],
         hardLinkAccumulator: inout HardLinkIdentityOwnerAccumulator,
         metrics: inout ScanMetrics,
         warnings: inout [ScanWarning],
@@ -2111,7 +2100,8 @@ actor ScanEngine {
     ) {
         let childNode = item.node
         let childPath = childNode.id
-        guard seenScannedNodeIDs.insert(childPath).inserted else {
+        if let previousKey = scanKeyByNodeID.updateValue(nextKey, forKey: childPath) {
+            scanKeyByNodeID[childPath] = previousKey
             recordDuplicateNode(
                 at: item.url,
                 weight: item.weight,
