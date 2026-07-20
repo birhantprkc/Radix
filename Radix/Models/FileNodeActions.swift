@@ -11,6 +11,7 @@ nonisolated enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable
     case quickLook
     case revealInFinder
     case open
+    case openInTerminal
     case copyPath
     case moveToTrash
 
@@ -24,6 +25,8 @@ nonisolated enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable
             return String(localized: "Reveal in Finder", comment: "File action that shows the selected item in Finder.")
         case .open:
             return String(localized: "Open", comment: "File action that opens the selected item.")
+        case .openInTerminal:
+            return String(localized: "Open in Terminal", comment: "File action that opens a shell at the selected folder.")
         case .copyPath:
             return String(localized: "Copy Path", comment: "File action that copies the selected item's path.")
         case .moveToTrash:
@@ -45,6 +48,8 @@ nonisolated enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable
             return "folder"
         case .open:
             return "arrow.up.forward.app"
+        case .openInTerminal:
+            return "terminal"
         case .copyPath:
             if #available(macOS 15.0, *) {
                 return "document.on.document"
@@ -63,11 +68,26 @@ nonisolated enum FileNodeAction: CaseIterable, Equatable, Identifiable, Sendable
             return availability.canRevealInFinder
         case .open:
             return availability.canOpen
+        case .openInTerminal:
+            return availability.canOpen
         case .copyPath:
             return availability.canCopyPath
         case .moveToTrash:
             return availability.canMoveToTrash
         }
+    }
+}
+
+extension FileNodeAction {
+    nonisolated func title(for node: FileNodeRecord?) -> String {
+        guard self == .openInTerminal,
+              node?.opensTerminalInContainingFolder == true else {
+            return title
+        }
+        return String(
+            localized: "Open Containing Folder in Terminal",
+            comment: "File action that opens a shell in the folder containing the selected file, package, or symbolic link."
+        )
     }
 }
 
@@ -165,6 +185,14 @@ nonisolated enum ScanPostTrashAction: Equatable {
 }
 
 extension FileNodeRecord {
+    nonisolated var opensTerminalInContainingFolder: Bool {
+        !isDirectory || isPackage || isSymbolicLink
+    }
+
+    nonisolated var terminalDirectoryURL: URL {
+        opensTerminalInContainingFolder ? url.deletingLastPathComponent() : url
+    }
+
     nonisolated var supportsMoveToTrash: Bool {
         supportsMoveToTrash(trashSafetyPolicy: .live())
     }

@@ -477,11 +477,12 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
-    func testSelectedFileActionsUseInjectedSystemActions() {
+    func testSelectedFileActionsUseInjectedSystemActions() async {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
         actions.open = { recorder.openedURLs.append($0) }
+        actions.openInTerminal = { recorder.terminalDirectoryURLs.append($0) }
         actions.reveal = { recorder.revealedURLs.append($0) }
         actions.copyPath = { recorder.copiedPathURLs.append($0) }
         actions.quickLook = AppQuickLookActions(
@@ -497,12 +498,14 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.revealSelectedInFinder()
         model.openSelected()
+        await model.openSelectedInTerminal()
         model.copySelectedPath()
         model.previewSelectedWithQuickLook()
         model.toggleQuickLookForSelected()
 
         XCTAssertEqual(recorder.revealedURLs, [file.url])
         XCTAssertEqual(recorder.openedURLs, [file.url])
+        XCTAssertEqual(recorder.terminalDirectoryURLs, [file.url.deletingLastPathComponent()])
         XCTAssertEqual(recorder.copiedPathURLs, [file.url])
         XCTAssertEqual(recorder.presentedQuickLookURLs, [file.url])
         XCTAssertEqual(recorder.toggledQuickLookURLs, [file.url])
@@ -3482,6 +3485,7 @@ private final class SpyRecentTargetPersistence: RecentTargetPersisting {
 @MainActor
 private final class AppModelActionRecorder {
     var openedURLs: [URL] = []
+    var terminalDirectoryURLs: [URL] = []
     var revealedURLs: [URL] = []
     var revealedManyURLs: [[URL]] = []
     var copiedPathURLs: [URL] = []

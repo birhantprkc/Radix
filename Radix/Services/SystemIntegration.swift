@@ -19,6 +19,13 @@ nonisolated enum FullDiskAccessStatus: Equatable, Sendable {
 protocol SystemWorkspace {
     func activateFileViewerSelecting(_ fileURLs: [URL])
     func open(_ url: URL) -> Bool
+    func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL?
+    func open(
+        _ urls: [URL],
+        withApplicationAt applicationURL: URL,
+        configuration: NSWorkspace.OpenConfiguration,
+        completionHandler: (@Sendable (NSRunningApplication?, (any Error)?) -> Void)?
+    )
 }
 
 extension NSWorkspace: SystemWorkspace {}
@@ -51,8 +58,9 @@ enum SystemIntegration {
         }
     }
 
-    enum SystemIntegrationError: LocalizedError {
+    enum SystemIntegrationError: LocalizedError, Sendable {
         case openFailed(path: String)
+        case openInTerminalFailed(path: String)
         case copyPathFailed(path: String)
         case quickLookUnavailable(path: String)
         case protectedTrashLocation(path: String)
@@ -61,6 +69,8 @@ enum SystemIntegration {
             switch self {
             case .openFailed(let path):
                 return String(localized: "macOS could not open the item at \(path).", comment: "Error shown when opening a selected file fails.")
+            case .openInTerminalFailed(let path):
+                return String(localized: "macOS could not open Terminal at \(path).", comment: "Error shown when Terminal cannot open at the selected folder.")
             case .copyPathFailed(let path):
                 return String(localized: "macOS could not copy the path for \(path).", comment: "Error shown when copying a selected file path fails.")
             case .quickLookUnavailable(let path):
@@ -358,6 +368,39 @@ enum SystemIntegration {
     static func open(_ url: URL, workspace: SystemWorkspace = NSWorkspace.shared) throws {
         guard workspace.open(url) else {
             throw SystemIntegrationError.openFailed(path: url.path)
+        }
+    }
+
+    @MainActor
+    static func openInTerminal(
+        _ directoryURL: URL,
+        workspace: SystemWorkspace = NSWorkspace.shared
+    ) async throws {
+        guard let terminalURL = workspace.urlForApplication(
+            withBundleIdentifier: "com.apple.Terminal"
+        ) else {
+            throw SystemIntegrationError.openInTerminalFailed(path: directoryURL.path)
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            workspace.open(
+                [directoryURL],
+                withApplicationAt: terminalURL,
+                configuration: configuration
+            ) { _, error in
+                if error != nil {
+                    continuation.resume(
+                        throwing: SystemIntegrationError.openInTerminalFailed(
+                            path: directoryURL.path
+                        )
+                    )
+                } else {
+                    continuation.resume()
+                }
+            }
         }
     }
 

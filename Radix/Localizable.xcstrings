@@ -8213,6 +8213,41 @@
         }
       }
     },
+    "macOS could not open Terminal at %@." : {
+      "comment" : "Error shown when Terminal cannot open at the selected folder.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS konnte Terminal nicht unter %@ öffnen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS no pudo abrir Terminal en %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS n’a pas pu ouvrir Terminal dans %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS non ha potuto aprire Terminale in %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 无法在 %@ 打开“终端”。"
+          }
+        }
+      }
+    },
     "macOS could not open the item at %@." : {
       "comment" : "Error shown when opening a selected file fails.",
       "localizations" : {
@@ -10577,6 +10612,41 @@
         }
       }
     },
+    "Open Containing Folder in Terminal" : {
+      "comment" : "File action that opens a shell in the folder containing the selected file, package, or symbolic link.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enthaltenden Ordner im Terminal öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir la carpeta contenedora en Terminal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir le dossier contenant dans Terminal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri la cartella contenitore in Terminale"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“终端”中打开所在文件夹"
+          }
+        }
+      }
+    },
     "Open Full Disk Access" : {
       "localizations" : {
         "de" : {
@@ -10641,6 +10711,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开完全磁盘访问权限设置"
+          }
+        }
+      }
+    },
+    "Open in Terminal" : {
+      "comment" : "File action that opens a shell at the selected folder.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Im Terminal öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir en Terminal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir dans Terminal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apri in Terminale"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“终端”中打开"
           }
         }
       }

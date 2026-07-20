@@ -67,6 +67,7 @@ final class AppEventMonitorToken {
 @MainActor
 struct AppSystemActions {
     var open: (URL) throws -> Void
+    var openInTerminal: (URL) async throws -> Void
     var reveal: (URL) -> Void
     var revealMany: ([URL]) -> Void
     var copyPath: (URL) throws -> Void
@@ -96,6 +97,7 @@ struct AppSystemActions {
 
     static let live = AppSystemActions(
         open: { try SystemIntegration.open($0) },
+        openInTerminal: { try await SystemIntegration.openInTerminal($0) },
         reveal: { SystemIntegration.reveal($0) },
         revealMany: { SystemIntegration.reveal($0) },
         copyPath: { try SystemIntegration.copyPath($0) },
@@ -186,6 +188,7 @@ struct AppSystemActions {
 
     static let inert = AppSystemActions(
         open: { _ in },
+        openInTerminal: { _ in },
         reveal: { _ in },
         revealMany: { _ in },
         copyPath: { _ in },

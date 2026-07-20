@@ -1939,6 +1939,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func openSelectedInTerminal() async {
+        do {
+            let node = try validatedSelection(requiresLivePath: true)
+            try await dependencies.systemActions.openInTerminal(node.terminalDirectoryURL)
+        } catch {
+            presentError(error)
+        }
+    }
+
     func previewSelectedWithQuickLook() {
         quickLookController.previewSelected()
     }

@@ -44,6 +44,7 @@ struct SelectedFileActions {
     let quickLook: () -> Void
     let revealInFinder: () -> Void
     let open: () -> Void
+    let openInTerminal: () -> Void
     let copyPath: () -> Void
     let moveToTrash: () -> Void
 
@@ -55,6 +56,8 @@ struct SelectedFileActions {
             revealInFinder()
         case .open:
             open()
+        case .openInTerminal:
+            openInTerminal()
         case .copyPath:
             copyPath()
         case .moveToTrash:

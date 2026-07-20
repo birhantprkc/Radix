@@ -338,6 +338,13 @@ struct FileBrowserTableView: View {
 
             fileActionButton(.open, availability: selection.actionAvailability, selectedID: selection.id)
 
+            fileActionButton(
+                .openInTerminal,
+                availability: selection.actionAvailability,
+                selectedID: selection.id,
+                node: node
+            )
+
             if node.isAutoSummarized {
                 let expansionIsActive = isExpanding(node)
                 Button(
@@ -528,9 +535,10 @@ struct FileBrowserTableView: View {
     private func fileActionButton(
         _ action: FileNodeAction,
         availability: FileNodeActionAvailability,
-        selectedID: FileNodeRecord.ID
+        selectedID: FileNodeRecord.ID,
+        node: FileNodeRecord? = nil
     ) -> some View {
-        Button(action.title, systemImage: action.systemImageName) {
+        Button(action.title(for: node), systemImage: action.systemImageName) {
             actions.selectNode(selectedID)
             actions.selectedFileActions.perform(action)
         }

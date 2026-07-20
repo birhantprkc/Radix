@@ -27,6 +27,61 @@ final class SystemIntegrationTests: XCTestCase {
         XCTAssertEqual(workspace.openedURLs, [url])
     }
 
+    func testOpenInTerminalOpensDirectoryWithTerminal() async throws {
+        let directoryURL = URL(filePath: "/tmp/example", directoryHint: .isDirectory)
+        let terminalURL = URL(filePath: "/System/Applications/Utilities/Terminal.app")
+        let workspace = WorkspaceSpy(openResult: true, terminalApplicationURL: terminalURL)
+
+        try await SystemIntegration.openInTerminal(directoryURL, workspace: workspace)
+
+        XCTAssertEqual(workspace.requestedApplicationBundleIdentifiers, ["com.apple.Terminal"])
+        XCTAssertEqual(workspace.applicationOpenedURLs, [[directoryURL]])
+        XCTAssertEqual(workspace.openedApplicationURLs, [terminalURL])
+        XCTAssertEqual(workspace.openConfigurationsActivate, [true])
+    }
+
+    func testOpenInTerminalThrowsWhenTerminalIsUnavailable() async {
+        let directoryURL = URL(filePath: "/tmp/example", directoryHint: .isDirectory)
+        let workspace = WorkspaceSpy(openResult: true, terminalApplicationURL: nil)
+
+        do {
+            try await SystemIntegration.openInTerminal(directoryURL, workspace: workspace)
+            XCTFail("Expected opening Terminal to fail.")
+        } catch {
+            guard let integrationError = error as? SystemIntegration.SystemIntegrationError else {
+                XCTFail("Expected SystemIntegrationError, got \(error).")
+                return
+            }
+
+            XCTAssertEqual(
+                integrationError.localizedDescription,
+                "macOS could not open Terminal at \(directoryURL.path)."
+            )
+        }
+        XCTAssertTrue(workspace.applicationOpenedURLs.isEmpty)
+    }
+
+    func testOpenInTerminalThrowsWhenWorkspaceReportsFailure() async {
+        let directoryURL = URL(filePath: "/tmp/example", directoryHint: .isDirectory)
+        let terminalURL = URL(filePath: "/System/Applications/Utilities/Terminal.app")
+        let workspace = WorkspaceSpy(
+            openResult: true,
+            terminalApplicationURL: terminalURL,
+            applicationOpenError: NSError(domain: "RadixTests", code: 1)
+        )
+
+        do {
+            try await SystemIntegration.openInTerminal(directoryURL, workspace: workspace)
+            XCTFail("Expected opening Terminal to fail.")
+        } catch {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "macOS could not open Terminal at \(directoryURL.path)."
+            )
+        }
+        XCTAssertEqual(workspace.applicationOpenedURLs, [[directoryURL]])
+    }
+
     func testRevealSelectsRequestedURL() {
         let url = URL(filePath: "/tmp/example.txt")
         let workspace = WorkspaceSpy(openResult: true)
@@ -349,11 +404,23 @@ final class SystemIntegrationTests: XCTestCase {
 
 private final class WorkspaceSpy: SystemWorkspace {
     private let openResult: Bool
+    private let terminalApplicationURL: URL?
+    private let applicationOpenError: (any Error)?
     private(set) var openedURLs: [URL] = []
     private(set) var revealedSelections: [[URL]] = []
+    private(set) var requestedApplicationBundleIdentifiers: [String] = []
+    private(set) var applicationOpenedURLs: [[URL]] = []
+    private(set) var openedApplicationURLs: [URL] = []
+    private(set) var openConfigurationsActivate: [Bool] = []
 
-    init(openResult: Bool) {
+    init(
+        openResult: Bool,
+        terminalApplicationURL: URL? = nil,
+        applicationOpenError: (any Error)? = nil
+    ) {
         self.openResult = openResult
+        self.terminalApplicationURL = terminalApplicationURL
+        self.applicationOpenError = applicationOpenError
     }
 
     func activateFileViewerSelecting(_ fileURLs: [URL]) {
@@ -363,6 +430,23 @@ private final class WorkspaceSpy: SystemWorkspace {
     func open(_ url: URL) -> Bool {
         openedURLs.append(url)
         return openResult
+    }
+
+    func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
+        requestedApplicationBundleIdentifiers.append(bundleIdentifier)
+        return terminalApplicationURL
+    }
+
+    func open(
+        _ urls: [URL],
+        withApplicationAt applicationURL: URL,
+        configuration: NSWorkspace.OpenConfiguration,
+        completionHandler: (@Sendable (NSRunningApplication?, (any Error)?) -> Void)?
+    ) {
+        applicationOpenedURLs.append(urls)
+        openedApplicationURLs.append(applicationURL)
+        openConfigurationsActivate.append(configuration.activates)
+        completionHandler?(nil, applicationOpenError)
     }
 }
 

@@ -191,6 +191,17 @@ struct RadixCommands: Commands {
 
             selectedFileActionCommand(.open, shortcut: "o", modifiers: [.command, .shift])
 
+            Button(
+                FileNodeAction.openInTerminal.title(for: navigation.selectedNode),
+                systemImage: FileNodeAction.openInTerminal.systemImageName
+            ) {
+                commandSelectedFileActions.perform(.openInTerminal)
+            }
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    !FileNodeAction.openInTerminal.isEnabled(in: selectedActionAvailability)
+            )
+
             selectedFileActionCommand(.revealInFinder, shortcut: "j", modifiers: [.command, .shift])
 
             selectedFileActionCommand(.copyPath, shortcut: "c", modifiers: [.command, .shift])
@@ -239,6 +250,7 @@ struct RadixCommands: Commands {
             quickLook: { appModel.toggleQuickLookForSelected() },
             revealInFinder: { appModel.revealSelectedInFinder() },
             open: { appModel.openSelected() },
+            openInTerminal: { Task { await appModel.openSelectedInTerminal() } },
             copyPath: { appModel.copySelectedPath() },
             moveToTrash: { appModel.requestMoveSelectedToTrash() }
         )

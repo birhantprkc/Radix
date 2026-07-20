@@ -182,13 +182,15 @@ final class ScanModelTests: XCTestCase {
 
         XCTAssertEqual(
             FileNodeAction.allCases.map(\.title),
-            ["Quick Look", "Reveal in Finder", "Open", "Copy Path", "Move to Trash"]
+            ["Quick Look", "Reveal in Finder", "Open", "Open in Terminal", "Copy Path", "Move to Trash"]
         )
         XCTAssertEqual(FileNodeAction.open.systemImageName, "arrow.up.forward.app")
+        XCTAssertEqual(FileNodeAction.openInTerminal.systemImageName, "terminal")
         XCTAssertEqual(FileNodeAction.moveToTrash.systemImageName, "trash")
         XCTAssertFalse(FileNodeAction.quickLook.isEnabled(in: availability))
         XCTAssertTrue(FileNodeAction.revealInFinder.isEnabled(in: availability))
         XCTAssertTrue(FileNodeAction.open.isEnabled(in: availability))
+        XCTAssertTrue(FileNodeAction.openInTerminal.isEnabled(in: availability))
         XCTAssertFalse(FileNodeAction.copyPath.isEnabled(in: availability))
         XCTAssertTrue(FileNodeAction.moveToTrash.isEnabled(in: availability))
 
@@ -198,6 +200,49 @@ final class ScanModelTests: XCTestCase {
         } else {
             XCTAssertEqual(FileNodeAction.quickLook.systemImageName, "doc.viewfinder")
             XCTAssertEqual(FileNodeAction.copyPath.systemImageName, "doc.on.doc")
+        }
+    }
+
+    func testTerminalActionTargetsFoldersAndContainingFolders() {
+        let folder = makeNode(
+            id: "/Users/example/Downloads",
+            isDirectory: true,
+            isSynthetic: false,
+            isAccessible: true
+        )
+        let file = makeNode(
+            id: "/Users/example/Downloads/archive.zip",
+            isDirectory: false,
+            isSynthetic: false,
+            isAccessible: true
+        )
+        let package = makeNode(
+            id: "/Users/example/Downloads/Example.app",
+            isDirectory: true,
+            isPackage: true,
+            isSynthetic: false,
+            isAccessible: true
+        )
+        let symbolicLink = makeNode(
+            id: "/Users/example/Downloads/shortcut",
+            isDirectory: true,
+            isSymbolicLink: true,
+            isSynthetic: false,
+            isAccessible: true
+        )
+
+        XCTAssertEqual(folder.terminalDirectoryURL, folder.url)
+        XCTAssertEqual(FileNodeAction.openInTerminal.title(for: folder), "Open in Terminal")
+
+        for node in [file, package, symbolicLink] {
+            XCTAssertEqual(
+                node.terminalDirectoryURL,
+                URL(filePath: "/Users/example/Downloads", directoryHint: .isDirectory)
+            )
+            XCTAssertEqual(
+                FileNodeAction.openInTerminal.title(for: node),
+                "Open Containing Folder in Terminal"
+            )
         }
     }
 
@@ -761,6 +806,7 @@ final class ScanModelTests: XCTestCase {
         id: String,
         isDirectory: Bool,
         isSymbolicLink: Bool = false,
+        isPackage: Bool = false,
         isSynthetic: Bool,
         isAccessible: Bool,
         allocatedSize: Int64 = 64,
@@ -777,7 +823,7 @@ final class ScanModelTests: XCTestCase {
             logicalSize: allocatedSize,
             descendantFileCount: descendantFileCount ?? (isDirectory || isSymbolicLink ? 0 : 1),
             lastModified: nil,
-            isPackage: false,
+            isPackage: isPackage,
             isAccessible: isAccessible,
             isSelfAccessible: isAccessible,
             isSynthetic: isSynthetic,

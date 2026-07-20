@@ -855,6 +855,7 @@ private extension ContentView {
             quickLook: { appModel.previewSelectedWithQuickLook() },
             revealInFinder: { appModel.revealPrimarySelectionInFinder() },
             open: { appModel.openSelected() },
+            openInTerminal: { Task { await appModel.openSelectedInTerminal() } },
             copyPath: { appModel.copyPrimarySelectionPath() },
             moveToTrash: { appModel.requestMovePrimarySelectionToTrash() }
         )
@@ -865,6 +866,7 @@ private extension ContentView {
             quickLook: { appModel.previewSelectedWithQuickLook() },
             revealInFinder: { appModel.revealSelectedInFinder() },
             open: { appModel.openSelected() },
+            openInTerminal: { Task { await appModel.openSelectedInTerminal() } },
             copyPath: { appModel.copySelectedPath() },
             moveToTrash: { appModel.requestMoveSelectedToTrash() }
         )
