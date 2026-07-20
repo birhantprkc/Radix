@@ -1859,6 +1859,9 @@ actor ScanEngine {
             force: true
         )
 
+        #if DEBUG
+        let finalizationStart = diagnostics?.start()
+        #endif
         let finalizationTotal = max(completedByKey.count, 1)
         // Cap stream traffic to roughly 200 assembly updates on very large scans.
         let finalizationProgressInterval = max(512, finalizationTotal / 200)
@@ -1885,7 +1888,7 @@ actor ScanEngine {
         childIndices.reserveCapacity(max(nextKey - 1, 0))
         var aggregateStats = AggregateStatsAccumulator()
         #if DEBUG
-        let finalizationStart = diagnostics?.start()
+        let assemblyStart = diagnostics?.start()
         #endif
         for key in (0..<nextKey).reversed() {
             if finalizedItems.isMultiple(of: 256) {
@@ -2004,7 +2007,7 @@ actor ScanEngine {
         diagnostics?.record(
             operation: "scan.finalize.assemble",
             url: target.url,
-            startedAt: finalizationStart,
+            startedAt: assemblyStart,
             itemCount: finalizedItems
         )
         let indexStart = diagnostics?.start()
