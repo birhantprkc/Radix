@@ -984,6 +984,10 @@ actor ScanEngine {
         metrics.isFinalizing = true
         continuation.yield(.progress(metrics))
 
+        #if DEBUG
+        let snapshotFinalizationStart = diagnostics?.start()
+        #endif
+
         if let overlappingBytes = VolumeCapacityAccounting.overlappingAllocatedBytes(
             in: treeStore,
             capacity: metrics.volumeCapacity
@@ -1009,6 +1013,14 @@ actor ScanEngine {
             reconcilesVolumeCapacity: metrics.estimatedTotalBytes > 0,
             hasActiveExclusions: !exclusionMatcher.isEmpty
         )
+        #if DEBUG
+        diagnostics?.record(
+            operation: "scan.finalize.snapshot",
+            url: target.url,
+            startedAt: snapshotFinalizationStart,
+            itemCount: treeStore.nodeCount
+        )
+        #endif
 
         metrics.isFinalizing = false
         metrics.currentPath = target.url.path
@@ -1968,6 +1980,15 @@ actor ScanEngine {
         guard let rootNode = resolvedNodeByKey[0] else {
             throw ScanEngineError.missingRootNode
         }
+        #if DEBUG
+        diagnostics?.record(
+            operation: "scan.finalize.assemble",
+            url: target.url,
+            startedAt: finalizationStart,
+            itemCount: finalizedItems
+        )
+        let materializationStart = diagnostics?.start()
+        #endif
 
         var nodes: [FileNodeRecord] = []
         nodes.reserveCapacity(resolvedNodeByKey.count)
@@ -1986,6 +2007,14 @@ actor ScanEngine {
             )
             assert(previous == nil)
         }
+        #if DEBUG
+        diagnostics?.record(
+            operation: "scan.finalize.materialize",
+            url: target.url,
+            startedAt: materializationStart,
+            itemCount: nodes.count
+        )
+        #endif
 
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
@@ -2016,7 +2045,7 @@ actor ScanEngine {
             itemCount: nodes.count
         )
         diagnostics?.record(
-            operation: "scan.finalize",
+            operation: "scan.finalize.total",
             url: target.url,
             startedAt: finalizationStart,
             itemCount: finalizedItems
