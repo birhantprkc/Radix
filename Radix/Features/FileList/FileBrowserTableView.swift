@@ -228,6 +228,7 @@ struct FileBrowserTableView: View {
                     }
             }
         }
+        .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .accessibilityLabel("Contents table")
         .accessibilityHint("Select a row to inspect it. Double-click a folder to zoom in, or a summarized folder to expand it. Press Space for Quick Look.")
         .contextMenu(forSelectionType: FileNodeRecord.ID.self) { selectedIDs in
