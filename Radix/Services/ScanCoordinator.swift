@@ -22,18 +22,6 @@ protocol ScanEventStreaming: Sendable {
     ) -> AsyncThrowingStream<ScanProgressEvent, Error>
 }
 
-extension ScanEventStreaming {
-    nonisolated func rescan(
-        target: ScanTarget,
-        options: ScanOptions,
-        from baseline: ScanSnapshot
-    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
-        scan(target: target, options: options)
-    }
-}
-
-extension ScanEngine: ScanEventStreaming {}
-
 enum ScanExpansionResult {
     case skipped
     case cancelled

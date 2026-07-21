@@ -55,7 +55,7 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testStartScanBaselineUsesDefaultFullScanFallback() {
+    func testStartScanBaselineUsesExplicitFullScanFallback() {
         let service = ControlledScanService()
         let coordinator = ScanCoordinator(scanService: service)
         let target = makeCoordinatorTarget("/scan/fallback")
@@ -631,7 +631,7 @@ final class ScanCoordinatorTests: XCTestCase {
             )
         )
         let targets = [firstTarget, secondTarget, thirdTarget]
-        let snapshots = targets.map(makeCoordinatorSnapshot)
+        let snapshots = targets.map { makeCoordinatorSnapshot(target: $0) }
 
         for (index, target) in targets.enumerated() {
             model.selectSidebarTarget(id: target.id)
@@ -756,7 +756,7 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testAppModelRescanBypassesSidebarCache() async throws {
+    func testAppModelRescanBypassesSidebarCacheAndUsesEligibleBaseline() async throws {
         let service = ControlledScanService()
         let target = makeCoordinatorTarget("/app/sidebar/rescan")
         let model = AppModel(
@@ -765,12 +765,20 @@ final class ScanCoordinatorTests: XCTestCase {
                 systemActions: makeCoordinatorSidebarActions(targets: [target])
             )
         )
-        let snapshot = makeCoordinatorSnapshot(target: target)
 
         model.selectSidebarTarget(id: target.id)
         try await waitUntil("initial sidebar scan request") {
             service.requests.count == 1
         }
+        let scanOptions = try XCTUnwrap(service.requests.first?.options)
+        let snapshot = makeCoordinatorSnapshot(
+            target: target,
+            scanOptions: scanOptions,
+            incrementalCheckpoint: ScanIncrementalCheckpoint(
+                volumeUUID: "test-volume",
+                eventID: 10
+            )
+        )
         service.yield(.finished(snapshot), scanIndex: 0)
         service.finish(scanIndex: 0)
         try await waitUntil("initial sidebar scan finished") {
@@ -780,9 +788,12 @@ final class ScanCoordinatorTests: XCTestCase {
         model.rescan()
 
         try await waitUntil("rescan request") {
-            service.requests.count == 2
+            service.rescanRequests.count == 1
         }
         XCTAssertEqual(service.requests.map(\.target), [target, target])
+        XCTAssertEqual(service.rescanRequests.map(\.target), [target])
+        XCTAssertEqual(service.rescanRequests.map(\.baselineID), [snapshot.id])
+        XCTAssertEqual(service.rescanRequests.map(\.options), [scanOptions])
     }
 
     @MainActor
@@ -1848,6 +1859,7 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
     private let lock = NSLock()
     private var continuations: [Continuation] = []
     private var storedRequests: [ControlledScanRequest] = []
+    private var storedRescanRequests: [ControlledRescanRequest] = []
     private var storedTerminationCount = 0
 
     var requests: [ControlledScanRequest] {
@@ -1860,6 +1872,12 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
         lock.lock()
         defer { lock.unlock() }
         return storedTerminationCount
+    }
+
+    var rescanRequests: [ControlledRescanRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRescanRequests
     }
 
     func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error> {
@@ -1876,6 +1894,23 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
                 self.lock.unlock()
             }
         }
+    }
+
+    func rescan(
+        target: ScanTarget,
+        options: ScanOptions,
+        from baseline: ScanSnapshot
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        lock.lock()
+        storedRescanRequests.append(
+            ControlledRescanRequest(
+                target: target,
+                options: options,
+                baselineID: baseline.id
+            )
+        )
+        lock.unlock()
+        return scan(target: target, options: options)
     }
 
     func yield(_ event: ScanProgressEvent, scanIndex: Int) {
@@ -1947,11 +1982,21 @@ private func makeCoordinatorMetrics(path: String, filesVisited: Int) -> ScanMetr
     return metrics
 }
 
-private func makeCoordinatorSnapshot(target: ScanTarget) -> ScanSnapshot {
+private func makeCoordinatorSnapshot(
+    target: ScanTarget,
+    scanOptions: ScanOptions? = nil,
+    incrementalCheckpoint: ScanIncrementalCheckpoint? = nil
+) -> ScanSnapshot {
     let file = makeTestFileNode(id: target.url.appendingPathComponent("file.txt").path, name: "file.txt", size: 20)
     let root = makeTestDirectoryNode(id: target.id, name: target.displayName, children: [file])
     let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
-    return makeCoordinatorSnapshot(target: target, root: root, store: store)
+    return makeCoordinatorSnapshot(
+        target: target,
+        root: root,
+        store: store,
+        scanOptions: scanOptions,
+        incrementalCheckpoint: incrementalCheckpoint
+    )
 }
 
 private func makeCoordinatorHomeSnapshot(
@@ -1990,13 +2035,17 @@ private func makeCoordinatorSnapshot(
     target: ScanTarget,
     root: FileNodeRecord,
     store: FileTreeStore,
-    warnings: [ScanWarning] = []
+    warnings: [ScanWarning] = [],
+    scanOptions: ScanOptions? = nil,
+    incrementalCheckpoint: ScanIncrementalCheckpoint? = nil
 ) -> ScanSnapshot {
     makeTestSnapshot(
         target: target,
         root: root,
         store: store,
-        warnings: warnings
+        warnings: warnings,
+        scanOptions: scanOptions,
+        incrementalCheckpoint: incrementalCheckpoint
     )
 }
 

@@ -3,6 +3,17 @@ import XCTest
 @testable import RadixCore
 
 final class IncrementalScanServiceTests: XCTestCase {
+    func testDarwinHistoryProviderCapturesCheckpointForLocalDirectory() throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let checkpoint = try DarwinFileSystemEventHistoryProvider()
+            .currentCheckpoint(for: rootURL)
+
+        XCTAssertGreaterThan(checkpoint.eventID, 0)
+        XCTAssertFalse(checkpoint.volumeUUID.isEmpty)
+    }
+
     func testShallowRelistClassificationBudgetAccountsForConcurrentRelists() {
         var options = ScanOptions()
         options.directoryTraversalWorkerLimit = 4

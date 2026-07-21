@@ -18,7 +18,7 @@ struct AppDependencies {
         preferences: any AppPreferencesPersisting,
         recentTargets: RecentTargetStore,
         systemActions: AppSystemActions,
-        scanService: any ScanEventStreaming = ScanEngine(),
+        scanService: any ScanEventStreaming = IncrementalScanService(),
         scanArchiveService: any ScanArchiveServicing = ScanArchiveService(),
         usageStats: any AppUsageStatsPersisting = InMemoryAppUsageStatsStore()
     ) {
@@ -41,7 +41,7 @@ struct AppDependencies {
                 }
             ),
             systemActions: systemActions,
-            scanService: ScanEngine(),
+            scanService: IncrementalScanService(),
             usageStats: UserDefaultsAppUsageStatsStore()
         )
     }

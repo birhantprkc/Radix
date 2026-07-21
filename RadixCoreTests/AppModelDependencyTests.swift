@@ -5,6 +5,21 @@ import XCTest
 
 final class AppModelDependencyTests: XCTestCase {
     @MainActor
+    func testProductionAndDefaultDependenciesUseIncrementalScanning() {
+        let defaultDependencies = AppDependencies(
+            preferences: SpyAppPreferencesStore(preferences: .defaults),
+            recentTargets: RecentTargetStore(
+                persistence: SpyRecentTargetPersistence(),
+                isAvailable: { _ in true }
+            ),
+            systemActions: .inert
+        )
+
+        XCTAssertTrue(defaultDependencies.scanService is IncrementalScanService)
+        XCTAssertTrue(AppDependencies.live.scanService is IncrementalScanService)
+    }
+
+    @MainActor
     func testInitializesFromInjectedPreferencesTargetsAndRecentStore() {
         let availableRecent = makeTestTarget("/recent/available")
         let missingRecent = makeTestTarget("/recent/missing")
@@ -3267,6 +3282,14 @@ private final class NeverFinishingScanService: ScanEventStreaming, @unchecked Se
             continuations.append(continuation)
         }
     }
+
+    func rescan(
+        target: ScanTarget,
+        options: ScanOptions,
+        from baseline: ScanSnapshot
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        scan(target: target, options: options)
+    }
 }
 
 private final class ControlledAppModelScanService: ScanEventStreaming, @unchecked Sendable {
@@ -3299,6 +3322,14 @@ private final class ControlledAppModelScanService: ScanEventStreaming, @unchecke
         }
     }
 
+    func rescan(
+        target: ScanTarget,
+        options: ScanOptions,
+        from baseline: ScanSnapshot
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        scan(target: target, options: options)
+    }
+
     func yield(_ event: ScanProgressEvent, scanIndex: Int) {
         continuation(at: scanIndex)?.yield(event)
     }
@@ -3321,7 +3352,7 @@ private func makeDependencies(
     recentPersistence: SpyRecentTargetPersistence = SpyRecentTargetPersistence(),
     availableRecentIDs: Set<String> = [],
     systemActions: AppSystemActions = .inert,
-    scanService: any ScanEventStreaming = ScanEngine(),
+    scanService: any ScanEventStreaming = IncrementalScanService(),
     scanArchiveService: any ScanArchiveServicing = ScanArchiveService(),
     usageStats: any AppUsageStatsPersisting = InMemoryAppUsageStatsStore()
 ) -> AppDependencies {

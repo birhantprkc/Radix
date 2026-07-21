@@ -33,7 +33,7 @@ nonisolated struct DarwinFileSystemEventHistoryProvider: FileSystemEventHistoryP
         let volume = try Self.volumeContext(for: targetURL)
         let eventID = FSEventsGetLastEventIdForDeviceBeforeTime(
             volume.deviceID,
-            CFAbsoluteTimeGetCurrent()
+            Date().timeIntervalSince1970
         )
         guard eventID > 0 else {
             throw FileSystemEventHistoryError.eventIDUnavailable(targetURL.path)
