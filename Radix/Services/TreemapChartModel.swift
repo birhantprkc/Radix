@@ -78,16 +78,43 @@ final class TreemapChartModel: ObservableObject {
 
     func spatialSelectionNodeID(
         from selectedNodeID: String?,
-        moving direction: ChartSpatialSelectionDirection
+        moving direction: ChartSpatialSelectionDirection,
+        in size: CGSize
     ) -> String? {
-        let candidates = renderedSegments.compactMap { segment -> ChartSpatialSelectionCandidate? in
+        let displayedSegments = renderedSegments.map { segment in
+            (segment, TreemapRenderer.displayRect(for: segment, in: size))
+        }
+        var firstChildYByContainer: [String: CGFloat] = [:]
+        for (segment, frame) in displayedSegments {
+            firstChildYByContainer[segment.containerNodeID] = min(
+                firstChildYByContainer[segment.containerNodeID] ?? .greatestFiniteMagnitude,
+                frame.minY
+            )
+        }
+
+        let candidates = displayedSegments.compactMap { segment, displayFrame
+            -> ChartSpatialSelectionCandidate? in
             guard let nodeID = segment.nodeID,
                   !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
                 return nil
             }
+
+            let selectionFrame: CGRect
+            if segment.showsContainerHeader,
+               let firstChildY = firstChildYByContainer[nodeID],
+               firstChildY > displayFrame.minY {
+                selectionFrame = CGRect(
+                    x: displayFrame.minX,
+                    y: displayFrame.minY,
+                    width: displayFrame.width,
+                    height: min(firstChildY - displayFrame.minY, displayFrame.height)
+                )
+            } else {
+                selectionFrame = displayFrame
+            }
             return ChartSpatialSelectionCandidate(
                 nodeID: nodeID,
-                center: CGPoint(x: segment.rect.midX, y: segment.rect.midY)
+                frame: selectionFrame
             )
         }
         return ChartSpatialSelection.nextNodeID(

@@ -216,7 +216,9 @@ struct SunburstChartView: View {
 
                 ChartSpatialSelectionKeyboardMonitor(
                     isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
-                    onMove: handleSpatialMove
+                    onMove: { direction in
+                        handleSpatialMove(direction, in: baseChartFrame)
+                    }
                 )
             }
             .clipped()
@@ -302,12 +304,23 @@ struct SunburstChartView: View {
         }
     }
 
-    private func handleSpatialMove(_ direction: ChartSpatialSelectionDirection) {
+    private func handleSpatialMove(
+        _ direction: ChartSpatialSelectionDirection,
+        in baseChartFrame: CGRect
+    ) {
         guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
         if let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
             moving: direction
         ) {
+            let transformedFrame = viewportTransform.frame(for: baseChartFrame)
+            if let point = chartModel.spatialSelectionPoint(for: nodeID, in: transformedFrame) {
+                viewportTransform = viewportTransform.revealing(
+                    point: point,
+                    within: baseChartFrame,
+                    padding: 12
+                )
+            }
             onSelect(nodeID)
         }
     }

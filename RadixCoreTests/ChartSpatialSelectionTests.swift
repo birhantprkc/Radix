@@ -19,14 +19,14 @@ final class ChartSpatialSelectionTests: XCTestCase {
         XCTAssertEqual(next(from: "center", moving: .right, among: candidates), "right")
     }
 
-    func testUsesFirstCandidateWhenSelectionIsMissing() {
+    func testInvalidSelectionUsesDirectionalEntryEdge() {
         let candidates = [
             candidate("first", x: 20, y: 20),
             candidate("second", x: 40, y: 20)
         ]
 
         XCTAssertEqual(next(from: nil, moving: .right, among: candidates), "first")
-        XCTAssertEqual(next(from: "not-rendered", moving: .left, among: candidates), "first")
+        XCTAssertEqual(next(from: "not-rendered", moving: .left, among: candidates), "second")
     }
 
     func testReturnsNilAtDirectionalEdge() {
@@ -36,6 +36,31 @@ final class ChartSpatialSelectionTests: XCTestCase {
         ]
 
         XCTAssertNil(next(from: "right", moving: .right, among: candidates))
+    }
+
+    func testRejectsCandidateThatIsMostlyPerpendicularToMovement() {
+        let candidates = [
+            candidate("current", x: 0, y: 0),
+            candidate("mostly-down", x: 1, y: 10),
+            candidate("right", x: 30, y: 0)
+        ]
+
+        XCTAssertEqual(next(from: "current", moving: .right, among: candidates), "right")
+    }
+
+    func testMissingSelectionEntersFromEdgeOppositeMovement() {
+        let candidates = [
+            candidate("center", x: 50, y: 50),
+            candidate("right", x: 90, y: 50),
+            candidate("bottom", x: 50, y: 90),
+            candidate("left", x: 10, y: 50),
+            candidate("top", x: 50, y: 10)
+        ]
+
+        XCTAssertEqual(next(from: nil, moving: .right, among: candidates), "left")
+        XCTAssertEqual(next(from: nil, moving: .left, among: candidates), "right")
+        XCTAssertEqual(next(from: nil, moving: .down, among: candidates), "top")
+        XCTAssertEqual(next(from: nil, moving: .up, among: candidates), "bottom")
     }
 
     private func next(

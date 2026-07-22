@@ -98,6 +98,20 @@ final class SunburstChartModel: ObservableObject {
         )
     }
 
+    func spatialSelectionPoint(for nodeID: String, in frame: CGRect) -> CGPoint? {
+        guard let segment = renderedSegments.first(where: { $0.nodeID == nodeID }) else {
+            return nil
+        }
+
+        let angle = ((segment.startAngle.radians + segment.endAngle.radians) / 2) - (.pi / 2)
+        let normalizedRadius = (segment.innerRadius + segment.outerRadius) / 2
+        let radius = (min(frame.width, frame.height) / 2) * normalizedRadius
+        return CGPoint(
+            x: frame.midX + (cos(angle) * radius),
+            y: frame.midY + (sin(angle) * radius)
+        )
+    }
+
     func selectionOverlaySegments(
         selectedNodeID: String?,
         selectedAncestorIDs: Set<String>

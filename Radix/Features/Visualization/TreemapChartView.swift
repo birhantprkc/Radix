@@ -144,7 +144,9 @@ struct TreemapChartView: View {
 
                 ChartSpatialSelectionKeyboardMonitor(
                     isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
-                    onMove: handleSpatialMove
+                    onMove: { direction in
+                        handleSpatialMove(direction, in: chartFrame.size)
+                    }
                 )
             }
             .clipped()
@@ -197,11 +199,15 @@ struct TreemapChartView: View {
         }
     }
 
-    private func handleSpatialMove(_ direction: ChartSpatialSelectionDirection) {
+    private func handleSpatialMove(
+        _ direction: ChartSpatialSelectionDirection,
+        in size: CGSize
+    ) {
         guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
         if let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
-            moving: direction
+            moving: direction,
+            in: size
         ) {
             onSelect(nodeID)
         }
