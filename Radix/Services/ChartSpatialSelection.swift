@@ -9,21 +9,27 @@ nonisolated enum ChartSpatialSelectionDirection {
 
 nonisolated struct ChartSpatialSelectionCandidate: Sendable {
     let nodeID: String
-    let frame: CGRect
-
-    var center: CGPoint {
-        CGPoint(x: frame.midX, y: frame.midY)
-    }
+    let frames: [CGRect]
 
     init(nodeID: String, center: CGPoint) {
         self.nodeID = nodeID
-        frame = CGRect(origin: center, size: .zero)
+        frames = [CGRect(origin: center, size: .zero)]
     }
 
     init(nodeID: String, frame: CGRect) {
         self.nodeID = nodeID
-        self.frame = frame
+        frames = [frame]
     }
+
+    init(nodeID: String, points: [CGPoint]) {
+        self.nodeID = nodeID
+        frames = points.map { CGRect(origin: $0, size: .zero) }
+    }
+}
+
+nonisolated struct ChartSpatialSelectionResult: Sendable {
+    let nodeID: String
+    let targetPoint: CGPoint
 }
 
 nonisolated enum ChartSpatialSelection {
@@ -32,61 +38,120 @@ nonisolated enum ChartSpatialSelection {
         moving direction: ChartSpatialSelectionDirection,
         among candidates: [ChartSpatialSelectionCandidate]
     ) -> String? {
+        nextSelection(
+            from: selectedNodeID,
+            moving: direction,
+            among: candidates
+        )?.nodeID
+    }
+
+    nonisolated static func nextSelection(
+        from selectedNodeID: String?,
+        moving direction: ChartSpatialSelectionDirection,
+        among candidates: [ChartSpatialSelectionCandidate]
+    ) -> ChartSpatialSelectionResult? {
         guard !candidates.isEmpty else { return nil }
         guard let selectedNodeID,
               let current = candidates.first(where: { $0.nodeID == selectedNodeID }) else {
-            return entryNodeID(moving: direction, among: candidates)
+            return entrySelection(moving: direction, among: candidates)
         }
 
-        var bestNodeID: String?
+        var bestResult: ChartSpatialSelectionResult?
         var bestScore: CandidateScore?
 
         for candidate in candidates where candidate.nodeID != current.nodeID {
-            let delta = CGPoint(
-                x: candidate.center.x - current.center.x,
-                y: candidate.center.y - current.center.y
-            )
-            let distances = distances(for: delta, moving: direction)
-            guard distances.forward > 0 else { continue }
-
-            let crossAxisGap = crossAxisGap(
-                between: current.frame,
-                and: candidate.frame,
-                moving: direction
-            )
-            let isInDirectionalBeam = crossAxisGap == 0
-            guard isInDirectionalBeam || distances.crossAxis <= distances.forward else {
-                continue
+            for currentFrame in current.frames {
+                for candidateFrame in candidate.frames {
+                    guard let score = score(
+                        from: currentFrame,
+                        to: candidateFrame,
+                        moving: direction
+                    ) else {
+                        continue
+                    }
+                    if let bestScore, score >= bestScore { continue }
+                    bestResult = ChartSpatialSelectionResult(
+                        nodeID: candidate.nodeID,
+                        targetPoint: candidateFrame.center
+                    )
+                    bestScore = score
+                }
             }
-
-            let score = CandidateScore(
-                beamRank: isInDirectionalBeam ? 0 : 1,
-                distanceSquared: (distances.forward * distances.forward)
-                    + (distances.crossAxis * distances.crossAxis),
-                crossAxisDistance: distances.crossAxis,
-                forwardDistance: distances.forward
-            )
-            if let bestScore, score >= bestScore { continue }
-            bestNodeID = candidate.nodeID
-            bestScore = score
         }
 
-        return bestNodeID
+        return bestResult
     }
 
-    private nonisolated static func entryNodeID(
+    private nonisolated static func entrySelection(
         moving direction: ChartSpatialSelectionDirection,
         among candidates: [ChartSpatialSelectionCandidate]
-    ) -> String? {
-        candidates.min { lhs, rhs in
-            let lhsCoordinate = entryCoordinate(for: lhs.center, moving: direction)
-            let rhsCoordinate = entryCoordinate(for: rhs.center, moving: direction)
-            if lhsCoordinate == rhsCoordinate {
-                return crossAxisCoordinate(for: lhs.center, moving: direction)
-                    < crossAxisCoordinate(for: rhs.center, moving: direction)
+    ) -> ChartSpatialSelectionResult? {
+        var bestResult: ChartSpatialSelectionResult?
+        var bestCoordinate = CGFloat.infinity
+        var bestCrossAxisCoordinate = CGFloat.infinity
+
+        for candidate in candidates {
+            for frame in candidate.frames {
+                let coordinate = entryCoordinate(for: frame.center, moving: direction)
+                let crossAxisCoordinate = crossAxisCoordinate(
+                    for: frame.center,
+                    moving: direction
+                )
+                guard coordinate < bestCoordinate || (
+                    coordinate == bestCoordinate &&
+                        crossAxisCoordinate < bestCrossAxisCoordinate
+                ) else {
+                    continue
+                }
+                bestResult = ChartSpatialSelectionResult(
+                    nodeID: candidate.nodeID,
+                    targetPoint: frame.center
+                )
+                bestCoordinate = coordinate
+                bestCrossAxisCoordinate = crossAxisCoordinate
             }
-            return lhsCoordinate < rhsCoordinate
-        }?.nodeID
+        }
+        return bestResult
+    }
+
+    private nonisolated static func score(
+        from currentFrame: CGRect,
+        to candidateFrame: CGRect,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> CandidateScore? {
+        let delta = CGPoint(
+            x: candidateFrame.midX - currentFrame.midX,
+            y: candidateFrame.midY - currentFrame.midY
+        )
+        let centerDistances = distances(for: delta, moving: direction)
+        let forwardProgress = forwardProgress(
+            from: currentFrame,
+            to: candidateFrame,
+            moving: direction
+        )
+        guard forwardProgress > 0 else { return nil }
+
+        let forwardGap = forwardGap(
+            between: currentFrame,
+            and: candidateFrame,
+            moving: direction
+        )
+        let crossAxisGap = crossAxisGap(
+            between: currentFrame,
+            and: candidateFrame,
+            moving: direction
+        )
+        let isInDirectionalBeam = crossAxisGap == 0
+        guard isInDirectionalBeam || crossAxisGap <= forwardGap else {
+            return nil
+        }
+
+        return CandidateScore(
+            beamRank: isInDirectionalBeam ? 0 : 1,
+            distanceSquared: (forwardGap * forwardGap) + (crossAxisGap * crossAxisGap),
+            crossAxisDistance: centerDistances.crossAxis,
+            forwardDistance: forwardProgress
+        )
     }
 
     private nonisolated static func entryCoordinate(
@@ -127,6 +192,40 @@ nonisolated enum ChartSpatialSelection {
                 current.minY...current.maxY,
                 candidate.minY...candidate.maxY
             )
+        }
+    }
+
+    private nonisolated static func forwardGap(
+        between current: CGRect,
+        and candidate: CGRect,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> CGFloat {
+        switch direction {
+        case .up:
+            max(current.minY - candidate.maxY, 0)
+        case .down:
+            max(candidate.minY - current.maxY, 0)
+        case .left:
+            max(current.minX - candidate.maxX, 0)
+        case .right:
+            max(candidate.minX - current.maxX, 0)
+        }
+    }
+
+    private nonisolated static func forwardProgress(
+        from current: CGRect,
+        to candidate: CGRect,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> CGFloat {
+        switch direction {
+        case .up:
+            current.minY - candidate.minY
+        case .down:
+            candidate.maxY - current.maxY
+        case .left:
+            current.minX - candidate.minX
+        case .right:
+            candidate.maxX - current.maxX
         }
     }
 
@@ -177,5 +276,11 @@ nonisolated enum ChartSpatialSelection {
             }
             return lhs.forwardDistance < rhs.forwardDistance
         }
+    }
+}
+
+private extension CGRect {
+    nonisolated var center: CGPoint {
+        CGPoint(x: midX, y: midY)
     }
 }

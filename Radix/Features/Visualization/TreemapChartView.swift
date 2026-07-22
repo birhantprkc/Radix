@@ -213,8 +213,18 @@ struct TreemapChartView: View {
         }
         tooltipAnchor = nil
         chartModel.setHoveredSegmentID(nil)
-        onSelect(nodeID)
+        selectFromKeyboard(nodeID)
         return true
+    }
+
+    private func selectFromKeyboard(_ nodeID: String) {
+        focusedWorkspaceTarget = nil
+        onSelect(nodeID)
+        Task { @MainActor in
+            await Task.yield()
+            guard focusedWorkspaceTarget == nil else { return }
+            focusedWorkspaceTarget = .chart
+        }
     }
 
     private var chartTransition: AnyTransition {

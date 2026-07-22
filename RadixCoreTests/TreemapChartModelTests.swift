@@ -3,6 +3,89 @@ import XCTest
 
 @MainActor
 final class TreemapChartModelTests: XCTestCase {
+    func testSpatialSelectionStartsAmongTopLevelTiles() async {
+        let topLevel = makeTreemapSegment(
+            id: "top-level",
+            rect: CGRect(x: 0.4, y: 0, width: 0.6, height: 1)
+        )
+        let deeper = makeTreemapSegment(
+            id: "deeper",
+            rect: CGRect(x: 0, y: 0, width: 0.2, height: 0.2),
+            depth: 1,
+            containerNodeID: topLevel.id
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(segments: [topLevel, deeper])
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 2,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: nil,
+                moving: .right,
+                in: CGSize(width: 600, height: 300)
+            ),
+            topLevel.id
+        )
+    }
+
+    func testSpatialSelectionDoesNotTreatNestedTileAsSidewaysFromContainerHeader() async {
+        let container = makeTreemapSegment(
+            id: "container",
+            rect: CGRect(x: 0, y: 0, width: 0.9, height: 1),
+            showsContainerHeader: true
+        )
+        let child = makeTreemapSegment(
+            id: "child",
+            rect: CGRect(x: 0.5, y: 0.1, width: 0.1, height: 0.2),
+            depth: 1,
+            containerNodeID: container.id
+        )
+        let rightSibling = makeTreemapSegment(
+            id: "right-sibling",
+            rect: CGRect(x: 0.9, y: 0, width: 0.1, height: 1)
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(
+                segments: [container, child, rightSibling]
+            )
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 2,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: container.id,
+                moving: .right,
+                in: CGSize(width: 600, height: 300)
+            ),
+            rightSibling.id
+        )
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: container.id,
+                moving: .down,
+                in: CGSize(width: 600, height: 300)
+            ),
+            child.id
+        )
+    }
+
     func testSpatialSelectionMeasuresDistanceInDisplayedAspectRatio() async {
         let current = makeTreemapSegment(
             id: "current",

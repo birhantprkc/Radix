@@ -229,6 +229,15 @@ struct SunburstChartView: View {
             .accessibilityAction(named: String(localized: "Reset Zoom", comment: "Accessibility action for resetting the disk map zoom.")) {
                 resetViewport(animated: true)
             }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedWorkspaceTarget, equals: .chart)
+            .chartSpatialSelectionKeyboardHandler(
+                isEnabled: !isDiskMapPending,
+                onMove: { direction in
+                    handleSpatialMove(direction, in: baseChartFrame)
+                }
+            )
             .overlay(alignment: .topLeading) {
                 if let hoverSummary {
                     FloatingSummaryCard(summary: hoverSummary)
@@ -272,15 +281,6 @@ struct SunburstChartView: View {
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(centerHoverAnimation, value: isHoveringCenter)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
-            .focusable()
-            .focusEffectDisabled()
-            .focused($focusedWorkspaceTarget, equals: .chart)
-            .chartSpatialSelectionKeyboardHandler(
-                isEnabled: !isDiskMapPending,
-                onMove: { direction in
-                    handleSpatialMove(direction, in: baseChartFrame)
-                }
-            )
             .onChange(of: baseChartFrame) { _, nextFrame in
                 viewportTransform = viewportTransform.constrained(to: nextFrame)
             }
@@ -309,7 +309,7 @@ struct SunburstChartView: View {
         in baseChartFrame: CGRect
     ) -> Bool {
         guard !isInputPending, !chartModel.layoutReadiness.isPending,
-              let nodeID = chartModel.spatialSelectionNodeID(
+              let selection = chartModel.spatialSelection(
             from: selectedNodeID,
             moving: direction
         ) else {
@@ -317,17 +317,26 @@ struct SunburstChartView: View {
         }
 
         let transformedFrame = viewportTransform.frame(for: baseChartFrame)
-        if let point = chartModel.spatialSelectionPoint(for: nodeID, in: transformedFrame) {
-            viewportTransform = viewportTransform.revealing(
-                point: point,
-                within: baseChartFrame,
-                padding: 12
-            )
-        }
+        let point = chartModel.spatialSelectionPoint(for: selection, in: transformedFrame)
+        viewportTransform = viewportTransform.revealing(
+            point: point,
+            within: baseChartFrame,
+            padding: 12
+        )
         isHoveringCenter = false
         chartModel.setHoveredSegmentID(nil)
-        onSelect(nodeID)
+        selectFromKeyboard(selection.nodeID)
         return true
+    }
+
+    private func selectFromKeyboard(_ nodeID: String) {
+        focusedWorkspaceTarget = nil
+        onSelect(nodeID)
+        Task { @MainActor in
+            await Task.yield()
+            guard focusedWorkspaceTarget == nil else { return }
+            focusedWorkspaceTarget = .chart
+        }
     }
 
     private var chartTransition: AnyTransition {

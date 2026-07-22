@@ -92,12 +92,25 @@ final class TreemapChartModel: ObservableObject {
             )
         }
 
-        let candidates = displayedSegments.compactMap { segment, displayFrame
+        let selectableSegments = displayedSegments.filter { segment, _ in
+            guard let nodeID = segment.nodeID else { return false }
+            return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
+        }
+        let hasRenderedSelection = selectableSegments.contains {
+            $0.0.nodeID == selectedNodeID
+        }
+        let candidateSegments: [(TreemapSegment, CGRect)]
+        if hasRenderedSelection {
+            candidateSegments = selectableSegments
+        } else if let minimumDepth = selectableSegments.map(\.0.depth).min() {
+            candidateSegments = selectableSegments.filter { $0.0.depth == minimumDepth }
+        } else {
+            candidateSegments = []
+        }
+
+        let candidates = candidateSegments.compactMap { segment, displayFrame
             -> ChartSpatialSelectionCandidate? in
-            guard let nodeID = segment.nodeID,
-                  !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
-                return nil
-            }
+            guard let nodeID = segment.nodeID else { return nil }
 
             let selectionFrame: CGRect
             if segment.showsContainerHeader,

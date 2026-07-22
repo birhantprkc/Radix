@@ -4,6 +4,94 @@ import XCTest
 
 @MainActor
 final class SunburstChartModelTests: XCTestCase {
+    func testSpatialSelectionSamplesDominantBranchInRequestedScreenDirection() async throws {
+        let firstGrandchild = makeTestFileNode(
+            id: "/root/dominant/first",
+            name: "first",
+            size: 700
+        )
+        let secondGrandchild = makeTestFileNode(
+            id: "/root/dominant/second",
+            name: "second",
+            size: 270
+        )
+        let dominant = makeTestDirectoryNode(
+            id: "/root/dominant",
+            name: "dominant",
+            children: [firstGrandchild, secondGrandchild]
+        )
+        let other = makeTestFileNode(id: "/root/other", name: "other", size: 30)
+        let root = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [dominant, other]
+        )
+        let store = FileTreeStore(
+            root: root,
+            childrenByID: [
+                root.id: [dominant, other],
+                dominant.id: [firstGrandchild, secondGrandchild]
+            ]
+        )
+        let segments = SunburstLayout.segments(
+            in: store,
+            rootID: root.id,
+            depthLimit: 2
+        )
+        let model = SunburstChartModel(
+            layoutService: ImmediateSunburstLayoutService(segments: segments)
+        )
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: root.id,
+            depthLimit: 2,
+            layoutID: "layout"
+        )
+
+        let selection = try XCTUnwrap(
+            model.spatialSelection(from: dominant.id, moving: .up)
+        )
+        XCTAssertTrue(
+            [firstGrandchild.id, secondGrandchild.id].contains(selection.nodeID)
+        )
+        XCTAssertLessThan(selection.targetPoint.y, 0)
+    }
+
+    func testSpatialSelectionStartsAmongTopLevelSegments() async {
+        let topLevel = makeSegment(
+            id: "top-level",
+            startAngle: .pi / 2,
+            endAngle: .pi,
+            innerRadius: 0.2,
+            outerRadius: 0.35
+        )
+        let deeper = makeSegment(
+            id: "deeper",
+            depth: 1,
+            startAngle: .pi,
+            endAngle: .pi * 1.5,
+            innerRadius: 0.36,
+            outerRadius: 0.5
+        )
+        let model = SunburstChartModel(
+            layoutService: ImmediateSunburstLayoutService(segments: [topLevel, deeper])
+        )
+        let store = makeStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 2,
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(from: nil, moving: .right),
+            topLevel.id
+        )
+    }
+
     func testStartingLayoutPublishesPendingState() async {
         let service = ControllableSunburstLayoutService()
         let model = SunburstChartModel(layoutService: service)
@@ -503,15 +591,22 @@ private func makeStore() -> FileTreeStore {
     return FileTreeStore(root: root)
 }
 
-private func makeSegment(id: String, depth: Int = 0) -> SunburstSegment {
+private func makeSegment(
+    id: String,
+    depth: Int = 0,
+    startAngle: Double = 0,
+    endAngle: Double = 1,
+    innerRadius: CGFloat = 0,
+    outerRadius: CGFloat = 1
+) -> SunburstSegment {
     SunburstSegment(
         id: id,
         nodeID: id,
         label: id,
-        startAngle: .radians(0),
-        endAngle: .radians(1),
-        innerRadius: 0,
-        outerRadius: 1,
+        startAngle: .radians(startAngle),
+        endAngle: .radians(endAngle),
+        innerRadius: innerRadius,
+        outerRadius: outerRadius,
         depth: depth,
         colorToken: .single(id: id, depth: depth),
         totalSize: 1,

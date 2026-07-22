@@ -48,6 +48,48 @@ final class ChartSpatialSelectionTests: XCTestCase {
         XCTAssertEqual(next(from: "current", moving: .right, among: candidates), "right")
     }
 
+    func testRectangleNavigationUsesVisibleEdgeDistanceInsteadOfCenters() {
+        let candidates = [
+            framedCandidate(
+                "current",
+                x: 90,
+                y: 0,
+                width: 10,
+                height: 100
+            ),
+            framedCandidate(
+                "adjacent-header",
+                x: 0,
+                y: 0,
+                width: 88,
+                height: 10
+            ),
+            framedCandidate(
+                "distant-center",
+                x: 50,
+                y: 49,
+                width: 10,
+                height: 2
+            )
+        ]
+
+        XCTAssertEqual(
+            next(from: "current", moving: .left, among: candidates),
+            "adjacent-header"
+        )
+    }
+
+    func testRectangleNavigationDoesNotTreatContainedTileAsSideways() {
+        let candidates = [
+            framedCandidate("current", x: 0, y: 0, width: 100, height: 10),
+            framedCandidate("child-below", x: 50, y: 10, width: 10, height: 10),
+            framedCandidate("right", x: 100, y: 0, width: 10, height: 10)
+        ]
+
+        XCTAssertEqual(next(from: "current", moving: .right, among: candidates), "right")
+        XCTAssertEqual(next(from: "current", moving: .down, among: candidates), "child-below")
+    }
+
     func testMissingSelectionEntersFromEdgeOppositeMovement() {
         let candidates = [
             candidate("center", x: 50, y: 50),
@@ -77,5 +119,18 @@ final class ChartSpatialSelectionTests: XCTestCase {
 
     private func candidate(_ nodeID: String, x: CGFloat, y: CGFloat) -> ChartSpatialSelectionCandidate {
         ChartSpatialSelectionCandidate(nodeID: nodeID, center: CGPoint(x: x, y: y))
+    }
+
+    private func framedCandidate(
+        _ nodeID: String,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat
+    ) -> ChartSpatialSelectionCandidate {
+        ChartSpatialSelectionCandidate(
+            nodeID: nodeID,
+            frame: CGRect(x: x, y: y, width: width, height: height)
+        )
     }
 }

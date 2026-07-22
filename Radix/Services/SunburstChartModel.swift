@@ -75,41 +75,91 @@ final class SunburstChartModel: ObservableObject {
         from selectedNodeID: String?,
         moving direction: ChartSpatialSelectionDirection
     ) -> String? {
-        let candidates = renderedSegments.compactMap { segment -> ChartSpatialSelectionCandidate? in
-            guard let nodeID = segment.nodeID,
-                  !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
+        spatialSelection(from: selectedNodeID, moving: direction)?.nodeID
+    }
+
+    func spatialSelection(
+        from selectedNodeID: String?,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> ChartSpatialSelectionResult? {
+        let selectableSegments = renderedSegments.filter { segment in
+            guard let nodeID = segment.nodeID else { return false }
+            return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
+        }
+        let hasRenderedSelection = selectableSegments.contains {
+            $0.nodeID == selectedNodeID
+        }
+        let candidateSegments: [SunburstSegment]
+        if hasRenderedSelection {
+            candidateSegments = selectableSegments
+        } else if let minimumDepth = selectableSegments.map(\.depth).min() {
+            candidateSegments = selectableSegments.filter { $0.depth == minimumDepth }
+        } else {
+            candidateSegments = []
+        }
+
+        let candidates = candidateSegments.compactMap { segment
+            -> ChartSpatialSelectionCandidate? in
+            guard let nodeID = segment.nodeID else {
                 return nil
             }
-
-            let angle = ((segment.startAngle.radians + segment.endAngle.radians) / 2) - (.pi / 2)
-            let radius = (segment.innerRadius + segment.outerRadius) / 2
+            let points = spatialSelectionPoints(for: segment)
+            guard !points.isEmpty else { return nil }
             return ChartSpatialSelectionCandidate(
                 nodeID: nodeID,
-                center: CGPoint(
-                    x: cos(angle) * radius,
-                    y: sin(angle) * radius
-                )
+                points: points
             )
         }
-        return ChartSpatialSelection.nextNodeID(
+        return ChartSpatialSelection.nextSelection(
             from: selectedNodeID,
             moving: direction,
             among: candidates
         )
     }
 
-    func spatialSelectionPoint(for nodeID: String, in frame: CGRect) -> CGPoint? {
-        guard let segment = renderedSegments.first(where: { $0.nodeID == nodeID }) else {
-            return nil
+    func spatialSelectionPoint(
+        for selection: ChartSpatialSelectionResult,
+        in frame: CGRect
+    ) -> CGPoint {
+        let radius = min(frame.width, frame.height) / 2
+        return CGPoint(
+            x: frame.midX + (selection.targetPoint.x * radius),
+            y: frame.midY + (selection.targetPoint.y * radius)
+        )
+    }
+
+    private func spatialSelectionPoints(for segment: SunburstSegment) -> [CGPoint] {
+        let startAngle = segment.startAngle.radians
+        let endAngle = segment.endAngle.radians
+        let span = endAngle - startAngle
+        guard span > 0 else { return [] }
+
+        let endpointInset = min(span / 4, .pi / 720)
+        var angles = [
+            startAngle + endpointInset,
+            startAngle + (span / 2),
+            endAngle - endpointInset
+        ]
+        for cardinalAngle in stride(from: 0.0, through: .pi * 2, by: .pi / 2)
+        where cardinalAngle > startAngle + endpointInset &&
+            cardinalAngle < endAngle - endpointInset {
+            angles.append(cardinalAngle)
         }
 
-        let angle = ((segment.startAngle.radians + segment.endAngle.radians) / 2) - (.pi / 2)
-        let normalizedRadius = (segment.innerRadius + segment.outerRadius) / 2
-        let radius = (min(frame.width, frame.height) / 2) * normalizedRadius
-        return CGPoint(
-            x: frame.midX + (cos(angle) * radius),
-            y: frame.midY + (sin(angle) * radius)
-        )
+        let radius = (segment.innerRadius + segment.outerRadius) / 2
+        var uniqueAngles: [Double] = []
+        for angle in angles.sorted() where !uniqueAngles.contains(where: {
+            abs($0 - angle) < 0.000_001
+        }) {
+            uniqueAngles.append(angle)
+        }
+        return uniqueAngles.map { angle in
+            let displayedAngle = angle - (.pi / 2)
+            return CGPoint(
+                x: cos(displayedAngle) * radius,
+                y: sin(displayedAngle) * radius
+            )
+        }
     }
 
     func selectionOverlaySegments(
