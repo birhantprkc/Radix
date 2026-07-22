@@ -173,6 +173,7 @@ struct TreemapChartView: View {
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
             .focusable()
+            .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
             .chartSpatialSelectionKeyboardHandler(
                 isEnabled: !isDiskMapPending,

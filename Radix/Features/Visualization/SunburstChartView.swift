@@ -273,6 +273,7 @@ struct SunburstChartView: View {
             .animation(centerHoverAnimation, value: isHoveringCenter)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
             .focusable()
+            .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
             .chartSpatialSelectionKeyboardHandler(
                 isEnabled: !isDiskMapPending,
