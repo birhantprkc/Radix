@@ -147,7 +147,7 @@ struct TreemapChartView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Treemap disk usage chart")
             .accessibilityValue(accessibilityValue)
-            .accessibilityHint("Select a tile to inspect it. Double-click a folder tile to zoom in. Use the breadcrumb to go up.")
+            .accessibilityHint("Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up.")
             .overlay(alignment: .topLeading) {
                 if !isDiskMapPending,
                    let tooltipContent,
@@ -173,7 +173,6 @@ struct TreemapChartView: View {
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
             .focusable()
-            .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
             .chartSpatialSelectionKeyboardHandler(
                 isEnabled: !isDiskMapPending,
@@ -211,6 +210,8 @@ struct TreemapChartView: View {
         ) else {
             return false
         }
+        tooltipAnchor = nil
+        chartModel.setHoveredSegmentID(nil)
         onSelect(nodeID)
         return true
     }

@@ -273,7 +273,6 @@ struct SunburstChartView: View {
             .animation(centerHoverAnimation, value: isHoveringCenter)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
             .focusable()
-            .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
             .chartSpatialSelectionKeyboardHandler(
                 isEnabled: !isDiskMapPending,
@@ -324,6 +323,8 @@ struct SunburstChartView: View {
                 padding: 12
             )
         }
+        isHoveringCenter = false
+        chartModel.setHoveredSegmentID(nil)
         onSelect(nodeID)
         return true
     }
@@ -415,10 +416,10 @@ struct SunburstChartView: View {
 
     private var accessibilityHint: String {
         if parentNode != nil {
-            return String(localized: "Select a segment to inspect it. Double-click a folder segment to zoom in. Click the center to go up.", comment: "Accessibility hint for the sunburst chart when navigating upward is available.")
+            return String(localized: "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Click the center or press Command-Up Arrow to go up.", comment: "Accessibility hint for the sunburst chart when navigating upward is available.")
         }
 
-        return String(localized: "Select a segment to inspect it. Double-click a folder segment to zoom in.", comment: "Accessibility hint for the sunburst chart.")
+        return String(localized: "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in.", comment: "Accessibility hint for the sunburst chart.")
     }
 
     private func chartFrame(in size: CGSize) -> CGRect {

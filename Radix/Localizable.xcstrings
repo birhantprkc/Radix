@@ -14284,106 +14284,106 @@
         }
       }
     },
-    "Select a segment to inspect it. Double-click a folder segment to zoom in." : {
+    "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in." : {
       "comment" : "Accessibility hint for the sunburst chart.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wählen Sie ein Segment aus, um es zu untersuchen. Doppelklicken Sie auf ein Ordnersegment, um es zu vergrößern."
+            "value" : "Klicken Sie auf ein Segment oder verwenden Sie die Pfeiltasten, um es auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selecciona un segmento para inspeccionarlo. Haz doble clic en un segmento de carpeta para acercarte."
+            "value" : "Haz clic en un segmento o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sélectionnez un segment pour l’inspecter. Double-cliquez sur un segment de dossier pour zoomer."
+            "value" : "Cliquez sur un segment ou utilisez les touches fléchées pour le sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleziona un segmento per esaminarlo. Fai doppio clic su un segmento di cartella per ingrandire."
+            "value" : "Fai clic su un segmento o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择分区以查看详情。双击文件夹分区以放大查看。"
+            "value" : "点按分区或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。"
           }
         }
       }
     },
-    "Select a segment to inspect it. Double-click a folder segment to zoom in. Click the center to go up." : {
+    "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Click the center or press Command-Up Arrow to go up." : {
       "comment" : "Accessibility hint for the sunburst chart when navigating upward is available.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wählen Sie ein Segment aus, um es zu untersuchen. Doppelklicken Sie auf ein Ordnersegment, um es zu vergrößern. Klicken Sie auf die Mitte, um nach oben zu navigieren."
+            "value" : "Klicken Sie auf ein Segment oder verwenden Sie die Pfeiltasten, um es auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern. Klicken Sie auf die Mitte oder drücken Sie Befehl–Aufwärtspfeil, um nach oben zu navigieren."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selecciona un segmento para inspeccionarlo. Haz doble clic en un segmento de carpeta para acercarte. Haz clic en el centro para subir."
+            "value" : "Haz clic en un segmento o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte. Haz clic en el centro o pulsa Comando–Flecha arriba para subir."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sélectionnez un segment pour l’inspecter. Double-cliquez sur un segment de dossier pour zoomer. Cliquez au centre pour remonter."
+            "value" : "Cliquez sur un segment ou utilisez les touches fléchées pour le sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer. Cliquez au centre ou appuyez sur Commande–Flèche vers le haut pour remonter."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleziona un segmento per esaminarlo. Fai doppio clic su un segmento di cartella per ingrandire. Fai clic al centro per salire."
+            "value" : "Fai clic su un segmento o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire. Fai clic al centro o premi Comando–Freccia su per salire."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择分区以查看详情。双击文件夹分区以放大查看。点按中心以上移。"
+            "value" : "点按分区或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。点按中心或按下 Command–上箭头键以上移。"
           }
         }
       }
     },
-    "Select a tile to inspect it. Double-click a folder tile to zoom in. Use the breadcrumb to go up." : {
+    "Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wählen Sie eine Kachel aus, um sie zu untersuchen. Doppelklicken Sie auf eine Ordnerkachel, um sie zu vergrößern. Verwenden Sie die Breadcrumb-Navigation, um nach oben zu navigieren."
+            "value" : "Klicken Sie auf eine Kachel oder verwenden Sie die Pfeiltasten, um sie auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern. Verwenden Sie die Breadcrumb-Navigation oder drücken Sie Befehl–Aufwärtspfeil, um nach oben zu navigieren."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selecciona un mosaico para inspeccionarlo. Haz doble clic en un mosaico de carpeta para acercarte. Usa la ruta de navegación para subir."
+            "value" : "Haz clic en un mosaico o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte. Usa la ruta de navegación o pulsa Comando–Flecha arriba para subir."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sélectionnez une tuile pour l’inspecter. Double-cliquez sur une tuile de dossier pour zoomer. Utilisez le fil d’Ariane pour remonter."
+            "value" : "Cliquez sur une tuile ou utilisez les touches fléchées pour la sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer. Utilisez le fil d’Ariane ou appuyez sur Commande–Flèche vers le haut pour remonter."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleziona un riquadro per esaminarlo. Fai doppio clic su un riquadro cartella per ingrandire. Usa il percorso di navigazione per salire."
+            "value" : "Fai clic su un riquadro o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire. Usa il percorso di navigazione o premi Comando–Freccia su per salire."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择磁贴以查看详情。双击文件夹磁贴以放大查看。使用面包屑路径上移。"
+            "value" : "点按磁贴或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。使用面包屑路径或按下 Command–上箭头键以上移。"
           }
         }
       }
