@@ -4,11 +4,22 @@
 //
 
 import Foundation
+import OSLog
 
 /// Adds conservative FSEvents-based rescans around the ordinary scan engine.
 /// Any uncertainty delegates to a full scan; partial subtree results are never
 /// published before the complete batch splice succeeds.
 nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked Sendable {
+    private static let logger = Logger(
+        subsystem: "com.colinkim.Radix",
+        category: "IncrementalScan"
+    )
+
+    private enum IncrementalRescanEligibility {
+        case eligible(ScanIncrementalCheckpoint)
+        case ineligible(IncrementalRescanFallbackReason)
+    }
+
     private enum ShallowRelistError: Error {
         case invalidDirectory
         case incompleteMetadata
@@ -41,15 +52,30 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         target: ScanTarget,
         options: ScanOptions
     ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
-        let checkpoint = try? eventHistoryProvider.currentCheckpoint(for: target.url)
-        return bridge(engine.scan(target: target, options: options)) { snapshot in
+        fullScan(target: target, options: options, executionMode: .full)
+    }
+
+    private nonisolated func fullScan(
+        target: ScanTarget,
+        options: ScanOptions,
+        executionMode: ScanExecutionMode
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        let checkpoint: ScanIncrementalCheckpoint?
+        do {
+            checkpoint = try eventHistoryProvider.currentCheckpoint(for: target.url)
+        } catch {
+            checkpoint = nil
+            Self.logger.info(
+                "Incremental checkpoint unavailable: \(error, privacy: .private)"
+            )
+        }
+        return bridge(
+            engine.scan(target: target, options: options),
+            executionMode: executionMode
+        ) { snapshot in
             self.snapshot(
                 snapshot,
-                checkpoint: self.eligibleCheckpoint(
-                    checkpoint,
-                    for: snapshot,
-                    options: options
-                )
+                checkpoint: checkpoint
             )
         }
     }
@@ -62,14 +88,19 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         AsyncThrowingStream { continuation in
             let task = Task(priority: .userInitiated) {
                 do {
-                    guard self.canIncrementallyRescan(
+                    let previousCheckpoint: ScanIncrementalCheckpoint
+                    switch self.incrementalRescanEligibility(
                         baseline,
                         target: target,
                         options: options
-                    ), let previousCheckpoint = baseline.incrementalCheckpoint else {
+                    ) {
+                    case .eligible(let checkpoint):
+                        previousCheckpoint = checkpoint
+                    case .ineligible(let reason):
                         try await self.forwardFullScan(
                             target: target,
                             options: options,
+                            reason: reason,
                             continuation: continuation
                         )
                         return
@@ -84,10 +115,14 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                             since: previousCheckpoint,
                             through: cutoff
                         )
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
                         try await self.forwardFullScan(
                             target: target,
                             options: options,
+                            reason: .eventHistoryUnavailable,
+                            diagnostic: String(describing: error),
                             continuation: continuation
                         )
                         return
@@ -103,13 +138,15 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                         treeStore: baseline.treeStore,
                         exclusionMatcher: matcher
                     ) {
-                    case .fullScan:
+                    case .fullScan(let reason):
                         try await self.forwardFullScan(
                             target: target,
                             options: options,
+                            reason: reason,
                             continuation: continuation
                         )
                     case .noChanges:
+                        continuation.yield(.executionMode(.incrementalNoChanges))
                         let finished = self.refreshedSnapshot(
                             baseline,
                             checkpoint: cutoff,
@@ -118,6 +155,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                         continuation.yield(.finished(finished))
                         continuation.finish()
                     case .update(let relistDirectoryIDs, let rescanSubtreeIDs):
+                        continuation.yield(.executionMode(.incremental))
                         try await self.performIncrementalScan(
                             target: target,
                             options: options,
@@ -150,6 +188,8 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         let startedAt = Date()
         var replacements: [String: FileTreeStore] = [:]
         var replacementWarnings: [ScanWarning] = []
+        let updateCount = relistDirectoryIDs.count + rescanSubtreeIDs.count
+        var completedRelists = 0
         var subtreeOptions = options
         if subtreeOptions.exclusionRootPath == nil {
             subtreeOptions.exclusionRootPath = target.url.path
@@ -187,6 +227,17 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                 while let replacement = try await group.next() {
                     replacements[replacement.directoryID] = replacement.treeStore
                     replacementWarnings.append(contentsOf: replacement.warnings)
+                    completedRelists += 1
+                    var metrics = ScanMetrics()
+                    metrics.currentPath = replacement.directoryID
+                    metrics.discoveredItems = updateCount
+                    metrics.completedItems = completedRelists
+                    metrics.directoriesVisited = completedRelists
+                    metrics.progressFraction = min(
+                        Double(completedRelists) / Double(max(updateCount, 1)) * 0.95,
+                        0.95
+                    )
+                    continuation.yield(.progress(metrics))
                     addNextRelist()
                 }
             }
@@ -199,23 +250,29 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             try await forwardFullScan(
                 target: target,
                 options: options,
+                reason: .directoryRelistFailed,
+                diagnostic: String(describing: error),
                 continuation: continuation
             )
             return
         }
 
-        let updateCount = relistDirectoryIDs.count + rescanSubtreeIDs.count
+        var completedSubtreeFiles = 0
+        var completedSubtreeDirectories = 0
         for (subtreeIndex, nodeID) in rescanSubtreeIDs.enumerated() {
             try Task.checkCancellation()
             guard let node = baseline.treeStore.node(id: nodeID) else {
                 try await forwardFullScan(
                     target: target,
                     options: options,
+                    reason: .changedSubtreeUnavailable,
                     continuation: continuation
                 )
                 return
             }
             var replacementSnapshot: ScanSnapshot?
+            var subtreeFilesVisited = 0
+            var subtreeDirectoriesVisited = 0
             let adjustedSubtreeOptions = ScanEngine.subtreeScanOptions(
                 subtreeOptions,
                 at: node.url,
@@ -227,7 +284,17 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                     options: adjustedSubtreeOptions
                 ) {
                     switch event {
+                    case .executionMode:
+                        break
                     case .progress(var metrics):
+                        subtreeFilesVisited = max(subtreeFilesVisited, metrics.filesVisited)
+                        subtreeDirectoriesVisited = max(
+                            subtreeDirectoriesVisited,
+                            metrics.directoriesVisited
+                        )
+                        metrics.filesVisited += completedSubtreeFiles
+                        metrics.directoriesVisited += relistDirectoryIDs.count
+                            + completedSubtreeDirectories
                         let localFraction = min(max(metrics.progressFraction, 0), 1)
                         metrics.progressFraction = min(
                             (
@@ -249,6 +316,8 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                 try await forwardFullScan(
                     target: target,
                     options: options,
+                    reason: .subtreeRescanFailed,
+                    diagnostic: String(describing: error),
                     continuation: continuation
                 )
                 return
@@ -257,23 +326,42 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
                 try await forwardFullScan(
                     target: target,
                     options: options,
+                    reason: .subtreeResultUnavailable,
                     continuation: continuation
                 )
                 return
             }
             replacements[nodeID] = replacement.treeStore
             replacementWarnings.append(contentsOf: replacement.scanWarnings)
+            completedSubtreeFiles += subtreeFilesVisited
+            completedSubtreeDirectories += subtreeDirectoriesVisited
         }
 
         try Task.checkCancellation()
-        guard let spliced = try baseline.replacingSubtrees(
-            replacements,
-            additionalWarnings: replacementWarnings,
-            cancellationCheck: { try Task.checkCancellation() }
-        ) else {
+        let spliced: ScanSnapshot?
+        do {
+            spliced = try baseline.replacingSubtrees(
+                replacements,
+                additionalWarnings: replacementWarnings,
+                cancellationCheck: { try Task.checkCancellation() }
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
             try await forwardFullScan(
                 target: target,
                 options: options,
+                reason: .treeUpdateFailed,
+                diagnostic: String(describing: error),
+                continuation: continuation
+            )
+            return
+        }
+        guard let spliced else {
+            try await forwardFullScan(
+                target: target,
+                options: options,
+                reason: .treeUpdateFailed,
                 continuation: continuation
             )
             return
@@ -457,7 +545,7 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             switch event {
             case .finished(let finished):
                 snapshot = finished
-            case .progress, .warning:
+            case .executionMode, .progress, .warning:
                 break
             }
         }
@@ -504,9 +592,24 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
     private nonisolated func forwardFullScan(
         target: ScanTarget,
         options: ScanOptions,
+        reason: IncrementalRescanFallbackReason,
+        diagnostic: String? = nil,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
     ) async throws {
-        for try await event in scan(target: target, options: options) {
+        if let diagnostic {
+            Self.logger.notice(
+                "Incremental rescan fallback: \(reason.rawValue, privacy: .public); detail: \(diagnostic, privacy: .private)"
+            )
+        } else {
+            Self.logger.notice(
+                "Incremental rescan fallback: \(reason.rawValue, privacy: .public)"
+            )
+        }
+        for try await event in fullScan(
+            target: target,
+            options: options,
+            executionMode: .fullFallback(reason)
+        ) {
             continuation.yield(event)
         }
         continuation.finish()
@@ -514,11 +617,13 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
 
     private nonisolated func bridge(
         _ stream: AsyncThrowingStream<ScanProgressEvent, Error>,
+        executionMode: ScanExecutionMode,
         finishedTransform: @escaping @Sendable (ScanSnapshot) -> ScanSnapshot
     ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task(priority: .userInitiated) {
                 do {
+                    continuation.yield(.executionMode(executionMode))
                     for try await event in stream {
                         if case .finished(let snapshot) = event {
                             continuation.yield(.finished(finishedTransform(snapshot)))
@@ -537,33 +642,49 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         }
     }
 
-    private nonisolated func canIncrementallyRescan(
+    private nonisolated func incrementalRescanEligibility(
         _ baseline: ScanSnapshot,
         target: ScanTarget,
         options: ScanOptions
-    ) -> Bool {
+    ) -> IncrementalRescanEligibility {
         // Whole-volume accounting must capture capacity and rebuild its synthetic
         // unattributed remainder as one consistent scan-time snapshot.
-        guard baseline.isComplete,
-              baseline.source.allowsFileMutation,
-              target.kind != .volume,
-              baseline.target.kind == target.kind,
-              baseline.target.url.standardizedFileURL.path == target.url.standardizedFileURL.path,
-              baseline.scanOptions == options,
-              baseline.incrementalCheckpoint != nil else {
-            return false
+        guard baseline.isComplete else {
+            return .ineligible(.incompleteBaseline)
         }
-        let liveIdentity = try? ScanMetadataLoader().metadata(for: target.url).fileIdentity
-        return baseline.root.fileIdentity == nil || liveIdentity == baseline.root.fileIdentity
-    }
+        guard baseline.source.allowsFileMutation else {
+            return .ineligible(.readOnlyBaseline)
+        }
+        guard target.kind != .volume else {
+            return .ineligible(.volumeTarget)
+        }
+        guard baseline.target.kind == target.kind,
+              baseline.target.url.standardizedFileURL.path == target.url.standardizedFileURL.path else {
+            return .ineligible(.changedTarget)
+        }
+        guard baseline.scanOptions == options else {
+            return .ineligible(.changedScanOptions)
+        }
+        guard let checkpoint = baseline.incrementalCheckpoint else {
+            return .ineligible(.checkpointUnavailable)
+        }
+        guard let baselineIdentity = baseline.root.fileIdentity else {
+            return .eligible(checkpoint)
+        }
 
-    private nonisolated func eligibleCheckpoint(
-        _ checkpoint: ScanIncrementalCheckpoint?,
-        for snapshot: ScanSnapshot,
-        options: ScanOptions
-    ) -> ScanIncrementalCheckpoint? {
-        _ = snapshot
-        return checkpoint
+        let liveIdentity: FileIdentity
+        do {
+            guard let identity = try ScanMetadataLoader().metadata(for: target.url).fileIdentity else {
+                return .ineligible(.targetIdentityUnavailable)
+            }
+            liveIdentity = identity
+        } catch {
+            return .ineligible(.targetIdentityUnavailable)
+        }
+        guard liveIdentity == baselineIdentity else {
+            return .ineligible(.targetIdentityChanged)
+        }
+        return .eligible(checkpoint)
     }
 
     private nonisolated func snapshot(

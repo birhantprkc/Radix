@@ -1511,7 +1511,16 @@ final class AppModel: ObservableObject {
         return estimatedWorkingSet <= physicalMemory / 4
     }
 
+    private enum ScanStartIntent: Sendable {
+        case scan
+        case rescan
+    }
+
     func startScan(_ target: ScanTarget) {
+        scheduleScanStart(target, intent: .scan)
+    }
+
+    private func scheduleScanStart(_ target: ScanTarget, intent: ScanStartIntent) {
         // Defer state mutations to the next runloop to avoid
         // "Publishing changes from within view updates is not allowed."
         cancelArchiveOperation()
@@ -1526,7 +1535,7 @@ final class AppModel: ObservableObject {
             id: \.deferredScanStartID,
             task: \.deferredScanStartTask
         ) { model in
-            model.startScanNow(target)
+            model.startScanNow(target, intent: intent)
         }
     }
 
@@ -1629,19 +1638,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startScanNow(_ target: ScanTarget) {
+    private func startScanNow(_ target: ScanTarget, intent: ScanStartIntent) {
         cancelArchiveOperation()
         let options = scanOptions(for: target)
-        let baseline = incrementalRescanBaseline(
-            for: target,
-            options: options,
-            currentSnapshot: scanCoordinator.snapshot
-        )
+        let baseline: ScanSnapshot?
+        switch intent {
+        case .scan:
+            baseline = incrementalRescanBaseline(
+                for: target,
+                options: options,
+                currentSnapshot: scanCoordinator.snapshot
+            )
+        case .rescan:
+            baseline = scanCoordinator.snapshot
+        }
         sidebarScanCacheController.prepareForScanStart(target: target, options: options)
         scanCoordinator.startScan(
             target,
             options: options,
-            baseline: baseline
+            baseline: baseline,
+            isRescan: intent == .rescan || baseline != nil
         ) {
             prepareForScan(target)
         }
@@ -1671,7 +1687,7 @@ final class AppModel: ObservableObject {
 
     func rescan() {
         guard let selectedTarget = scanCoordinator.selectedTarget else { return }
-        startScan(selectedTarget)
+        scheduleScanStart(selectedTarget, intent: .rescan)
     }
 
     func cachedFreeSpaceAvailableCapacity(for snapshot: ScanSnapshot, focusNode: FileNodeRecord) -> Int64? {

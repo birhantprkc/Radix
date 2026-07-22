@@ -35,6 +35,143 @@
         }
       }
     },
+    "Checking for changes in %@" : {
+      "comment" : "Progress title while Radix prepares an incremental rescan.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen in %@ werden geprüft" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Comprobando si hay cambios en %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Recherche de modifications dans %@" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Verifica delle modifiche in %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在检查 %@ 中的更改" } }
+      }
+    },
+    "Complete rescan finished" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Vollständiger erneuter Scan abgeschlossen" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Nuevo análisis completo finalizado" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Nouvelle analyse complète terminée" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Nuova scansione completa terminata" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整重新扫描已完成" } }
+      }
+    },
+    "Disk rescans need a complete scan to keep storage totals accurate." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Erneute Festplattenscans benötigen einen vollständigen Scan, damit die Speicherwerte korrekt bleiben." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Volver a analizar un disco requiere un análisis completo para mantener exactos los totales de almacenamiento." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La nouvelle analyse d’un disque nécessite une analyse complète pour conserver des totaux de stockage exacts." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La nuova scansione di un disco richiede una scansione completa per mantenere accurati i totali di archiviazione." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新扫描磁盘需要完整扫描，以确保储存空间总量准确。" } }
+      }
+    },
+    "No changes since the previous scan" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Änderungen seit dem vorherigen Scan" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No hay cambios desde el análisis anterior" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune modification depuis l’analyse précédente" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Nessuna modifica dalla scansione precedente" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自上次扫描以来没有更改" } }
+      }
+    },
+    "Radix couldn’t safely apply the recent changes." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Radix konnte die letzten Änderungen nicht sicher übernehmen." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Radix no pudo aplicar de forma segura los cambios recientes." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Radix n’a pas pu appliquer les modifications récentes en toute sécurité." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Radix non ha potuto applicare in modo sicuro le modifiche recenti." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 无法安全地应用最近的更改。" } }
+      }
+    },
+    "Radix is scanning the entire location to ensure accurate results." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Radix scannt den gesamten Speicherort, um genaue Ergebnisse zu gewährleisten." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Radix está analizando toda la ubicación para garantizar resultados precisos." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Radix analyse l’emplacement entier afin de garantir des résultats exacts." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Radix sta analizzando l’intera posizione per garantire risultati accurati." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 正在扫描整个位置，以确保结果准确。" } }
+      }
+    },
+    "Why a complete scan?" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Warum ein vollständiger Scan?" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "¿Por qué un análisis completo?" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pourquoi une analyse complète ?" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Perché una scansione completa?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "为什么要进行完整扫描？" } }
+      }
+    },
+    "Why Radix is performing a complete scan" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Warum Radix einen vollständigen Scan durchführt" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Por qué Radix está realizando un análisis completo" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pourquoi Radix effectue une analyse complète" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Perché Radix sta eseguendo una scansione completa" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 为什么要进行完整扫描" } }
+      }
+    },
+    "Radix scanned the entire location." : {
+      "comment" : "Result shown after an incremental rescan safely completed as a full scan.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Radix hat den gesamten Speicherort gescannt." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Radix analizó toda la ubicación." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Radix a analysé l’emplacement entier." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Radix ha analizzato l’intera posizione." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 已扫描整个位置。" } }
+      }
+    },
+    "Recent file history isn’t available." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der letzte Dateiverlauf ist nicht verfügbar." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El historial reciente de archivos no está disponible." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’historique récent des fichiers n’est pas disponible." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La cronologia recente dei file non è disponibile." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近的文件历史记录不可用。" } }
+      }
+    },
+    "Scan settings changed." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Scaneinstellungen wurden geändert." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La configuración del análisis cambió." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les réglages d’analyse ont changé." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Le impostazioni di scansione sono cambiate." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "扫描设置已更改。" } }
+      }
+    },
+    "Scan updated from recent changes" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Scan mit den letzten Änderungen aktualisiert" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Análisis actualizado con los cambios recientes" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Analyse mise à jour avec les modifications récentes" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Scansione aggiornata con le modifiche recenti" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "扫描已根据最近的更改更新" } }
+      }
+    },
+    "The previous scan can’t be safely reused." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der vorherige Scan kann nicht sicher wiederverwendet werden." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El análisis anterior no se puede reutilizar de forma segura." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’analyse précédente ne peut pas être réutilisée en toute sécurité." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La scansione precedente non può essere riutilizzata in modo sicuro." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法安全地重复使用上次扫描。" } }
+      }
+    },
+    "The scan location changed while Radix was checking it." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der Scanort hat sich geändert, während Radix ihn geprüft hat." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La ubicación del análisis cambió mientras Radix la comprobaba." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’emplacement d’analyse a changé pendant que Radix le vérifiait." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La posizione della scansione è cambiata mentre Radix la controllava." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 检查扫描位置时，该位置发生了变化。" } }
+      }
+    },
+    "Too much changed for a quick rescan." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Für einen schnellen erneuten Scan hat sich zu viel geändert." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Hubo demasiados cambios para un nuevo análisis rápido." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Trop d’éléments ont changé pour une nouvelle analyse rapide." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Sono cambiate troppe cose per una nuova scansione rapida." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更改过多，无法快速重新扫描。" } }
+      }
+    },
     " files, " : {
       "localizations" : {
         "de" : {
@@ -8181,6 +8318,40 @@
         }
       }
     },
+    "Location" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standort"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ubicación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Emplacement"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posizione"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置"
+          }
+        }
+      }
+    },
     "Locations" : {
       "localizations" : {
         "de" : {
@@ -12878,6 +13049,41 @@
         }
       }
     },
+    "Rescanning changes in %@" : {
+      "comment" : "Progress title for an incremental rescan of a location.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen in %@ werden erneut gescannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volviendo a analizar los cambios en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvelle analyse des modifications dans %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuova scansione delle modifiche in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在重新扫描 %@ 中的更改"
+          }
+        }
+      }
+    },
     "Reset Stats" : {
       "localizations" : {
         "de" : {
@@ -13765,6 +13971,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在扫描 %@"
+          }
+        }
+      }
+    },
+    "Scanning all of %@" : {
+      "comment" : "Progress title when an incremental rescan safely falls back to scanning the entire location.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alles in %@ wird gescannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analizando todo el contenido de %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse complète de %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione completa di %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在扫描 %@ 中的所有内容"
           }
         }
       }

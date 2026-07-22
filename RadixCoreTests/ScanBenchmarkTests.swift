@@ -151,6 +151,8 @@ final class ScanBenchmarkTests: XCTestCase {
 
         for try await event in engine.scan(target: ScanTarget(url: targetURL), options: options) {
             switch event {
+            case .executionMode:
+                break
             case .progress:
                 progressEvents += 1
             case .warning:

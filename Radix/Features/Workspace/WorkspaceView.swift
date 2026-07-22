@@ -121,6 +121,18 @@ struct WorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .top) {
+            if let notice = scanState.scanCompletionNotice {
+                ScanCompletionNoticeBanner(
+                    notice: notice,
+                    dismiss: scanState.dismissScanCompletionNotice
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: scanState.scanCompletionNotice)
         .hidingWindowToolbarBackgroundWhenAvailable()
         .toolbar {
             ToolbarItem(placement: .automatic) { Spacer() }

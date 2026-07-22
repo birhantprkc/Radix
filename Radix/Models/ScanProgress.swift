@@ -125,6 +125,7 @@ nonisolated struct ScanMetrics: Sendable {
 }
 
 nonisolated enum ScanProgressEvent: Sendable {
+    case executionMode(ScanExecutionMode)
     case progress(ScanMetrics)
     case warning(ScanWarning)
     case finished(ScanSnapshot)

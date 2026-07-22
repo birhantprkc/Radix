@@ -1485,6 +1485,8 @@ final class ScanEngineTests: XCTestCase {
 
         for try await event in engine.scan(target: ScanTarget(url: rootURL), options: options) {
             switch event {
+            case .executionMode:
+                break
             case .progress(let metrics):
                 if metrics.atomicSummaryVisitedItems > 0 {
                     summaryProgress.append(metrics)
@@ -2616,7 +2618,7 @@ final class ScanEngineTests: XCTestCase {
                 finalizingProgress.append(metrics)
             case .finished:
                 didFinish = true
-            case .progress, .warning:
+            case .executionMode, .progress, .warning:
                 break
             }
         }
@@ -3360,6 +3362,8 @@ final class ScanEngineTests: XCTestCase {
 
         for try await event in engine.scan(target: ScanTarget(url: rootURL), options: options) {
             switch event {
+            case .executionMode:
+                break
             case .progress(let metrics):
                 progressSnapshots.append(metrics)
             case .finished(let snapshot):

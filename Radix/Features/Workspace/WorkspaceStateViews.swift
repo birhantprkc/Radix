@@ -44,6 +44,7 @@ struct EmptyWorkspaceState: View {
 struct ScanningWorkspaceState: View {
     @ObservedObject var progress: ScanProgressState
     @StateObject private var throttledItemCounts = ThrottledScanItemCounts()
+    @State private var isFallbackExplanationPresented = false
 
     let selectedTarget: ScanTarget?
     let actions: WorkspaceActions
@@ -51,40 +52,74 @@ struct ScanningWorkspaceState: View {
     var body: some View {
         VStack(spacing: 16) {
             VStack(spacing: 6) {
-                ProgressView(value: scanProgressFraction, total: 1)
-                    .frame(width: 260)
+                if isPreparingIncremental {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 260)
+                } else {
+                    ProgressView(value: scanProgressFraction, total: 1)
+                        .frame(width: 260)
+
+                    HStack(spacing: 0) {
+                        if isFinalizingScan {
+                            Text("Finishing ")
+                        }
+
+                        ScanProgressNumberText(value: progress.metrics.progressPercentage)
+
+                        Text("%")
+                    }
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Text(scanTitle)
+                    .font(.title3.weight(.semibold))
+
+                if let fallbackCategory {
+                    Button {
+                        isFallbackExplanationPresented.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Why Radix is performing a complete scan")
+                    .accessibilityLabel("Why Radix is performing a complete scan")
+                    .popover(isPresented: $isFallbackExplanationPresented, arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Why a complete scan?")
+                                .font(.headline)
+                            Text(fallbackCategory.userFacingCause)
+                            Text("Radix is scanning the entire location to ensure accurate results.")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.callout)
+                        .padding(16)
+                        .frame(width: 310, alignment: .leading)
+                    }
+                }
+            }
+
+            if !isPreparingIncremental {
+                ScanCurrentPathText(
+                    path: progress.metrics.currentPath,
+                    isFinalizing: isFinalizingScan
+                )
 
                 HStack(spacing: 0) {
-                    if isFinalizingScan {
-                        Text("Finishing ")
-                    }
-
-                    ScanProgressNumberText(value: progress.metrics.progressPercentage)
-
-                    Text("%")
+                    ScanProgressNumberText(value: throttledItemCounts.counts.filesVisited)
+                    Text(" files, ")
+                    ScanProgressNumberText(value: throttledItemCounts.counts.directoriesVisited)
+                    Text(" folders")
                 }
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .combine)
             }
-
-            Text("Scanning \(selectedTarget?.displayName ?? "Location")")
-                .font(.title3.weight(.semibold))
-
-            ScanCurrentPathText(
-                path: progress.metrics.currentPath,
-                isFinalizing: isFinalizingScan
-            )
-
-            HStack(spacing: 0) {
-                ScanProgressNumberText(value: throttledItemCounts.counts.filesVisited)
-                Text(" files, ")
-                ScanProgressNumberText(value: throttledItemCounts.counts.directoriesVisited)
-                Text(" folders")
-            }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
 
             Button("Stop Scan") {
                 actions.stopScan()
@@ -98,6 +133,11 @@ struct ScanningWorkspaceState: View {
         .onDisappear {
             throttledItemCounts.cancel()
         }
+        .onChange(of: progress.executionMode) { _, mode in
+            if case .some(.fullFallback) = mode {
+                throttledItemCounts.bind(to: progress)
+            }
+        }
     }
 
     private var isFinalizingScan: Bool {
@@ -106,6 +146,140 @@ struct ScanningWorkspaceState: View {
 
     private var scanProgressFraction: Double {
         progress.metrics.progressFraction
+    }
+
+    private var scanTitle: String {
+        let targetName = selectedTarget?.displayName ?? String(localized: "Location")
+        switch progress.executionMode {
+        case .some(.preparingIncremental):
+            return String(
+                localized: "Checking for changes in \(targetName)",
+                comment: "Progress title while Radix prepares an incremental rescan."
+            )
+        case .some(.incremental), .some(.incrementalNoChanges):
+            return String(
+                localized: "Rescanning changes in \(targetName)",
+                comment: "Progress title for an incremental rescan of a location."
+            )
+        case .some(.fullFallback):
+            return String(
+                localized: "Scanning all of \(targetName)",
+                comment: "Progress title when an incremental rescan safely falls back to scanning the entire location."
+            )
+        case .some(.full), .none:
+            return String(
+                localized: "Scanning \(targetName)",
+                comment: "Progress title showing the current scan target."
+            )
+        }
+    }
+
+    private var isPreparingIncremental: Bool {
+        progress.executionMode == .preparingIncremental
+    }
+
+    private var fallbackCategory: ScanFallbackCategory? {
+        if case .some(.fullFallback(let reason)) = progress.executionMode {
+            return reason.presentationCategory
+        }
+        return nil
+    }
+}
+
+struct ScanCompletionNoticeBanner: View {
+    let notice: ScanCompletionNotice
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+
+                if let detail {
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(.secondary)
+                    .padding(4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+        }
+        .padding(14)
+        .frame(maxWidth: 560)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.separator.opacity(0.5), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+    }
+
+    private var title: String {
+        switch notice {
+        case .incrementalUpdated:
+            return String(localized: "Scan updated from recent changes")
+        case .noChanges:
+            return String(localized: "No changes since the previous scan")
+        case .fullFallback:
+            return String(localized: "Complete rescan finished")
+        }
+    }
+
+    private var detail: String? {
+        guard case .fullFallback(let reason) = notice else { return nil }
+        let result = String(
+            localized: "Radix scanned the entire location.",
+            comment: "Result shown after an incremental rescan safely completed as a full scan."
+        )
+        return "\(reason.presentationCategory.userFacingCause) \(result)"
+    }
+
+    private var iconName: String {
+        if case .fullFallback = notice {
+            return "info.circle.fill"
+        }
+        return "checkmark.circle.fill"
+    }
+
+    private var iconColor: Color {
+        if case .fullFallback = notice {
+            return .orange
+        }
+        return .green
+    }
+}
+
+extension ScanFallbackCategory {
+    var userFacingCause: String {
+        switch self {
+        case .settingsChanged:
+            return String(localized: "Scan settings changed.")
+        case .historyUnavailable:
+            return String(localized: "Recent file history isn’t available.")
+        case .tooManyChanges:
+            return String(localized: "Too much changed for a quick rescan.")
+        case .locationChanged:
+            return String(localized: "The scan location changed while Radix was checking it.")
+        case .volumeAccounting:
+            return String(localized: "Disk rescans need a complete scan to keep storage totals accurate.")
+        case .previousScanUnavailable:
+            return String(localized: "The previous scan can’t be safely reused.")
+        case .incrementalUpdateFailed:
+            return String(localized: "Radix couldn’t safely apply the recent changes.")
+        }
     }
 }
 

@@ -38,6 +38,78 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testExecutionModeUpdatesProgressAndResetsMetricsOnFallback() async throws {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(
+            scanService: service,
+            progressThrottleDuration: .zero
+        )
+        let target = makeCoordinatorTarget("/scan/mode")
+
+        coordinator.startScan(target, options: ScanOptions())
+        service.yield(.executionMode(.incremental), scanIndex: 0)
+        service.yield(
+            .progress(makeCoordinatorMetrics(path: "/scan/mode/changed.txt", filesVisited: 4)),
+            scanIndex: 0
+        )
+        try await waitUntil("incremental mode and progress") {
+            coordinator.progress.executionMode == .incremental
+                && coordinator.scanMetrics.filesVisited == 4
+        }
+
+        service.yield(
+            .executionMode(.fullFallback(.directoryRelistFailed)),
+            scanIndex: 0
+        )
+        try await waitUntil("full fallback mode") {
+            coordinator.progress.executionMode == .fullFallback(.directoryRelistFailed)
+        }
+
+        XCTAssertEqual(coordinator.scanMetrics.filesVisited, 0)
+        XCTAssertEqual(coordinator.scanMetrics.currentPath, "")
+        coordinator.stopScan()
+    }
+
+    @MainActor
+    func testRescanPreparationAndCompletionNoticesFollowExecutionMode() async throws {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(scanService: service, progressThrottleDuration: .zero)
+        let target = makeCoordinatorTarget("/scan/notices")
+        let baseline = makeCoordinatorSnapshot(target: target)
+
+        coordinator.startScan(
+            target,
+            options: ScanOptions(),
+            baseline: baseline,
+            isRescan: true
+        )
+        XCTAssertEqual(coordinator.progress.executionMode, .preparingIncremental)
+
+        service.yield(.executionMode(.incrementalNoChanges), scanIndex: 0)
+        service.yield(.finished(makeCoordinatorSnapshot(target: target)), scanIndex: 0)
+        service.finish(scanIndex: 0)
+        try await waitUntil("no-change completion notice") {
+            coordinator.scanCompletionNotice == .noChanges
+        }
+
+        coordinator.dismissScanCompletionNotice()
+        XCTAssertNil(coordinator.scanCompletionNotice)
+
+        coordinator.startScan(
+            target,
+            options: ScanOptions(),
+            baseline: baseline,
+            isRescan: true
+        )
+        service.yield(.executionMode(.fullFallback(.changedScanOptions)), scanIndex: 1)
+        service.yield(.finished(makeCoordinatorSnapshot(target: target)), scanIndex: 1)
+        service.finish(scanIndex: 1)
+        try await waitUntil("fallback completion notice") {
+            coordinator.scanCompletionNotice == .fullFallback(.changedScanOptions)
+        }
+    }
+
+    @MainActor
     func testStartScanWithEligibleBaselineRoutesToRescan() {
         let service = RescanRecordingService()
         let coordinator = ScanCoordinator(scanService: service)
@@ -794,6 +866,47 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertEqual(service.rescanRequests.map(\.target), [target])
         XCTAssertEqual(service.rescanRequests.map(\.baselineID), [snapshot.id])
         XCTAssertEqual(service.rescanRequests.map(\.options), [scanOptions])
+    }
+
+    @MainActor
+    func testAppModelRescanPreservesIntentWhenScanOptionsChanged() async throws {
+        let service = ControlledScanService()
+        let target = makeCoordinatorTarget("/app/sidebar/rescan-options")
+        let model = AppModel(
+            dependencies: makeCoordinatorAppDependencies(
+                scanService: service,
+                systemActions: makeCoordinatorSidebarActions(targets: [target])
+            )
+        )
+
+        model.startScan(target)
+        try await waitUntil("initial options scan") {
+            service.requests.count == 1
+        }
+        let initialOptions = try XCTUnwrap(service.requests.first?.options)
+        let snapshot = makeCoordinatorSnapshot(
+            target: target,
+            scanOptions: initialOptions,
+            incrementalCheckpoint: ScanIncrementalCheckpoint(
+                volumeUUID: "test-volume",
+                eventID: 10
+            )
+        )
+        service.yield(.finished(snapshot), scanIndex: 0)
+        service.finish(scanIndex: 0)
+        try await waitUntil("initial options scan finished") {
+            model.scanState.phase == .displaying
+        }
+
+        model.treatPackagesAsDirectories.toggle()
+        model.rescan()
+
+        try await waitUntil("changed-options rescan request") {
+            service.rescanRequests.count == 1
+        }
+        XCTAssertEqual(service.rescanRequests.first?.baselineID, snapshot.id)
+        XCTAssertNotEqual(service.rescanRequests.first?.options, initialOptions)
+        XCTAssertEqual(model.scanState.progress.executionMode, .preparingIncremental)
     }
 
     @MainActor

@@ -29,12 +29,23 @@ enum ScanExpansionResult {
     case failed(message: String)
 }
 
+nonisolated enum ScanCompletionNotice: Equatable, Sendable {
+    case incrementalUpdated
+    case noChanges
+    case fullFallback(IncrementalRescanFallbackReason)
+}
+
 @MainActor
 final class ScanProgressState: ObservableObject {
     @Published var metrics: ScanMetrics
+    @Published var executionMode: ScanExecutionMode?
 
-    init(metrics: ScanMetrics = ScanMetrics()) {
+    init(
+        metrics: ScanMetrics = ScanMetrics(),
+        executionMode: ScanExecutionMode? = nil
+    ) {
         self.metrics = metrics
+        self.executionMode = executionMode
     }
 }
 
@@ -47,6 +58,7 @@ final class ScanCoordinator: ObservableObject {
     @Published private(set) var scanErrorMessage: String?
     @Published private(set) var expandingNodeID: FileNodeRecord.ID?
     @Published private(set) var trashSafetyPolicy: TrashSafetyPolicy
+    @Published private(set) var scanCompletionNotice: ScanCompletionNotice?
 
     let progress: ScanProgressState
 
@@ -58,6 +70,7 @@ final class ScanCoordinator: ObservableObject {
     private var scanTask: Task<Void, Never>?
     private var expandTask: Task<Void, Never>?
     private var progressPublishTask: Task<Void, Never>?
+    private var completionNoticeDismissTask: Task<Void, Never>?
     private var activeScanID: UUID?
     private var activeExpansionID: UUID?
     private var expansionCompletion: ((ScanExpansionResult) -> Void)?
@@ -114,15 +127,18 @@ final class ScanCoordinator: ObservableObject {
         _ target: ScanTarget,
         options: ScanOptions,
         baseline: ScanSnapshot? = nil,
+        isRescan: Bool = false,
         prepare: () -> Void = {}
     ) {
         stopScan(resetState: false)
+        dismissScanCompletionNotice()
         prepare()
 
         selectedTarget = target
         phase = .scanning
         scanErrorMessage = nil
         scanMetrics = ScanMetrics()
+        progress.executionMode = isRescan ? .preparingIncremental : nil
         publishSnapshot(nil, startsNewContext: true)
         completedScanSnapshot = nil
         resetProgressThrottling()
@@ -158,15 +174,18 @@ final class ScanCoordinator: ObservableObject {
 
     func clearScan() {
         stopScan(resetState: false)
+        dismissScanCompletionNotice()
         selectedTarget = nil
         publishSnapshot(nil, startsNewContext: true)
         completedScanSnapshot = nil
         scanMetrics = ScanMetrics()
+        progress.executionMode = nil
         phase = .idle
     }
 
     func replaceCurrentSnapshot(_ snapshot: ScanSnapshot?) {
         cancelExpansion(completeWith: .cancelled)
+        dismissScanCompletionNotice()
         publishSnapshot(snapshot, startsNewContext: true)
         if snapshot == nil {
             phase = .idle
@@ -182,10 +201,12 @@ final class ScanCoordinator: ObservableObject {
         guard snapshot.isComplete else { return }
 
         stopScan(resetState: false)
+        dismissScanCompletionNotice()
         prepare()
 
         selectedTarget = snapshot.target
         scanErrorMessage = nil
+        progress.executionMode = nil
         resetProgressThrottling()
         apply(snapshot: snapshot)
         completedScanSnapshot = snapshot.source.allowsFileMutation ? snapshot : nil
@@ -348,6 +369,8 @@ final class ScanCoordinator: ObservableObject {
         guard activeScanID == scanID else { return }
 
         switch event {
+        case .executionMode(let mode):
+            handleExecutionMode(mode)
         case .progress(let metrics):
             handleProgress(metrics, scanID: scanID)
         case .warning:
@@ -355,6 +378,15 @@ final class ScanCoordinator: ObservableObject {
         case .finished(let snapshot):
             finishScan(with: snapshot, scanID: scanID)
         }
+    }
+
+    private func handleExecutionMode(_ mode: ScanExecutionMode) {
+        if case .fullFallback = mode,
+           progress.executionMode == .incremental || progress.executionMode == .incrementalNoChanges {
+            resetProgressThrottling()
+            scanMetrics = ScanMetrics()
+        }
+        progress.executionMode = mode
     }
 
     private func handleProgress(_ metrics: ScanMetrics, scanID: UUID) {
@@ -427,7 +459,48 @@ final class ScanCoordinator: ObservableObject {
         activeScanID = nil
         scanTask = nil
         phase = .displaying
+        publishCompletionNotice(for: progress.executionMode)
         onScanFinished?(snapshot)
+    }
+
+    func dismissScanCompletionNotice() {
+        completionNoticeDismissTask?.cancel()
+        completionNoticeDismissTask = nil
+        scanCompletionNotice = nil
+    }
+
+    private func publishCompletionNotice(for mode: ScanExecutionMode?) {
+        let notice: ScanCompletionNotice?
+        let automaticallyDismisses: Bool
+        switch mode {
+        case .incremental:
+            notice = .incrementalUpdated
+            automaticallyDismisses = true
+        case .incrementalNoChanges:
+            notice = .noChanges
+            automaticallyDismisses = true
+        case .fullFallback(let reason):
+            notice = .fullFallback(reason)
+            automaticallyDismisses = false
+        case .full, .preparingIncremental, .none:
+            notice = nil
+            automaticallyDismisses = false
+        }
+
+        completionNoticeDismissTask?.cancel()
+        completionNoticeDismissTask = nil
+        scanCompletionNotice = notice
+        guard automaticallyDismisses, notice != nil else { return }
+
+        completionNoticeDismissTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(4))
+            } catch {
+                return
+            }
+            self?.scanCompletionNotice = nil
+            self?.completionNoticeDismissTask = nil
+        }
     }
 
     private func apply(snapshot: ScanSnapshot) {

@@ -80,6 +80,15 @@ nonisolated struct FileSystemEventHistory: Sendable {
 }
 
 nonisolated enum IncrementalRescanFallbackReason: String, Codable, Hashable, Sendable {
+    case incompleteBaseline
+    case readOnlyBaseline
+    case volumeTarget
+    case changedTarget
+    case changedScanOptions
+    case checkpointUnavailable
+    case targetIdentityUnavailable
+    case targetIdentityChanged
+    case eventHistoryUnavailable
     case userDroppedEvents
     case kernelDroppedEvents
     case eventIDsWrapped
@@ -90,6 +99,71 @@ nonisolated enum IncrementalRescanFallbackReason: String, Codable, Hashable, Sen
     case noMaterializedAncestor
     case autoSummarizedBoundary
     case incrementalWorkTooBroad
+    case directoryRelistFailed
+    case changedSubtreeUnavailable
+    case subtreeRescanFailed
+    case subtreeResultUnavailable
+    case treeUpdateFailed
+}
+
+/// Groups implementation-level fallback reasons into explanations that are
+/// useful to someone waiting for a rescan to finish.
+nonisolated enum ScanFallbackCategory: Equatable, Sendable {
+    case settingsChanged
+    case historyUnavailable
+    case tooManyChanges
+    case locationChanged
+    case volumeAccounting
+    case previousScanUnavailable
+    case incrementalUpdateFailed
+}
+
+nonisolated extension IncrementalRescanFallbackReason {
+    var presentationCategory: ScanFallbackCategory {
+        switch self {
+        case .changedScanOptions:
+            return .settingsChanged
+        case .checkpointUnavailable,
+             .eventHistoryUnavailable,
+             .userDroppedEvents,
+             .kernelDroppedEvents,
+             .eventIDsWrapped:
+            return .historyUnavailable
+        case .incrementalWorkTooBroad:
+            return .tooManyChanges
+        case .changedTarget,
+             .targetIdentityUnavailable,
+             .targetIdentityChanged,
+             .watchedRootChanged,
+             .nestedVolumeChanged,
+             .changedScanRoot,
+             .eventOutsideTarget:
+            return .locationChanged
+        case .volumeTarget:
+            return .volumeAccounting
+        case .incompleteBaseline,
+             .readOnlyBaseline,
+             .noMaterializedAncestor,
+             .autoSummarizedBoundary:
+            return .previousScanUnavailable
+        case .directoryRelistFailed,
+             .changedSubtreeUnavailable,
+             .subtreeRescanFailed,
+             .subtreeResultUnavailable,
+             .treeUpdateFailed:
+            return .incrementalUpdateFailed
+        }
+    }
+}
+
+/// Describes the work backing the active scan without persisting transient UI state
+/// into a completed snapshot.
+nonisolated enum ScanExecutionMode: Equatable, Sendable {
+    case full
+    case preparingIncremental
+    case incremental
+    case incrementalNoChanges
+    case fullFallback(IncrementalRescanFallbackReason)
 }
 
 nonisolated enum IncrementalRescanPlan: Equatable, Sendable {

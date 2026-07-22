@@ -28,6 +28,171 @@ final class IncrementalScanServiceTests: XCTestCase {
         XCTAssertLessThan(limit, 8)
     }
 
+    func testFullScanReportsFullExecutionMode() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let service = IncrementalScanService(
+            eventHistoryProvider: IncrementalHistoryStub(
+                checkpoints: [checkpoint(10)],
+                events: []
+            )
+        )
+        let result = try await incrementalScanResult(
+            from: service.scan(
+                target: ScanTarget(url: rootURL),
+                options: ScanOptions()
+            )
+        )
+
+        XCTAssertEqual(result.executionModes, [.full])
+        XCTAssertEqual(result.snapshot.incrementalCheckpoint?.eventID, 10)
+    }
+
+    func testMissingCheckpointReportsFullFallbackReason() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try Data([0x1]).write(to: rootURL.appending(path: "stable.dat"))
+
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: ScanEngine().scan(target: target, options: options)
+        )
+        let service = IncrementalScanService(
+            eventHistoryProvider: IncrementalHistoryStub(
+                checkpoints: [checkpoint(20)],
+                events: []
+            )
+        )
+
+        let result = try await incrementalScanResult(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+
+        XCTAssertEqual(result.executionModes, [.fullFallback(.checkpointUnavailable)])
+        XCTAssertEqual(result.snapshot.incrementalCheckpoint?.eventID, 20)
+    }
+
+    func testChangedOptionsReportFullFallbackReason() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try Data([0x1]).write(to: rootURL.appending(path: "stable.dat"))
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20)],
+            events: []
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: ScanOptions())
+        )
+        let changedOptions = ScanOptions(includeHiddenFiles: true)
+
+        let result = try await incrementalScanResult(
+            from: service.rescan(
+                target: target,
+                options: changedOptions,
+                from: baseline
+            )
+        )
+
+        XCTAssertEqual(result.executionModes, [.fullFallback(.changedScanOptions)])
+        XCTAssertEqual(result.snapshot.scanOptions, changedOptions)
+        XCTAssertEqual(result.snapshot.incrementalCheckpoint?.eventID, 20)
+    }
+
+    func testUnavailableEventHistoryReportsFullFallbackReason() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try Data([0x1]).write(to: rootURL.appending(path: "stable.dat"))
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20), checkpoint(30)],
+            events: [],
+            beforeReturningHistory: {
+                throw FileSystemEventHistoryError.streamStartFailed
+            }
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        let result = try await incrementalScanResult(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+
+        XCTAssertEqual(result.executionModes, [.fullFallback(.eventHistoryUnavailable)])
+        XCTAssertEqual(result.snapshot.incrementalCheckpoint?.eventID, 30)
+    }
+
+    func testCancelledEventHistoryDoesNotStartFullFallback() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try Data([0x1]).write(to: rootURL.appending(path: "stable.dat"))
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20), checkpoint(30)],
+            events: [],
+            beforeReturningHistory: {
+                throw CancellationError()
+            }
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        var executionModes: [ScanExecutionMode] = []
+        for try await event in service.rescan(
+            target: target,
+            options: options,
+            from: baseline
+        ) {
+            if case .executionMode(let mode) = event {
+                executionModes.append(mode)
+            }
+        }
+
+        XCTAssertTrue(executionModes.isEmpty)
+    }
+
+    func testPlannerFallbackPreservesExactReason() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try Data([0x1]).write(to: rootURL.appending(path: "stable.dat"))
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20), checkpoint(30)],
+            events: [
+                FileSystemEventRecord(
+                    path: rootURL.path,
+                    eventID: 15,
+                    flags: [.userDropped]
+                )
+            ]
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        let result = try await incrementalScanResult(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+
+        XCTAssertEqual(result.executionModes, [.fullFallback(.userDroppedEvents)])
+        XCTAssertEqual(result.snapshot.incrementalCheckpoint?.eventID, 30)
+    }
+
     func testRootShallowRelistAppliesMixedMembershipChanges() async throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -82,15 +247,18 @@ final class IncrementalScanServiceTests: XCTestCase {
         )
         try Data([0x5]).write(to: createdDirectoryURL.appending(path: "nested.dat"))
 
-        let incremental = try await finishedIncrementalSnapshot(
+        let incrementalResult = try await incrementalScanResult(
             from: service.rescan(target: target, options: options, from: baseline)
         )
+        let incremental = incrementalResult.snapshot
         let full = try await finishedIncrementalSnapshot(
             from: ScanEngine().scan(target: target, options: options)
         )
 
         try assertEquivalent(incremental, full)
         XCTAssertEqual(incremental.incrementalCheckpoint?.eventID, 20)
+        XCTAssertEqual(incrementalResult.progressMetrics.last?.directoriesVisited, 1)
+        XCTAssertGreaterThan(incrementalResult.progressMetrics.last?.progressFraction ?? 0, 0)
     }
 
     func testBatchedShallowRelistsMatchFullScanAcrossDirectories() async throws {
@@ -263,6 +431,54 @@ final class IncrementalScanServiceTests: XCTestCase {
         try assertEquivalent(incremental, full)
     }
 
+    func testMultipleSubtreeRescansReportCumulativeItemCounts() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let directoryURLs = ["First", "Second"].map {
+            rootURL.appending(path: $0, directoryHint: .isDirectory)
+        }
+        for directoryURL in directoryURLs {
+            try FileManager.default.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: false
+            )
+            for index in 0..<4 {
+                try Data([UInt8(index)]).write(
+                    to: directoryURL.appending(path: "file-\(index).dat")
+                )
+            }
+        }
+
+        let provider = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10), checkpoint(20)],
+            events: directoryURLs.enumerated().map { index, url in
+                FileSystemEventRecord(
+                    path: url.path,
+                    eventID: UInt64(14 + index),
+                    flags: [.itemModified, .itemIsDirectory]
+                )
+            }
+        )
+        let service = IncrementalScanService(eventHistoryProvider: provider)
+        let target = ScanTarget(url: rootURL)
+        let options = ScanOptions()
+        let baseline = try await finishedIncrementalSnapshot(
+            from: service.scan(target: target, options: options)
+        )
+
+        let result = try await incrementalScanResult(
+            from: service.rescan(target: target, options: options, from: baseline)
+        )
+        let fileCounts = result.progressMetrics.map(\.filesVisited)
+        let directoryCounts = result.progressMetrics.map(\.directoriesVisited)
+
+        XCTAssertEqual(result.executionModes, [.incremental])
+        XCTAssertEqual(fileCounts, fileCounts.sorted())
+        XCTAssertEqual(directoryCounts, directoryCounts.sorted())
+        XCTAssertGreaterThanOrEqual(fileCounts.last ?? 0, 8)
+        XCTAssertGreaterThanOrEqual(directoryCounts.last ?? 0, 2)
+    }
+
     func testNoChangeRescanAdvancesCheckpointWithoutChangingTree() async throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -277,14 +493,16 @@ final class IncrementalScanServiceTests: XCTestCase {
         let baseline = try await finishedIncrementalSnapshot(
             from: service.scan(target: target, options: ScanOptions())
         )
-        let rescanned = try await finishedIncrementalSnapshot(
+        let result = try await incrementalScanResult(
             from: service.rescan(
                 target: target,
                 options: ScanOptions(),
                 from: baseline
             )
         )
+        let rescanned = result.snapshot
 
+        XCTAssertEqual(result.executionModes, [.incrementalNoChanges])
         XCTAssertEqual(rescanned.incrementalCheckpoint?.eventID, 40)
         XCTAssertEqual(rescanned.treeStore.contentID, baseline.treeStore.contentID)
         XCTAssertNotEqual(rescanned.id, baseline.id)
@@ -317,10 +535,15 @@ final class IncrementalScanServiceTests: XCTestCase {
             from: service.scan(target: target, options: options)
         )
 
-        let rescanned = try await finishedIncrementalSnapshot(
+        let result = try await incrementalScanResult(
             from: service.rescan(target: target, options: options, from: baseline)
         )
+        let rescanned = result.snapshot
 
+        XCTAssertEqual(
+            result.executionModes,
+            [.incremental, .fullFallback(.subtreeRescanFailed)]
+        )
         XCTAssertNil(rescanned.treeStore.node(id: changedURL.path))
         XCTAssertEqual(rescanned.incrementalCheckpoint?.eventID, 30)
         XCTAssertEqual(provider.historyRequestCount, 1)
@@ -448,9 +671,34 @@ private func makeIncrementalTemporaryDirectory() throws -> URL {
 private func finishedIncrementalSnapshot(
     from stream: AsyncThrowingStream<ScanProgressEvent, Error>
 ) async throws -> ScanSnapshot {
+    try await incrementalScanResult(from: stream).snapshot
+}
+
+private struct IncrementalScanResult {
+    let snapshot: ScanSnapshot
+    let executionModes: [ScanExecutionMode]
+    let progressMetrics: [ScanMetrics]
+}
+
+private func incrementalScanResult(
+    from stream: AsyncThrowingStream<ScanProgressEvent, Error>
+) async throws -> IncrementalScanResult {
+    var executionModes: [ScanExecutionMode] = []
+    var progressMetrics: [ScanMetrics] = []
     for try await event in stream {
-        if case .finished(let snapshot) = event {
-            return snapshot
+        switch event {
+        case .executionMode(let mode):
+            executionModes.append(mode)
+        case .finished(let snapshot):
+            return IncrementalScanResult(
+                snapshot: snapshot,
+                executionModes: executionModes,
+                progressMetrics: progressMetrics
+            )
+        case .progress(let metrics):
+            progressMetrics.append(metrics)
+        case .warning:
+            break
         }
     }
     XCTFail("Expected a finished incremental scan snapshot")

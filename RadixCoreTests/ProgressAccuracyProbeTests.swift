@@ -35,6 +35,8 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         var finalSnapshot: ScanSnapshot?
         for try await event in engine.scan(target: ScanTarget(url: targetURL), options: options) {
             switch event {
+            case .executionMode:
+                break
             case .progress(let metrics):
                 samples.append(Sample(
                     elapsed: Date().timeIntervalSince(start),
