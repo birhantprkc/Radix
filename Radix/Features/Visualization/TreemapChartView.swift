@@ -142,12 +142,6 @@ struct TreemapChartView: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(!isDiskMapPending)
 
-                ChartSpatialSelectionKeyboardMonitor(
-                    isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
-                    onMove: { direction in
-                        handleSpatialMove(direction, in: chartFrame.size)
-                    }
-                )
             }
             .clipped()
             .accessibilityElement(children: .ignore)
@@ -181,6 +175,12 @@ struct TreemapChartView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
+            .chartSpatialSelectionKeyboardHandler(
+                isEnabled: !isDiskMapPending,
+                onMove: { direction in
+                    handleSpatialMove(direction, in: chartFrame.size)
+                }
+            )
             .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
                 await updateLoadingDiskMapProgress(
                     isPending: isDiskMapPending,
@@ -202,15 +202,17 @@ struct TreemapChartView: View {
     private func handleSpatialMove(
         _ direction: ChartSpatialSelectionDirection,
         in size: CGSize
-    ) {
-        guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
-        if let nodeID = chartModel.spatialSelectionNodeID(
+    ) -> Bool {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending,
+              let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
             moving: direction,
             in: size
-        ) {
-            onSelect(nodeID)
+        ) else {
+            return false
         }
+        onSelect(nodeID)
+        return true
     }
 
     private var chartTransition: AnyTransition {

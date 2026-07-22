@@ -214,12 +214,6 @@ struct SunburstChartView: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(!isDiskMapPending)
 
-                ChartSpatialSelectionKeyboardMonitor(
-                    isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
-                    onMove: { direction in
-                        handleSpatialMove(direction, in: baseChartFrame)
-                    }
-                )
             }
             .clipped()
             .accessibilityElement(children: .ignore)
@@ -281,6 +275,12 @@ struct SunburstChartView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
+            .chartSpatialSelectionKeyboardHandler(
+                isEnabled: !isDiskMapPending,
+                onMove: { direction in
+                    handleSpatialMove(direction, in: baseChartFrame)
+                }
+            )
             .onChange(of: baseChartFrame) { _, nextFrame in
                 viewportTransform = viewportTransform.constrained(to: nextFrame)
             }
@@ -307,22 +307,25 @@ struct SunburstChartView: View {
     private func handleSpatialMove(
         _ direction: ChartSpatialSelectionDirection,
         in baseChartFrame: CGRect
-    ) {
-        guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
-        if let nodeID = chartModel.spatialSelectionNodeID(
+    ) -> Bool {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending,
+              let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
             moving: direction
-        ) {
-            let transformedFrame = viewportTransform.frame(for: baseChartFrame)
-            if let point = chartModel.spatialSelectionPoint(for: nodeID, in: transformedFrame) {
-                viewportTransform = viewportTransform.revealing(
-                    point: point,
-                    within: baseChartFrame,
-                    padding: 12
-                )
-            }
-            onSelect(nodeID)
+        ) else {
+            return false
         }
+
+        let transformedFrame = viewportTransform.frame(for: baseChartFrame)
+        if let point = chartModel.spatialSelectionPoint(for: nodeID, in: transformedFrame) {
+            viewportTransform = viewportTransform.revealing(
+                point: point,
+                within: baseChartFrame,
+                padding: 12
+            )
+        }
+        onSelect(nodeID)
+        return true
     }
 
     private var chartTransition: AnyTransition {
