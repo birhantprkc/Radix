@@ -307,8 +307,7 @@ struct FolderRescanProgressBanner: View {
     }
 
     private var progressDetail: String {
-        let currentName = URL(filePath: progress.metrics.currentPath).lastPathComponent
-        if !currentName.isEmpty {
+        if let currentName = progress.metrics.currentItemName {
             return currentName
         }
         return String(

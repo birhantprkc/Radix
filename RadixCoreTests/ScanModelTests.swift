@@ -2,6 +2,19 @@ import XCTest
 @testable import RadixCore
 
 final class ScanModelTests: XCTestCase {
+    func testScanMetricsCurrentItemNameIsNilForEmptyPath() {
+        let metrics = ScanMetrics()
+
+        XCTAssertNil(metrics.currentItemName)
+    }
+
+    func testScanMetricsCurrentItemNameUsesLastPathComponent() {
+        var metrics = ScanMetrics()
+        metrics.currentPath = "/Users/example/Downloads/archive.zip"
+
+        XCTAssertEqual(metrics.currentItemName, "archive.zip")
+    }
+
     func testScanTargetInfersMountedVolumeRoots() {
         let volumeURL = URL(filePath: "/Volumes/External Drive", directoryHint: .isDirectory)
         let folderURL = URL(filePath: "/Users/example/Documents", directoryHint: .isDirectory)
