@@ -28,7 +28,7 @@ struct SunburstChartView: View {
     @StateObject private var chartModel: SunburstChartModel
     @State private var isHoveringCenter = false
     @State private var showsLoadingDiskMapProgress = false
-    @State private var viewportTransform = SunburstViewportTransform.identity
+    @State private var viewportTransform = ChartViewportTransform.identity
     @State private var layoutRetryGeneration = 0
 
     init(
@@ -251,10 +251,10 @@ struct SunburstChartView: View {
             }
             .overlay(alignment: .topTrailing) {
                 if canAdjustViewport {
-                    SunburstViewportControls(
+                    ChartViewportControls(
                         zoomText: viewportZoomText,
                         canZoomOut: viewportTransform.isZoomed,
-                        canZoomIn: viewportTransform.scale < SunburstViewportTransform.maximumScale,
+                        canZoomIn: viewportTransform.scale < ChartViewportTransform.maximumScale,
                         zoomOut: {
                             zoomViewport(by: 0.8, anchor: nil, in: baseChartFrame, animated: true)
                         },
@@ -288,7 +288,7 @@ struct SunburstChartView: View {
             .onChange(of: layoutID) { _, _ in
                 resetViewport(animated: false)
             }
-            .focusedSceneValue(\.sunburstViewportAction) { action in
+            .focusedSceneValue(\.chartViewportAction) { action in
                 handleViewportAction(action, in: baseChartFrame)
             }
             .task(id: loadingDiskMapProgressTaskID) {
@@ -561,7 +561,7 @@ struct SunburstChartView: View {
     }
 
     private func handleViewportAction(
-        _ action: SunburstViewportAction,
+        _ action: ChartViewportAction,
         in baseFrame: CGRect
     ) {
         switch action {
@@ -575,7 +575,7 @@ struct SunburstChartView: View {
     }
 
     private func setViewportTransform(
-        _ nextTransform: SunburstViewportTransform,
+        _ nextTransform: ChartViewportTransform,
         animated: Bool
     ) {
         guard viewportTransform != nextTransform else { return }
@@ -616,67 +616,6 @@ private struct SunburstCenterAffordance: View, Equatable {
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(.secondary)
             .shadow(color: Color.black.opacity(0.14), radius: 2, y: 1)
-    }
-}
-
-private struct SunburstViewportControls: View {
-    let zoomText: String
-    let canZoomOut: Bool
-    let canZoomIn: Bool
-    let zoomOut: () -> Void
-    let zoomIn: () -> Void
-    let reset: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            controlButton(
-                systemName: "minus.magnifyingglass",
-                accessibilityLabel: String(localized: "Zoom Out", comment: "Accessibility label for zooming out of the disk map."),
-                action: zoomOut
-            )
-            .disabled(!canZoomOut)
-
-            Text(zoomText)
-                .font(.caption.monospacedDigit().weight(.medium))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 42)
-
-            controlButton(
-                systemName: "plus.magnifyingglass",
-                accessibilityLabel: String(localized: "Zoom In", comment: "Accessibility label for zooming into the disk map."),
-                action: zoomIn
-            )
-            .disabled(!canZoomIn)
-
-            Divider()
-                .frame(height: 16)
-
-            controlButton(
-                systemName: "arrow.counterclockwise",
-                accessibilityLabel: String(localized: "Reset Zoom", comment: "Accessibility label for resetting the disk map zoom."),
-                action: reset
-            )
-            .disabled(!canZoomOut)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func controlButton(
-        systemName: String,
-        accessibilityLabel: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .help(accessibilityLabel)
     }
 }
 

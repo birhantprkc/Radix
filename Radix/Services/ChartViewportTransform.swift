@@ -1,7 +1,7 @@
 import CoreGraphics
 
-nonisolated struct SunburstViewportTransform: Equatable {
-    static let identity = SunburstViewportTransform()
+nonisolated struct ChartViewportTransform: Equatable {
+    static let identity = ChartViewportTransform()
     static let minimumScale: CGFloat = 1
     static let maximumScale: CGFloat = 4
 
@@ -53,7 +53,7 @@ nonisolated struct SunburstViewportTransform: Equatable {
         anchor: CGPoint?,
         in baseFrame: CGRect,
         maximumScale: CGFloat = Self.maximumScale
-    ) -> SunburstViewportTransform {
+    ) -> ChartViewportTransform {
         let nextScale = Self.clampedScale(scale * factor, maximumScale: maximumScale)
         guard nextScale > Self.minimumScale else {
             return .identity
@@ -76,11 +76,11 @@ nonisolated struct SunburstViewportTransform: Equatable {
             )
         }
 
-        return SunburstViewportTransform(scale: nextScale, offset: nextOffset)
+        return ChartViewportTransform(scale: nextScale, offset: nextOffset)
             .constrained(to: baseFrame, maximumScale: maximumScale)
     }
 
-    func panned(by delta: CGSize, in baseFrame: CGRect) -> SunburstViewportTransform {
+    func panned(by delta: CGSize, in baseFrame: CGRect) -> ChartViewportTransform {
         guard isZoomed else { return .identity }
 
         let nextOffset = CGSize(
@@ -88,7 +88,7 @@ nonisolated struct SunburstViewportTransform: Equatable {
             height: offset.height + delta.height
         )
 
-        return SunburstViewportTransform(scale: scale, offset: nextOffset)
+        return ChartViewportTransform(scale: scale, offset: nextOffset)
             .constrained(to: baseFrame)
     }
 
@@ -96,7 +96,7 @@ nonisolated struct SunburstViewportTransform: Equatable {
         point: CGPoint,
         within baseFrame: CGRect,
         padding: CGFloat = 0
-    ) -> SunburstViewportTransform {
+    ) -> ChartViewportTransform {
         guard isZoomed else { return .identity }
 
         let maximumPadding = max(min(baseFrame.width, baseFrame.height) / 2, 0)
@@ -131,7 +131,7 @@ nonisolated struct SunburstViewportTransform: Equatable {
     func constrained(
         to baseFrame: CGRect,
         maximumScale: CGFloat = Self.maximumScale
-    ) -> SunburstViewportTransform {
+    ) -> ChartViewportTransform {
         let nextScale = Self.clampedScale(scale, maximumScale: maximumScale)
         guard nextScale > Self.minimumScale else {
             return .identity
@@ -144,7 +144,7 @@ nonisolated struct SunburstViewportTransform: Equatable {
             height: offset.height.clamped(to: -maximumYOffset...maximumYOffset)
         )
 
-        return SunburstViewportTransform(scale: nextScale, offset: nextOffset)
+        return ChartViewportTransform(scale: nextScale, offset: nextOffset)
     }
 
     private static func clampedScale(_ scale: CGFloat, maximumScale: CGFloat) -> CGFloat {

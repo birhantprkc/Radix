@@ -89,7 +89,7 @@ let package = Package(
                 "Services/DiskMapFreeSpaceVisualization.swift",
                 "Services/SunburstGeometry.swift",
                 "Services/DiskMapVisualizationFilterModel.swift",
-                "Services/SunburstViewportTransform.swift",
+                "Services/ChartViewportTransform.swift",
                 "Services/SystemIntegration.swift",
                 "Services/TreemapChartModel.swift",
                 "Services/TreemapColorResolver.swift",
