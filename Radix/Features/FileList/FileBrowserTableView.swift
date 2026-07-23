@@ -145,6 +145,9 @@ struct FileBrowserTableView: View {
         .onChange(of: scanState.snapshot?.id) { _, _ in
             updateModelContent()
         }
+        .onChange(of: scanState.fileTreeStore?.contentID) { _, _ in
+            updateModelContent()
+        }
         .onChange(of: hiddenNodeIDs) { _, _ in
             updateModelContent()
         }

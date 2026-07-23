@@ -719,6 +719,58 @@ final class FileBrowserModelTests: XCTestCase {
     }
 
     @MainActor
+    func testEntireScanSearchRefreshesForNewTreeContentWithSameSnapshotAndVisibleRows() async throws {
+        let visible = makeTestFileNode(id: "/root/visible.txt", name: "visible.txt", size: 10)
+        let alpha = makeTestFileNode(id: "/root/archive/alpha.txt", name: "alpha.txt", size: 20)
+        let archive = makeTestDirectoryNode(id: "/root/archive", name: "archive", children: [alpha])
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [archive, visible])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [archive, visible],
+            archive.id: [alpha],
+        ])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        let model = FileBrowserModel(searchDebounceDuration: .zero)
+
+        model.updateContent(
+            nodes: [visible],
+            contentID: "\(snapshot.id.uuidString)|\(root.id)",
+            snapshot: snapshot,
+            fileTreeStore: store
+        )
+        model.setSearchScope(.entireScan)
+        model.setActiveSearchText("alpha")
+        try await waitForSearchToFinish(model)
+        XCTAssertEqual(model.displayedNodes.map(\.id), [alpha.id])
+
+        let beta = makeTestFileNode(id: "/root/archive/beta.txt", name: "beta.txt", size: 20)
+        let replacementArchive = makeTestDirectoryNode(
+            id: archive.id,
+            name: archive.name,
+            children: [beta]
+        )
+        let replacementStore = FileTreeStore(
+            root: replacementArchive,
+            childrenByID: [replacementArchive.id: [beta]]
+        )
+        let updatedSnapshot = try XCTUnwrap(
+            snapshot.replacingNode(id: archive.id, with: replacementStore)
+        )
+
+        model.updateContent(
+            nodes: [visible],
+            contentID: "\(snapshot.id.uuidString)|\(root.id)",
+            snapshot: updatedSnapshot,
+            fileTreeStore: updatedSnapshot.treeStore
+        )
+        try await waitForSearchToFinish(model)
+        XCTAssertTrue(model.displayedNodes.isEmpty)
+
+        model.setActiveSearchText("beta")
+        try await waitForSearchToFinish(model)
+        XCTAssertEqual(model.displayedNodes.map(\.id), [beta.id])
+    }
+
+    @MainActor
     func testDelayedEntireScanResultCannotReplaceNewerQuery() async throws {
         let slow = makeTestFileNode(id: "/root/slow.txt", name: "slow.txt", size: 5)
         let fast = makeTestFileNode(id: "/root/fast.txt", name: "fast.txt", size: 10)
