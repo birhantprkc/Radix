@@ -279,6 +279,232 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testFolderRescanKeepsBaselineVisibleAndAtomicallyReplacesSubtree() async throws {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(
+            scanService: service,
+            progressThrottleDuration: .zero
+        )
+        let rootTarget = makeCoordinatorTarget("/scan/home")
+        let folderTarget = makeCoordinatorTarget("/scan/home/Downloads")
+        let checkpoint = ScanIncrementalCheckpoint(volumeUUID: "test-volume", eventID: 42)
+        let baseline = makeCoordinatorHomeSnapshot(
+            target: rootTarget,
+            downloadsTarget: folderTarget,
+            rootName: "home",
+            scanOptions: ScanOptions(includeHiddenFiles: true),
+            incrementalCheckpoint: checkpoint
+        )
+        let originalSibling = try XCTUnwrap(
+            baseline.treeStore.node(id: rootTarget.id + "/notes.txt")
+        )
+        coordinator.restoreCompletedSnapshot(baseline)
+
+        XCTAssertTrue(coordinator.rescanFolder(id: folderTarget.id))
+        XCTAssertFalse(coordinator.rescanFolder(id: folderTarget.id))
+        XCTAssertEqual(coordinator.snapshot?.id, baseline.id)
+        XCTAssertEqual(coordinator.snapshot?.treeStore.contentID, baseline.treeStore.contentID)
+        XCTAssertEqual(
+            coordinator.folderRescanState,
+            FolderRescanState(nodeName: "Downloads")
+        )
+        XCTAssertTrue(coordinator.isScanOperationInProgress)
+        XCTAssertEqual(service.requests.map(\.target), [
+            ScanTarget(url: folderTarget.url, kind: .folder)
+        ])
+        XCTAssertEqual(service.subtreeBehaviorTargets, [rootTarget])
+        XCTAssertEqual(service.requests.first?.options.includeHiddenFiles, true)
+        XCTAssertEqual(service.requests.first?.options.exclusionRootPath, rootTarget.id)
+
+        service.yield(
+            .progress(makeCoordinatorMetrics(
+                path: folderTarget.id + "/new.dat",
+                filesVisited: 1
+            )),
+            scanIndex: 0
+        )
+        let first = makeTestFileNode(
+            id: folderTarget.id + "/new.dat",
+            name: "new.dat",
+            size: 50
+        )
+        let second = makeTestFileNode(
+            id: folderTarget.id + "/other.dat",
+            name: "other.dat",
+            size: 30
+        )
+        let replacementRoot = makeTestDirectoryNode(
+            id: folderTarget.id,
+            name: "Downloads",
+            children: [first, second]
+        )
+        let replacementStore = FileTreeStore(
+            root: replacementRoot,
+            childrenByID: [replacementRoot.id: [first, second]]
+        )
+        let replacementWarning = ScanWarning(
+            path: first.id,
+            message: "replacement warning",
+            category: .fileSystem
+        )
+        let replacement = makeCoordinatorSnapshot(
+            target: folderTarget,
+            root: replacementRoot,
+            store: replacementStore,
+            warnings: [replacementWarning]
+        )
+
+        service.yield(.finished(replacement), scanIndex: 0)
+        service.finish(scanIndex: 0)
+
+        try await waitUntil("folder rescan finished") {
+            coordinator.scanCompletionNotice == .folderUpdated(name: "Downloads")
+        }
+
+        let updated = try XCTUnwrap(coordinator.snapshot)
+        XCTAssertEqual(updated.id, baseline.id)
+        XCTAssertEqual(updated.target, baseline.target)
+        XCTAssertEqual(updated.incrementalCheckpoint, checkpoint)
+        XCTAssertEqual(updated.treeStore.children(of: folderTarget.id).map(\.id), [
+            first.id,
+            second.id,
+        ])
+        XCTAssertEqual(updated.treeStore.node(id: originalSibling.id), originalSibling)
+        XCTAssertEqual(updated.scanWarnings.map(\.path), [replacementWarning.path])
+        XCTAssertGreaterThan(
+            try XCTUnwrap(updated.finishedAt),
+            try XCTUnwrap(baseline.finishedAt)
+        )
+        XCTAssertFalse(coordinator.isScanOperationInProgress)
+        XCTAssertNil(coordinator.folderRescanState)
+    }
+
+    @MainActor
+    func testFolderRescanRefreshesWholeVolumeCapacityAccounting() async throws {
+        let service = ControlledScanService()
+        let refreshedCapacity = VolumeCapacitySnapshot(
+            totalCapacity: 1_000_000_000,
+            availableCapacity: 300_000_000
+        )
+        let coordinator = ScanCoordinator(
+            scanService: service,
+            volumeCapacityProvider: { _ in
+                VolumeCapacityRefresh(
+                    capacity: refreshedCapacity,
+                    reconcilesTree: true
+                )
+            },
+            progressThrottleDuration: .zero
+        )
+        let volumeTarget = ScanTarget(
+            url: URL(filePath: "/test-volume", directoryHint: .isDirectory),
+            kind: .volume
+        )
+        let oldFile = makeTestFileNode(
+            id: volumeTarget.id + "/Folder/old.dat",
+            name: "old.dat",
+            size: 20
+        )
+        let folder = makeTestDirectoryNode(
+            id: volumeTarget.id + "/Folder",
+            name: "Folder",
+            children: [oldFile]
+        )
+        let root = makeTestDirectoryNode(
+            id: volumeTarget.id,
+            name: "Test Volume",
+            children: [folder]
+        )
+        let baselineStore = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [oldFile],
+        ])
+        let baseline = ScanSnapshot(
+            target: volumeTarget,
+            treeStore: baselineStore,
+            startedAt: .now,
+            finishedAt: .now,
+            scanWarnings: [],
+            aggregateStats: baselineStore.aggregateStats,
+            isComplete: true,
+            scanOptions: ScanOptions(),
+            volumeCapacity: VolumeCapacitySnapshot(
+                totalCapacity: 1_000_000_000,
+                availableCapacity: 400_000_000
+            ),
+            incrementalCheckpoint: ScanIncrementalCheckpoint(
+                volumeUUID: "test-volume",
+                eventID: 10
+            )
+        )
+        coordinator.restoreCompletedSnapshot(baseline)
+
+        XCTAssertTrue(coordinator.rescanFolder(id: folder.id))
+        let replacementFile = makeTestFileNode(
+            id: folder.id + "/new.dat",
+            name: "new.dat",
+            size: 40
+        )
+        let replacementRoot = makeTestDirectoryNode(
+            id: folder.id,
+            name: folder.name,
+            children: [replacementFile]
+        )
+        let replacementStore = FileTreeStore(
+            root: replacementRoot,
+            childrenByID: [replacementRoot.id: [replacementFile]]
+        )
+        service.yield(
+            .finished(makeCoordinatorSnapshot(
+                target: ScanTarget(url: folder.url, kind: .folder),
+                root: replacementRoot,
+                store: replacementStore
+            )),
+            scanIndex: 0
+        )
+        service.finish(scanIndex: 0)
+
+        try await waitUntil("volume folder rescan finished") {
+            coordinator.folderRescanState == nil
+        }
+
+        let updated = try XCTUnwrap(coordinator.snapshot)
+        XCTAssertEqual(updated.volumeCapacity, refreshedCapacity)
+        XCTAssertEqual(updated.root.allocatedSize, refreshedCapacity.usedCapacity)
+        XCTAssertEqual(updated.treeStore.node(id: replacementFile.id)?.allocatedSize, 40)
+        XCTAssertEqual(
+            updated.incrementalCheckpoint,
+            baseline.incrementalCheckpoint
+        )
+    }
+
+    @MainActor
+    func testStoppingFolderRescanKeepsExistingSnapshot() async throws {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(scanService: service)
+        let rootTarget = makeCoordinatorTarget("/scan/cancel-folder")
+        let folderTarget = makeCoordinatorTarget("/scan/cancel-folder/Folder")
+        let baseline = makeCoordinatorHomeSnapshot(
+            target: rootTarget,
+            downloadsTarget: folderTarget,
+            rootName: "root",
+            scanOptions: ScanOptions()
+        )
+        coordinator.restoreCompletedSnapshot(baseline)
+
+        XCTAssertTrue(coordinator.rescanFolder(id: folderTarget.id))
+        coordinator.stopScan()
+
+        try await waitUntil("folder stream cancellation") {
+            service.terminationCount > 0
+        }
+        XCTAssertEqual(coordinator.snapshot?.treeStore.contentID, baseline.treeStore.contentID)
+        XCTAssertFalse(coordinator.isScanOperationInProgress)
+        XCTAssertNil(coordinator.folderRescanState)
+        XCTAssertNil(coordinator.scanCompletionNotice)
+    }
+
+    @MainActor
     func testProgressMetricsDoNotPublishCoordinatorChanges() {
         let coordinator = ScanCoordinator()
         var coordinatorChangeCount = 0
@@ -866,6 +1092,88 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertEqual(service.rescanRequests.map(\.target), [target])
         XCTAssertEqual(service.rescanRequests.map(\.baselineID), [snapshot.id])
         XCTAssertEqual(service.rescanRequests.map(\.options), [scanOptions])
+    }
+
+    @MainActor
+    func testAppModelRescanUsesFocusedFolderAndPreservesNavigation() async throws {
+        let service = ControlledScanService()
+        let rootTarget = makeCoordinatorTarget("/app/focused-rescan")
+        let folderTarget = makeCoordinatorTarget("/app/focused-rescan/Downloads")
+        let model = AppModel(
+            dependencies: makeCoordinatorAppDependencies(
+                scanService: service,
+                systemActions: makeCoordinatorSidebarActions(targets: [rootTarget])
+            )
+        )
+
+        model.startScan(rootTarget)
+        try await waitUntil("focused baseline request") {
+            service.requests.count == 1
+        }
+        let scanOptions = try XCTUnwrap(service.requests.first?.options)
+        let baseline = makeCoordinatorHomeSnapshot(
+            target: rootTarget,
+            downloadsTarget: folderTarget,
+            rootName: "root",
+            scanOptions: scanOptions,
+            incrementalCheckpoint: ScanIncrementalCheckpoint(
+                volumeUUID: "test-volume",
+                eventID: 10
+            )
+        )
+        service.yield(.finished(baseline), scanIndex: 0)
+        service.finish(scanIndex: 0)
+        try await waitUntil("focused baseline finished") {
+            model.scanState.phase == .displaying
+        }
+
+        model.focus(nodeID: folderTarget.id)
+        XCTAssertEqual(model.navigation.focusedNodeID, folderTarget.id)
+        XCTAssertTrue(model.canRescanCurrentFolder)
+        model.rescan()
+
+        try await waitUntil("focused folder request") {
+            service.requests.count == 2
+        }
+        XCTAssertEqual(service.requests[1].target, ScanTarget(
+            url: folderTarget.url,
+            kind: .folder
+        ))
+        XCTAssertTrue(service.rescanRequests.isEmpty)
+        XCTAssertEqual(model.scanState.snapshot?.id, baseline.id)
+
+        let refreshedFile = makeTestFileNode(
+            id: folderTarget.id + "/refreshed.dat",
+            name: "refreshed.dat",
+            size: 90
+        )
+        let refreshedRoot = makeTestDirectoryNode(
+            id: folderTarget.id,
+            name: "Downloads",
+            children: [refreshedFile]
+        )
+        let refreshedStore = FileTreeStore(
+            root: refreshedRoot,
+            childrenByID: [refreshedRoot.id: [refreshedFile]]
+        )
+        service.yield(
+            .finished(makeCoordinatorSnapshot(
+                target: folderTarget,
+                root: refreshedRoot,
+                store: refreshedStore
+            )),
+            scanIndex: 1
+        )
+        service.finish(scanIndex: 1)
+
+        try await waitUntil("focused folder applied") {
+            model.scanState.scanCompletionNotice == .folderUpdated(name: "Downloads")
+        }
+        XCTAssertEqual(model.navigation.focusedNodeID, folderTarget.id)
+        XCTAssertEqual(
+            model.scanState.snapshot?.treeStore.children(of: folderTarget.id).map(\.id),
+            [refreshedFile.id]
+        )
     }
 
     @MainActor
@@ -1973,6 +2281,7 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
     private var continuations: [Continuation] = []
     private var storedRequests: [ControlledScanRequest] = []
     private var storedRescanRequests: [ControlledRescanRequest] = []
+    private var storedSubtreeBehaviorTargets: [ScanTarget] = []
     private var storedTerminationCount = 0
 
     var requests: [ControlledScanRequest] {
@@ -1991,6 +2300,12 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
         lock.lock()
         defer { lock.unlock() }
         return storedRescanRequests
+    }
+
+    var subtreeBehaviorTargets: [ScanTarget] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedSubtreeBehaviorTargets
     }
 
     func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error> {
@@ -2022,6 +2337,17 @@ private final class ControlledScanService: ScanEventStreaming, @unchecked Sendab
                 baselineID: baseline.id
             )
         )
+        lock.unlock()
+        return scan(target: target, options: options)
+    }
+
+    func scanSubtree(
+        target: ScanTarget,
+        preservingBehaviorOf scanTarget: ScanTarget,
+        options: ScanOptions
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        lock.lock()
+        storedSubtreeBehaviorTargets.append(scanTarget)
         lock.unlock()
         return scan(target: target, options: options)
     }
@@ -2115,7 +2441,9 @@ private func makeCoordinatorSnapshot(
 private func makeCoordinatorHomeSnapshot(
     target homeTarget: ScanTarget,
     downloadsTarget: ScanTarget,
-    rootName: String
+    rootName: String,
+    scanOptions: ScanOptions? = nil,
+    incrementalCheckpoint: ScanIncrementalCheckpoint? = nil
 ) -> ScanSnapshot {
     let downloadFile = makeTestFileNode(
         id: downloadsTarget.id + "/download.txt",
@@ -2141,7 +2469,13 @@ private func makeCoordinatorHomeSnapshot(
         homeRoot.id: [downloadsNode, siblingFile],
         downloadsNode.id: [downloadFile],
     ])
-    return makeCoordinatorSnapshot(target: homeTarget, root: homeRoot, store: homeStore)
+    return makeCoordinatorSnapshot(
+        target: homeTarget,
+        root: homeRoot,
+        store: homeStore,
+        scanOptions: scanOptions,
+        incrementalCheckpoint: incrementalCheckpoint
+    )
 }
 
 private func makeCoordinatorSnapshot(

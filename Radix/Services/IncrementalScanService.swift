@@ -55,6 +55,18 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         fullScan(target: target, options: options, executionMode: .full)
     }
 
+    nonisolated func scanSubtree(
+        target: ScanTarget,
+        preservingBehaviorOf scanTarget: ScanTarget,
+        options: ScanOptions
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        engine.scan(
+            target: target,
+            options: options,
+            preservingBehaviorOf: scanTarget
+        )
+    }
+
     private nonisolated func fullScan(
         target: ScanTarget,
         options: ScanOptions,

@@ -8,6 +8,7 @@ struct FileBrowserActions {
     let selectNodesAfterViewUpdate: (Set<String>, String?) -> Void
     let expandSummarizedNode: (FileNodeRecord) -> Void
     let zoomIntoSelection: () -> Void
+    let rescanFolder: (FileNodeRecord.ID) -> Void
     let selectedFileActions: SelectedFileActions
     let bulkFileActions: BulkFileActions
     let setDiscardPileDragActiveAfterThreshold: (Bool) -> Void
@@ -362,6 +363,13 @@ struct FileBrowserTableView: View {
                     actions.zoomIntoSelection()
                 }
                 .disabled(!canRequestZoom(for: node))
+            }
+
+            if node.isDirectory {
+                Button("Rescan Folder", systemImage: "arrow.clockwise") {
+                    actions.rescanFolder(id)
+                }
+                .disabled(!scanState.canRescanFolder(id: id))
             }
 
             Divider()

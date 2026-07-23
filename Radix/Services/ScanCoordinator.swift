@@ -15,11 +15,26 @@ enum AppModelPhase: Equatable, Sendable {
 
 protocol ScanEventStreaming: Sendable {
     nonisolated func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error>
+    nonisolated func scanSubtree(
+        target: ScanTarget,
+        preservingBehaviorOf scanTarget: ScanTarget,
+        options: ScanOptions
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error>
     nonisolated func rescan(
         target: ScanTarget,
         options: ScanOptions,
         from baseline: ScanSnapshot
     ) -> AsyncThrowingStream<ScanProgressEvent, Error>
+}
+
+extension ScanEventStreaming {
+    nonisolated func scanSubtree(
+        target: ScanTarget,
+        preservingBehaviorOf scanTarget: ScanTarget,
+        options: ScanOptions
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        scan(target: target, options: options)
+    }
 }
 
 enum ScanExpansionResult {
@@ -33,6 +48,16 @@ nonisolated enum ScanCompletionNotice: Equatable, Sendable {
     case incrementalUpdated
     case noChanges
     case fullFallback(IncrementalRescanFallbackReason)
+    case folderUpdated(name: String)
+}
+
+nonisolated struct FolderRescanState: Equatable, Sendable {
+    let nodeName: String
+}
+
+nonisolated struct VolumeCapacityRefresh: Equatable, Sendable {
+    let capacity: VolumeCapacitySnapshot?
+    let reconcilesTree: Bool
 }
 
 @MainActor
@@ -59,11 +84,13 @@ final class ScanCoordinator: ObservableObject {
     @Published private(set) var expandingNodeID: FileNodeRecord.ID?
     @Published private(set) var trashSafetyPolicy: TrashSafetyPolicy
     @Published private(set) var scanCompletionNotice: ScanCompletionNotice?
+    @Published private(set) var folderRescanState: FolderRescanState?
 
     let progress: ScanProgressState
 
     private let scanService: any ScanEventStreaming
     private let snapshotTransformService: any ScanSnapshotTransforming
+    private let volumeCapacityProvider: @Sendable (URL) async -> VolumeCapacityRefresh
     private let progressThrottleDuration: Duration
     private let progressClock = ContinuousClock()
 
@@ -83,12 +110,28 @@ final class ScanCoordinator: ObservableObject {
     init(
         scanService: any ScanEventStreaming = IncrementalScanService(),
         snapshotTransformService: any ScanSnapshotTransforming = ScanSnapshotTransformService(),
+        volumeCapacityProvider: @escaping @Sendable (URL) async -> VolumeCapacityRefresh = { url in
+            await Task.detached(priority: .utility) {
+                let capacity = (try? ScanMetadataLoader().metadata(
+                    for: url,
+                    includeVolumeDetails: true
+                ))?.volumeCapacity
+                let fileSystemType = ScanEngine.defaultVolumeFileSystemType(for: url)
+                return VolumeCapacityRefresh(
+                    capacity: capacity,
+                    reconcilesTree: fileSystemType.map {
+                        ScanEngine.shouldReconcileVolumeCapacity(fileSystemType: $0)
+                    } ?? false
+                )
+            }.value
+        },
         progressThrottleDuration: Duration = .milliseconds(100),
         progress: ScanProgressState = ScanProgressState(),
         trashSafetyPolicy: TrashSafetyPolicy = .live()
     ) {
         self.scanService = scanService
         self.snapshotTransformService = snapshotTransformService
+        self.volumeCapacityProvider = volumeCapacityProvider
         self.progressThrottleDuration = progressThrottleDuration
         self.progress = progress
         self.trashSafetyPolicy = trashSafetyPolicy
@@ -103,12 +146,16 @@ final class ScanCoordinator: ObservableObject {
         phase == .scanning
     }
 
+    var isScanOperationInProgress: Bool {
+        activeScanID != nil
+    }
+
     var canRescan: Bool {
-        selectedTarget != nil && !isScanning
+        selectedTarget != nil && !isScanOperationInProgress
     }
 
     var canStopScan: Bool {
-        isScanning
+        isScanOperationInProgress
     }
 
     var snapshotSource: ScanSnapshotSource {
@@ -121,6 +168,23 @@ final class ScanCoordinator: ObservableObject {
 
     func replaceTrashSafetyPolicy(_ policy: TrashSafetyPolicy) {
         trashSafetyPolicy = policy
+    }
+
+    func canRescanFolder(id nodeID: FileNodeRecord.ID) -> Bool {
+        guard !isScanOperationInProgress,
+              expandingNodeID == nil,
+              let snapshot,
+              snapshot.isComplete,
+              snapshot.source.allowsFileMutation,
+              let options = snapshot.scanOptions,
+              let node = snapshot.treeStore.node(id: nodeID) else {
+            return false
+        }
+        return node.isDirectory
+            && !node.isSymbolicLink
+            && !node.isSynthetic
+            && (!node.isPackage || options.treatPackagesAsDirectories)
+            && nodeID != snapshot.root.id
     }
 
     func startScan(
@@ -156,10 +220,61 @@ final class ScanCoordinator: ObservableObject {
         }
     }
 
+    @discardableResult
+    func rescanFolder(id nodeID: FileNodeRecord.ID) -> Bool {
+        guard canRescanFolder(id: nodeID),
+              let baseline = snapshot,
+              let node = baseline.treeStore.node(id: nodeID),
+              var options = baseline.scanOptions else {
+            return false
+        }
+
+        cancelExpansion(completeWith: .cancelled)
+        dismissScanCompletionNotice()
+        scanErrorMessage = nil
+        scanMetrics = ScanMetrics()
+        progress.executionMode = nil
+        resetProgressThrottling()
+
+        if options.exclusionRootPath == nil {
+            options.exclusionRootPath = baseline.target.url.path
+        }
+        options = ScanEngine.subtreeScanOptions(
+            options,
+            at: node.url,
+            scanTarget: baseline.target
+        )
+
+        let rescanID = UUID()
+        let baselineContextID = snapshotContextID
+        let baselineRevision = snapshotRevision
+        activeScanID = rescanID
+        folderRescanState = FolderRescanState(nodeName: node.name)
+
+        let subtreeTarget = ScanTarget(url: node.url, kind: .folder)
+        let stream = scanService.scanSubtree(
+            target: subtreeTarget,
+            preservingBehaviorOf: baseline.target,
+            options: options
+        )
+        scanTask = Task { [weak self] in
+            await self?.consumeFolderRescanStream(
+                stream,
+                node: node,
+                baseline: baseline,
+                rescanID: rescanID,
+                snapshotContextID: baselineContextID,
+                snapshotRevision: baselineRevision
+            )
+        }
+        return true
+    }
+
     func stopScan(resetState: Bool = true) {
         activeScanID = nil
         scanTask?.cancel()
         scanTask = nil
+        folderRescanState = nil
         resetProgressThrottling()
         cancelExpansion(completeWith: .cancelled)
 
@@ -189,7 +304,7 @@ final class ScanCoordinator: ObservableObject {
         publishSnapshot(snapshot, startsNewContext: true)
         if snapshot == nil {
             phase = .idle
-        } else if !isScanning {
+        } else if !isScanOperationInProgress {
             phase = .displaying
         }
     }
@@ -258,7 +373,7 @@ final class ScanCoordinator: ObservableObject {
 
                 publishSnapshot(updatedSnapshot, startsNewContext: false)
                 completedScanSnapshot = nil
-                if !isScanning {
+                if !isScanOperationInProgress {
                     phase = .displaying
                 }
                 return true
@@ -276,7 +391,8 @@ final class ScanCoordinator: ObservableObject {
         options: ScanOptions,
         completion: @escaping (ScanExpansionResult) -> Void
     ) {
-        guard node.isAutoSummarized else {
+        guard !isScanOperationInProgress,
+              node.isAutoSummarized else {
             completion(.skipped)
             return
         }
@@ -319,6 +435,102 @@ final class ScanCoordinator: ObservableObject {
         }
 
         completeScanIfActive(scanID: scanID)
+    }
+
+    private func consumeFolderRescanStream(
+        _ stream: AsyncThrowingStream<ScanProgressEvent, Error>,
+        node: FileNodeRecord,
+        baseline: ScanSnapshot,
+        rescanID: UUID,
+        snapshotContextID baselineContextID: UUID,
+        snapshotRevision baselineRevision: UInt64
+    ) async {
+        do {
+            var replacement: ScanSnapshot?
+            for try await event in stream {
+                guard activeScanID == rescanID else { return }
+                switch event {
+                case .progress(var metrics):
+                    metrics.progressFraction = min(metrics.progressFraction * 0.95, 0.95)
+                    handleProgress(metrics, operationID: rescanID)
+                case .finished(let snapshot):
+                    replacement = snapshot
+                case .executionMode, .warning:
+                    break
+                }
+            }
+
+            try Task.checkCancellation()
+            guard folderRescanContextIsCurrent(
+                id: rescanID,
+                snapshotContextID: baselineContextID,
+                snapshotRevision: baselineRevision
+            ),
+                  let replacement else {
+                completeFolderRescanAsCancelled(id: rescanID)
+                return
+            }
+
+            let capacityRefresh: VolumeCapacityRefresh
+            if baseline.target.kind == .volume {
+                capacityRefresh = await volumeCapacityProvider(baseline.target.url)
+            } else {
+                capacityRefresh = VolumeCapacityRefresh(
+                    capacity: baseline.volumeCapacity,
+                    reconcilesTree: false
+                )
+            }
+
+            try Task.checkCancellation()
+            guard folderRescanContextIsCurrent(
+                id: rescanID,
+                snapshotContextID: baselineContextID,
+                snapshotRevision: baselineRevision
+            ) else {
+                completeFolderRescanAsCancelled(id: rescanID)
+                return
+            }
+
+            let updatedSnapshot = try await snapshotTransformService.replacingNodeForSubtreeRescan(
+                in: baseline,
+                id: node.id,
+                with: replacement.treeStore,
+                additionalWarnings: replacement.scanWarnings,
+                volumeCapacity: capacityRefresh.capacity,
+                reconcilesVolumeCapacity: capacityRefresh.reconcilesTree
+            )
+
+            try Task.checkCancellation()
+            guard folderRescanContextIsCurrent(
+                id: rescanID,
+                snapshotContextID: baselineContextID,
+                snapshotRevision: baselineRevision
+            ),
+                  let updatedSnapshot else {
+                completeFolderRescanAsCancelled(id: rescanID)
+                return
+            }
+
+            finishFolderRescan(
+                with: updatedSnapshot,
+                nodeName: node.name,
+                rescanID: rescanID
+            )
+        } catch is CancellationError {
+            completeFolderRescanAsCancelled(id: rescanID)
+        } catch {
+            failFolderRescan(error, nodeName: node.name, rescanID: rescanID)
+        }
+    }
+
+    private func folderRescanContextIsCurrent(
+        id rescanID: UUID,
+        snapshotContextID baselineContextID: UUID,
+        snapshotRevision baselineRevision: UInt64
+    ) -> Bool {
+        activeScanID == rescanID
+            && snapshotContextID == baselineContextID
+            && snapshotRevision == baselineRevision
     }
 
     private func consumeExpansionStream(
@@ -372,7 +584,7 @@ final class ScanCoordinator: ObservableObject {
         case .executionMode(let mode):
             handleExecutionMode(mode)
         case .progress(let metrics):
-            handleProgress(metrics, scanID: scanID)
+            handleProgress(metrics, operationID: scanID)
         case .warning:
             break
         case .finished(let snapshot):
@@ -389,8 +601,8 @@ final class ScanCoordinator: ObservableObject {
         progress.executionMode = mode
     }
 
-    private func handleProgress(_ metrics: ScanMetrics, scanID: UUID) {
-        guard activeScanID == scanID else { return }
+    private func handleProgress(_ metrics: ScanMetrics, operationID: UUID) {
+        guard activeScanID == operationID else { return }
 
         if shouldPublishProgressImmediately {
             publishProgress(metrics)
@@ -398,7 +610,7 @@ final class ScanCoordinator: ObservableObject {
         }
 
         pendingProgressMetrics = metrics
-        schedulePendingProgressPublish(scanID: scanID)
+        schedulePendingProgressPublish(operationID: operationID)
     }
 
     private var shouldPublishProgressImmediately: Bool {
@@ -408,7 +620,7 @@ final class ScanCoordinator: ObservableObject {
         return lastProgressPublishTime.duration(to: progressClock.now) >= progressThrottleDuration
     }
 
-    private func schedulePendingProgressPublish(scanID: UUID) {
+    private func schedulePendingProgressPublish(operationID: UUID) {
         guard progressPublishTask == nil else { return }
 
         let delay: Duration
@@ -426,12 +638,12 @@ final class ScanCoordinator: ObservableObject {
                 return
             }
 
-            self?.publishPendingProgress(scanID: scanID)
+            self?.publishPendingProgress(operationID: operationID)
         }
     }
 
-    private func publishPendingProgress(scanID: UUID) {
-        guard activeScanID == scanID else { return }
+    private func publishPendingProgress(operationID: UUID) {
+        guard activeScanID == operationID else { return }
         progressPublishTask = nil
         guard let pendingProgressMetrics else { return }
         publishProgress(pendingProgressMetrics)
@@ -448,7 +660,7 @@ final class ScanCoordinator: ObservableObject {
     private func finishScan(with snapshot: ScanSnapshot, scanID: UUID) {
         guard activeScanID == scanID else { return }
 
-        flushPendingProgress(scanID: scanID)
+        flushPendingProgress(operationID: scanID)
         apply(snapshot: snapshot)
         completedScanSnapshot = snapshot
 
@@ -487,6 +699,13 @@ final class ScanCoordinator: ObservableObject {
             automaticallyDismisses = false
         }
 
+        publishCompletionNotice(notice, automaticallyDismisses: automaticallyDismisses)
+    }
+
+    private func publishCompletionNotice(
+        _ notice: ScanCompletionNotice?,
+        automaticallyDismisses: Bool
+    ) {
         completionNoticeDismissTask?.cancel()
         completionNoticeDismissTask = nil
         scanCompletionNotice = notice
@@ -548,8 +767,58 @@ final class ScanCoordinator: ObservableObject {
         scanTask = nil
     }
 
-    private func flushPendingProgress(scanID: UUID) {
-        guard activeScanID == scanID else { return }
+    private func finishFolderRescan(
+        with updatedSnapshot: ScanSnapshot,
+        nodeName: String,
+        rescanID: UUID
+    ) {
+        guard activeScanID == rescanID else { return }
+
+        flushPendingProgress(operationID: rescanID)
+        publishSnapshot(updatedSnapshot, startsNewContext: false)
+        completedScanSnapshot = updatedSnapshot
+
+        var completedMetrics = scanMetrics
+        completedMetrics.recalculateProgress(isComplete: true)
+        publishProgress(completedMetrics)
+
+        activeScanID = nil
+        scanTask = nil
+        folderRescanState = nil
+        phase = .displaying
+        publishCompletionNotice(.folderUpdated(name: nodeName), automaticallyDismisses: true)
+    }
+
+    private func completeFolderRescanAsCancelled(id rescanID: UUID) {
+        guard activeScanID == rescanID else { return }
+
+        resetProgressThrottling()
+        activeScanID = nil
+        scanTask = nil
+        folderRescanState = nil
+        phase = snapshot == nil ? .idle : .displaying
+    }
+
+    private func failFolderRescan(
+        _ error: Error,
+        nodeName: String,
+        rescanID: UUID
+    ) {
+        guard activeScanID == rescanID else { return }
+
+        resetProgressThrottling()
+        activeScanID = nil
+        scanTask = nil
+        folderRescanState = nil
+        phase = snapshot == nil ? .idle : .displaying
+        scanErrorMessage = String(
+            localized: "Failed to rescan \(nodeName): \(error.localizedDescription)",
+            comment: "Error shown when refreshing one folder in an existing scan fails."
+        )
+    }
+
+    private func flushPendingProgress(operationID: UUID) {
+        guard activeScanID == operationID else { return }
         progressPublishTask?.cancel()
         progressPublishTask = nil
 

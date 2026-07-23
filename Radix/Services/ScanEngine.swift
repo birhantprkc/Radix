@@ -596,7 +596,7 @@ actor ScanEngine {
         )
     }
 
-    private nonisolated static func defaultVolumeFileSystemType(for url: URL) -> String? {
+    nonisolated static func defaultVolumeFileSystemType(for url: URL) -> String? {
         var fileSystemStats = statfs()
         let result = url.withUnsafeFileSystemRepresentation { path in
             guard let path else { return Int32(-1) }
@@ -783,11 +783,20 @@ actor ScanEngine {
     }
 
     nonisolated func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error> {
+        scan(target: target, options: options, preservingBehaviorOf: target)
+    }
+
+    nonisolated func scan(
+        target: ScanTarget,
+        options: ScanOptions,
+        preservingBehaviorOf scanTarget: ScanTarget
+    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task(priority: .userInitiated) {
                 do {
                     let snapshot = try await self.performScan(
                         target: target,
+                        scanTarget: scanTarget,
                         options: options,
                         continuation: continuation
                     )
@@ -946,6 +955,7 @@ actor ScanEngine {
     // that bug (see testNewScanCanFinishWhilePreviousEnumerationIsStillCancelling).
     private nonisolated func performScan(
         target: ScanTarget,
+        scanTarget: ScanTarget,
         options: ScanOptions,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
     ) async throws -> ScanSnapshot {
@@ -960,7 +970,8 @@ actor ScanEngine {
         var warnings: [ScanWarning] = []
         var emissionState = ScanEmissionState()
         let behavior = ScanBehavior(
-            excludesStartupVolumeInternals: target.kind == .volume && target.url.path == "/"
+            excludesStartupVolumeInternals: scanTarget.kind == .volume
+                && scanTarget.url.path == "/"
         )
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: options.exclusionPatterns,

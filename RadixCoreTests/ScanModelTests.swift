@@ -382,6 +382,55 @@ final class ScanModelTests: XCTestCase {
         XCTAssertNil(snapshot.replacingNode(id: "/root/missing", with: treeStore))
     }
 
+    func testSubtreeUpdateRefreshesAPFSCapacityWithoutReconcilingItIntoTree() {
+        let target = ScanTarget(
+            url: URL(filePath: "/volume", directoryHint: .isDirectory),
+            kind: .volume
+        )
+        let file = makeNode(
+            id: "/volume/file.dat",
+            isDirectory: false,
+            isSynthetic: false,
+            isAccessible: true,
+            allocatedSize: 40
+        )
+        let root = FileNodeRecord.directory(
+            id: target.id,
+            url: target.url,
+            name: "volume",
+            children: [file],
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true
+        )
+        let treeStore = FileTreeStore(root: root, childrenByID: [root.id: [file]])
+        let snapshot = ScanSnapshot(
+            target: target,
+            treeStore: treeStore,
+            startedAt: .now,
+            finishedAt: .now,
+            scanWarnings: [],
+            aggregateStats: treeStore.aggregateStats,
+            isComplete: true,
+            scanOptions: ScanOptions(),
+            volumeCapacity: nil
+        )
+        let refreshedCapacity = VolumeCapacitySnapshot(
+            totalCapacity: 1_000_000_000,
+            availableCapacity: 300_000_000
+        )
+
+        let updated = snapshot.updatedAfterSubtreeRescan(
+            finishedAt: .now,
+            volumeCapacity: refreshedCapacity,
+            reconcilesVolumeCapacity: false
+        )
+
+        XCTAssertEqual(updated.volumeCapacity, refreshedCapacity)
+        XCTAssertEqual(updated.root.allocatedSize, 40)
+        XCTAssertEqual(updated.treeStore.children(of: root.id).map(\.id), [file.id])
+    }
+
     func testSnapshotRemovingNodeRemovesSubtreeAndRebuildsAncestors() throws {
         let removedLeaf = makeNode(
             id: "/root/folder/removed.bin",

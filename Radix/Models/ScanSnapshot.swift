@@ -312,6 +312,46 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         )
     }
 
+    /// Marks a snapshot after one of its subtrees has been refreshed. The
+    /// original scan identity and incremental checkpoint are retained because
+    /// locations outside the replacement may still reflect the earlier scan.
+    nonisolated func updatedAfterSubtreeRescan(
+        finishedAt: Date,
+        volumeCapacity: VolumeCapacitySnapshot?,
+        reconcilesVolumeCapacity: Bool
+    ) -> ScanSnapshot {
+        let updatedCapacity = target.kind == .volume
+            ? volumeCapacity ?? self.volumeCapacity
+            : self.volumeCapacity
+        let updatedStore: FileTreeStore
+        if reconcilesVolumeCapacity {
+            updatedStore = VolumeCapacityAccounting.reconciledStore(
+                treeStore,
+                target: target,
+                capacity: updatedCapacity,
+                hasActiveExclusions: scanOptions?.exclusionPatterns.isEmpty == false
+                    || VolumeCapacityAccounting.hasActiveExclusions(in: treeStore)
+            )
+        } else {
+            updatedStore = treeStore
+        }
+
+        return ScanSnapshot(
+            id: id,
+            target: target,
+            treeStore: updatedStore,
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            scanWarnings: scanWarnings,
+            aggregateStats: updatedStore.aggregateStats,
+            isComplete: isComplete,
+            scanOptions: scanOptions,
+            volumeCapacity: updatedCapacity,
+            source: source,
+            incrementalCheckpoint: incrementalCheckpoint
+        )
+    }
+
     nonisolated func scoped(to target: ScanTarget) -> ScanSnapshot? {
         try? scoped(to: target, cancellationCheck: {})
     }

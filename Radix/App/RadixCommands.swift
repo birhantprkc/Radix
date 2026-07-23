@@ -85,7 +85,7 @@ struct RadixCommands: Commands {
                 appModel.presentOpenPanelAndScan()
             }
             .keyboardShortcut("o")
-            .disabled(scanState.isScanning)
+            .disabled(scanState.isScanOperationInProgress)
 
             Button("Import Snapshot…", systemImage: "square.and.arrow.down") {
                 appModel.importScanSnapshot()
@@ -115,11 +115,17 @@ struct RadixCommands: Commands {
 
             Divider()
 
-            Button("Rescan", systemImage: "arrow.clockwise") {
+            Button("Rescan Current Folder", systemImage: "arrow.clockwise") {
                 appModel.rescan()
             }
             .keyboardShortcut("r")
-            .disabled(!scanState.canRescan)
+            .disabled(!appModel.canRescanCurrentFolder)
+
+            Button("Rescan Entire Scan", systemImage: "arrow.clockwise.circle") {
+                appModel.rescanEntireScan()
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(!appModel.canRescanEntireScan)
 
             Button("Stop Scan", systemImage: "stop") {
                 appModel.stopScan()

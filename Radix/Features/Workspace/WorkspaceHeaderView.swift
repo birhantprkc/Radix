@@ -31,7 +31,7 @@ struct WorkspaceHeaderView: View {
 
                 if let finishedAt = snapshot.finishedAt {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("Last Scan")
+                        Text("Last Updated")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(RadixFormatters.date(finishedAt))

@@ -236,6 +236,11 @@ struct ScanCompletionNoticeBanner: View {
             return String(localized: "No changes since the previous scan")
         case .fullFallback:
             return String(localized: "Complete rescan finished")
+        case .folderUpdated(let name):
+            return String(
+                localized: "\(name) updated",
+                comment: "Confirmation shown after one folder was refreshed inside an existing scan."
+            )
         }
     }
 
@@ -260,6 +265,56 @@ struct ScanCompletionNoticeBanner: View {
             return .orange
         }
         return .green
+    }
+}
+
+struct FolderRescanProgressBanner: View {
+    let state: FolderRescanState
+    @ObservedObject var progress: ScanProgressState
+    let cancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView(value: progress.metrics.progressFraction, total: 1)
+                .frame(width: 96)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    "Rescanning \(state.nodeName)",
+                    comment: "Progress banner title while refreshing one folder inside an existing scan."
+                )
+                .font(.subheadline.weight(.semibold))
+
+                Text(progressDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: cancel) {
+                Label("Cancel", systemImage: "xmark.circle.fill")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Cancel")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: 560)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+    }
+
+    private var progressDetail: String {
+        let currentName = URL(filePath: progress.metrics.currentPath).lastPathComponent
+        if !currentName.isEmpty {
+            return currentName
+        }
+        return String(
+            localized: "Preparing folder scan",
+            comment: "Progress detail before a focused folder rescan reports its current item."
+        )
     }
 }
 

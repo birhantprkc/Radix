@@ -18,6 +18,8 @@ struct WorkspaceActions {
     let startScan: (ScanTarget) -> Void
     let stopScan: () -> Void
     let rescan: () -> Void
+    let rescanFolder: (FileNodeRecord.ID) -> Void
+    let canRescanCurrentFolder: () -> Bool
     let compareScans: () -> Void
     let canCompareScans: () -> Bool
     let handleDroppedURLs: ([URL]) -> Bool
@@ -122,7 +124,16 @@ struct WorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .top) {
-            if let notice = scanState.scanCompletionNotice {
+            if let folderRescanState = scanState.folderRescanState {
+                FolderRescanProgressBanner(
+                    state: folderRescanState,
+                    progress: scanState.progress,
+                    cancel: actions.stopScan
+                )
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let notice = scanState.scanCompletionNotice {
                 ScanCompletionNoticeBanner(
                     notice: notice,
                     dismiss: scanState.dismissScanCompletionNotice
@@ -132,6 +143,7 @@ struct WorkspaceView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .animation(.easeOut(duration: 0.2), value: scanState.folderRescanState)
         .animation(.easeOut(duration: 0.2), value: scanState.scanCompletionNotice)
         .hidingWindowToolbarBackgroundWhenAvailable()
         .toolbar {
@@ -142,7 +154,7 @@ struct WorkspaceView: View {
                 } label: {
                     Label("Choose Folder", systemImage: "folder.badge.plus")
                 }
-                .disabled(scanState.isScanning)
+                .disabled(scanState.isScanOperationInProgress)
                 .help("Choose Folder")
 
                 if scanState.canStopScan {
@@ -156,10 +168,10 @@ struct WorkspaceView: View {
                     Button {
                         actions.rescan()
                     } label: {
-                        Label("Rescan", systemImage: "arrow.clockwise")
+                        Label(rescanButtonTitle, systemImage: "arrow.clockwise")
                     }
-                    .disabled(!scanState.canRescan)
-                    .help("Rescan")
+                    .disabled(!actions.canRescanCurrentFolder())
+                    .help(rescanButtonTitle)
 
                     Button {
                         actions.compareScans()
@@ -193,6 +205,18 @@ struct WorkspaceView: View {
 }
 
 private extension WorkspaceView {
+    var rescanButtonTitle: String {
+        guard let snapshot = scanState.snapshot,
+              let focusNode = navigation.currentFocusNode,
+              focusNode.id != snapshot.root.id else {
+            return String(localized: "Rescan Entire Scan")
+        }
+        return String(
+            localized: "Rescan \(focusNode.name)",
+            comment: "Toolbar action that refreshes the currently focused folder."
+        )
+    }
+
     var visualizationModePicker: some View {
         Picker("Disk Map Style", selection: $visualizationMode) {
             Label("Sunburst", systemImage: "chart.pie")
