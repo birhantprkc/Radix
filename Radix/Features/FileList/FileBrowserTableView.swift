@@ -14,6 +14,14 @@ struct FileBrowserActions {
     let setDiscardPileDragActiveAfterThreshold: (Bool) -> Void
 }
 
+private struct FileBrowserContentRefreshID: Hashable {
+    let tableContentID: String
+    let tableContentRevision: Int
+    let snapshotID: UUID?
+    let treeContentID: UUID?
+    let hiddenNodeIDs: Set<FileNodeRecord.ID>
+}
+
 struct FileBrowserTableView: View {
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
@@ -101,6 +109,16 @@ struct FileBrowserTableView: View {
         navigation.tableContentRevision
     }
 
+    private var contentRefreshID: FileBrowserContentRefreshID {
+        FileBrowserContentRefreshID(
+            tableContentID: contentID,
+            tableContentRevision: contentRevision,
+            snapshotID: scanState.snapshot?.id,
+            treeContentID: scanState.fileTreeStore?.contentID,
+            hiddenNodeIDs: hiddenNodeIDs
+        )
+    }
+
     var body: some View {
         Group {
             if !showsTableChrome {
@@ -130,26 +148,13 @@ struct FileBrowserTableView: View {
             isSearchFieldFocused = true
         }
         .onExitCommand(perform: exitCommandHandler)
-        .onAppear {
+        .task(id: contentRefreshID) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             updateModelContent()
         }
         .onDisappear {
             model.cleanup()
-        }
-        .onChange(of: contentID) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: contentRevision) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: scanState.snapshot?.id) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: scanState.fileTreeStore?.contentID) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: hiddenNodeIDs) { _, _ in
-            updateModelContent()
         }
         .onChange(of: focusedWorkspaceTarget) { _, target in
             if target != nil {
