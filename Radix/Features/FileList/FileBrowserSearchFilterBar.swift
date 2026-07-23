@@ -48,19 +48,7 @@ struct FileBrowserSearchFilterBar: View {
             }
 
             if query.hasStructuredFilters {
-                HStack(spacing: 6) {
-                    if let itemKind = query.itemKind {
-                        filterChip(title: itemKind.title, accessibilityLabel: "Remove kind filter") {
-                            query.itemKind = nil
-                        }
-                    }
-
-                    if let allocatedSize = query.allocatedSize {
-                        sizeFilterChip(allocatedSize)
-                    }
-
-                    Spacer(minLength: 0)
-                }
+                adaptiveFilterSummary
             }
         }
         .padding(.horizontal, 10)
@@ -109,9 +97,15 @@ struct FileBrowserSearchFilterBar: View {
         Button {
             showsFilterEditor = true
         } label: {
-            Image(systemName: query.hasStructuredFilters
-                ? "line.3.horizontal.decrease.circle.fill"
-                : "line.3.horizontal.decrease.circle")
+            HStack(spacing: 4) {
+                Image(systemName: query.hasStructuredFilters
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle")
+                if query.structuredFilterCount > 0 {
+                    Text(verbatim: "\(query.structuredFilterCount)")
+                        .monospacedDigit()
+                }
+            }
         }
         .buttonStyle(.plain)
         .foregroundStyle(query.hasStructuredFilters ? Color.accentColor : .secondary)
@@ -119,6 +113,46 @@ struct FileBrowserSearchFilterBar: View {
         .accessibilityLabel("Search Filters")
         .popover(isPresented: $showsFilterEditor, arrowEdge: .bottom) {
             FileBrowserFilterEditor(query: $query)
+        }
+    }
+
+    private var adaptiveFilterSummary: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                filterChips
+                Spacer(minLength: 0)
+            }
+
+            HStack {
+                Button {
+                    showsFilterEditor = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                        Text("Search Filters")
+                        Text(verbatim: "(\(query.structuredFilterCount))")
+                            .monospacedDigit()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.mini)
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var filterChips: some View {
+        if let itemKind = query.itemKind {
+            filterChip(title: itemKind.title, accessibilityLabel: "Remove kind filter") {
+                query.itemKind = nil
+            }
+        }
+
+        if let allocatedSize = query.allocatedSize {
+            sizeFilterChip(allocatedSize)
         }
     }
 
@@ -146,6 +180,7 @@ struct FileBrowserSearchFilterBar: View {
         .buttonStyle(.bordered)
         .buttonBorderShape(.capsule)
         .controlSize(.mini)
+        .fixedSize()
         .accessibilityLabel(accessibilityLabel)
     }
 }
@@ -154,122 +189,210 @@ private struct FileBrowserFilterEditor: View {
     @Binding var query: FileBrowserQuery
     @Environment(\.dismiss) private var dismiss
 
-    @State private var itemKind: FileBrowserItemKindFilter?
-    @State private var sizeIsEnabled: Bool
-    @State private var sizeRelation: FileBrowserSizeRelation
-    @State private var sizeValue: Double
-    @State private var sizeUnit: FileBrowserSizeUnit
-
-    init(query: Binding<FileBrowserQuery>) {
-        _query = query
-        let draft = Self.draftValues(for: query.wrappedValue.allocatedSize)
-        _itemKind = State(initialValue: query.wrappedValue.itemKind)
-        _sizeIsEnabled = State(initialValue: query.wrappedValue.allocatedSize != nil)
-        _sizeRelation = State(initialValue: draft.relation)
-        _sizeValue = State(initialValue: draft.value)
-        _sizeUnit = State(initialValue: draft.unit)
-    }
-
-    private var sizeBytes: Int64? {
-        let bytes = sizeValue * Double(sizeUnit.bytes)
-        guard sizeValue.isFinite,
-              sizeValue >= 0,
-              bytes <= Double(Int64.max) else {
-            return nil
-        }
-        return Int64(bytes.rounded())
-    }
-
-    private var canApply: Bool {
-        !sizeIsEnabled || sizeBytes != nil
+    private var allFiltersAreActive: Bool {
+        query.itemKind != nil && query.allocatedSize != nil
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Search Filters")
                 .font(.headline)
 
-            Form {
-                Picker("Kind", selection: $itemKind) {
-                    Text("Any Item").tag(nil as FileBrowserItemKindFilter?)
-                    Text("File").tag(FileBrowserItemKindFilter.file as FileBrowserItemKindFilter?)
-                    Text("Folder").tag(FileBrowserItemKindFilter.folder as FileBrowserItemKindFilter?)
-                    Text("Package").tag(FileBrowserItemKindFilter.package as FileBrowserItemKindFilter?)
-                }
+            if query.hasStructuredFilters {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        if query.itemKind != nil {
+                            kindFilterRow
+                        }
 
-                Toggle("Size", isOn: $sizeIsEnabled)
-
-                if sizeIsEnabled {
-                    Picker("Condition", selection: $sizeRelation) {
-                        Text("Greater Than").tag(FileBrowserSizeRelation.greaterThan)
-                        Text("At Least").tag(FileBrowserSizeRelation.atLeast)
-                        Text("Less Than").tag(FileBrowserSizeRelation.lessThan)
-                        Text("At Most").tag(FileBrowserSizeRelation.atMost)
-                    }
-
-                    LabeledContent("Value") {
-                        HStack(spacing: 6) {
-                            TextField(
-                                "Value",
-                                value: $sizeValue,
-                                format: .number.precision(.fractionLength(0...2))
-                            )
-                            .frame(width: 90)
-
-                            Picker("", selection: $sizeUnit) {
-                                ForEach(FileBrowserSizeUnit.allCases) { unit in
-                                    Text(verbatim: unit.title).tag(unit)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 75)
+                        if query.allocatedSize != nil {
+                            FileBrowserSizeFilterRow(filter: $query.allocatedSize)
                         }
                     }
                 }
+                .frame(height: min(CGFloat(query.structuredFilterCount) * 48, 240))
+
+                Divider()
             }
-            .formStyle(.grouped)
 
             HStack {
-                Button("Cancel", role: .cancel) {
-                    dismiss()
+                if query.hasStructuredFilters {
+                    Button("Clear All") {
+                        query.itemKind = nil
+                        query.allocatedSize = nil
+                    }
                 }
 
                 Spacer()
 
-                Button("Apply") {
-                    apply()
+                addFilterMenu
+
+                Button("Done") {
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!canApply)
             }
         }
         .padding(16)
-        .frame(width: 360)
+        .frame(width: 440)
     }
 
-    private func apply() {
-        var updatedQuery = query
-        updatedQuery.itemKind = itemKind
-        updatedQuery.allocatedSize = sizeIsEnabled
-            ? sizeBytes.map { FileBrowserAllocatedSizeFilter(relation: sizeRelation, bytes: $0) }
-            : nil
-        query = updatedQuery
-        dismiss()
-    }
+    private var kindFilterRow: some View {
+        HStack(spacing: 8) {
+            Text("Kind")
+                .frame(width: 45, alignment: .leading)
 
-    private static func draftValues(
-        for filter: FileBrowserAllocatedSizeFilter?
-    ) -> (relation: FileBrowserSizeRelation, value: Double, unit: FileBrowserSizeUnit) {
-        guard let filter else {
-            return (.greaterThan, 500, .megabytes)
+            Picker("", selection: itemKindBinding) {
+                Text("File").tag(FileBrowserItemKindFilter.file)
+                Text("Folder").tag(FileBrowserItemKindFilter.folder)
+                Text("Package").tag(FileBrowserItemKindFilter.package)
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+
+            removeFilterButton(accessibilityLabel: "Remove kind filter") {
+                query.itemKind = nil
+            }
         }
+        .filterRowStyle()
+    }
 
-        let unit = FileBrowserSizeUnit.bestUnit(for: filter.bytes)
-        return (
-            filter.relation,
-            Double(filter.bytes) / Double(unit.bytes),
-            unit
+    private var itemKindBinding: Binding<FileBrowserItemKindFilter> {
+        Binding(
+            get: { query.itemKind ?? .file },
+            set: { query.itemKind = $0 }
         )
+    }
+
+    private var addFilterMenu: some View {
+        Menu {
+            if query.itemKind == nil {
+                Button("Kind") {
+                    query.itemKind = .file
+                }
+            }
+
+            if query.allocatedSize == nil {
+                Button("Size") {
+                    query.allocatedSize = FileBrowserAllocatedSizeFilter(
+                        relation: .greaterThan,
+                        bytes: 500_000_000
+                    )
+                }
+            }
+        } label: {
+            Label("Add Filter", systemImage: "plus")
+        }
+        .disabled(allFiltersAreActive)
+    }
+}
+
+private struct FileBrowserSizeFilterRow: View {
+    @Binding var filter: FileBrowserAllocatedSizeFilter?
+    @State private var unit: FileBrowserSizeUnit
+
+    init(filter: Binding<FileBrowserAllocatedSizeFilter?>) {
+        _filter = filter
+        _unit = State(initialValue: FileBrowserSizeUnit.bestUnit(for: filter.wrappedValue?.bytes ?? 0))
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Size")
+                .frame(width: 45, alignment: .leading)
+
+            Picker("", selection: relationBinding) {
+                Text("Greater Than").tag(FileBrowserSizeRelation.greaterThan)
+                Text("At Least").tag(FileBrowserSizeRelation.atLeast)
+                Text("Less Than").tag(FileBrowserSizeRelation.lessThan)
+                Text("At Most").tag(FileBrowserSizeRelation.atMost)
+            }
+            .labelsHidden()
+            .frame(width: 125)
+
+            TextField(
+                "Value",
+                value: valueBinding,
+                format: .number.precision(.fractionLength(0...2))
+            )
+            .frame(width: 80)
+
+            Picker("", selection: $unit) {
+                ForEach(FileBrowserSizeUnit.allCases) { unit in
+                    Text(verbatim: unit.title).tag(unit)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 70)
+            .onChange(of: unit) { previousUnit, nextUnit in
+                updateUnit(from: previousUnit, to: nextUnit)
+            }
+
+            removeFilterButton(accessibilityLabel: "Remove size filter") {
+                filter = nil
+            }
+        }
+        .filterRowStyle()
+    }
+
+    private var relationBinding: Binding<FileBrowserSizeRelation> {
+        Binding(
+            get: { filter?.relation ?? .greaterThan },
+            set: { relation in
+                guard var updatedFilter = filter else { return }
+                updatedFilter.relation = relation
+                filter = updatedFilter
+            }
+        )
+    }
+
+    private var valueBinding: Binding<Double> {
+        Binding(
+            get: {
+                Double(filter?.bytes ?? 0) / Double(unit.bytes)
+            },
+            set: { value in
+                guard value.isFinite,
+                      value >= 0,
+                      value <= Double(Int64.max) / Double(unit.bytes),
+                      var updatedFilter = filter else {
+                    return
+                }
+                updatedFilter.bytes = Int64((value * Double(unit.bytes)).rounded())
+                filter = updatedFilter
+            }
+        )
+    }
+
+    private func updateUnit(
+        from previousUnit: FileBrowserSizeUnit,
+        to nextUnit: FileBrowserSizeUnit
+    ) {
+        guard var updatedFilter = filter else { return }
+        let displayedValue = Double(updatedFilter.bytes) / Double(previousUnit.bytes)
+        let nextBytes = displayedValue * Double(nextUnit.bytes)
+        guard nextBytes <= Double(Int64.max) else { return }
+        updatedFilter.bytes = Int64(nextBytes.rounded())
+        filter = updatedFilter
+    }
+}
+
+private func removeFilterButton(
+    accessibilityLabel: LocalizedStringKey,
+    action: @escaping () -> Void
+) -> some View {
+    Button(action: action) {
+        Image(systemName: "xmark.circle.fill")
+            .foregroundStyle(.tertiary)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(accessibilityLabel)
+}
+
+private extension View {
+    func filterRowStyle() -> some View {
+        padding(8)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -304,6 +427,12 @@ private enum FileBrowserSizeUnit: CaseIterable, Identifiable {
             return unit
         }
         return .megabytes
+    }
+}
+
+private extension FileBrowserQuery {
+    var structuredFilterCount: Int {
+        (itemKind == nil ? 0 : 1) + (allocatedSize == nil ? 0 : 1)
     }
 }
 
