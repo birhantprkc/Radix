@@ -572,23 +572,53 @@ nonisolated enum TreemapRenderer {
     private nonisolated static let displayInset: CGFloat = 0.75
 
     nonisolated static func rect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
+        rect(
+            for: segment,
+            in: CGRect(origin: .zero, size: size)
+        )
+    }
+
+    nonisolated static func rect(
+        for segment: TreemapSegment,
+        in contentFrame: CGRect
+    ) -> CGRect {
         CGRect(
-            x: segment.rect.minX * size.width,
-            y: segment.rect.minY * size.height,
-            width: segment.rect.width * size.width,
-            height: segment.rect.height * size.height
+            x: contentFrame.minX + (segment.rect.minX * contentFrame.width),
+            y: contentFrame.minY + (segment.rect.minY * contentFrame.height),
+            width: segment.rect.width * contentFrame.width,
+            height: segment.rect.height * contentFrame.height
         )
     }
 
     nonisolated static func displayRect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
-        displayRect(for: rect(for: segment, in: size))
+        displayRect(
+            for: segment,
+            in: CGRect(origin: .zero, size: size)
+        )
+    }
+
+    nonisolated static func displayRect(
+        for segment: TreemapSegment,
+        in contentFrame: CGRect
+    ) -> CGRect {
+        displayRect(for: rect(for: segment, in: contentFrame))
     }
 
     nonisolated static func navigationRect(
         for segment: TreemapSegment,
         in size: CGSize
     ) -> CGRect {
-        let segmentRect = rect(for: segment, in: size)
+        navigationRect(
+            for: segment,
+            in: CGRect(origin: .zero, size: size)
+        )
+    }
+
+    nonisolated static func navigationRect(
+        for segment: TreemapSegment,
+        in contentFrame: CGRect
+    ) -> CGRect {
+        let segmentRect = rect(for: segment, in: contentFrame)
         guard segment.showsContainerHeader else {
             return displayRect(for: segmentRect)
         }
@@ -618,7 +648,19 @@ nonisolated enum TreemapRenderer {
         in size: CGSize,
         lineWidth: CGFloat
     ) -> CGRect? {
-        let displayRect = displayRect(for: segment, in: size)
+        strokeRect(
+            for: segment,
+            in: CGRect(origin: .zero, size: size),
+            lineWidth: lineWidth
+        )
+    }
+
+    nonisolated static func strokeRect(
+        for segment: TreemapSegment,
+        in contentFrame: CGRect,
+        lineWidth: CGFloat
+    ) -> CGRect? {
+        let displayRect = displayRect(for: segment, in: contentFrame)
         let effectiveLineWidth = max(lineWidth, 0)
         guard min(displayRect.width, displayRect.height) >= effectiveLineWidth else {
             return nil

@@ -26,6 +26,7 @@ struct TreemapChartView: View {
     @StateObject private var chartModel: TreemapChartModel
     @State private var showsLoadingDiskMapProgress = false
     @State private var tooltipAnchor: CGPoint?
+    @State private var viewportTransform = ChartViewportTransform.identity
     @State private var layoutRetryGeneration = 0
 
     init(
@@ -85,10 +86,11 @@ struct TreemapChartView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let chartFrame = chartFrame(in: geometry.size)
+            let baseChartFrame = chartFrame(in: geometry.size)
+            let viewportContentFrame = viewportContentFrame(in: baseChartFrame)
             let layoutTaskID = TreemapLayoutTaskID(
                 layoutID: layoutID,
-                size: chartFrame.size,
+                size: baseChartFrame.size,
                 retryGeneration: layoutRetryGeneration
             )
             let isDiskMapPending = isInputPending
@@ -100,7 +102,8 @@ struct TreemapChartView: View {
                     renderVersion: chartModel.renderedLayoutVersion,
                     selectedSegment: chartModel.selectedSegment(nodeID: selectedNodeID),
                     hoveredSegment: isDiskMapPending ? nil : chartModel.hoveredSegment,
-                    chartFrame: chartFrame
+                    chartFrame: baseChartFrame,
+                    contentFrame: viewportContentFrame
                 )
                 .id(chartModel.renderedLayoutVersion)
                 .transition(chartTransition)
@@ -127,22 +130,22 @@ struct TreemapChartView: View {
                 TreemapInteractionOverlay(
                     onHover: { location in
                         guard !isDiskMapPending else { return }
-                        updateHover(at: location, in: chartFrame)
+                        updateHover(at: location, in: baseChartFrame)
                     },
                     onClick: { location, clickCount in
                         guard !isDiskMapPending else { return }
-                        handleClick(at: location, in: chartFrame, clickCount: clickCount)
+                        handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
                     },
                     onMove: { direction in
                         guard !isDiskMapPending else { return false }
-                        return handleSpatialMove(direction, in: chartFrame.size)
+                        return handleSpatialMove(direction, in: baseChartFrame.size)
                     },
                     onKeyboardFocus: {
                         focusedWorkspaceTarget = .chart
                     },
                     isKeyboardFocused: focusedWorkspaceTarget == .chart,
                     discardPileDragItem: { location in
-                        discardPileDragItem(at: location, in: chartFrame)
+                        discardPileDragItem(at: location, in: baseChartFrame)
                     },
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange
                 )
@@ -182,6 +185,14 @@ struct TreemapChartView: View {
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
+            .onChange(of: baseChartFrame) { _, nextFrame in
+                viewportTransform = viewportTransform.constrained(
+                    to: CGRect(origin: .zero, size: nextFrame.size)
+                )
+            }
+            .onChange(of: layoutID) { _, _ in
+                viewportTransform = .identity
+            }
             .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
                 await updateLoadingDiskMapProgress(
                     isPending: isDiskMapPending,
@@ -193,7 +204,7 @@ struct TreemapChartView: View {
                     treeStore: treeStore,
                     rootID: rootNode.id,
                     depthLimit: depthLimit,
-                    size: chartFrame.size,
+                    size: baseChartFrame.size,
                     layoutID: layoutTaskID.requestID
                 )
             }
@@ -249,6 +260,12 @@ struct TreemapChartView: View {
         )
     }
 
+    private func viewportContentFrame(in baseChartFrame: CGRect) -> CGRect {
+        viewportTransform.frame(
+            for: CGRect(origin: .zero, size: baseChartFrame.size)
+        )
+    }
+
     private func updateHover(at location: CGPoint?, in frame: CGRect) {
         guard let location,
               let segment = hitTest(at: location, in: frame) else {
@@ -292,8 +309,18 @@ struct TreemapChartView: View {
 
     private func hitTest(at location: CGPoint, in frame: CGRect) -> TreemapSegment? {
         guard frame.contains(location) else { return nil }
-        let localPoint = CGPoint(x: location.x - frame.minX, y: location.y - frame.minY)
-        return chartModel.segment(at: localPoint, in: frame.size)
+        let localViewportPoint = CGPoint(
+            x: location.x - frame.minX,
+            y: location.y - frame.minY
+        )
+        let localViewportFrame = CGRect(origin: .zero, size: frame.size)
+        guard let chartPoint = viewportTransform.localChartPoint(
+            for: localViewportPoint,
+            in: localViewportFrame
+        ) else {
+            return nil
+        }
+        return chartModel.segment(at: chartPoint.point, in: chartPoint.size)
     }
 
     private func discardPileDragItem(
@@ -441,6 +468,7 @@ private struct TreemapRenderedChartLayer: View {
     let selectedSegment: TreemapSegment?
     let hoveredSegment: TreemapSegment?
     let chartFrame: CGRect
+    let contentFrame: CGRect
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -449,25 +477,31 @@ private struct TreemapRenderedChartLayer: View {
             TreemapBaseCanvas(
                 segments: segments,
                 renderVersion: renderVersion,
-                colorScheme: colorScheme
+                colorScheme: colorScheme,
+                contentFrame: contentFrame
             )
                 .equatable()
 
             TreemapHoverOverlay(
                 segment: hoveredSegment,
-                colorScheme: colorScheme
+                colorScheme: colorScheme,
+                contentFrame: contentFrame
             )
                 .equatable()
                 .allowsHitTesting(false)
 
-            TreemapSelectionOverlay(segment: selectedSegment)
+            TreemapSelectionOverlay(
+                segment: selectedSegment,
+                contentFrame: contentFrame
+            )
                 .equatable()
                 .allowsHitTesting(false)
 
             TreemapLabelCanvas(
                 segments: segments,
                 renderVersion: renderVersion,
-                colorScheme: colorScheme
+                colorScheme: colorScheme,
+                contentFrame: contentFrame
             )
                 .equatable()
                 .allowsHitTesting(false)

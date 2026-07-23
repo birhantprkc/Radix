@@ -169,6 +169,53 @@ final class TreemapGeometryTests: XCTestCase {
         XCTAssertNil(index.segment(at: CGPoint(x: 300, y: 150), in: size))
     }
 
+    func testRendererMapsSegmentIntoOffsetContentFrame() {
+        let segment = makeTreemapSegment(
+            id: "mapped",
+            rect: CGRect(x: 0.25, y: 0.2, width: 0.5, height: 0.4)
+        )
+        let contentFrame = CGRect(x: -100, y: 50, width: 800, height: 400)
+
+        XCTAssertEqual(
+            TreemapRenderer.rect(for: segment, in: contentFrame),
+            CGRect(x: 100, y: 130, width: 400, height: 160)
+        )
+        XCTAssertEqual(
+            TreemapRenderer.displayRect(for: segment, in: contentFrame),
+            CGRect(x: 100.75, y: 130.75, width: 398.5, height: 158.5)
+        )
+    }
+
+    func testTransformedPointerHitsRenderedSegment() throws {
+        let segment = makeTreemapSegment(
+            id: "visible",
+            rect: CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        )
+        let baseFrame = CGRect(x: 20, y: 30, width: 400, height: 200)
+        let transform = ChartViewportTransform(
+            scale: 2,
+            offset: CGSize(width: -50, height: 20)
+        )
+        let contentFrame = transform.frame(for: baseFrame)
+        let renderedRect = TreemapRenderer.displayRect(
+            for: segment,
+            in: contentFrame
+        )
+        let pointer = CGPoint(x: renderedRect.midX, y: renderedRect.midY)
+        let chartPoint = try XCTUnwrap(
+            transform.localChartPoint(for: pointer, in: baseFrame)
+        )
+
+        XCTAssertTrue(baseFrame.contains(pointer))
+        XCTAssertEqual(
+            TreemapHitTestIndex(segments: [segment]).segment(
+                at: chartPoint.point,
+                in: chartPoint.size
+            )?.id,
+            segment.id
+        )
+    }
+
     func testHitTestingMatchesRenderedRectsAcrossFractionalChartSize() {
         let segments = [
             makeTreemapSegment(id: "left", rect: CGRect(x: 0, y: 0, width: 0.6, height: 1)),
