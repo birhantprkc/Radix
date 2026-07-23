@@ -76,6 +76,8 @@ struct BulkFileActions {
 }
 
 struct WorkspaceView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
     @Binding var isInspectorPresented: Bool
@@ -132,7 +134,7 @@ struct WorkspaceView: View {
                 )
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .topBannerTransition()
             } else if let notice = scanState.scanCompletionNotice {
                 ScanCompletionNoticeBanner(
                     notice: notice,
@@ -140,11 +142,17 @@ struct WorkspaceView: View {
                 )
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .topBannerTransition()
             }
         }
-        .animation(.easeOut(duration: 0.2), value: scanState.folderRescanState)
-        .animation(.easeOut(duration: 0.2), value: scanState.scanCompletionNotice)
+        .animation(
+            TopBannerPresentation.animation(reduceMotion: reduceMotion),
+            value: scanState.folderRescanState
+        )
+        .animation(
+            TopBannerPresentation.animation(reduceMotion: reduceMotion),
+            value: scanState.scanCompletionNotice
+        )
         .hidingWindowToolbarBackgroundWhenAvailable()
         .toolbar {
             ToolbarItem(placement: .automatic) { Spacer() }
