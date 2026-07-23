@@ -216,6 +216,7 @@ struct ScanCompletionNoticeBanner: View {
             }
             .buttonStyle(.plain)
             .help("Dismiss")
+            .accessibilityLabel("Dismiss")
         }
         .padding(14)
         .frame(maxWidth: 560)
