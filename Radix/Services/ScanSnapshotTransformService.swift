@@ -21,6 +21,15 @@ protocol ScanSnapshotTransforming: Sendable {
         additionalWarnings: [ScanWarning]
     ) async throws -> ScanSnapshot?
 
+    func replacingNodeForSubtreeRescan(
+        in snapshot: ScanSnapshot,
+        id targetID: String,
+        with replacement: FileTreeStore,
+        additionalWarnings: [ScanWarning],
+        volumeCapacity: VolumeCapacitySnapshot?,
+        reconcilesVolumeCapacity: Bool
+    ) async throws -> ScanSnapshot?
+
     func removingNode(
         in snapshot: ScanSnapshot,
         id targetID: String
@@ -38,6 +47,26 @@ protocol ScanSnapshotTransforming: Sendable {
 }
 
 extension ScanSnapshotTransforming {
+    func replacingNodeForSubtreeRescan(
+        in snapshot: ScanSnapshot,
+        id targetID: String,
+        with replacement: FileTreeStore,
+        additionalWarnings: [ScanWarning],
+        volumeCapacity: VolumeCapacitySnapshot?,
+        reconcilesVolumeCapacity: Bool
+    ) async throws -> ScanSnapshot? {
+        try await replacingNode(
+            in: snapshot,
+            id: targetID,
+            with: replacement,
+            additionalWarnings: additionalWarnings
+        )?.updatedAfterSubtreeRescan(
+            finishedAt: Date(),
+            volumeCapacity: volumeCapacity,
+            reconcilesVolumeCapacity: reconcilesVolumeCapacity
+        )
+    }
+
     func replacingSubtrees(
         in snapshot: ScanSnapshot,
         replacements: [String: FileTreeStore],
@@ -100,6 +129,28 @@ actor ScanSnapshotTransformService {
             cancellationCheck: {
                 try Task.checkCancellation()
             }
+        )
+    }
+
+    func replacingNodeForSubtreeRescan(
+        in snapshot: ScanSnapshot,
+        id targetID: String,
+        with replacement: FileTreeStore,
+        additionalWarnings: [ScanWarning] = [],
+        volumeCapacity: VolumeCapacitySnapshot?,
+        reconcilesVolumeCapacity: Bool
+    ) async throws -> ScanSnapshot? {
+        try snapshot.replacingNode(
+            id: targetID,
+            with: replacement,
+            additionalWarnings: additionalWarnings,
+            cancellationCheck: {
+                try Task.checkCancellation()
+            }
+        )?.updatedAfterSubtreeRescan(
+            finishedAt: Date(),
+            volumeCapacity: volumeCapacity,
+            reconcilesVolumeCapacity: reconcilesVolumeCapacity
         )
     }
 

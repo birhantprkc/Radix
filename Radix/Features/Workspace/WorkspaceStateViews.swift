@@ -191,41 +191,30 @@ struct ScanCompletionNoticeBanner: View {
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(spacing: 12) {
             Image(systemName: iconName)
                 .foregroundStyle(iconColor)
-                .font(.title3)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
 
                 if let detail {
                     Text(detail)
-                        .font(.callout)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .foregroundStyle(.secondary)
-                    .padding(4)
-                    .contentShape(Rectangle())
+                Label("Dismiss", systemImage: "xmark.circle.fill")
             }
-            .buttonStyle(.plain)
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
             .help("Dismiss")
-            .accessibilityLabel("Dismiss")
         }
-        .padding(14)
-        .frame(maxWidth: 560)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.separator.opacity(0.5), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+        .topBannerSurface()
     }
 
     private var title: String {
@@ -236,6 +225,11 @@ struct ScanCompletionNoticeBanner: View {
             return String(localized: "No changes since the previous scan")
         case .fullFallback:
             return String(localized: "Complete rescan finished")
+        case .folderUpdated(let name):
+            return String(
+                localized: "\(name) updated",
+                comment: "Confirmation shown after one folder was refreshed inside an existing scan."
+            )
         }
     }
 
@@ -260,6 +254,51 @@ struct ScanCompletionNoticeBanner: View {
             return .orange
         }
         return .green
+    }
+}
+
+struct FolderRescanProgressBanner: View {
+    let state: FolderRescanState
+    @ObservedObject var progress: ScanProgressState
+    let cancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView(value: progress.metrics.progressFraction, total: 1)
+                .frame(width: 96)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    "Rescanning \(state.nodeName)",
+                    comment: "Progress banner title while refreshing one folder inside an existing scan."
+                )
+                .font(.subheadline.weight(.semibold))
+
+                Text(progressDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: cancel) {
+                Label("Cancel", systemImage: "xmark.circle.fill")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Cancel")
+        }
+        .topBannerSurface()
+    }
+
+    private var progressDetail: String {
+        if let currentName = progress.metrics.currentItemName {
+            return currentName
+        }
+        return String(
+            localized: "Preparing folder scan",
+            comment: "Progress detail before a focused folder rescan reports its current item."
+        )
     }
 }
 

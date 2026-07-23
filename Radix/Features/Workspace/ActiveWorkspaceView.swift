@@ -183,6 +183,7 @@ struct ActiveWorkspaceView: View {
             selectNodesAfterViewUpdate: actions.selectNodes,
             expandSummarizedNode: actions.expandSummarizedNode,
             zoomIntoSelection: actions.zoomIntoSelection,
+            rescanFolder: actions.rescanFolder,
             selectedFileActions: actions.selectedFileActions,
             bulkFileActions: actions.bulkFileActions,
             setDiscardPileDragActiveAfterThreshold: actions.setDiscardPileDragActiveAfterThreshold

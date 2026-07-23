@@ -8,9 +8,18 @@ struct FileBrowserActions {
     let selectNodesAfterViewUpdate: (Set<String>, String?) -> Void
     let expandSummarizedNode: (FileNodeRecord) -> Void
     let zoomIntoSelection: () -> Void
+    let rescanFolder: (FileNodeRecord.ID) -> Void
     let selectedFileActions: SelectedFileActions
     let bulkFileActions: BulkFileActions
     let setDiscardPileDragActiveAfterThreshold: (Bool) -> Void
+}
+
+private struct FileBrowserContentRefreshID: Hashable {
+    let tableContentID: String
+    let tableContentRevision: Int
+    let snapshotID: UUID?
+    let treeContentID: UUID?
+    let hiddenNodeIDs: Set<FileNodeRecord.ID>
 }
 
 struct FileBrowserTableView: View {
@@ -100,6 +109,16 @@ struct FileBrowserTableView: View {
         navigation.tableContentRevision
     }
 
+    private var contentRefreshID: FileBrowserContentRefreshID {
+        FileBrowserContentRefreshID(
+            tableContentID: contentID,
+            tableContentRevision: contentRevision,
+            snapshotID: scanState.snapshot?.id,
+            treeContentID: scanState.fileTreeStore?.contentID,
+            hiddenNodeIDs: hiddenNodeIDs
+        )
+    }
+
     var body: some View {
         Group {
             if !showsTableChrome {
@@ -129,23 +148,13 @@ struct FileBrowserTableView: View {
             isSearchFieldFocused = true
         }
         .onExitCommand(perform: exitCommandHandler)
-        .onAppear {
+        .task(id: contentRefreshID) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             updateModelContent()
         }
         .onDisappear {
             model.cleanup()
-        }
-        .onChange(of: contentID) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: contentRevision) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: scanState.snapshot?.id) { _, _ in
-            updateModelContent()
-        }
-        .onChange(of: hiddenNodeIDs) { _, _ in
-            updateModelContent()
         }
         .onChange(of: focusedWorkspaceTarget) { _, target in
             if target != nil {
@@ -362,6 +371,13 @@ struct FileBrowserTableView: View {
                     actions.zoomIntoSelection()
                 }
                 .disabled(!canRequestZoom(for: node))
+            }
+
+            if node.isDirectory {
+                Button("Rescan Folder", systemImage: "arrow.clockwise") {
+                    actions.rescanFolder(id)
+                }
+                .disabled(!scanState.canRescanFolder(id: id))
             }
 
             Divider()

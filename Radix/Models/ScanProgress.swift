@@ -59,6 +59,12 @@ nonisolated struct ScanMetrics: Sendable {
         Int((progressFraction * 100).rounded(.down))
     }
 
+    nonisolated var currentItemName: String? {
+        guard !currentPath.isEmpty else { return nil }
+        let name = URL(filePath: currentPath).lastPathComponent
+        return name.isEmpty ? nil : name
+    }
+
     nonisolated mutating func recalculateProgress(isComplete: Bool = false) {
         if isComplete {
             progressFraction = 1

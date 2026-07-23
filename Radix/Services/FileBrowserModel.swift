@@ -109,6 +109,7 @@ final class FileBrowserModel: ObservableObject {
             needsRefreshAfterCleanup ||
             self.contentID != contentID ||
             snapshotID != nextSnapshotID ||
+            self.fileTreeStore?.contentID != fileTreeStore?.contentID ||
             self.hiddenNodeIDs != hiddenNodeIDs ||
             self.nodes != nodes else {
             return

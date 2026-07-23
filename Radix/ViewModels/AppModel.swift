@@ -700,7 +700,7 @@ final class AppModel: ObservableObject {
     }
 
     func presentOpenPanelAndScan() {
-        guard !scanCoordinator.isScanning else { return }
+        guard !scanCoordinator.isScanOperationInProgress else { return }
         if let target = dependencies.systemActions.presentOpenPanel() {
             startScan(target)
         }
@@ -708,13 +708,13 @@ final class AppModel: ObservableObject {
 
     var canExportCurrentScan: Bool {
         scanCoordinator.snapshot?.isComplete == true &&
-            !scanCoordinator.isScanning &&
+            !scanCoordinator.isScanOperationInProgress &&
             !isExportPanelPresented &&
             !isArchiveOperationInProgress
     }
 
     private var canPresentScanSnapshotPanel: Bool {
-        !scanCoordinator.isScanning &&
+        !scanCoordinator.isScanOperationInProgress &&
             !isExportPanelPresented &&
             !isArchiveOperationInProgress &&
             pendingComparisonSetup == nil &&
@@ -745,7 +745,7 @@ final class AppModel: ObservableObject {
     }
 
     private var canConfirmImportPreview: Bool {
-        !scanCoordinator.isScanning &&
+        !scanCoordinator.isScanOperationInProgress &&
             !isExportPanelPresented &&
             !isArchiveOperationInProgress
     }
@@ -787,7 +787,7 @@ final class AppModel: ObservableObject {
 
     private var canExportCurrentScanIgnoringPresentedPanel: Bool {
         scanCoordinator.snapshot?.isComplete == true &&
-            !scanCoordinator.isScanning &&
+            !scanCoordinator.isScanOperationInProgress &&
             !isArchiveOperationInProgress
     }
 
@@ -886,7 +886,7 @@ final class AppModel: ObservableObject {
     }
 
     private var importUnavailableMessage: String {
-        if scanCoordinator.isScanning {
+        if scanCoordinator.isScanOperationInProgress {
             return String(localized: "Stop the current scan before importing a snapshot.", comment: "Error shown when importing is attempted during a scan.")
         }
         if isExportPanelPresented {
@@ -905,7 +905,7 @@ final class AppModel: ObservableObject {
     }
 
     private var comparisonUnavailableMessage: String {
-        if scanCoordinator.isScanning {
+        if scanCoordinator.isScanOperationInProgress {
             return String(localized: "Stop the current scan before comparing snapshots.", comment: "Error shown when comparison is attempted during a scan.")
         }
         if isExportPanelPresented {
@@ -1685,9 +1685,49 @@ final class AppModel: ObservableObject {
             .path
     }
 
+    var canRescanEntireScan: Bool {
+        guard scanCoordinator.canRescan,
+              !isArchiveOperationInProgress else {
+            return false
+        }
+        if let snapshot = scanCoordinator.snapshot {
+            return snapshot.source.allowsFileMutation
+        }
+        return scanCoordinator.phase == .failed
+    }
+
+    var canRescanCurrentFolder: Bool {
+        guard let snapshot = scanCoordinator.snapshot,
+              snapshot.source.allowsFileMutation,
+              let focusedNodeID = navigationModel.focusedNodeID else {
+            return canRescanEntireScan
+        }
+        if focusedNodeID == snapshot.root.id {
+            return canRescanEntireScan
+        }
+        return !isArchiveOperationInProgress
+            && scanCoordinator.canRescanFolder(id: focusedNodeID)
+    }
+
     func rescan() {
-        guard let selectedTarget = scanCoordinator.selectedTarget else { return }
+        guard let snapshot = scanCoordinator.snapshot,
+              let focusedNodeID = navigationModel.focusedNodeID,
+              focusedNodeID != snapshot.root.id else {
+            rescanEntireScan()
+            return
+        }
+        rescanFolder(id: focusedNodeID)
+    }
+
+    func rescanEntireScan() {
+        guard canRescanEntireScan,
+              let selectedTarget = scanCoordinator.selectedTarget else { return }
         scheduleScanStart(selectedTarget, intent: .rescan)
+    }
+
+    func rescanFolder(id nodeID: FileNodeRecord.ID) {
+        guard !isArchiveOperationInProgress else { return }
+        scanCoordinator.rescanFolder(id: nodeID)
     }
 
     func cachedFreeSpaceAvailableCapacity(for snapshot: ScanSnapshot, focusNode: FileNodeRecord) -> Int64? {

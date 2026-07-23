@@ -12,6 +12,7 @@ struct ContentView: View {
     private static let discardPileDragActivationDistance: CGFloat = 10
 
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
@@ -109,6 +110,7 @@ struct ContentView: View {
                 )
                 .padding(.top, 12)
                 .padding(.horizontal, 16)
+                .topBannerTransition()
             } else if appModel.exportConfirmation != nil {
                 ExportConfirmationBanner(
                     onReveal: {
@@ -120,8 +122,17 @@ struct ContentView: View {
                 )
                 .padding(.top, 12)
                 .padding(.horizontal, 16)
+                .topBannerTransition()
             }
         }
+        .animation(
+            TopBannerPresentation.animation(reduceMotion: reduceMotion),
+            value: appModel.archiveOperation?.id
+        )
+        .animation(
+            TopBannerPresentation.animation(reduceMotion: reduceMotion),
+            value: appModel.exportConfirmation?.id
+        )
         .sheet(item: activeSheetBinding) { sheet in
             switch sheet {
             case .onboarding:
@@ -304,6 +315,7 @@ private struct ArchiveOperationBanner: View {
                     .font(.subheadline.weight(.semibold))
                 messageText
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .lineLimit(1)
 
             Button {
@@ -315,10 +327,7 @@ private struct ArchiveOperationBanner: View {
             .buttonStyle(.borderless)
             .help("Cancel")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .topBannerSurface()
     }
 
     private var messageText: some View {
@@ -362,6 +371,7 @@ private struct ExportConfirmationBanner: View {
 
             Text("Snapshot Exported")
                 .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             Button("Show in Finder") {
                 onReveal()
@@ -377,10 +387,7 @@ private struct ExportConfirmationBanner: View {
             .buttonStyle(.borderless)
             .help("Dismiss")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .topBannerSurface()
     }
 }
 
@@ -800,6 +807,8 @@ private extension ContentView {
             startScan: { appModel.startScan($0) },
             stopScan: { appModel.stopScan() },
             rescan: { appModel.rescan() },
+            rescanFolder: { appModel.rescanFolder(id: $0) },
+            canRescanCurrentFolder: { appModel.canRescanCurrentFolder },
             compareScans: { appModel.compareScanSnapshots() },
             canCompareScans: { appModel.canCompareScanSnapshots },
             handleDroppedURLs: { appModel.handleDroppedURLs($0) },
