@@ -189,9 +189,16 @@ struct SunburstChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard !isDiskMapPending else { return }
-                        focusedWorkspaceTarget = .chart
                         handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
                     },
+                    onMove: { direction in
+                        guard !isDiskMapPending else { return false }
+                        return handleSpatialMove(direction, in: baseChartFrame)
+                    },
+                    onKeyboardFocus: {
+                        focusedWorkspaceTarget = .chart
+                    },
+                    isKeyboardFocused: focusedWorkspaceTarget == .chart,
                     onPan: { delta in
                         panViewport(by: delta, in: baseChartFrame)
                     },
@@ -232,12 +239,6 @@ struct SunburstChartView: View {
             .focusable()
             .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
-            .chartSpatialSelectionKeyboardHandler(
-                isEnabled: !isDiskMapPending,
-                onMove: { direction in
-                    handleSpatialMove(direction, in: baseChartFrame)
-                }
-            )
             .overlay(alignment: .topLeading) {
                 if let hoverSummary {
                     FloatingSummaryCard(summary: hoverSummary)
@@ -309,15 +310,15 @@ struct SunburstChartView: View {
         in baseChartFrame: CGRect
     ) -> Bool {
         guard !isInputPending, !chartModel.layoutReadiness.isPending,
-              let selection = chartModel.spatialSelection(
+              let segment = chartModel.keyboardSelection(
             from: selectedNodeID,
             moving: direction
-        ) else {
+        ), let nodeID = segment.nodeID else {
             return false
         }
 
         let transformedFrame = viewportTransform.frame(for: baseChartFrame)
-        let point = chartModel.spatialSelectionPoint(for: selection, in: transformedFrame)
+        let point = chartModel.keyboardSelectionPoint(for: segment, in: transformedFrame)
         viewportTransform = viewportTransform.revealing(
             point: point,
             within: baseChartFrame,
@@ -325,18 +326,8 @@ struct SunburstChartView: View {
         )
         isHoveringCenter = false
         chartModel.setHoveredSegmentID(nil)
-        selectFromKeyboard(selection.nodeID)
-        return true
-    }
-
-    private func selectFromKeyboard(_ nodeID: String) {
-        focusedWorkspaceTarget = nil
         onSelect(nodeID)
-        Task { @MainActor in
-            await Task.yield()
-            guard focusedWorkspaceTarget == nil else { return }
-            focusedWorkspaceTarget = .chart
-        }
+        return true
     }
 
     private var chartTransition: AnyTransition {

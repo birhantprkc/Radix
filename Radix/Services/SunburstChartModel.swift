@@ -71,95 +71,120 @@ final class SunburstChartModel: ObservableObject {
         renderState.segment(at: point, in: size)
     }
 
-    func spatialSelectionNodeID(
+    func keyboardSelection(
         from selectedNodeID: String?,
         moving direction: ChartSpatialSelectionDirection
-    ) -> String? {
-        spatialSelection(from: selectedNodeID, moving: direction)?.nodeID
-    }
-
-    func spatialSelection(
-        from selectedNodeID: String?,
-        moving direction: ChartSpatialSelectionDirection
-    ) -> ChartSpatialSelectionResult? {
+    ) -> SunburstSegment? {
         let selectableSegments = renderedSegments.filter { segment in
             guard let nodeID = segment.nodeID else { return false }
             return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
         }
-        let hasRenderedSelection = selectableSegments.contains {
-            $0.nodeID == selectedNodeID
-        }
-        let candidateSegments: [SunburstSegment]
-        if hasRenderedSelection {
-            candidateSegments = selectableSegments
-        } else if let minimumDepth = selectableSegments.map(\.depth).min() {
-            candidateSegments = selectableSegments.filter { $0.depth == minimumDepth }
-        } else {
-            candidateSegments = []
+        guard let selectedNodeID,
+              let current = selectableSegments.first(where: {
+                  $0.nodeID == selectedNodeID
+              }) else {
+            return firstTopLevelSegment(in: selectableSegments)
         }
 
-        let candidates = candidateSegments.compactMap { segment
-            -> ChartSpatialSelectionCandidate? in
-            guard let nodeID = segment.nodeID else {
-                return nil
-            }
-            let points = spatialSelectionPoints(for: segment)
-            guard !points.isEmpty else { return nil }
-            return ChartSpatialSelectionCandidate(
-                nodeID: nodeID,
-                points: points
+        switch direction {
+        case .left, .right:
+            return adjacentSegment(
+                to: current,
+                moving: direction,
+                among: selectableSegments
+            )
+        case .up:
+            return segment(
+                atSameAngleAs: current,
+                depthOffset: -1,
+                among: selectableSegments
+            )
+        case .down:
+            return segment(
+                atSameAngleAs: current,
+                depthOffset: 1,
+                among: selectableSegments
             )
         }
-        return ChartSpatialSelection.nextSelection(
-            from: selectedNodeID,
-            moving: direction,
-            among: candidates
-        )
     }
 
-    func spatialSelectionPoint(
-        for selection: ChartSpatialSelectionResult,
+    func keyboardSelectionPoint(
+        for segment: SunburstSegment,
         in frame: CGRect
     ) -> CGPoint {
+        let angle = ((segment.startAngle.radians + segment.endAngle.radians) / 2)
+            - (.pi / 2)
+        let normalizedRadius = (segment.innerRadius + segment.outerRadius) / 2
         let radius = min(frame.width, frame.height) / 2
         return CGPoint(
-            x: frame.midX + (selection.targetPoint.x * radius),
-            y: frame.midY + (selection.targetPoint.y * radius)
+            x: frame.midX + (cos(angle) * normalizedRadius * radius),
+            y: frame.midY + (sin(angle) * normalizedRadius * radius)
         )
     }
 
-    private func spatialSelectionPoints(for segment: SunburstSegment) -> [CGPoint] {
-        let startAngle = segment.startAngle.radians
-        let endAngle = segment.endAngle.radians
-        let span = endAngle - startAngle
-        guard span > 0 else { return [] }
+    private func firstTopLevelSegment(
+        in segments: [SunburstSegment]
+    ) -> SunburstSegment? {
+        guard let minimumDepth = segments.map(\.depth).min() else { return nil }
+        return ordered(segments.filter { $0.depth == minimumDepth }).first
+    }
 
-        let endpointInset = min(span / 4, .pi / 720)
-        var angles = [
-            startAngle + endpointInset,
-            startAngle + (span / 2),
-            endAngle - endpointInset
-        ]
-        for cardinalAngle in stride(from: 0.0, through: .pi * 2, by: .pi / 2)
-        where cardinalAngle > startAngle + endpointInset &&
-            cardinalAngle < endAngle - endpointInset {
-            angles.append(cardinalAngle)
+    private func adjacentSegment(
+        to current: SunburstSegment,
+        moving direction: ChartSpatialSelectionDirection,
+        among segments: [SunburstSegment]
+    ) -> SunburstSegment? {
+        let ring = ordered(segments.filter { $0.depth == current.depth })
+        guard ring.count > 1,
+              let currentIndex = ring.firstIndex(where: {
+                  $0.nodeID == current.nodeID
+              }) else {
+            return nil
         }
 
-        let radius = (segment.innerRadius + segment.outerRadius) / 2
-        var uniqueAngles: [Double] = []
-        for angle in angles.sorted() where !uniqueAngles.contains(where: {
-            abs($0 - angle) < 0.000_001
-        }) {
-            uniqueAngles.append(angle)
+        switch direction {
+        case .left:
+            return ring[(currentIndex - 1 + ring.count) % ring.count]
+        case .right:
+            return ring[(currentIndex + 1) % ring.count]
+        case .up, .down:
+            return nil
         }
-        return uniqueAngles.map { angle in
-            let displayedAngle = angle - (.pi / 2)
-            return CGPoint(
-                x: cos(displayedAngle) * radius,
-                y: sin(displayedAngle) * radius
-            )
+    }
+
+    private func segment(
+        atSameAngleAs current: SunburstSegment,
+        depthOffset: Int,
+        among segments: [SunburstSegment]
+    ) -> SunburstSegment? {
+        let targetDepth = current.depth + depthOffset
+        guard targetDepth >= 0 else { return nil }
+        let midpoint = angularMidpoint(of: current)
+        return ordered(segments
+            .filter {
+                $0.depth == targetDepth
+                    && contains(angle: midpoint, in: $0)
+            })
+            .first
+    }
+
+    private func ordered(_ segments: [SunburstSegment]) -> [SunburstSegment] {
+        segments.sorted {
+            if $0.startAngle.radians != $1.startAngle.radians {
+                return $0.startAngle.radians < $1.startAngle.radians
+            }
+            return $0.id < $1.id
         }
+    }
+
+    private func angularMidpoint(of segment: SunburstSegment) -> Double {
+        (segment.startAngle.radians + segment.endAngle.radians) / 2
+    }
+
+    private func contains(angle: Double, in segment: SunburstSegment) -> Bool {
+        let tolerance = 0.000_000_001
+        return angle >= segment.startAngle.radians - tolerance
+            && angle <= segment.endAngle.radians + tolerance
     }
 
     func selectionOverlaySegments(

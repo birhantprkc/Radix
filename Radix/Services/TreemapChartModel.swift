@@ -82,88 +82,34 @@ final class TreemapChartModel: ObservableObject {
         in size: CGSize
     ) -> String? {
         let displayedSegments = renderedSegments.map { segment in
-            (segment, TreemapRenderer.displayRect(for: segment, in: size))
-        }
-        var firstChildYByContainer: [String: CGFloat] = [:]
-        for (segment, frame) in displayedSegments {
-            firstChildYByContainer[segment.containerNodeID] = min(
-                firstChildYByContainer[segment.containerNodeID] ?? .greatestFiniteMagnitude,
-                frame.minY
-            )
+            (segment, TreemapRenderer.navigationRect(for: segment, in: size))
         }
 
         let selectableSegments = displayedSegments.filter { segment, _ in
             guard let nodeID = segment.nodeID else { return false }
             return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
         }
-        var parentNodeIDByNodeID: [String: String] = [:]
-        for (segment, _) in selectableSegments {
-            if let nodeID = segment.nodeID {
-                parentNodeIDByNodeID[nodeID] = segment.containerNodeID
-            }
-        }
-
-        func isAncestor(_ ancestorNodeID: String, of nodeID: String) -> Bool {
-            var visitedNodeIDs: Set<String> = []
-            var currentNodeID = parentNodeIDByNodeID[nodeID]
-            while let candidateNodeID = currentNodeID,
-                  visitedNodeIDs.insert(candidateNodeID).inserted {
-                if candidateNodeID == ancestorNodeID {
-                    return true
-                }
-                currentNodeID = parentNodeIDByNodeID[candidateNodeID]
-            }
-            return false
-        }
-
         let hasRenderedSelection = selectableSegments.contains {
             $0.0.nodeID == selectedNodeID
         }
         let candidateSegments: [(TreemapSegment, CGRect)]
         if hasRenderedSelection {
-            candidateSegments = selectableSegments.filter { segment, _ in
-                guard let nodeID = segment.nodeID,
-                      let selectedNodeID,
-                      nodeID != selectedNodeID else {
-                    return true
-                }
-                switch direction {
-                case .up, .down:
-                    return true
-                case .left, .right:
-                    return !isAncestor(nodeID, of: selectedNodeID)
-                        && !isAncestor(selectedNodeID, of: nodeID)
-                }
-            }
+            candidateSegments = selectableSegments
         } else if let minimumDepth = selectableSegments.map(\.0.depth).min() {
             candidateSegments = selectableSegments.filter { $0.0.depth == minimumDepth }
         } else {
             candidateSegments = []
         }
 
-        let candidates = candidateSegments.compactMap { segment, displayFrame
-            -> ChartSpatialSelectionCandidate? in
+        let candidates = candidateSegments.compactMap { segment, navigationFrame
+            -> ChartRectangleSelectionCandidate? in
             guard let nodeID = segment.nodeID else { return nil }
-
-            let selectionFrame: CGRect
-            if segment.showsContainerHeader,
-               let firstChildY = firstChildYByContainer[nodeID],
-               firstChildY > displayFrame.minY {
-                selectionFrame = CGRect(
-                    x: displayFrame.minX,
-                    y: displayFrame.minY,
-                    width: displayFrame.width,
-                    height: min(firstChildY - displayFrame.minY, displayFrame.height)
-                )
-            } else {
-                selectionFrame = displayFrame
-            }
-            return ChartSpatialSelectionCandidate(
+            return ChartRectangleSelectionCandidate(
                 nodeID: nodeID,
-                frame: selectionFrame
+                frame: navigationFrame
             )
         }
-        return ChartSpatialSelection.nextNodeID(
+        return ChartRectangleSpatialSelection.nextNodeID(
             from: selectedNodeID,
             moving: direction,
             among: candidates

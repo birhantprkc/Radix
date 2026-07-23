@@ -11,6 +11,7 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
     let onHover: (CGPoint?) -> Void
     let onClick: (CGPoint, Int) -> Void
     let onMove: (ChartSpatialSelectionDirection) -> Bool
+    let onKeyboardFocus: () -> Void
     let isKeyboardFocused: Bool
     let discardPileDragItem: (CGPoint) -> TreemapDiscardPileDragItem?
     let onDiscardPileDragActiveChange: (Bool) -> Void
@@ -29,17 +30,16 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         view.onHover = onHover
         view.onClick = onClick
         view.onMove = onMove
+        view.onKeyboardFocus = onKeyboardFocus
         view.isKeyboardFocused = isKeyboardFocused
         view.discardPileDragItem = discardPileDragItem
         view.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
         view.acquireKeyboardFocusIfNeeded()
     }
 
-    final class InteractionView: NSView, NSDraggingSource {
+    final class InteractionView: ChartKeyboardInteractionView, NSDraggingSource {
         var onHover: (CGPoint?) -> Void = { _ in }
         var onClick: (CGPoint, Int) -> Void = { _, _ in }
-        var onMove: (ChartSpatialSelectionDirection) -> Bool = { _ in false }
-        var isKeyboardFocused = false
         var discardPileDragItem: (CGPoint) -> TreemapDiscardPileDragItem? = { _ in nil }
         var onDiscardPileDragActiveChange: (Bool) -> Void = { _ in }
 
@@ -50,19 +50,6 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         private var didDrag = false
 
         override var isFlipped: Bool { true }
-        override var acceptsFirstResponder: Bool { true }
-
-        func acquireKeyboardFocusIfNeeded() {
-            guard isKeyboardFocused else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, isKeyboardFocused,
-                      let window,
-                      window.firstResponder !== self else {
-                    return
-                }
-                window.makeFirstResponder(self)
-            }
-        }
 
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
@@ -91,24 +78,9 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
-            window?.makeFirstResponder(self)
+            focusForKeyboardInput()
             mouseDownLocation = eventLocation(event)
             didDrag = false
-        }
-
-        override func keyDown(with event: NSEvent) {
-            let selectionModifiers: NSEvent.ModifierFlags = [
-                .command,
-                .control,
-                .option,
-                .shift
-            ]
-            guard event.modifierFlags.intersection(selectionModifiers).isEmpty,
-                  let direction = spatialSelectionDirection(for: event),
-                  onMove(direction) else {
-                super.keyDown(with: event)
-                return
-            }
         }
 
         override func mouseDragged(with event: NSEvent) {
@@ -154,18 +126,6 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
 
         private func eventLocation(_ event: NSEvent) -> CGPoint {
             convert(event.locationInWindow, from: nil)
-        }
-
-        private func spatialSelectionDirection(
-            for event: NSEvent
-        ) -> ChartSpatialSelectionDirection? {
-            switch event.keyCode {
-            case 123: .left
-            case 124: .right
-            case 125: .down
-            case 126: .up
-            default: nil
-            }
         }
 
         private func didExceedDragThreshold(from start: CGPoint, to end: CGPoint) -> Bool {

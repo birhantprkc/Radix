@@ -131,12 +131,14 @@ struct TreemapChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard !isDiskMapPending else { return }
-                        focusedWorkspaceTarget = .chart
                         handleClick(at: location, in: chartFrame, clickCount: clickCount)
                     },
                     onMove: { direction in
                         guard !isDiskMapPending else { return false }
                         return handleSpatialMove(direction, in: chartFrame.size)
+                    },
+                    onKeyboardFocus: {
+                        focusedWorkspaceTarget = .chart
                     },
                     isKeyboardFocused: focusedWorkspaceTarget == .chart,
                     discardPileDragItem: { location in
