@@ -9,8 +9,7 @@ protocol FileSearching: Sendable {
     func search(
         snapshotID: UUID,
         treeStore: FileTreeStore,
-        normalizedQuery: String,
-        includesPath: Bool,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator]
     ) async throws -> [FileNodeRecord]
 
@@ -24,7 +23,7 @@ extension FileSearching {
 actor CurrentContentsSearchService {
     func filteredAndSortedCurrentContents(
         _ nodes: [FileNodeRecord],
-        searchText: String,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore?,
         debounceDuration: Duration
@@ -32,7 +31,7 @@ actor CurrentContentsSearchService {
         try await Task.sleep(for: debounceDuration)
         return try FileBrowserResults.filteredAndSortedCurrentContents(
             nodes,
-            searchText: searchText,
+            query: query,
             sortOrder: sortOrder,
             fileTreeStore: fileTreeStore,
             cancellationCheck: {
@@ -48,11 +47,11 @@ actor FileSearchService: FileSearching {
     func search(
         snapshotID: UUID,
         treeStore: FileTreeStore,
-        normalizedQuery: String,
-        includesPath: Bool,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator]
     ) async throws -> [FileNodeRecord] {
-        guard !normalizedQuery.isEmpty else { return [] }
+        guard query.isActive else { return [] }
+        let preparedQuery = query.prepared()
 
         let indexKey = FileSearchIndexKey(
             snapshotID: snapshotID,
@@ -74,14 +73,22 @@ actor FileSearchService: FileSearching {
                 try Task.checkCancellation()
             }
 
-            if entry.normalizedNameKindHaystack.contains(normalizedQuery) {
+            guard preparedQuery.matchesMetadata(
+                allocatedSize: entry.allocatedSize,
+                itemKind: entry.itemKind
+            ) else {
+                continue
+            }
+
+            if !preparedQuery.hasText ||
+                entry.normalizedNameKindHaystack.contains(preparedQuery.normalizedText) {
                 if let node = treeStore.node(id: entry.id) {
                     matchedNodes.append(node)
                 }
                 continue
             }
 
-            guard includesPath else { continue }
+            guard preparedQuery.includesPath else { continue }
 
             let normalizedPath: String
             if let cachedPath = cachedIndex?.index.normalizedPathsByID[entry.id] {
@@ -91,7 +98,7 @@ actor FileSearchService: FileSearching {
                 cachedIndex?.index.normalizedPathsByID[entry.id] = normalizedPath
             }
 
-            if normalizedPath.contains(normalizedQuery) {
+            if normalizedPath.contains(preparedQuery.normalizedText) {
                 if let node = treeStore.node(id: entry.id) {
                     matchedNodes.append(node)
                 }
@@ -135,7 +142,14 @@ actor FileSearchService: FileSearching {
             guard let node = treeStore.node(id: id) else { return }
             entries.append(FileSearchEntry(
                 id: id,
-                normalizedNameKindHaystack: SearchNormalizer.normalizedNameKindHaystack(for: node)
+                normalizedNameKindHaystack: SearchNormalizer.normalizedNameKindHaystack(for: node),
+                allocatedSize: node.allocatedSize,
+                itemKind: FileBrowserItemKindFilter.classification(
+                    isDirectory: node.isDirectory,
+                    isSymbolicLink: node.isSymbolicLink,
+                    isPackage: node.isPackage,
+                    isSynthetic: node.isSynthetic
+                )
             ))
         }
 
@@ -193,4 +207,6 @@ private nonisolated struct FileSearchIndexKey: Hashable, Sendable {
 private struct FileSearchEntry {
     let id: FileNodeRecord.ID
     let normalizedNameKindHaystack: String
+    let allocatedSize: Int64
+    let itemKind: FileBrowserItemKindFilter?
 }

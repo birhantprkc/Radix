@@ -13,8 +13,8 @@ enum FileBrowserFindTarget: Equatable, Sendable {
 
 @MainActor
 final class FileBrowserModel: ObservableObject {
-    @Published private(set) var currentContentsSearchText = ""
-    @Published private(set) var entireScanSearchText = ""
+    @Published private(set) var currentContentsQuery = FileBrowserQuery()
+    @Published private(set) var entireScanQuery = FileBrowserQuery()
     @Published private(set) var searchScope: FileBrowserFindTarget = .currentContents
     @Published private(set) var sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
     @Published private(set) var isSearchingEntireScan = false
@@ -52,11 +52,15 @@ final class FileBrowserModel: ObservableObject {
     }
 
     var activeSearchText: String {
+        activeQuery.text
+    }
+
+    var activeQuery: FileBrowserQuery {
         switch searchScope {
         case .currentContents:
-            currentContentsSearchText
+            currentContentsQuery
         case .entireScan:
-            entireScanSearchText
+            entireScanQuery
         }
     }
 
@@ -88,11 +92,11 @@ final class FileBrowserModel: ObservableObject {
     }
 
     var isShowingEntireScanResults: Bool {
-        searchScope == .entireScan && !trimmedEntireScanSearchText.isEmpty
+        searchScope == .entireScan && entireScanQuery.isActive
     }
 
     var isFilteringCurrentContents: Bool {
-        searchScope == .currentContents && !trimmedCurrentContentsSearchText.isEmpty
+        searchScope == .currentContents && currentContentsQuery.isActive
     }
 
     func updateContent(
@@ -133,15 +137,26 @@ final class FileBrowserModel: ObservableObject {
     }
 
     func setActiveSearchText(_ text: String) {
+        var query = activeQuery
+        guard query.text != text else { return }
+        query.text = text
+        setActiveQuery(query)
+    }
+
+    func setActiveQuery(_ query: FileBrowserQuery) {
         switch searchScope {
         case .currentContents:
-            guard currentContentsSearchText != text else { return }
-            currentContentsSearchText = text
+            guard currentContentsQuery != query else { return }
+            currentContentsQuery = query
         case .entireScan:
-            guard entireScanSearchText != text else { return }
-            entireScanSearchText = text
+            guard entireScanQuery != query else { return }
+            entireScanQuery = query
         }
         refreshDisplayedNodes()
+    }
+
+    func clearActiveQuery() {
+        setActiveQuery(FileBrowserQuery())
     }
 
     func setSortOrder(_ order: [FileNodeTableComparator]) {
@@ -179,33 +194,16 @@ final class FileBrowserModel: ObservableObject {
         }
     }
 
-    private var trimmedCurrentContentsSearchText: String {
-        currentContentsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var trimmedEntireScanSearchText: String {
-        entireScanSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private var currentDisplayContext: FileBrowserDisplayContext {
         FileBrowserDisplayContext(
             contentID: contentID,
             contentRevision: contentRevision,
             snapshotID: snapshotID,
             searchScope: searchScope,
-            searchText: activeTrimmedSearchText,
+            query: activeQuery,
             sortOrder: sortOrder,
             hiddenNodeIDs: hiddenNodeIDs
         )
-    }
-
-    private var activeTrimmedSearchText: String {
-        switch searchScope {
-        case .currentContents:
-            trimmedCurrentContentsSearchText
-        case .entireScan:
-            trimmedEntireScanSearchText
-        }
     }
 
     private func refreshDisplayedNodes() {
@@ -221,7 +219,7 @@ final class FileBrowserModel: ObservableObject {
     }
 
     private func rebuildCurrentContentsResults() {
-        let searchText = isFilteringCurrentContents ? trimmedCurrentContentsSearchText : ""
+        let query = isFilteringCurrentContents ? currentContentsQuery : FileBrowserQuery()
         let displayContext = currentDisplayContext
         let visibleNodes = Self.visibleNodes(
             nodes,
@@ -234,7 +232,7 @@ final class FileBrowserModel: ObservableObject {
             applyDisplayedNodes(
                 FileBrowserResults.filteredAndSortedCurrentContents(
                     visibleNodes,
-                    searchText: searchText,
+                    query: query,
                     sortOrder: sortOrder,
                     fileTreeStore: fileTreeStore
                 ),
@@ -245,7 +243,7 @@ final class FileBrowserModel: ObservableObject {
 
         scheduleCurrentContentsRefresh(
             nodes: visibleNodes,
-            searchText: searchText,
+            query: query,
             displayContext: displayContext
         )
     }
@@ -256,7 +254,7 @@ final class FileBrowserModel: ObservableObject {
 
     private func scheduleCurrentContentsRefresh(
         nodes: [FileNodeRecord],
-        searchText: String,
+        query: FileBrowserQuery,
         displayContext: FileBrowserDisplayContext
     ) {
         let sortOrder = sortOrder
@@ -265,14 +263,14 @@ final class FileBrowserModel: ObservableObject {
             generation: searchGeneration,
             displayContext: displayContext
         )
-        let debounceDuration = searchText.isEmpty ? Duration.zero : searchDebounceDuration
+        let debounceDuration = query.hasText ? searchDebounceDuration : Duration.zero
 
         setIsRefreshingCurrentContents(true)
         searchTask = Task { [currentContentsService] in
             do {
                 let refreshedNodes = try await currentContentsService.filteredAndSortedCurrentContents(
                     nodes,
-                    searchText: searchText,
+                    query: query,
                     sortOrder: sortOrder,
                     fileTreeStore: fileTreeStore,
                     debounceDuration: debounceDuration
@@ -310,17 +308,15 @@ final class FileBrowserModel: ObservableObject {
             return
         }
 
-        let searchText = trimmedEntireScanSearchText
-        guard !searchText.isEmpty else {
+        let query = entireScanQuery
+        guard query.isActive else {
             setIsSearchingEntireScan(false)
             rebuildCurrentContentsResults()
             return
         }
 
-        let normalizedSearchText = SearchNormalizer.normalize(searchText)
-        let includesPath = SearchNormalizer.queryIncludesPath(searchText)
         let sortOrder = sortOrder
-        let debounceDuration = searchDebounceDuration
+        let debounceDuration = query.hasText ? searchDebounceDuration : Duration.zero
         let hiddenNodeIDs = hiddenNodeIDs
         let request = FileBrowserDisplayRequest(
             generation: searchGeneration,
@@ -334,8 +330,7 @@ final class FileBrowserModel: ObservableObject {
                 let matchedNodes = try await searchService.search(
                     snapshotID: snapshotID,
                     treeStore: fileTreeStore,
-                    normalizedQuery: normalizedSearchText,
-                    includesPath: includesPath,
+                    query: query,
                     sortOrder: sortOrder
                 )
                 let visibleMatchedNodes = Self.visibleNodes(

@@ -82,10 +82,10 @@ struct FileBrowserTableView: View {
         )
     }
 
-    private var activeSearchText: Binding<String> {
+    private var activeQuery: Binding<FileBrowserQuery> {
         Binding(
-            get: { model.activeSearchText },
-            set: { model.setActiveSearchText($0) }
+            get: { model.activeQuery },
+            set: { model.setActiveQuery($0) }
         )
     }
 
@@ -132,7 +132,7 @@ struct FileBrowserTableView: View {
                 VStack(spacing: 0) {
                     FileBrowserSearchFilterBar(
                         scope: searchScopeBinding,
-                        text: activeSearchText,
+                        query: activeQuery,
                         isLoading: isSearchBarLoading,
                         isFocused: $isSearchFieldFocused
                     )
@@ -536,13 +536,13 @@ struct FileBrowserTableView: View {
     }
 
     private var exitCommandHandler: (() -> Void)? {
-        guard isSearchFieldFocused || !model.activeSearchText.isEmpty else { return nil }
+        guard isSearchFieldFocused || model.activeQuery.isActive else { return nil }
         return handleExitCommand
     }
 
     private func handleExitCommand() {
-        if !model.activeSearchText.isEmpty {
-            model.setActiveSearchText("")
+        if model.activeQuery.isActive {
+            model.clearActiveQuery()
         } else {
             isSearchFieldFocused = false
         }
