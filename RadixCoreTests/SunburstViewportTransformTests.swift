@@ -42,6 +42,36 @@ final class SunburstViewportTransformTests: XCTestCase {
         XCTAssertTrue(transform.frame(for: baseFrame).contains(baseFrame))
     }
 
+    func testRevealingPointPansZoomedViewportIntoSafeFrame() {
+        let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let transform = SunburstViewportTransform(scale: 2)
+
+        let revealed = transform.revealing(
+            point: CGPoint(x: 280, y: 100),
+            within: baseFrame,
+            padding: 10
+        )
+
+        XCTAssertEqual(revealed.offset, CGSize(width: -90, height: 0))
+    }
+
+    func testRevealingVisiblePointPreservesViewport() {
+        let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let transform = SunburstViewportTransform(
+            scale: 2,
+            offset: CGSize(width: 20, height: -10)
+        )
+
+        XCTAssertEqual(
+            transform.revealing(
+                point: CGPoint(x: 100, y: 100),
+                within: baseFrame,
+                padding: 10
+            ),
+            transform
+        )
+    }
+
     func testConstrainedShrinksOffsetForSmallerFrame() {
         let smallerFrame = CGRect(x: 0, y: 0, width: 120, height: 80)
         let transform = SunburstViewportTransform(

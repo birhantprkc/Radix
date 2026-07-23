@@ -131,9 +131,16 @@ struct TreemapChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard !isDiskMapPending else { return }
-                        focusedWorkspaceTarget = .chart
                         handleClick(at: location, in: chartFrame, clickCount: clickCount)
                     },
+                    onMove: { direction in
+                        guard !isDiskMapPending else { return false }
+                        return handleSpatialMove(direction, in: chartFrame.size)
+                    },
+                    onKeyboardFocus: {
+                        focusedWorkspaceTarget = .chart
+                    },
+                    isKeyboardFocused: focusedWorkspaceTarget == .chart,
                     discardPileDragItem: { location in
                         discardPileDragItem(at: location, in: chartFrame)
                     },
@@ -142,16 +149,15 @@ struct TreemapChartView: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(!isDiskMapPending)
 
-                ChartSpatialSelectionKeyboardMonitor(
-                    isEnabled: focusedWorkspaceTarget == .chart && !isDiskMapPending,
-                    onMove: handleSpatialMove
-                )
             }
             .clipped()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Treemap disk usage chart")
             .accessibilityValue(accessibilityValue)
-            .accessibilityHint("Select a tile to inspect it. Double-click a folder tile to zoom in. Use the breadcrumb to go up.")
+            .accessibilityHint("Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up.")
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedWorkspaceTarget, equals: .chart)
             .overlay(alignment: .topLeading) {
                 if !isDiskMapPending,
                    let tooltipContent,
@@ -176,9 +182,6 @@ struct TreemapChartView: View {
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
-            .focusable()
-            .focusEffectDisabled()
-            .focused($focusedWorkspaceTarget, equals: .chart)
             .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
                 await updateLoadingDiskMapProgress(
                     isPending: isDiskMapPending,
@@ -197,14 +200,22 @@ struct TreemapChartView: View {
         }
     }
 
-    private func handleSpatialMove(_ direction: ChartSpatialSelectionDirection) {
-        guard !isInputPending, !chartModel.layoutReadiness.isPending else { return }
-        if let nodeID = chartModel.spatialSelectionNodeID(
+    private func handleSpatialMove(
+        _ direction: ChartSpatialSelectionDirection,
+        in size: CGSize
+    ) -> Bool {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending,
+              let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
-            moving: direction
-        ) {
-            onSelect(nodeID)
+            moving: direction,
+            in: size
+        ) else {
+            return false
         }
+        tooltipAnchor = nil
+        chartModel.setHoveredSegmentID(nil)
+        onSelect(nodeID)
+        return true
     }
 
     private var chartTransition: AnyTransition {

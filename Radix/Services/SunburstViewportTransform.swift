@@ -92,6 +92,42 @@ nonisolated struct SunburstViewportTransform: Equatable {
             .constrained(to: baseFrame)
     }
 
+    func revealing(
+        point: CGPoint,
+        within baseFrame: CGRect,
+        padding: CGFloat = 0
+    ) -> SunburstViewportTransform {
+        guard isZoomed else { return .identity }
+
+        let maximumPadding = max(min(baseFrame.width, baseFrame.height) / 2, 0)
+        let safeFrame = baseFrame.insetBy(
+            dx: min(max(padding, 0), maximumPadding),
+            dy: min(max(padding, 0), maximumPadding)
+        )
+        let horizontalOffset: CGFloat
+        if point.x < safeFrame.minX {
+            horizontalOffset = safeFrame.minX - point.x
+        } else if point.x > safeFrame.maxX {
+            horizontalOffset = safeFrame.maxX - point.x
+        } else {
+            horizontalOffset = 0
+        }
+
+        let verticalOffset: CGFloat
+        if point.y < safeFrame.minY {
+            verticalOffset = safeFrame.minY - point.y
+        } else if point.y > safeFrame.maxY {
+            verticalOffset = safeFrame.maxY - point.y
+        } else {
+            verticalOffset = 0
+        }
+
+        return panned(
+            by: CGSize(width: horizontalOffset, height: verticalOffset),
+            in: baseFrame
+        )
+    }
+
     func constrained(
         to baseFrame: CGRect,
         maximumScale: CGFloat = Self.maximumScale

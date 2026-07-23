@@ -78,19 +78,38 @@ final class TreemapChartModel: ObservableObject {
 
     func spatialSelectionNodeID(
         from selectedNodeID: String?,
-        moving direction: ChartSpatialSelectionDirection
+        moving direction: ChartSpatialSelectionDirection,
+        in size: CGSize
     ) -> String? {
-        let candidates = renderedSegments.compactMap { segment -> ChartSpatialSelectionCandidate? in
-            guard let nodeID = segment.nodeID,
-                  !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
-                return nil
-            }
-            return ChartSpatialSelectionCandidate(
+        let displayedSegments = renderedSegments.map { segment in
+            (segment, TreemapRenderer.navigationRect(for: segment, in: size))
+        }
+
+        let selectableSegments = displayedSegments.filter { segment, _ in
+            guard let nodeID = segment.nodeID else { return false }
+            return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
+        }
+        let hasRenderedSelection = selectableSegments.contains {
+            $0.0.nodeID == selectedNodeID
+        }
+        let candidateSegments: [(TreemapSegment, CGRect)]
+        if hasRenderedSelection {
+            candidateSegments = selectableSegments
+        } else if let minimumDepth = selectableSegments.map(\.0.depth).min() {
+            candidateSegments = selectableSegments.filter { $0.0.depth == minimumDepth }
+        } else {
+            candidateSegments = []
+        }
+
+        let candidates = candidateSegments.compactMap { segment, navigationFrame
+            -> ChartRectangleSelectionCandidate? in
+            guard let nodeID = segment.nodeID else { return nil }
+            return ChartRectangleSelectionCandidate(
                 nodeID: nodeID,
-                center: CGPoint(x: segment.rect.midX, y: segment.rect.midY)
+                frame: navigationFrame
             )
         }
-        return ChartSpatialSelection.nextNodeID(
+        return ChartRectangleSpatialSelection.nextNodeID(
             from: selectedNodeID,
             moving: direction,
             among: candidates

@@ -3,6 +3,233 @@ import XCTest
 
 @MainActor
 final class TreemapChartModelTests: XCTestCase {
+    func testSpatialSelectionStartsAmongTopLevelTiles() async {
+        let topLevel = makeTreemapSegment(
+            id: "top-level",
+            rect: CGRect(x: 0.4, y: 0, width: 0.6, height: 1)
+        )
+        let deeper = makeTreemapSegment(
+            id: "deeper",
+            rect: CGRect(x: 0, y: 0, width: 0.2, height: 0.2),
+            depth: 1,
+            containerNodeID: topLevel.id
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(segments: [topLevel, deeper])
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 2,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: nil,
+                moving: .right,
+                in: CGSize(width: 600, height: 300)
+            ),
+            topLevel.id
+        )
+    }
+
+    func testSpatialSelectionDoesNotTreatNestedTileAsSidewaysFromContainerHeader() async {
+        let container = makeTreemapSegment(
+            id: "container",
+            rect: CGRect(x: 0, y: 0, width: 0.9, height: 1),
+            showsContainerHeader: true
+        )
+        let child = makeTreemapSegment(
+            id: "child",
+            rect: CGRect(x: 0.5, y: 0.1, width: 0.1, height: 0.2),
+            depth: 1,
+            containerNodeID: container.id
+        )
+        let rightSibling = makeTreemapSegment(
+            id: "right-sibling",
+            rect: CGRect(x: 0.9, y: 0, width: 0.1, height: 1)
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(
+                segments: [container, child, rightSibling]
+            )
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 2,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: container.id,
+                moving: .right,
+                in: CGSize(width: 600, height: 300)
+            ),
+            rightSibling.id
+        )
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: container.id,
+                moving: .down,
+                in: CGSize(width: 600, height: 300)
+            ),
+            child.id
+        )
+    }
+
+    func testSpatialSelectionDoesNotMoveSidewaysIntoAncestorHeaders() async {
+        let ancestor = makeTreemapSegment(
+            id: "ancestor",
+            rect: CGRect(x: 0, y: 0, width: 0.8, height: 1),
+            showsContainerHeader: true
+        )
+        let current = makeTreemapSegment(
+            id: "current",
+            rect: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.8),
+            depth: 1,
+            containerNodeID: ancestor.id,
+            showsContainerHeader: true
+        )
+        let child = makeTreemapSegment(
+            id: "child",
+            rect: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.3),
+            depth: 2,
+            containerNodeID: current.id,
+            showsContainerHeader: false
+        )
+        let rightSibling = makeTreemapSegment(
+            id: "right-sibling",
+            rect: CGRect(x: 0.6, y: 0.1, width: 0.4, height: 0.8),
+            depth: 1,
+            containerNodeID: ancestor.id,
+            showsContainerHeader: false
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(
+                segments: [ancestor, current, child, rightSibling]
+            )
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 3,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .right,
+                in: CGSize(width: 600, height: 300)
+            ),
+            rightSibling.id
+        )
+        XCTAssertNil(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .left,
+                in: CGSize(width: 600, height: 300)
+            )
+        )
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .up,
+                in: CGSize(width: 600, height: 300)
+            ),
+            ancestor.id
+        )
+    }
+
+    func testSpatialSelectionMeasuresDistanceInDisplayedAspectRatio() async {
+        let current = makeTreemapSegment(
+            id: "current",
+            rect: CGRect(x: 0.499, y: 0.499, width: 0.002, height: 0.002)
+        )
+        let normalizedFavorite = makeTreemapSegment(
+            id: "normalized-favorite",
+            rect: CGRect(x: 0.649, y: 0.579, width: 0.002, height: 0.002)
+        )
+        let displayedFavorite = makeTreemapSegment(
+            id: "displayed-favorite",
+            rect: CGRect(x: 0.579, y: 0.649, width: 0.002, height: 0.002)
+        )
+        let service = ImmediateTreemapLayoutService(
+            segments: [current, normalizedFavorite, displayedFavorite]
+        )
+        let model = TreemapChartModel(layoutService: service)
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 1,
+            size: CGSize(width: 1_000, height: 250),
+            layoutID: "wide-layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .right,
+                in: CGSize(width: 1_000, height: 250)
+            ),
+            displayedFavorite.id
+        )
+    }
+
+    func testSpatialSelectionUsesExposedContainerHeaderInsteadOfCoveredCenter() async {
+        let parent = makeTreemapSegment(
+            id: "parent",
+            rect: CGRect(x: 0, y: 0, width: 0.6, height: 1),
+            showsContainerHeader: true
+        )
+        let child = makeTreemapSegment(
+            id: "child",
+            rect: CGRect(x: 0, y: 0.2, width: 0.6, height: 0.3),
+            depth: 1,
+            containerNodeID: parent.id
+        )
+        let lowerSibling = makeTreemapSegment(
+            id: "lower-sibling",
+            rect: CGRect(x: 0, y: 0.55, width: 0.6, height: 0.45),
+            depth: 1,
+            containerNodeID: parent.id
+        )
+        let service = ImmediateTreemapLayoutService(segments: [parent, child, lowerSibling])
+        let model = TreemapChartModel(layoutService: service)
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 2,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: child.id,
+                moving: .down,
+                in: CGSize(width: 600, height: 300)
+            ),
+            lowerSibling.id
+        )
+    }
+
     func testSelectedSegmentDoesNotIncludeAncestorOverlays() async {
         let ancestor = makeTreemapSegment(id: "ancestor", depth: 0)
         let selected = makeTreemapSegment(id: "selected", depth: 1)
@@ -375,19 +602,25 @@ private func makeTreemapStore() -> FileTreeStore {
     return FileTreeStore(root: root)
 }
 
-private func makeTreemapSegment(id: String, depth: Int = 0) -> TreemapSegment {
+private func makeTreemapSegment(
+    id: String,
+    rect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+    depth: Int = 0,
+    containerNodeID: String = "/root",
+    showsContainerHeader: Bool? = nil
+) -> TreemapSegment {
     TreemapSegment(
         id: id,
         nodeID: id,
-        containerNodeID: "/root",
+        containerNodeID: containerNodeID,
         label: id,
-        rect: CGRect(x: 0, y: 0, width: 1, height: 1),
+        rect: rect,
         depth: depth,
         colorToken: .single(id: id, depth: depth),
         totalSize: 1,
         isAggregate: false,
         groupedItemCount: nil,
         isDirectory: depth == 0,
-        showsContainerHeader: depth == 0
+        showsContainerHeader: showsContainerHeader ?? (depth == 0)
     )
 }

@@ -10,6 +10,9 @@ struct TreemapDiscardPileDragItem {
 struct TreemapInteractionOverlay: NSViewRepresentable {
     let onHover: (CGPoint?) -> Void
     let onClick: (CGPoint, Int) -> Void
+    let onMove: (ChartSpatialSelectionDirection) -> Bool
+    let onKeyboardFocus: () -> Void
+    let isKeyboardFocused: Bool
     let discardPileDragItem: (CGPoint) -> TreemapDiscardPileDragItem?
     let onDiscardPileDragActiveChange: (Bool) -> Void
 
@@ -26,11 +29,15 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
     private func update(_ view: InteractionView) {
         view.onHover = onHover
         view.onClick = onClick
+        view.onMove = onMove
+        view.onKeyboardFocus = onKeyboardFocus
+        view.isKeyboardFocused = isKeyboardFocused
         view.discardPileDragItem = discardPileDragItem
         view.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
+        view.acquireKeyboardFocusIfNeeded()
     }
 
-    final class InteractionView: NSView, NSDraggingSource {
+    final class InteractionView: ChartKeyboardInteractionView, NSDraggingSource {
         var onHover: (CGPoint?) -> Void = { _ in }
         var onClick: (CGPoint, Int) -> Void = { _, _ in }
         var discardPileDragItem: (CGPoint) -> TreemapDiscardPileDragItem? = { _ in nil }
@@ -71,6 +78,7 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
+            focusForKeyboardInput()
             mouseDownLocation = eventLocation(event)
             didDrag = false
         }

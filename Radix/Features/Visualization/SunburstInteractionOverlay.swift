@@ -10,6 +10,9 @@ struct SunburstDiscardPileDragItem {
 struct SunburstInteractionOverlay: NSViewRepresentable {
     let onHover: (CGPoint?) -> Void
     let onClick: (CGPoint, Int) -> Void
+    let onMove: (ChartSpatialSelectionDirection) -> Bool
+    let onKeyboardFocus: () -> Void
+    let isKeyboardFocused: Bool
     let onPan: (CGSize) -> Void
     let onMagnify: (CGPoint, CGFloat) -> Void
     let canStartPan: (CGPoint) -> Bool
@@ -22,6 +25,9 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         let view = InteractionView()
         view.onHover = onHover
         view.onClick = onClick
+        view.onMove = onMove
+        view.onKeyboardFocus = onKeyboardFocus
+        view.isKeyboardFocused = isKeyboardFocused
         view.onPan = onPan
         view.onMagnify = onMagnify
         view.canStartPan = canStartPan
@@ -29,12 +35,16 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         view.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
         view.help = help
         view.isPanEnabled = isPanEnabled
+        view.acquireKeyboardFocusIfNeeded()
         return view
     }
 
     func updateNSView(_ nsView: InteractionView, context: Context) {
         nsView.onHover = onHover
         nsView.onClick = onClick
+        nsView.onMove = onMove
+        nsView.onKeyboardFocus = onKeyboardFocus
+        nsView.isKeyboardFocused = isKeyboardFocused
         nsView.onPan = onPan
         nsView.onMagnify = onMagnify
         nsView.canStartPan = canStartPan
@@ -42,9 +52,10 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         nsView.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
         nsView.help = help
         nsView.isPanEnabled = isPanEnabled
+        nsView.acquireKeyboardFocusIfNeeded()
     }
 
-    final class InteractionView: NSView, NSDraggingSource {
+    final class InteractionView: ChartKeyboardInteractionView, NSDraggingSource {
         var onHover: (CGPoint?) -> Void = { _ in }
         var onClick: (CGPoint, Int) -> Void = { _, _ in }
         var onPan: (CGSize) -> Void = { _ in }
@@ -101,6 +112,7 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
+            focusForKeyboardInput()
             let location = eventLocation(event)
             mouseDownLocation = location
             lastDragLocation = location

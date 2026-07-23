@@ -114,7 +114,13 @@ struct TreemapSelectionOverlay: View, Equatable {
                 for: segment,
                 in: size,
                 lineWidth: style.strokeWidth
-            ) else { return }
+            ) else {
+                context.fill(
+                    tilePath(for: segment, in: size),
+                    with: .color(style.strokeColor.opacity(0.72))
+                )
+                return
+            }
             context.stroke(
                 accentPath,
                 with: .color(style.strokeColor),

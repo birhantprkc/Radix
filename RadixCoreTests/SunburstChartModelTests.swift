@@ -4,6 +4,118 @@ import XCTest
 
 @MainActor
 final class SunburstChartModelTests: XCTestCase {
+    func testKeyboardSelectionMovesAroundCurrentRingAndWraps() async {
+        let first = makeSegment(id: "first", startAngle: 0, endAngle: 1)
+        let aggregate = makeSegment(
+            id: "aggregate",
+            startAngle: 1,
+            endAngle: 2,
+            isSelectable: false
+        )
+        let second = makeSegment(id: "second", startAngle: 2, endAngle: 3)
+        let third = makeSegment(id: "third", startAngle: 3, endAngle: 4)
+        let model = await loadedModel(
+            with: [third, aggregate, first, second]
+        )
+
+        XCTAssertEqual(
+            model.keyboardSelection(from: first.id, moving: .left)?.nodeID,
+            third.id
+        )
+        XCTAssertEqual(
+            model.keyboardSelection(from: first.id, moving: .right)?.nodeID,
+            second.id
+        )
+        XCTAssertEqual(
+            model.keyboardSelection(from: third.id, moving: .right)?.nodeID,
+            first.id
+        )
+    }
+
+    func testKeyboardSelectionMovesOneRingInAndOut() async {
+        let parent = makeSegment(
+            id: "parent",
+            startAngle: 0,
+            endAngle: 2
+        )
+        let otherParent = makeSegment(
+            id: "other-parent",
+            startAngle: 2,
+            endAngle: 4
+        )
+        let firstChild = makeSegment(
+            id: "first-child",
+            depth: 1,
+            startAngle: 0,
+            endAngle: 0.8
+        )
+        let secondChild = makeSegment(
+            id: "second-child",
+            depth: 1,
+            startAngle: 0.8,
+            endAngle: 2
+        )
+        let unrelatedChild = makeSegment(
+            id: "unrelated-child",
+            depth: 1,
+            startAngle: 2,
+            endAngle: 4
+        )
+        let model = await loadedModel(
+            with: [
+                unrelatedChild,
+                secondChild,
+                otherParent,
+                firstChild,
+                parent
+            ]
+        )
+
+        XCTAssertEqual(
+            model.keyboardSelection(from: secondChild.id, moving: .up)?.nodeID,
+            parent.id
+        )
+        XCTAssertEqual(
+            model.keyboardSelection(from: parent.id, moving: .down)?.nodeID,
+            secondChild.id
+        )
+        XCTAssertNil(
+            model.keyboardSelection(from: parent.id, moving: .up)
+        )
+        XCTAssertNil(
+            model.keyboardSelection(from: secondChild.id, moving: .down)
+        )
+    }
+
+    func testKeyboardSelectionStartsAtFirstSegmentInTopLevelRing() async {
+        let first = makeSegment(
+            id: "first",
+            startAngle: 0,
+            endAngle: 1
+        )
+        let later = makeSegment(
+            id: "later",
+            startAngle: 1,
+            endAngle: 2
+        )
+        let deeper = makeSegment(
+            id: "deeper",
+            depth: 1,
+            startAngle: 0,
+            endAngle: 1
+        )
+        let model = await loadedModel(with: [deeper, later, first])
+
+        XCTAssertEqual(
+            model.keyboardSelection(from: nil, moving: .right)?.nodeID,
+            first.id
+        )
+        XCTAssertEqual(
+            model.keyboardSelection(from: "missing", moving: .down)?.nodeID,
+            first.id
+        )
+    }
+
     func testStartingLayoutPublishesPendingState() async {
         let service = ControllableSunburstLayoutService()
         let model = SunburstChartModel(layoutService: service)
@@ -349,6 +461,22 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertEqual(overlaySegments.map(\.segment.id), [ancestor.id, selected.id])
         XCTAssertEqual(overlaySegments.map(\.role), [.ancestor, .selected])
     }
+
+    private func loadedModel(
+        with segments: [SunburstSegment]
+    ) async -> SunburstChartModel {
+        let model = SunburstChartModel(
+            layoutService: ImmediateSunburstLayoutService(segments: segments)
+        )
+        let store = makeStore()
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 3,
+            layoutID: "layout"
+        )
+        return model
+    }
 }
 
 private actor ImmediateSunburstLayoutService: SunburstLayouting {
@@ -503,15 +631,23 @@ private func makeStore() -> FileTreeStore {
     return FileTreeStore(root: root)
 }
 
-private func makeSegment(id: String, depth: Int = 0) -> SunburstSegment {
+private func makeSegment(
+    id: String,
+    depth: Int = 0,
+    startAngle: Double = 0,
+    endAngle: Double = 1,
+    innerRadius: CGFloat = 0,
+    outerRadius: CGFloat = 1,
+    isSelectable: Bool = true
+) -> SunburstSegment {
     SunburstSegment(
         id: id,
-        nodeID: id,
+        nodeID: isSelectable ? id : nil,
         label: id,
-        startAngle: .radians(0),
-        endAngle: .radians(1),
-        innerRadius: 0,
-        outerRadius: 1,
+        startAngle: .radians(startAngle),
+        endAngle: .radians(endAngle),
+        innerRadius: innerRadius,
+        outerRadius: outerRadius,
         depth: depth,
         colorToken: .single(id: id, depth: depth),
         totalSize: 1,

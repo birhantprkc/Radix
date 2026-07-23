@@ -23,8 +23,8 @@ nonisolated struct TreemapSegment: Identifiable, Hashable, Sendable {
 }
 
 nonisolated enum TreemapLayout {
-    private nonisolated static let containerInset: CGFloat = 2
-    private nonisolated static let containerHeaderHeight: CGFloat = 18
+    fileprivate nonisolated static let containerInset: CGFloat = 2
+    fileprivate nonisolated static let containerHeaderHeight: CGFloat = 18
     private nonisolated static let minimumContainerWidth: CGFloat = 52
     private nonisolated static let minimumContainerHeight: CGFloat = 46
 
@@ -581,7 +581,31 @@ nonisolated enum TreemapRenderer {
     }
 
     nonisolated static func displayRect(for segment: TreemapSegment, in size: CGSize) -> CGRect {
-        let rect = rect(for: segment, in: size)
+        displayRect(for: rect(for: segment, in: size))
+    }
+
+    nonisolated static func navigationRect(
+        for segment: TreemapSegment,
+        in size: CGSize
+    ) -> CGRect {
+        let segmentRect = rect(for: segment, in: size)
+        guard segment.showsContainerHeader else {
+            return displayRect(for: segmentRect)
+        }
+
+        let headerHeight = min(
+            TreemapLayout.containerInset + TreemapLayout.containerHeaderHeight,
+            segmentRect.height
+        )
+        return displayRect(for: CGRect(
+            x: segmentRect.minX,
+            y: segmentRect.minY,
+            width: segmentRect.width,
+            height: headerHeight
+        ))
+    }
+
+    private nonisolated static func displayRect(for rect: CGRect) -> CGRect {
         let inset = min(
             displayInset,
             min(rect.width, rect.height) * 0.12
