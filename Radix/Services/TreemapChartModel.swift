@@ -96,12 +96,45 @@ final class TreemapChartModel: ObservableObject {
             guard let nodeID = segment.nodeID else { return false }
             return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
         }
+        var parentNodeIDByNodeID: [String: String] = [:]
+        for (segment, _) in selectableSegments {
+            if let nodeID = segment.nodeID {
+                parentNodeIDByNodeID[nodeID] = segment.containerNodeID
+            }
+        }
+
+        func isAncestor(_ ancestorNodeID: String, of nodeID: String) -> Bool {
+            var visitedNodeIDs: Set<String> = []
+            var currentNodeID = parentNodeIDByNodeID[nodeID]
+            while let candidateNodeID = currentNodeID,
+                  visitedNodeIDs.insert(candidateNodeID).inserted {
+                if candidateNodeID == ancestorNodeID {
+                    return true
+                }
+                currentNodeID = parentNodeIDByNodeID[candidateNodeID]
+            }
+            return false
+        }
+
         let hasRenderedSelection = selectableSegments.contains {
             $0.0.nodeID == selectedNodeID
         }
         let candidateSegments: [(TreemapSegment, CGRect)]
         if hasRenderedSelection {
-            candidateSegments = selectableSegments
+            candidateSegments = selectableSegments.filter { segment, _ in
+                guard let nodeID = segment.nodeID,
+                      let selectedNodeID,
+                      nodeID != selectedNodeID else {
+                    return true
+                }
+                switch direction {
+                case .up, .down:
+                    return true
+                case .left, .right:
+                    return !isAncestor(nodeID, of: selectedNodeID)
+                        && !isAncestor(selectedNodeID, of: nodeID)
+                }
+            }
         } else if let minimumDepth = selectableSegments.map(\.0.depth).min() {
             candidateSegments = selectableSegments.filter { $0.0.depth == minimumDepth }
         } else {

@@ -134,6 +134,11 @@ struct TreemapChartView: View {
                         focusedWorkspaceTarget = .chart
                         handleClick(at: location, in: chartFrame, clickCount: clickCount)
                     },
+                    onMove: { direction in
+                        guard !isDiskMapPending else { return false }
+                        return handleSpatialMove(direction, in: chartFrame.size)
+                    },
+                    isKeyboardFocused: focusedWorkspaceTarget == .chart,
                     discardPileDragItem: { location in
                         discardPileDragItem(at: location, in: chartFrame)
                     },
@@ -148,6 +153,9 @@ struct TreemapChartView: View {
             .accessibilityLabel("Treemap disk usage chart")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up.")
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focusedWorkspaceTarget, equals: .chart)
             .overlay(alignment: .topLeading) {
                 if !isDiskMapPending,
                    let tooltipContent,
@@ -172,15 +180,6 @@ struct TreemapChartView: View {
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
-            .focusable()
-            .focusEffectDisabled()
-            .focused($focusedWorkspaceTarget, equals: .chart)
-            .chartSpatialSelectionKeyboardHandler(
-                isEnabled: !isDiskMapPending,
-                onMove: { direction in
-                    handleSpatialMove(direction, in: chartFrame.size)
-                }
-            )
             .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
                 await updateLoadingDiskMapProgress(
                     isPending: isDiskMapPending,
@@ -213,18 +212,8 @@ struct TreemapChartView: View {
         }
         tooltipAnchor = nil
         chartModel.setHoveredSegmentID(nil)
-        selectFromKeyboard(nodeID)
-        return true
-    }
-
-    private func selectFromKeyboard(_ nodeID: String) {
-        focusedWorkspaceTarget = nil
         onSelect(nodeID)
-        Task { @MainActor in
-            await Task.yield()
-            guard focusedWorkspaceTarget == nil else { return }
-            focusedWorkspaceTarget = .chart
-        }
+        return true
     }
 
     private var chartTransition: AnyTransition {

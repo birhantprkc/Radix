@@ -86,6 +86,73 @@ final class TreemapChartModelTests: XCTestCase {
         )
     }
 
+    func testSpatialSelectionDoesNotMoveSidewaysIntoAncestorHeaders() async {
+        let ancestor = makeTreemapSegment(
+            id: "ancestor",
+            rect: CGRect(x: 0, y: 0, width: 0.8, height: 1),
+            showsContainerHeader: true
+        )
+        let current = makeTreemapSegment(
+            id: "current",
+            rect: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.8),
+            depth: 1,
+            containerNodeID: ancestor.id,
+            showsContainerHeader: true
+        )
+        let child = makeTreemapSegment(
+            id: "child",
+            rect: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.3),
+            depth: 2,
+            containerNodeID: current.id,
+            showsContainerHeader: false
+        )
+        let rightSibling = makeTreemapSegment(
+            id: "right-sibling",
+            rect: CGRect(x: 0.6, y: 0.1, width: 0.4, height: 0.8),
+            depth: 1,
+            containerNodeID: ancestor.id,
+            showsContainerHeader: false
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(
+                segments: [ancestor, current, child, rightSibling]
+            )
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 3,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .right,
+                in: CGSize(width: 600, height: 300)
+            ),
+            rightSibling.id
+        )
+        XCTAssertNil(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .left,
+                in: CGSize(width: 600, height: 300)
+            )
+        )
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .up,
+                in: CGSize(width: 600, height: 300)
+            ),
+            ancestor.id
+        )
+    }
+
     func testSpatialSelectionMeasuresDistanceInDisplayedAspectRatio() async {
         let current = makeTreemapSegment(
             id: "current",
