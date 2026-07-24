@@ -136,7 +136,7 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
         let location = eventLocation(event)
         let zoomModifiers: NSEvent.ModifierFlags = [.command, .option]
 
-        if !event.modifierFlags.intersection(zoomModifiers).isEmpty {
+        if !event.modifierFlags.isDisjoint(with: zoomModifiers) {
             let scrollDelta = event.scrollingDeltaY != 0
                 ? event.scrollingDeltaY
                 : -event.scrollingDeltaX
