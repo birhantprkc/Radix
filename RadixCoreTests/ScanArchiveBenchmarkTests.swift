@@ -17,41 +17,53 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         let iterations = Self.integer(from: environment["RADIX_BENCH_ARCHIVE_ITERATIONS"], defaultValue: 3)
         let cases = Self.benchmarkCases(environment: environment)
         let service = ScanArchiveService()
+        let formatVersions = environment["RADIX_BENCH_ARCHIVE_COMPARE_FORMATS"] == "1"
+            ? [4, ScanArchiveService.currentFormatVersion]
+            : [ScanArchiveService.currentFormatVersion]
 
         for benchmarkCase in cases {
             let snapshot = benchmarkCase.makeSnapshot()
 
-            for iteration in 1...iterations {
-                let archiveURL = try makeTemporaryArchiveURL(caseName: benchmarkCase.name, iteration: iteration)
-                let exportMeasurement = try await Self.measureMemoryAndTime {
-                    try await service.export(
-                        snapshot: snapshot,
-                        to: archiveURL,
-                        options: ScanArchiveExportOptions(appVersion: "ArchiveBenchmark")
+            for formatVersion in formatVersions {
+                for iteration in 1...iterations {
+                    let archiveURL = try makeTemporaryArchiveURL(
+                        caseName: "\(benchmarkCase.name)-v\(formatVersion)",
+                        iteration: iteration
                     )
+                    let exportMeasurement = try await Self.measureMemoryAndTime {
+                        try await service.export(
+                            snapshot: snapshot,
+                            to: archiveURL,
+                            options: ScanArchiveExportOptions(
+                                appVersion: "ArchiveBenchmark",
+                                formatVersion: formatVersion
+                            )
+                        )
+                    }
+                    let archiveSize = try Self.directoryLogicalSize(archiveURL)
+                    let sectionSizes = try Self.sectionSizes(archiveURL)
+
+                    let importMeasurement = try await Self.measureMemoryAndTime {
+                        try await service.importSnapshot(from: archiveURL)
+                    }
+
+                    let importedSnapshot = importMeasurement.value.snapshot
+                    XCTAssertEqual(importedSnapshot.treeStore.nodeCount, snapshot.treeStore.nodeCount)
+                    XCTAssertEqual(importedSnapshot.treeStore.childIDsByID, snapshot.treeStore.childIDsByID)
+                    XCTAssertEqual(importedSnapshot.aggregateStats.totalAllocatedSize, snapshot.aggregateStats.totalAllocatedSize)
+                    XCTAssertEqual(importedSnapshot.aggregateStats.fileCount, snapshot.aggregateStats.fileCount)
+
+                    print(Self.resultLine(
+                        benchmarkCase: benchmarkCase,
+                        formatVersion: formatVersion,
+                        iteration: iteration,
+                        snapshot: snapshot,
+                        export: exportMeasurement,
+                        imported: importMeasurement,
+                        archiveSize: archiveSize,
+                        sectionSizes: sectionSizes
+                    ))
                 }
-                let archiveSize = try Self.directoryLogicalSize(archiveURL)
-                let sectionSizes = try Self.sectionSizes(archiveURL)
-
-                let importMeasurement = try await Self.measureMemoryAndTime {
-                    try await service.importSnapshot(from: archiveURL)
-                }
-
-                let importedSnapshot = importMeasurement.value.snapshot
-                XCTAssertEqual(importedSnapshot.treeStore.nodeCount, snapshot.treeStore.nodeCount)
-                XCTAssertEqual(importedSnapshot.treeStore.childIDsByID, snapshot.treeStore.childIDsByID)
-                XCTAssertEqual(importedSnapshot.aggregateStats.totalAllocatedSize, snapshot.aggregateStats.totalAllocatedSize)
-                XCTAssertEqual(importedSnapshot.aggregateStats.fileCount, snapshot.aggregateStats.fileCount)
-
-                print(Self.resultLine(
-                    benchmarkCase: benchmarkCase,
-                    iteration: iteration,
-                    snapshot: snapshot,
-                    export: exportMeasurement,
-                    imported: importMeasurement,
-                    archiveSize: archiveSize,
-                    sectionSizes: sectionSizes
-                ))
             }
         }
     }
@@ -71,7 +83,10 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         _ = try await service.export(
             snapshot: snapshot,
             to: archiveURL,
-            options: ScanArchiveExportOptions(appVersion: "ArchiveBenchmark")
+            options: ScanArchiveExportOptions(
+                appVersion: "ArchiveBenchmark",
+                formatVersion: 4
+            )
         )
 
         let nodesURL = archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory)
@@ -174,8 +189,8 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         let imported = try await Self.measureMemoryAndTime {
             try await service.importSnapshot(from: archiveURL)
         }
-        guard imported.value.manifest.formatVersion == 4 else {
-            throw XCTSkip("Real snapshot import profiling requires a compact v4 archive.")
+        guard imported.value.manifest.formatVersion >= 4 else {
+            throw XCTSkip("Real snapshot import profiling requires a compact v4 or newer archive.")
         }
 
         XCTAssertEqual(
@@ -944,6 +959,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
 
     private static func resultLine(
         benchmarkCase: BenchmarkCase,
+        formatVersion: Int,
         iteration: Int,
         snapshot: ScanSnapshot,
         export: Measurement<ScanArchiveExportResult>,
@@ -956,7 +972,8 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             .map { "section_\($0.key.replacingOccurrences(of: ".", with: "_"))=\($0.value)" }
             .joined(separator: " ")
         return """
-        RADIX_ARCHIVE_BENCH_RESULT case=\(benchmarkCase.name) detail=\(benchmarkCase.detail) iteration=\(iteration) \
+        RADIX_ARCHIVE_BENCH_RESULT case=\(benchmarkCase.name) format_version=\(formatVersion) \
+        detail=\(benchmarkCase.detail) iteration=\(iteration) \
         nodes=\(snapshot.treeStore.nodeCount) files=\(snapshot.aggregateStats.fileCount) directories=\(snapshot.aggregateStats.directoryCount) \
         warnings=\(snapshot.scanWarnings.count) export=\(secondsString(export.elapsedSeconds)) import=\(secondsString(imported.elapsedSeconds)) \
         package_bytes=\(archiveSize) export_peak_rss_delta=\(export.peakDeltaRSS) import_peak_rss_delta=\(imported.peakDeltaRSS) \(sections)

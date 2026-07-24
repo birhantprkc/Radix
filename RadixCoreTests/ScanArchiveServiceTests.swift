@@ -26,8 +26,13 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(importedSnapshot.scanWarnings.map(\.path), snapshot.scanWarnings.map(\.path))
         XCTAssertEqual(importedSnapshot.scanOptions, snapshot.scanOptions)
         XCTAssertEqual(importedSnapshot.volumeCapacity, snapshot.volumeCapacity)
-        XCTAssertEqual(importResult.manifest.formatVersion, 4)
-        XCTAssertEqual(importResult.manifest.createdBy.swiftSchema, "ScanArchiveV4")
+        XCTAssertEqual(importResult.manifest.formatVersion, 5)
+        XCTAssertEqual(importResult.manifest.createdBy.swiftSchema, "ScanArchiveV5")
+        XCTAssertEqual(importResult.manifest.sectionEncodings, .versionFive)
+        XCTAssertEqual(importResult.manifest.integrity.domain, .decodedSectionBytes)
+        XCTAssertNotNil(importResult.manifest.integrity.topology)
+        XCTAssertNotNil(importResult.manifest.integrity.warnings)
+        XCTAssertNotNil(importResult.manifest.integrity.stats)
         XCTAssertEqual(importResult.manifest.snapshot.scanOptions, snapshot.scanOptions)
         XCTAssertNotNil(importResult.manifest.snapshot.scanOptionsFingerprint)
 
@@ -66,7 +71,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertFalse(availability.canMoveToTrash)
     }
 
-    func testVersionFourNodePayloadIsSmallerThanLegacyFullPathRecords() async throws {
+    func testVersionFiveUsesCompressedBodySectionsAndReadableManifest() async throws {
         let service = ScanArchiveService()
         let snapshot = makeLargeArchiveSnapshot(childCount: 1_000)
         let archiveURL = try makeTemporaryArchiveURL()
@@ -75,6 +80,480 @@ final class ScanArchiveServiceTests: XCTestCase {
             snapshot: snapshot,
             to: archiveURL,
             options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+
+        let manifestURL = archiveURL.appending(path: "manifest.json")
+        let manifestData = try Data(contentsOf: manifestURL)
+        let manifest = try ScanArchiveService.makeJSONDecoder().decode(
+            ScanArchiveDocument.self,
+            from: manifestData
+        )
+        let nodesData = try Data(contentsOf: archiveURL.appending(path: manifest.sections.nodes))
+        let topologyData = try Data(
+            contentsOf: archiveURL.appending(path: manifest.sections.topology)
+        )
+
+        XCTAssertEqual(manifest.formatVersion, 5)
+        XCTAssertEqual(manifest.createdBy.swiftSchema, "ScanArchiveV5")
+        XCTAssertEqual(manifest.sectionEncodings, .versionFive)
+        XCTAssertNotNil(manifest.sectionByteCounts)
+        XCTAssertEqual(manifest.sections.nodes, "nodes.jsonl.lzfse")
+        XCTAssertEqual(manifest.sections.topology, "topology.json.lzfse")
+        XCTAssertTrue(String(decoding: manifestData, as: UTF8.self).contains("\"formatVersion\":5"))
+        XCTAssertNotEqual(nodesData.first, 0x7B)
+        XCTAssertNotEqual(topologyData.first, 0x7B)
+    }
+
+    func testVersionFivePreviewDoesNotReadCompressedTreeSections() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeArchiveSnapshot()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+        let manifest = try readManifest(from: archiveURL)
+        try FileManager.default.removeItem(
+            at: archiveURL.appending(path: manifest.sections.nodes)
+        )
+        try FileManager.default.removeItem(
+            at: archiveURL.appending(path: manifest.sections.topology)
+        )
+
+        let preview = try await service.previewSnapshot(from: archiveURL)
+
+        XCTAssertEqual(preview.appVersion, "Tests")
+        XCTAssertEqual(preview.nodeCount, snapshot.treeStore.nodeCount)
+        XCTAssertEqual(preview.totalAllocatedSize, snapshot.aggregateStats.totalAllocatedSize)
+    }
+
+    func testVersionFourAndFiveRoundTripsAreSemanticallyEquivalent() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeArchiveSnapshot()
+        let versionFourURL = try makeTemporaryArchiveURL()
+        let versionFiveURL = try makeTemporaryArchiveURL()
+
+        let versionFourExport = try await service.export(
+            snapshot: snapshot,
+            to: versionFourURL,
+            options: versionFourOptions(appVersion: "Tests")
+        )
+        let versionFiveExport = try await service.export(
+            snapshot: snapshot,
+            to: versionFiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+        let versionFour = try await service.importSnapshot(from: versionFourURL)
+        let versionFive = try await service.importSnapshot(from: versionFiveURL)
+
+        XCTAssertEqual(versionFour.manifest.formatVersion, 4)
+        XCTAssertEqual(versionFive.manifest.formatVersion, 5)
+        XCTAssertFalse(versionFourExport.nodeChecksum.isEmpty)
+        XCTAssertFalse(versionFiveExport.nodeChecksum.isEmpty)
+        assertEquivalentSnapshots(versionFour.snapshot, versionFive.snapshot)
+
+        let forward = try await ScanComparisonService().compare(
+            before: versionFour.snapshot,
+            after: versionFive.snapshot
+        )
+        let reverse = try await ScanComparisonService().compare(
+            before: versionFive.snapshot,
+            after: versionFour.snapshot
+        )
+
+        XCTAssertTrue(forward.rows.isEmpty)
+        XCTAssertTrue(reverse.rows.isEmpty)
+        XCTAssertEqual(forward.summary.allocatedDelta, 0)
+        XCTAssertEqual(reverse.summary.allocatedDelta, 0)
+        XCTAssertEqual(forward.summary.fileCountDelta, 0)
+        XCTAssertEqual(reverse.summary.fileCountDelta, 0)
+    }
+
+    func testCrossVersionComparisonMatchesSameVersionBaseline() async throws {
+        let service = ScanArchiveService()
+        let beforeSnapshot = makeArchiveSnapshot()
+        let removedID = "/archive/folder/résource-文件-🙂.bin"
+        let afterSnapshot = try XCTUnwrap(beforeSnapshot.removingNode(id: removedID))
+
+        let beforeFour = try await exportAndImport(
+            beforeSnapshot,
+            formatVersion: 4,
+            service: service
+        )
+        let afterFour = try await exportAndImport(
+            afterSnapshot,
+            formatVersion: 4,
+            service: service
+        )
+        let beforeFive = try await exportAndImport(
+            beforeSnapshot,
+            formatVersion: 5,
+            service: service
+        )
+        let afterFive = try await exportAndImport(
+            afterSnapshot,
+            formatVersion: 5,
+            service: service
+        )
+
+        let baseline = try await ScanComparisonService().compare(
+            before: beforeFour,
+            after: afterFour
+        )
+        let fourToFive = try await ScanComparisonService().compare(
+            before: beforeFour,
+            after: afterFive
+        )
+        let fiveToFour = try await ScanComparisonService().compare(
+            before: beforeFive,
+            after: afterFour
+        )
+
+        XCTAssertEqual(fourToFive.rows, baseline.rows)
+        XCTAssertEqual(fiveToFour.rows, baseline.rows)
+        XCTAssertEqual(fourToFive.summary, baseline.summary)
+        XCTAssertEqual(fiveToFour.summary, baseline.summary)
+    }
+
+    func testLZFSESectionStreamRoundTripsChunkedDecodedBytes() throws {
+        var pseudoRandomState: UInt64 = 0xD1CE_BA5E_F00D_CAFE
+        let incompressiblePayload = Data((0..<(2 * 1_024 * 1_024)).map { _ in
+            pseudoRandomState = pseudoRandomState &* 6_364_136_223_846_793_005 &+ 1
+            return UInt8(truncatingIfNeeded: pseudoRandomState >> 32)
+        })
+        let payloads = [
+            Data(),
+            Data([0]),
+            Data(repeating: 0x41, count: 2 * 1_024 * 1_024),
+            incompressiblePayload,
+            Data("résource-文件-🙂".utf8),
+        ]
+
+        for payload in payloads {
+            let fileURL = FileManager.default.temporaryDirectory
+                .appending(path: UUID().uuidString)
+            addTeardownBlock {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            XCTAssertTrue(FileManager.default.createFile(atPath: fileURL.path, contents: nil))
+            let handle = try FileHandle(forWritingTo: fileURL)
+            var writer = try ScanArchiveSectionWriter(
+                fileHandle: handle,
+                encoding: .lzfse
+            )
+            for offset in stride(from: 0, to: payload.count, by: 777) {
+                let end = min(offset + 777, payload.count)
+                try writer.append(payload.subdata(in: offset..<end))
+            }
+            let checksum = try writer.finish()
+            try handle.close()
+
+            let reader = try ScanArchiveSectionReader(url: fileURL, encoding: .lzfse)
+            defer { reader.close() }
+            var decoded = Data()
+            while true {
+                let chunk = try reader.read(upToCount: 509)
+                guard !chunk.isEmpty else { break }
+                decoded.append(chunk)
+            }
+
+            XCTAssertEqual(decoded, payload)
+            XCTAssertEqual(
+                checksum,
+                Data(SHA256.hash(data: payload)).base64EncodedString()
+            )
+        }
+    }
+
+    func testVersionFiveRejectsCorruptedTruncatedAndTrailingNodeStreams() async throws {
+        enum Mutation {
+            case corrupt
+            case truncate
+            case append
+        }
+        let service = ScanArchiveService()
+
+        for mutation in [Mutation.corrupt, .truncate, .append] {
+            let archiveURL = try makeTemporaryArchiveURL()
+            _ = try await service.export(
+                snapshot: makeLargeArchiveSnapshot(childCount: 1_000),
+                to: archiveURL,
+                options: ScanArchiveExportOptions()
+            )
+            let manifest = try readManifest(from: archiveURL)
+            let nodesURL = archiveURL.appending(path: manifest.sections.nodes)
+            var data = try Data(contentsOf: nodesURL)
+            switch mutation {
+            case .corrupt:
+                data[data.count / 2] ^= 0xFF
+            case .truncate:
+                data.removeLast()
+            case .append:
+                data.append(0)
+            }
+            try data.write(to: nodesURL, options: [.atomic])
+
+            do {
+                _ = try await service.importSnapshot(from: archiveURL)
+                XCTFail("Import should reject a \(mutation) v5 node stream.")
+            } catch ScanArchiveError.nodes(let detail) {
+                XCTAssertFalse(detail.isEmpty)
+            } catch ScanArchiveError.integrity(let detail) {
+                XCTAssertTrue(detail.contains("nodes"))
+            }
+        }
+    }
+
+    func testVersionFiveImportRejectsMissingCompressedTreeSections() async throws {
+        let service = ScanArchiveService()
+
+        for section in ["nodes", "topology"] {
+            let archiveURL = try makeTemporaryArchiveURL()
+            _ = try await service.export(
+                snapshot: makeArchiveSnapshot(),
+                to: archiveURL,
+                options: ScanArchiveExportOptions()
+            )
+            let manifest = try readManifest(from: archiveURL)
+            let sectionName = section == "nodes"
+                ? manifest.sections.nodes
+                : manifest.sections.topology
+            try FileManager.default.removeItem(
+                at: archiveURL.appending(path: sectionName)
+            )
+
+            do {
+                _ = try await service.importSnapshot(from: archiveURL)
+                XCTFail("Import should reject a missing v5 \(section) section.")
+            } catch ScanArchiveError.integrity(let detail) {
+                XCTAssertTrue(detail.contains(section))
+            }
+        }
+    }
+
+    func testVersionFiveRejectsCorruptedAndTruncatedTopologyStreams() async throws {
+        let service = ScanArchiveService()
+        for shouldTruncate in [false, true] {
+            let archiveURL = try makeTemporaryArchiveURL()
+            _ = try await service.export(
+                snapshot: makeLargeArchiveSnapshot(childCount: 1_000),
+                to: archiveURL,
+                options: ScanArchiveExportOptions()
+            )
+            let manifest = try readManifest(from: archiveURL)
+            let topologyURL = archiveURL.appending(path: manifest.sections.topology)
+            var data = try Data(contentsOf: topologyURL)
+            if shouldTruncate {
+                data.removeLast()
+            } else {
+                data[data.count / 2] ^= 0xFF
+            }
+            try data.write(to: topologyURL, options: [.atomic])
+
+            do {
+                _ = try await service.importSnapshot(from: archiveURL)
+                XCTFail("Import should reject a damaged v5 topology stream.")
+            } catch ScanArchiveError.topology(let detail) {
+                XCTAssertFalse(detail.isEmpty)
+            } catch ScanArchiveError.integrity(let detail) {
+                XCTAssertTrue(detail.contains("topology"))
+            }
+        }
+    }
+
+    func testVersionFivePreviewAndImportVerifyStatsChecksum() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let statsURL = archiveURL.appending(path: "stats.json")
+        try rewriteJSONObject(at: statsURL) { object in
+            object["totalAllocatedSize"] = 1
+        }
+
+        do {
+            _ = try await service.previewSnapshot(from: archiveURL)
+            XCTFail("Preview should verify the v5 stats checksum.")
+        } catch ScanArchiveError.integrity(let detail) {
+            XCTAssertTrue(detail.contains("stats"))
+        }
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should verify the v5 stats checksum.")
+        } catch ScanArchiveError.integrity(let detail) {
+            XCTAssertTrue(detail.contains("stats"))
+        }
+    }
+
+    func testVersionFiveRejectsMissingOrIncorrectSectionEncodings() async throws {
+        let service = ScanArchiveService()
+        for mutation in 0...1 {
+            let archiveURL = try makeTemporaryArchiveURL()
+            _ = try await service.export(
+                snapshot: makeArchiveSnapshot(),
+                to: archiveURL,
+                options: ScanArchiveExportOptions()
+            )
+            let manifestURL = archiveURL.appending(path: "manifest.json")
+            try rewriteJSONObject(at: manifestURL) { object in
+                if mutation == 0 {
+                    object.removeValue(forKey: "sectionEncodings")
+                } else {
+                    var encodings = object["sectionEncodings"] as? [String: Any] ?? [:]
+                    encodings["nodes"] = "identity"
+                    object["sectionEncodings"] = encodings
+                }
+            }
+
+            do {
+                _ = try await service.previewSnapshot(from: archiveURL)
+                XCTFail("Preview should reject invalid v5 section encodings.")
+            } catch ScanArchiveError.manifest(let detail) {
+                XCTAssertTrue(detail.contains("encodings"))
+            }
+        }
+    }
+
+    func testVersionFiveRequiresCompleteIntegrityAndStoredByteCounts() async throws {
+        let service = ScanArchiveService()
+        for mutation in 0...3 {
+            let archiveURL = try makeTemporaryArchiveURL()
+            _ = try await service.export(
+                snapshot: makeArchiveSnapshot(),
+                to: archiveURL,
+                options: ScanArchiveExportOptions()
+            )
+            let manifestURL = archiveURL.appending(path: "manifest.json")
+            try rewriteJSONObject(at: manifestURL) { object in
+                switch mutation {
+                case 0:
+                    var integrity = object["integrity"] as? [String: Any] ?? [:]
+                    integrity["nodes"] = ""
+                    object["integrity"] = integrity
+                case 1:
+                    var integrity = object["integrity"] as? [String: Any] ?? [:]
+                    integrity.removeValue(forKey: "topology")
+                    object["integrity"] = integrity
+                case 2:
+                    object.removeValue(forKey: "sectionByteCounts")
+                default:
+                    var counts = object["sectionByteCounts"] as? [String: Any] ?? [:]
+                    counts["nodes"] = -1
+                    object["sectionByteCounts"] = counts
+                }
+            }
+
+            do {
+                _ = try await service.previewSnapshot(from: archiveURL)
+                XCTFail("Preview should reject incomplete v5 integrity metadata.")
+            } catch ScanArchiveError.integrity(let detail) {
+                XCTAssertFalse(detail.isEmpty)
+            }
+        }
+    }
+
+    func testVersionFiveImportVerifiesWarningsChecksum() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let warningsURL = archiveURL.appending(path: "warnings.json")
+        let originalData = try Data(contentsOf: warningsURL)
+        let originalText = String(decoding: originalData, as: UTF8.self)
+        let modifiedText = originalText.replacingOccurrences(
+            of: "Permission denied",
+            with: "Permission DenieD"
+        )
+        XCTAssertEqual(modifiedText.utf8.count, originalData.count)
+        try Data(modifiedText.utf8).write(to: warningsURL, options: [.atomic])
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should verify the v5 warnings transport and checksum.")
+        } catch ScanArchiveError.integrity(let detail) {
+            XCTAssertTrue(detail.contains("warnings"))
+        }
+    }
+
+    func testVersionFiveDecodedTopologyLimitAppliesAfterDecompression() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let manifest = try readManifest(from: archiveURL)
+        let topologyURL = archiveURL.appending(path: manifest.sections.topology)
+        let oversizedDecodedData = Data(repeating: 0x20, count: 128 * 1_024)
+        let checksum = try writeSection(
+            oversizedDecodedData,
+            to: topologyURL,
+            encoding: .lzfse
+        )
+        try rewriteManifestChecksum(checksum, key: "topology", in: archiveURL)
+        try rewriteManifestByteCount(
+            Int64(try topologyURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0),
+            key: "topology",
+            in: archiveURL
+        )
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should bound decoded v5 topology bytes.")
+        } catch ScanArchiveError.topology(let detail) {
+            XCTAssertTrue(detail.contains("supported size"))
+        }
+    }
+
+    func testVersionFiveDecodedNodeLineLimitAppliesAfterDecompression() async throws {
+        let service = ScanArchiveService()
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: ScanArchiveExportOptions()
+        )
+        let manifest = try readManifest(from: archiveURL)
+        let nodesURL = archiveURL.appending(path: manifest.sections.nodes)
+        let oversizedDecodedLine = Data(repeating: 0x7B, count: 2 * 1_024 * 1_024)
+        let checksum = try writeSection(
+            oversizedDecodedLine,
+            to: nodesURL,
+            encoding: .lzfse
+        )
+        try rewriteManifestChecksum(checksum, key: "nodes", in: archiveURL)
+        try rewriteManifestByteCount(
+            Int64(try nodesURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0),
+            key: "nodes",
+            in: archiveURL
+        )
+
+        do {
+            _ = try await service.importSnapshot(from: archiveURL)
+            XCTFail("Import should bound decoded v5 node-line bytes.")
+        } catch ScanArchiveError.nodes(let detail) {
+            XCTAssertTrue(detail.contains("too large"))
+        }
+    }
+
+    func testVersionFourNodePayloadIsSmallerThanLegacyFullPathRecords() async throws {
+        let service = ScanArchiveService()
+        let snapshot = makeLargeArchiveSnapshot(childCount: 1_000)
+        let archiveURL = try makeTemporaryArchiveURL()
+
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: versionFourOptions(appVersion: "Tests")
         )
 
         let compactData = try Data(contentsOf: archiveURL.appending(path: "nodes.jsonl"))
@@ -107,7 +586,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(
             snapshot: snapshot,
             to: archiveURL,
-            options: ScanArchiveExportOptions(appVersion: "Tests")
+            options: versionFourOptions(appVersion: "Tests")
         )
 
         let nodesURL = archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory)
@@ -156,7 +635,11 @@ final class ScanArchiveServiceTests: XCTestCase {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: snapshot, to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: versionFourOptions()
+        )
         try rewriteArchiveAsLegacyVersionThree(snapshot: snapshot, archiveURL: archiveURL)
 
         let result = try await service.importSnapshot(from: archiveURL)
@@ -302,16 +785,17 @@ final class ScanArchiveServiceTests: XCTestCase {
             to: archiveURL,
             options: ScanArchiveExportOptions(appVersion: "Tests")
         )
-        let expectedArchiveSize = try [
-            "manifest.json",
-            "nodes.jsonl",
-            "topology.json",
-            "warnings.json",
-            "stats.json"
-        ].reduce(into: Int64(0)) { totalSize, fileName in
-            let fileURL = archiveURL.appending(path: fileName, directoryHint: .notDirectory)
-            totalSize += Int64(try Data(contentsOf: fileURL).count)
-        }
+        let expectedArchiveSize = try FileManager.default
+            .subpathsOfDirectory(atPath: archiveURL.path)
+            .reduce(into: Int64(0)) { totalSize, relativePath in
+                let fileURL = archiveURL.appending(path: relativePath)
+                let values = try fileURL.resourceValues(
+                    forKeys: [.isRegularFileKey, .fileSizeKey]
+                )
+                if values.isRegularFile == true {
+                    totalSize += Int64(values.fileSize ?? 0)
+                }
+            }
 
         let preview = try await service.previewSnapshot(from: archiveURL)
 
@@ -347,7 +831,7 @@ final class ScanArchiveServiceTests: XCTestCase {
             _ = try await service.export(
                 snapshot: makeArchiveSnapshot(),
                 to: archiveURL,
-                options: ScanArchiveExportOptions()
+                options: versionFourOptions()
             )
             let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
             try rewriteJSONObject(at: statsURL) { object in
@@ -376,7 +860,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(
             snapshot: makeArchiveSnapshot(),
             to: archiveURL,
-            options: ScanArchiveExportOptions()
+            options: versionFourOptions()
         )
         let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
         try Data(repeating: 0x20, count: (256 * 1_024) + 1).write(to: statsURL, options: [.atomic])
@@ -402,7 +886,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(
             snapshot: makeArchiveSnapshot(),
             to: archiveURL,
-            options: ScanArchiveExportOptions()
+            options: versionFourOptions()
         )
         let topologyURL = archiveURL.appending(path: "topology.json", directoryHint: .notDirectory)
         try Data(repeating: 0x20, count: 128 * 1_024).write(to: topologyURL, options: [.atomic])
@@ -421,7 +905,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(
             snapshot: makeArchiveSnapshot(),
             to: archiveURL,
-            options: ScanArchiveExportOptions()
+            options: versionFourOptions()
         )
         let warningsURL = archiveURL.appending(path: "warnings.json", directoryHint: .notDirectory)
         try Data(repeating: 0x20, count: 192 * 1_024).write(to: warningsURL, options: [.atomic])
@@ -483,7 +967,11 @@ final class ScanArchiveServiceTests: XCTestCase {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: snapshot, to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let topologyURL = archiveURL.appending(path: "topology.json", directoryHint: .notDirectory)
         let topologyData = try Data(contentsOf: topologyURL)
@@ -631,7 +1119,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
         _ = try await service.export(
-            snapshot: makeLargeArchiveSnapshot(childCount: 20_000),
+            snapshot: makeLargeArchiveSnapshot(childCount: 100_000),
             to: archiveURL,
             options: ScanArchiveExportOptions()
         )
@@ -661,7 +1149,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRejectsNodesChecksumMismatch() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let nodesURL = archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory)
         let handle = try FileHandle(forWritingTo: nodesURL)
@@ -680,7 +1172,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRejectsMissingNodeSectionAsArchiveError() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
         try FileManager.default.removeItem(at: archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory))
 
         do {
@@ -724,7 +1220,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRejectsNodePayloadExceedingManifestCountEarly() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let checksum = try appendArchiveNode([
             "x": "extra.txt",
@@ -743,7 +1243,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRejectsOversizedNodeLineBeforeDecoding() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let nodesURL = archiveURL.appending(path: "nodes.jsonl", directoryHint: .notDirectory)
         try Data(repeating: 0x7B, count: 2 * 1024 * 1024).write(to: nodesURL, options: [.atomic])
@@ -806,7 +1310,11 @@ final class ScanArchiveServiceTests: XCTestCase {
 
         for testCase in cases {
             let archiveURL = try makeTemporaryArchiveURL()
-            _ = try await service.export(snapshot: snapshot, to: archiveURL, options: ScanArchiveExportOptions())
+            _ = try await service.export(
+                snapshot: snapshot,
+                to: archiveURL,
+                options: versionFourOptions()
+            )
             try encodeArchiveJSON(
                 testCase.topology,
                 to: archiveURL.appending(path: "topology.json", directoryHint: .notDirectory)
@@ -827,7 +1335,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRejectsNodePathMismatch() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
             if archiveNodeName(node) == "hard-link-a.bin" {
@@ -851,7 +1363,7 @@ final class ScanArchiveServiceTests: XCTestCase {
             _ = try await service.export(
                 snapshot: makeArchiveSnapshot(),
                 to: archiveURL,
-                options: ScanArchiveExportOptions()
+                options: versionFourOptions()
             )
 
             let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
@@ -895,7 +1407,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRejectsChildOutsideParentPath() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let newID = "/tmp/other.txt"
         let checksum = try rewriteArchiveNodes(in: archiveURL) { node in
@@ -1034,7 +1550,11 @@ final class ScanArchiveServiceTests: XCTestCase {
     func testImportRepairsMismatchedStatsAndRecordsWarning() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
-        _ = try await service.export(snapshot: makeArchiveSnapshot(), to: archiveURL, options: ScanArchiveExportOptions())
+        _ = try await service.export(
+            snapshot: makeArchiveSnapshot(),
+            to: archiveURL,
+            options: versionFourOptions()
+        )
 
         let statsURL = archiveURL.appending(path: "stats.json", directoryHint: .notDirectory)
         try rewriteJSONObject(at: statsURL) { object in
@@ -1056,7 +1576,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         _ = try await service.export(
             snapshot: snapshot,
             to: archiveURL,
-            options: ScanArchiveExportOptions()
+            options: versionFourOptions()
         )
         let expectedFolder = try XCTUnwrap(snapshot.treeStore.node(id: "/archive/folder"))
 
@@ -1111,6 +1631,170 @@ final class ScanArchiveServiceTests: XCTestCase {
             try? FileManager.default.removeItem(at: directoryURL)
         }
         return directoryURL.appending(path: "Export.radixscan", directoryHint: .isDirectory)
+    }
+
+    private func versionFourOptions(
+        appVersion: String? = nil,
+        progressReporter: ScanArchiveProgressReporter? = nil
+    ) -> ScanArchiveExportOptions {
+        ScanArchiveExportOptions(
+            appVersion: appVersion,
+            formatVersion: 4,
+            progressReporter: progressReporter
+        )
+    }
+
+    private func exportAndImport(
+        _ snapshot: ScanSnapshot,
+        formatVersion: Int,
+        service: ScanArchiveService
+    ) async throws -> ScanSnapshot {
+        let archiveURL = try makeTemporaryArchiveURL()
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(formatVersion: formatVersion)
+        )
+        return try await service.importSnapshot(from: archiveURL).snapshot
+    }
+
+    private func assertEquivalentSnapshots(
+        _ lhs: ScanSnapshot,
+        _ rhs: ScanSnapshot,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(lhs.id, rhs.id, file: file, line: line)
+        XCTAssertEqual(lhs.target, rhs.target, file: file, line: line)
+        XCTAssertEqual(lhs.startedAt, rhs.startedAt, file: file, line: line)
+        XCTAssertEqual(lhs.finishedAt, rhs.finishedAt, file: file, line: line)
+        XCTAssertEqual(lhs.isComplete, rhs.isComplete, file: file, line: line)
+        XCTAssertEqual(lhs.scanOptions, rhs.scanOptions, file: file, line: line)
+        XCTAssertEqual(lhs.volumeCapacity, rhs.volumeCapacity, file: file, line: line)
+        XCTAssertEqual(
+            lhs.scanWarnings.map(\.path),
+            rhs.scanWarnings.map(\.path),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.scanWarnings.map(\.message),
+            rhs.scanWarnings.map(\.message),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.scanWarnings.map(\.category),
+            rhs.scanWarnings.map(\.category),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.treeStore.indexedNodeIDs(),
+            rhs.treeStore.indexedNodeIDs(),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.treeStore.childIDsByID,
+            rhs.treeStore.childIDsByID,
+            file: file,
+            line: line
+        )
+        for nodeID in lhs.treeStore.indexedNodeIDs() {
+            XCTAssertEqual(
+                lhs.treeStore.node(id: nodeID),
+                rhs.treeStore.node(id: nodeID),
+                "Node mismatch at \(nodeID)",
+                file: file,
+                line: line
+            )
+        }
+        XCTAssertEqual(
+            lhs.aggregateStats.totalAllocatedSize,
+            rhs.aggregateStats.totalAllocatedSize,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.aggregateStats.totalLogicalSize,
+            rhs.aggregateStats.totalLogicalSize,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.aggregateStats.fileCount,
+            rhs.aggregateStats.fileCount,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.aggregateStats.directoryCount,
+            rhs.aggregateStats.directoryCount,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.aggregateStats.accessibleItemCount,
+            rhs.aggregateStats.accessibleItemCount,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            lhs.aggregateStats.inaccessibleItemCount,
+            rhs.aggregateStats.inaccessibleItemCount,
+            file: file,
+            line: line
+        )
+    }
+
+    private func readManifest(from archiveURL: URL) throws -> ScanArchiveDocument {
+        try ScanArchiveService.makeJSONDecoder().decode(
+            ScanArchiveDocument.self,
+            from: Data(contentsOf: archiveURL.appending(path: "manifest.json"))
+        )
+    }
+
+    private func writeSection(
+        _ data: Data,
+        to url: URL,
+        encoding: ScanArchiveSectionEncoding
+    ) throws -> String {
+        XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        var writer = try ScanArchiveSectionWriter(
+            fileHandle: handle,
+            encoding: encoding
+        )
+        try writer.append(data)
+        return try writer.finish()
+    }
+
+    private func rewriteManifestChecksum(
+        _ checksum: String,
+        key: String,
+        in archiveURL: URL
+    ) throws {
+        let manifestURL = archiveURL.appending(path: "manifest.json")
+        try rewriteJSONObject(at: manifestURL) { object in
+            var integrity = object["integrity"] as? [String: Any] ?? [:]
+            integrity[key] = checksum
+            object["integrity"] = integrity
+        }
+    }
+
+    private func rewriteManifestByteCount(
+        _ byteCount: Int64,
+        key: String,
+        in archiveURL: URL
+    ) throws {
+        let manifestURL = archiveURL.appending(path: "manifest.json")
+        try rewriteJSONObject(at: manifestURL) { object in
+            var counts = object["sectionByteCounts"] as? [String: Any] ?? [:]
+            counts[key] = byteCount
+            object["sectionByteCounts"] = counts
+        }
     }
 
     private func temporaryArchiveSiblings(for archiveURL: URL) throws -> [URL] {

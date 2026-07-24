@@ -41,11 +41,17 @@ nonisolated private struct ScanArchiveCompactTopology {
 nonisolated private struct ScanArchiveStreamingJSONWriter {
     private static let flushByteCount = 1024 * 1024
 
-    let fileHandle: FileHandle
+    private var sectionWriter: ScanArchiveSectionWriter
     private var buffer = Data()
 
-    init(fileHandle: FileHandle) {
-        self.fileHandle = fileHandle
+    init(
+        fileHandle: FileHandle,
+        encoding: ScanArchiveSectionEncoding
+    ) throws {
+        self.sectionWriter = try ScanArchiveSectionWriter(
+            fileHandle: fileHandle,
+            encoding: encoding
+        )
         buffer.reserveCapacity(Self.flushByteCount)
     }
 
@@ -63,13 +69,14 @@ nonisolated private struct ScanArchiveStreamingJSONWriter {
         }
     }
 
-    mutating func finish() throws {
+    mutating func finish() throws -> String {
         try flush()
+        return try sectionWriter.finish()
     }
 
     private mutating func flush() throws {
         guard !buffer.isEmpty else { return }
-        try fileHandle.write(contentsOf: buffer)
+        try sectionWriter.append(buffer)
         buffer.removeAll(keepingCapacity: true)
     }
 }
@@ -78,6 +85,7 @@ extension ScanArchiveService {
     func writeNodes(
         _ treeStore: FileTreeStore,
         to url: URL,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> String {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
@@ -87,12 +95,14 @@ extension ScanArchiveService {
         let fileHandle = try FileHandle(forWritingTo: url)
         defer { try? fileHandle.close() }
 
-        var hasher = SHA256()
         let encoder = Self.makeJSONLineEncoder()
         let totalNodeCount = treeStore.nodeCount
         var processedNodeCount = 0
         let orderedNodeIndices = treeStore.indexedNodeIndices()
-        var writer = ScanArchiveStreamingJSONWriter(fileHandle: fileHandle)
+        var writer = try ScanArchiveStreamingJSONWriter(
+            fileHandle: fileHandle,
+            encoding: encoding
+        )
 
         for nodeIndex in orderedNodeIndices {
             try Task.checkCancellation()
@@ -107,7 +117,6 @@ extension ScanArchiveService {
                 )
             )
             lineData.append(ScanArchiveNodeIOConstants.newlineData)
-            hasher.update(data: lineData)
             try writer.append(lineData)
             processedNodeCount += 1
 
@@ -121,9 +130,7 @@ extension ScanArchiveService {
                 await Task.yield()
             }
         }
-        try writer.finish()
-
-        return Data(hasher.finalize()).base64EncodedString()
+        return try writer.finish()
     }
 
     /// Writes topology incrementally. Building and encoding the complete
@@ -131,8 +138,9 @@ extension ScanArchiveService {
     func writeTopology(
         _ treeStore: FileTreeStore,
         to url: URL,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
-    ) async throws {
+    ) async throws -> String {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw ScanArchiveError.topology(localized: "could not create topology section")
         }
@@ -159,7 +167,10 @@ extension ScanArchiveService {
             throw ScanArchiveError.topology(localized: "root node is missing from node order")
         }
 
-        var writer = ScanArchiveStreamingJSONWriter(fileHandle: fileHandle)
+        var writer = try ScanArchiveStreamingJSONWriter(
+            fileHandle: fileHandle,
+            encoding: encoding
+        )
         try writer.append("{\"r\":\(ordinalByNodeOffset[rootOffset]),\"c\":{")
         var wroteParent = false
 
@@ -207,7 +218,7 @@ extension ScanArchiveService {
         }
 
         try writer.append("}}")
-        try writer.finish()
+        return try writer.finish()
     }
 
     func readNodes(
@@ -215,6 +226,7 @@ extension ScanArchiveService {
         expectedChecksum: String,
         expectedNodeCount: Int,
         formatVersion: Int,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> ScanArchiveEncodedNodePayload {
         if formatVersion == 3 {
@@ -222,6 +234,7 @@ extension ScanArchiveService {
                 from: url,
                 expectedChecksum: expectedChecksum,
                 expectedNodeCount: expectedNodeCount,
+                encoding: encoding,
                 progressReporter: progressReporter
             )
             var nodesByID: [String: FileNodeRecord] = [:]
@@ -245,6 +258,7 @@ extension ScanArchiveService {
             from: url,
             expectedChecksum: expectedChecksum,
             expectedNodeCount: expectedNodeCount,
+            encoding: encoding,
             progressReporter: progressReporter
         )
         return .compact(records)
@@ -603,6 +617,7 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        encoding: ScanArchiveSectionEncoding,
         topology archivedTopology: ScanArchiveTopology,
         expectedRootID: String,
         expectedTargetPath: String,
@@ -620,6 +635,7 @@ extension ScanArchiveService {
                 from: url,
                 expectedChecksum: expectedChecksum,
                 expectedNodeCount: expectedNodeCount,
+                encoding: encoding,
                 progressReporter: progressReporter
             )
             finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
@@ -651,6 +667,7 @@ extension ScanArchiveService {
             from: url,
             expectedChecksum: expectedChecksum,
             expectedNodeCount: expectedNodeCount,
+            encoding: encoding,
             progressReporter: progressReporter
         ) { (batch: [ScanArchiveCompactNode]) in
             for record in batch {
@@ -734,6 +751,7 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> [Record] {
         var records: [Record] = []
@@ -745,6 +763,7 @@ extension ScanArchiveService {
             from: url,
             expectedChecksum: expectedChecksum,
             expectedNodeCount: expectedNodeCount,
+            encoding: encoding,
             progressReporter: progressReporter
         ) { batch in
             records.append(contentsOf: batch)
@@ -756,16 +775,20 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?,
         consumeBatch: ([Record]) throws -> Void
     ) async throws {
-        let fileHandle: FileHandle
+        let sectionReader: ScanArchiveSectionReader
         do {
-            fileHandle = try FileHandle(forReadingFrom: url)
+            sectionReader = try ScanArchiveSectionReader(
+                url: url,
+                encoding: encoding
+            )
         } catch {
             throw ScanArchiveError.nodes(error.localizedDescription)
         }
-        defer { try? fileHandle.close() }
+        defer { sectionReader.close() }
 
         var buffer = Data()
         var hasher = SHA256()
@@ -833,7 +856,9 @@ extension ScanArchiveService {
                 let ioStartedAt = importProfileStart()
                 let chunk: Data
                 do {
-                    chunk = try fileHandle.read(upToCount: ScanArchiveNodeIOConstants.readChunkSize) ?? Data()
+                    chunk = try sectionReader.read(
+                        upToCount: ScanArchiveNodeIOConstants.readChunkSize
+                    )
                 } catch let error as ScanArchiveError {
                     throw error
                 } catch {

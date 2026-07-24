@@ -38,7 +38,9 @@ Add items from the disk map, file browser, or inspector to the **Discard Pile**.
 
 ### Save and Reopen Results
 
-Export completed scans and reopen them later as read-only snapshots.
+Export completed scans as compact, losslessly compressed exact snapshots and
+reopen them later as read-only results. Radix continues to open snapshots
+created by earlier supported versions.
 
 ## More Features
 
@@ -144,7 +146,9 @@ Radix/
 - `ScanEngine` is an actor-based asynchronous scanner that uses iterative file-system traversal.
 - `AppModel` is the central `@MainActor` state and coordination layer for the application.
 - `ScanSnapshot` and `FileTreeStore` represent scan results using flat tree storage and indexed lookups.
-- Archive and comparison services import, export, validate, and compare `.radixscan` snapshots.
+- Archive and comparison services stream, validate, and compare `.radixscan`
+  snapshots. Format v5 losslessly compresses the large node and topology
+  sections with LZFSE while retaining v3/v4 import compatibility.
 - Sunburst and treemap services separate layout and interaction models from their SwiftUI presentation.
 - `RadixCore` has no external Swift package dependencies; the app target uses Sparkle for updates.
 

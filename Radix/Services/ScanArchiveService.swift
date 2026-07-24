@@ -32,15 +32,18 @@ extension ScanArchiveServicing {
 nonisolated struct ScanArchiveExportOptions: Sendable {
     var pathMode: ScanArchivePathMode
     var appVersion: String?
+    var formatVersion: Int
     var progressReporter: ScanArchiveProgressReporter?
 
     nonisolated init(
         pathMode: ScanArchivePathMode = .absolute,
         appVersion: String? = nil,
+        formatVersion: Int = ScanArchiveService.currentFormatVersion,
         progressReporter: ScanArchiveProgressReporter? = nil
     ) {
         self.pathMode = pathMode
         self.appVersion = appVersion
+        self.formatVersion = formatVersion
         self.progressReporter = progressReporter
     }
 }
@@ -239,12 +242,15 @@ nonisolated enum ScanArchiveError: LocalizedError, Equatable {
 nonisolated struct ScanArchiveService: ScanArchiveServicing {
     nonisolated static let fileExtension = "radixscan"
     nonisolated static let formatIdentifier = "dev.colinkim.radix.scan"
-    nonisolated static let currentFormatVersion = 4
+    nonisolated static let currentFormatVersion = 5
     private nonisolated static let oldestSupportedFormatVersion = 3
+    private nonisolated static let oldestExportFormatVersion = 4
 
     private nonisolated static let manifestFileName = "manifest.json"
     private nonisolated static let nodesFileName = "nodes.jsonl"
+    private nonisolated static let compressedNodesFileName = "nodes.jsonl.lzfse"
     private nonisolated static let topologyFileName = "topology.json"
+    private nonisolated static let compressedTopologyFileName = "topology.json.lzfse"
     private nonisolated static let warningsFileName = "warnings.json"
     private nonisolated static let statsFileName = "stats.json"
 
@@ -289,6 +295,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard snapshot.isComplete else {
             throw ScanArchiveError.incompleteSnapshot
         }
+        guard (Self.oldestExportFormatVersion...Self.currentFormatVersion)
+            .contains(options.formatVersion) else {
+            throw ScanArchiveError.unsupportedVersion(options.formatVersion)
+        }
         try validateArchiveExtension(destinationURL)
 
         let archiveURL = try createTemporaryArchiveDirectory(for: destinationURL)
@@ -299,9 +309,16 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             }
         }
 
+        let sectionEncodings: ScanArchiveSectionEncodings = options.formatVersion >= 5
+            ? .versionFive
+            : .identity
         let archiveSections = ScanArchiveSections(
-            nodes: Self.nodesFileName,
-            topology: Self.topologyFileName,
+            nodes: sectionEncodings.nodes == .lzfse
+                ? Self.compressedNodesFileName
+                : Self.nodesFileName,
+            topology: sectionEncodings.topology == .lzfse
+                ? Self.compressedTopologyFileName
+                : Self.topologyFileName,
             warnings: Self.warningsFileName,
             stats: Self.statsFileName
         )
@@ -318,6 +335,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         let nodeChecksum = try await writeNodes(
             snapshot.treeStore,
             to: nodesURL,
+            encoding: sectionEncodings.nodes,
             progressReporter: options.progressReporter
         )
         try Task.checkCancellation()
@@ -326,9 +344,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             phase: .writingTopology,
             message: String(localized: "Writing topology", comment: "Progress message while writing scan tree topology.")
         ))
-        try await writeTopology(
+        let topologyChecksum = try await writeTopology(
             snapshot.treeStore,
             to: topologyURL,
+            encoding: sectionEncodings.topology,
             progressReporter: options.progressReporter
         )
 
@@ -336,8 +355,20 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             phase: .writingMetadata,
             message: String(localized: "Writing metadata", comment: "Progress message while writing scan metadata.")
         ))
-        try writeJSON(snapshot.scanWarnings.map(ScanArchiveWarningV1.init), to: warningsURL)
-        try writeJSON(ScanArchiveStatsV1(snapshot.aggregateStats), to: statsURL)
+        let warningsChecksum = try writeJSON(
+            snapshot.scanWarnings.map(ScanArchiveWarningV1.init),
+            to: warningsURL
+        )
+        let statsChecksum = try writeJSON(
+            ScanArchiveStatsV1(snapshot.aggregateStats),
+            to: statsURL
+        )
+        let sectionByteCounts = try ScanArchiveSectionByteCounts(
+            nodes: fileByteCount(at: nodesURL),
+            topology: fileByteCount(at: topologyURL),
+            warnings: fileByteCount(at: warningsURL),
+            stats: fileByteCount(at: statsURL)
+        )
 
         let manifest = try ScanArchiveDocument(
             exportedAt: Date(),
@@ -345,9 +376,15 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             snapshot: snapshot,
             pathMode: options.pathMode,
             sections: archiveSections,
-            nodeChecksum: nodeChecksum
+            nodeChecksum: nodeChecksum,
+            topologyChecksum: options.formatVersion >= 5 ? topologyChecksum : nil,
+            warningsChecksum: options.formatVersion >= 5 ? warningsChecksum : nil,
+            statsChecksum: options.formatVersion >= 5 ? statsChecksum : nil,
+            formatVersion: options.formatVersion,
+            sectionEncodings: options.formatVersion >= 5 ? sectionEncodings : nil,
+            sectionByteCounts: options.formatVersion >= 5 ? sectionByteCounts : nil
         )
-        try writeJSON(manifest, to: manifestURL)
+        _ = try writeJSON(manifest, to: manifestURL)
 
         try Task.checkCancellation()
         try installArchive(from: archiveURL, to: destinationURL)
@@ -359,15 +396,26 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     func previewSnapshot(from sourceURL: URL) async throws -> ScanArchivePreview {
         try Task.checkCancellation()
         let manifest = try readValidatedManifest(from: sourceURL)
+        let sectionEncodings = try resolvedSectionEncodings(for: manifest)
         let statsURL = try sectionURL(
             named: manifest.sections.stats,
             in: sourceURL,
             sectionDescription: "stats"
         )
+        if let sectionByteCounts = manifest.sectionByteCounts {
+            try validateSectionByteCount(
+                sectionByteCounts.stats,
+                at: statsURL,
+                sectionDescription: "stats"
+            )
+        }
         let stats: ScanArchiveStatsV1 = try readJSON(
             ScanArchiveStatsV1.self,
             from: statsURL,
-            maximumByteCount: Self.maximumStatsByteCount
+            maximumByteCount: Self.maximumStatsByteCount,
+            encoding: sectionEncodings.stats,
+            expectedChecksum: manifest.integrity.stats,
+            sectionDescription: "stats"
         ) { detail in
             ScanArchiveError.stats(detail)
         }
@@ -392,6 +440,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             message: String(localized: "Reading manifest", comment: "Progress message while reading a scan archive manifest.")
         ))
         let manifest = try readValidatedManifest(from: sourceURL)
+        let sectionEncodings = try resolvedSectionEncodings(for: manifest)
 
         let nodesURL = try sectionURL(
             named: manifest.sections.nodes,
@@ -413,10 +462,35 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             in: sourceURL,
             sectionDescription: "stats"
         )
+        if let sectionByteCounts = manifest.sectionByteCounts {
+            try validateSectionByteCount(
+                sectionByteCounts.nodes,
+                at: nodesURL,
+                sectionDescription: "nodes"
+            )
+            try validateSectionByteCount(
+                sectionByteCounts.topology,
+                at: topologyURL,
+                sectionDescription: "topology"
+            )
+            try validateSectionByteCount(
+                sectionByteCounts.warnings,
+                at: warningsURL,
+                sectionDescription: "warnings"
+            )
+            try validateSectionByteCount(
+                sectionByteCounts.stats,
+                at: statsURL,
+                sectionDescription: "stats"
+            )
+        }
         let archivedStats: ScanArchiveStatsV1 = try readJSON(
             ScanArchiveStatsV1.self,
             from: statsURL,
-            maximumByteCount: Self.maximumStatsByteCount
+            maximumByteCount: Self.maximumStatsByteCount,
+            encoding: sectionEncodings.stats,
+            expectedChecksum: manifest.integrity.stats,
+            sectionDescription: "stats"
         ) { detail in
             ScanArchiveError.stats(detail)
         }
@@ -429,7 +503,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         let archivedTopology: ScanArchiveTopology = try readJSON(
             ScanArchiveTopology.self,
             from: topologyURL,
-            maximumByteCount: Self.maximumTopologySize(for: manifest.snapshot.nodeCount)
+            maximumByteCount: Self.maximumTopologySize(for: manifest.snapshot.nodeCount),
+            encoding: sectionEncodings.topology,
+            expectedChecksum: manifest.integrity.topology,
+            sectionDescription: "topology"
         ) { detail in
             ScanArchiveError.topology(detail)
         }
@@ -437,11 +514,12 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
 
         let compactTreeStore: FileTreeStore?
         let legacyNodePayload: ScanArchiveNodePayload?
-        if manifest.formatVersion == 4 {
+        if manifest.formatVersion >= 4 {
             compactTreeStore = try await readCompactTreeStore(
                 from: nodesURL,
                 expectedChecksum: manifest.integrity.nodes,
                 expectedNodeCount: manifest.snapshot.nodeCount,
+                encoding: sectionEncodings.nodes,
                 topology: archivedTopology,
                 expectedRootID: manifest.snapshot.rootID,
                 expectedTargetPath: manifest.snapshot.target.path,
@@ -455,6 +533,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
                 expectedChecksum: manifest.integrity.nodes,
                 expectedNodeCount: manifest.snapshot.nodeCount,
                 formatVersion: manifest.formatVersion,
+                encoding: sectionEncodings.nodes,
                 progressReporter: progressReporter
             )
             finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
@@ -474,7 +553,10 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         let warnings: [ScanArchiveWarningV1] = try readJSON(
             [ScanArchiveWarningV1].self,
             from: warningsURL,
-            maximumByteCount: Self.maximumWarningsSize(for: manifest.snapshot.warningCount)
+            maximumByteCount: Self.maximumWarningsSize(for: manifest.snapshot.warningCount),
+            encoding: sectionEncodings.warnings,
+            expectedChecksum: manifest.integrity.warnings,
+            sectionDescription: "warnings"
         ) { detail in
             ScanArchiveError.manifest(localized: "warnings section failed: \(detail)")
         }
@@ -633,6 +715,20 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard manifest.integrity.algorithm == "sha256" else {
             throw ScanArchiveError.integrity(localized: "unsupported integrity algorithm \(manifest.integrity.algorithm)")
         }
+        if manifest.formatVersion >= 5 {
+            guard manifest.integrity.domain == .decodedSectionBytes else {
+                throw ScanArchiveError.integrity(localized: "unsupported or missing integrity domain")
+            }
+            guard !manifest.integrity.nodes.isEmpty,
+                  let topology = manifest.integrity.topology, !topology.isEmpty,
+                  let warnings = manifest.integrity.warnings, !warnings.isEmpty,
+                  let stats = manifest.integrity.stats, !stats.isEmpty else {
+                throw ScanArchiveError.integrity(localized: "snapshot section checksums are incomplete")
+            }
+            guard manifest.sectionByteCounts?.areValid == true else {
+                throw ScanArchiveError.integrity(localized: "snapshot section byte counts are incomplete or invalid")
+            }
+        }
     }
 
     private func validateManifestHeader(format: String, formatVersion: Int) throws {
@@ -642,6 +738,20 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard (Self.oldestSupportedFormatVersion...Self.currentFormatVersion).contains(formatVersion) else {
             throw ScanArchiveError.unsupportedVersion(formatVersion)
         }
+    }
+
+    private func resolvedSectionEncodings(
+        for manifest: ScanArchiveDocument
+    ) throws -> ScanArchiveSectionEncodings {
+        if manifest.formatVersion < 5 {
+            return .identity
+        }
+        guard manifest.sectionEncodings == .versionFive else {
+            throw ScanArchiveError.manifest(localized:
+                "snapshot section encodings are unsupported or incomplete"
+            )
+        }
+        return .versionFive
     }
 
     private func validateCounts(
@@ -678,6 +788,36 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         return url
     }
 
+    private func fileByteCount(at url: URL) throws -> Int64 {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else {
+            throw ScanArchiveError.integrity(localized: "archive section is not a regular file")
+        }
+        return Int64(values.fileSize ?? 0)
+    }
+
+    private func validateSectionByteCount(
+        _ expectedByteCount: Int64,
+        at url: URL,
+        sectionDescription: String
+    ) throws {
+        let actualByteCount: Int64
+        do {
+            actualByteCount = try fileByteCount(at: url)
+        } catch let error as ScanArchiveError {
+            throw error
+        } catch {
+            throw ScanArchiveError.integrity(localized:
+                "\(sectionDescription) section is missing or unreadable"
+            )
+        }
+        guard actualByteCount == expectedByteCount else {
+            throw ScanArchiveError.integrity(localized:
+                "\(sectionDescription) stored byte count mismatch"
+            )
+        }
+    }
+
     private func createTemporaryArchiveDirectory(for destinationURL: URL) throws -> URL {
         let parentURL = destinationURL.deletingLastPathComponent()
         let tempName = ".\(destinationURL.lastPathComponent).\(UUID().uuidString).tmp"
@@ -701,23 +841,86 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         }
     }
 
-    private func writeJSON<T: Encodable>(_ value: T, to url: URL) throws {
+    @discardableResult
+    private func writeJSON<T: Encodable>(_ value: T, to url: URL) throws -> String {
         let data = try Self.makeSectionJSONEncoder().encode(value)
         try data.write(to: url, options: [.atomic])
+        return Data(SHA256.hash(data: data)).base64EncodedString()
     }
 
     private func readJSON<T: Decodable>(
         _ type: T.Type,
         from url: URL,
         maximumByteCount: Int,
+        encoding: ScanArchiveSectionEncoding = .identity,
+        expectedChecksum: String? = nil,
+        sectionDescription: String? = nil,
         mapError: (String) -> ScanArchiveError
     ) throws -> T {
-        let data = try readData(
-            from: url,
-            maximumByteCount: maximumByteCount,
-            mapError: mapError
-        )
+        let data: Data
+        if encoding == .identity, expectedChecksum == nil {
+            data = try readData(
+                from: url,
+                maximumByteCount: maximumByteCount,
+                mapError: mapError
+            )
+        } else {
+            data = try readSectionData(
+                from: url,
+                maximumByteCount: maximumByteCount,
+                encoding: encoding,
+                expectedChecksum: expectedChecksum,
+                sectionDescription: sectionDescription ?? "section",
+                mapError: mapError
+            )
+        }
         return try decodeJSON(type, from: data, mapError: mapError)
+    }
+
+    private func readSectionData(
+        from url: URL,
+        maximumByteCount: Int,
+        encoding: ScanArchiveSectionEncoding,
+        expectedChecksum: String?,
+        sectionDescription: String,
+        mapError: (String) -> ScanArchiveError
+    ) throws -> Data {
+        do {
+            let reader = try ScanArchiveSectionReader(url: url, encoding: encoding)
+            defer { reader.close() }
+
+            var data = Data()
+            data.reserveCapacity(min(maximumByteCount, Self.sectionReadChunkByteCount))
+            var hasher = SHA256()
+            while true {
+                let remainingByteCount = maximumByteCount - data.count
+                let nextReadByteCount = min(
+                    Self.sectionReadChunkByteCount,
+                    remainingByteCount + 1
+                )
+                let chunk = try reader.read(upToCount: nextReadByteCount)
+                guard !chunk.isEmpty else { break }
+                data.append(chunk)
+                hasher.update(data: chunk)
+                guard data.count <= maximumByteCount else {
+                    throw mapError("section exceeds supported size")
+                }
+            }
+
+            if let expectedChecksum {
+                let actualChecksum = Data(hasher.finalize()).base64EncodedString()
+                guard actualChecksum == expectedChecksum else {
+                    throw ScanArchiveError.integrity(localized:
+                        "\(sectionDescription) checksum mismatch"
+                    )
+                }
+            }
+            return data
+        } catch let error as ScanArchiveError {
+            throw error
+        } catch {
+            throw mapError(error.localizedDescription)
+        }
     }
 
     private func readData(
