@@ -89,7 +89,7 @@ struct SunburstChartView: View {
     }
 
     private var hoverSummary: ChartSummary? {
-        guard !isDiskMapPending else { return nil }
+        guard layoutPresentationState.canUseRenderedLayout else { return nil }
         guard let hoveredSegment = chartModel.hoveredSegment else { return nil }
 
         if let hoveredNodeID = hoveredSegment.nodeID,
@@ -106,11 +106,20 @@ struct SunburstChartView: View {
     }
 
     private var canAdjustViewport: Bool {
-        !isDiskMapPending && !chartModel.renderedSegments.isEmpty
+        layoutPresentationState.canUseRenderedLayout
+            && !chartModel.renderedSegments.isEmpty
     }
 
-    private var isDiskMapPending: Bool {
-        isInputPending || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutRequestID)
+    private var isAwaitingLayout: Bool {
+        layoutPresentationState.isAwaitingLayout
+    }
+
+    private var layoutPresentationState: ChartLayoutPresentationState {
+        ChartLayoutPresentationState(
+            readiness: chartModel.layoutReadiness,
+            layoutID: layoutRequestID,
+            isInputPending: isInputPending
+        )
     }
 
     private var layoutRequestID: String {
@@ -118,13 +127,14 @@ struct SunburstChartView: View {
     }
 
     private var loadingDiskMapProgressTaskID: String {
-        "\(layoutRequestID)|\(isDiskMapPending)"
+        "\(layoutRequestID)|\(isAwaitingLayout)"
     }
 
     var body: some View {
         GeometryReader { geometry in
             let baseChartFrame = chartFrame(in: geometry.size)
             let chartFrame = viewportTransform.frame(for: baseChartFrame)
+            let layoutPresentation = layoutPresentationState
             let canAdjustViewport = self.canAdjustViewport
 
             ZStack {
@@ -142,7 +152,9 @@ struct SunburstChartView: View {
                 .allowsHitTesting(false)
 
                 SunburstHoverOverlay(
-                    segment: isDiskMapPending ? nil : chartModel.hoveredSegment
+                    segment: layoutPresentation.canUseRenderedLayout
+                        ? chartModel.hoveredSegment
+                        : nil
                 )
                 .equatable()
                 .frame(width: chartFrame.width, height: chartFrame.height)
@@ -151,7 +163,7 @@ struct SunburstChartView: View {
 
                 if parentNode != nil,
                    isHoveringCenter,
-                   !isDiskMapPending,
+                   layoutPresentation.canUseRenderedLayout,
                    !chartModel.renderedSegments.isEmpty {
                     SunburstCenterAffordance()
                         .equatable()
@@ -164,12 +176,13 @@ struct SunburstChartView: View {
                         .transition(.opacity)
                 }
 
-                if isDiskMapPending {
+                if layoutPresentation.shouldObscureRenderedLayout {
                     Color(nsColor: .windowBackgroundColor)
                         .opacity(0.28)
                         .allowsHitTesting(false)
 
-                    if showsLoadingDiskMapProgress {
+                    if layoutPresentation.isAwaitingLayout,
+                       showsLoadingDiskMapProgress {
                         ProgressView("Loading Disk Map…")
                             .controlSize(.small)
                             .transition(.opacity)
@@ -184,15 +197,15 @@ struct SunburstChartView: View {
             .overlay {
                 SunburstInteractionOverlay(
                     onHover: { location in
-                        guard !isDiskMapPending else { return }
+                        guard layoutPresentation.canUseRenderedLayout else { return }
                         updateHover(at: location, in: baseChartFrame)
                     },
                     onClick: { location, clickCount in
-                        guard !isDiskMapPending else { return }
+                        guard layoutPresentation.canUseRenderedLayout else { return }
                         handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
                     },
                     onMove: { direction in
-                        guard !isDiskMapPending else { return false }
+                        guard layoutPresentation.canUseRenderedLayout else { return false }
                         return handleSpatialMove(direction, in: baseChartFrame)
                     },
                     onKeyboardFocus: {
@@ -231,13 +244,13 @@ struct SunburstChartView: View {
                     },
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange,
                     help: { location in
-                        guard !isDiskMapPending else { return nil }
+                        guard layoutPresentation.canUseRenderedLayout else { return nil }
                         return help(at: location, in: baseChartFrame)
                     },
                     isPanEnabled: canAdjustViewport && viewportTransform.isZoomed
                 )
                 .accessibilityHidden(true)
-                .allowsHitTesting(!isDiskMapPending)
+                .allowsHitTesting(layoutPresentation.canUseRenderedLayout)
 
             }
             .clipped()
@@ -289,7 +302,7 @@ struct SunburstChartView: View {
             }
             .overlay(alignment: .bottom) {
                 if let layoutError = chartModel.layoutReadiness.failure,
-                   !isDiskMapPending {
+                   layoutPresentation.showsFailure {
                     ChartLayoutFailureBanner(failure: layoutError) {
                         layoutRetryGeneration += 1
                     }
@@ -310,7 +323,7 @@ struct SunburstChartView: View {
                 handleViewportAction(action, in: baseChartFrame)
             }
             .task(id: loadingDiskMapProgressTaskID) {
-                await updateLoadingDiskMapProgress(isPending: isDiskMapPending)
+                await updateLoadingDiskMapProgress(isPending: isAwaitingLayout)
             }
             .task(id: SunburstLayoutTaskID(layoutID: layoutID, retryGeneration: layoutRetryGeneration)) {
                 await chartModel.loadLayout(
@@ -327,7 +340,7 @@ struct SunburstChartView: View {
         _ direction: ChartSpatialSelectionDirection,
         in baseChartFrame: CGRect
     ) -> Bool {
-        guard !isInputPending, !chartModel.layoutReadiness.isPending,
+        guard layoutPresentationState.canUseRenderedLayout,
               let segment = chartModel.keyboardSelection(
             from: selectedNodeID,
             moving: direction
@@ -652,7 +665,7 @@ struct SunburstChartView: View {
             return
         }
 
-        guard isDiskMapPending else { return }
+        guard isAwaitingLayout else { return }
         showsLoadingDiskMapProgress = true
     }
 }

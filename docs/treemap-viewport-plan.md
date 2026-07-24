@@ -166,9 +166,8 @@ work inside pointer events, and divergence between rendering and hit testing.
 
 ## Implementation record
 
-Completed on 2026-07-23 in the dedicated
-`/Users/colin/Programming/Radix/.build/worktrees/treemap-viewport` worktree on
-branch `feat/treemap-viewport`.
+Completed on 2026-07-23 in a dedicated worktree on branch
+`feat/treemap-viewport`.
 
 Checkpoint commits:
 
@@ -179,7 +178,7 @@ Checkpoint commits:
 
 Review and validation completed:
 
-- Full `swift test`: 708 tests executed, 18 skipped, 0 failures.
+- Full `swift test`: 713 tests executed, 18 skipped, 0 failures.
 - Complete Debug app build with `xcodebuild`.
 - Hands-on app checks at 100%, 125%, 156%, and 400% for HUD controls,
   shortcuts, transformed selection and folder navigation, keyboard reveal,
@@ -191,3 +190,16 @@ Review and validation completed:
   a layout request is actively pending.
 - Final review found no viewport value in treemap layout identity, no enlarged
   Canvas surface, no persisted viewport state, and no new cache or dependency.
+
+Post-implementation audit:
+
+- Kept size buckets and retry generations solely in SwiftUI task identity;
+  chart readiness now uses the semantic layout identity. This preserves a
+  normalized render after a cancelled resize without exposing stale tiles
+  during folder or data changes.
+- Shared layout presentation state now distinguishes an awaiting layout, a
+  usable current render, and a resolved failure. A failed semantic replacement
+  dims and disables stale output, while a failed same-layout resize can keep
+  its prior render usable.
+- Removed duplicated sunburst representable updates and the encoded treemap
+  request/cache identifiers.
