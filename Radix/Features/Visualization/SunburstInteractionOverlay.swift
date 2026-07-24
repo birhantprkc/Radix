@@ -23,6 +23,15 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
 
     func makeNSView(context: Context) -> InteractionView {
         let view = InteractionView()
+        update(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: InteractionView, context: Context) {
+        update(nsView)
+    }
+
+    private func update(_ view: InteractionView) {
         view.onHover = onHover
         view.onClick = onClick
         view.onMove = onMove
@@ -36,23 +45,6 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         view.help = help
         view.isPanEnabled = isPanEnabled
         view.acquireKeyboardFocusIfNeeded()
-        return view
-    }
-
-    func updateNSView(_ nsView: InteractionView, context: Context) {
-        nsView.onHover = onHover
-        nsView.onClick = onClick
-        nsView.onMove = onMove
-        nsView.onKeyboardFocus = onKeyboardFocus
-        nsView.isKeyboardFocused = isKeyboardFocused
-        nsView.onPan = onPan
-        nsView.onMagnify = onMagnify
-        nsView.canStartPan = canStartPan
-        nsView.discardPileDragItem = discardPileDragItem
-        nsView.onDragActiveChange = onDiscardPileDragActiveChange
-        nsView.help = help
-        nsView.isPanEnabled = isPanEnabled
-        nsView.acquireKeyboardFocusIfNeeded()
     }
 
     final class InteractionView: ChartViewportInteractionView {
