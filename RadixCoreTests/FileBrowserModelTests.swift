@@ -2,6 +2,15 @@ import Combine
 import XCTest
 @testable import RadixCore
 
+private extension FileBrowserModel {
+    @MainActor
+    func setActiveSearchText(_ text: String) {
+        var query = activeQuery
+        query.text = text
+        setActiveQuery(query)
+    }
+}
+
 final class FileBrowserModelTests: XCTestCase {
     @MainActor
     func testCurrentContentsSortsFiltersAndFindsDisplayedNodes() {
@@ -126,6 +135,7 @@ final class FileBrowserModelTests: XCTestCase {
             ("resume", [resume.id]),
             ("report", [report.id]),
             ("/library/caches", [cache.id]),
+            ("\\library\\caches", [cache.id]),
             ("Library", [])
         ]
 
@@ -224,6 +234,26 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertTrue(FileBrowserAllocatedSizeFilter(relation: .atMost, bytes: boundary).matches(boundary))
     }
 
+    func testSizeUnitsPreserveEditablePrecisionAndRejectInvalidByteCounts() {
+        let fractionalKilobytes: Int64 = 1_500
+        let unit = FileBrowserSizeUnit.bestUnit(for: fractionalKilobytes)
+        let reopenedValue = Double(fractionalKilobytes) / Double(unit.bytes)
+
+        XCTAssertEqual(unit, .kilobytes)
+        XCTAssertEqual(unit.byteCount(for: reopenedValue), fractionalKilobytes)
+        XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 500_000_000), .megabytes)
+        XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 1_500_000_000), .gigabytes)
+        XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 1_234_560), .kilobytes)
+        XCTAssertEqual(FileBrowserSizeUnit.kilobytes.byteCount(for: 1.234), 1_234)
+        XCTAssertNil(FileBrowserSizeUnit.megabytes.byteCount(for: -.infinity))
+        XCTAssertNil(FileBrowserSizeUnit.megabytes.byteCount(for: -1))
+        XCTAssertNil(
+            FileBrowserSizeUnit.kilobytes.byteCount(
+                for: Double(Int64.max) / Double(FileBrowserSizeUnit.kilobytes.bytes)
+            )
+        )
+    }
+
     func testStructuredKindClassificationDistinguishesSearchableItemTypes() {
         XCTAssertEqual(
             FileBrowserItemKindFilter.classification(
@@ -300,6 +330,35 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertTrue(model.isShowingEntireScanResults)
         try await waitForSearchToFinish(model)
         XCTAssertEqual(model.displayedNodes.map(\.id), [large.id])
+    }
+
+    @MainActor
+    func testSearchScopesKeepAndClearIndependentStructuredQueries() {
+        let model = FileBrowserModel()
+        let currentContentsQuery = FileBrowserQuery(
+            itemKind: .folder,
+            allocatedSize: FileBrowserAllocatedSizeFilter(
+                relation: .atLeast,
+                bytes: 500_000_000
+            )
+        )
+        let entireScanQuery = FileBrowserQuery(
+            itemKind: .package
+        )
+
+        model.setActiveQuery(currentContentsQuery)
+        model.setSearchScope(.entireScan)
+        XCTAssertEqual(model.activeQuery, FileBrowserQuery())
+
+        model.setActiveQuery(entireScanQuery)
+        model.setSearchScope(.currentContents)
+        XCTAssertEqual(model.activeQuery, currentContentsQuery)
+
+        model.clearActiveQuery()
+        XCTAssertEqual(model.activeQuery, FileBrowserQuery())
+
+        model.setSearchScope(.entireScan)
+        XCTAssertEqual(model.activeQuery, entireScanQuery)
     }
 
     @MainActor

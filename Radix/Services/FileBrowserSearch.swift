@@ -98,7 +98,7 @@ actor FileSearchService: FileSearching {
                 cachedIndex?.index.normalizedPathsByID[entry.id] = normalizedPath
             }
 
-            if normalizedPath.contains(preparedQuery.normalizedText) {
+            if normalizedPath.contains(preparedQuery.normalizedPathText) {
                 if let node = treeStore.node(id: entry.id) {
                     matchedNodes.append(node)
                 }
@@ -174,6 +174,7 @@ enum SearchNormalizer {
     nonisolated static func nodeMatches(
         _ node: FileNodeRecord,
         normalizedQuery: String,
+        normalizedPathQuery: String,
         includesPath: Bool
     ) -> Bool {
         if normalizedNameKindHaystack(for: node).contains(normalizedQuery) {
@@ -181,7 +182,7 @@ enum SearchNormalizer {
         }
 
         guard includesPath else { return false }
-        return normalize(node.url.path).contains(normalizedQuery)
+        return normalize(node.url.path).contains(normalizedPathQuery)
     }
 
     nonisolated static func normalizedNameKindHaystack(for node: FileNodeRecord) -> String {

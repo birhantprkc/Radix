@@ -51,10 +51,6 @@ final class FileBrowserModel: ObservableObject {
         searchIndexPruneTask?.cancel()
     }
 
-    var activeSearchText: String {
-        activeQuery.text
-    }
-
     var activeQuery: FileBrowserQuery {
         switch searchScope {
         case .currentContents:
@@ -134,13 +130,6 @@ final class FileBrowserModel: ObservableObject {
         guard searchScope != scope else { return }
         searchScope = scope
         refreshDisplayedNodes()
-    }
-
-    func setActiveSearchText(_ text: String) {
-        var query = activeQuery
-        guard query.text != text else { return }
-        query.text = text
-        setActiveQuery(query)
     }
 
     func setActiveQuery(_ query: FileBrowserQuery) {

@@ -22,8 +22,10 @@ nonisolated struct FileBrowserQuery: Hashable, Sendable {
     }
 
     func prepared() -> PreparedFileBrowserQuery {
-        PreparedFileBrowserQuery(
-            normalizedText: SearchNormalizer.normalize(trimmedText),
+        let normalizedText = SearchNormalizer.normalize(trimmedText)
+        return PreparedFileBrowserQuery(
+            normalizedText: normalizedText,
+            normalizedPathText: normalizedText.replacingOccurrences(of: "\\", with: "/"),
             includesPath: SearchNormalizer.queryIncludesPath(trimmedText),
             itemKind: itemKind,
             allocatedSize: allocatedSize
@@ -75,8 +77,53 @@ nonisolated enum FileBrowserSizeRelation: Hashable, Sendable {
     case atMost
 }
 
+nonisolated enum FileBrowserSizeUnit: CaseIterable, Hashable, Identifiable, Sendable {
+    case kilobytes
+    case megabytes
+    case gigabytes
+    case terabytes
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .kilobytes: "KB"
+        case .megabytes: "MB"
+        case .gigabytes: "GB"
+        case .terabytes: "TB"
+        }
+    }
+
+    var bytes: Int64 {
+        switch self {
+        case .kilobytes: 1_000
+        case .megabytes: 1_000_000
+        case .gigabytes: 1_000_000_000
+        case .terabytes: 1_000_000_000_000
+        }
+    }
+
+    func byteCount(for value: Double) -> Int64? {
+        guard value.isFinite, value >= 0 else { return nil }
+        return Int64(exactly: (value * Double(bytes)).rounded())
+    }
+
+    static func bestUnit(for bytes: Int64) -> Self {
+        guard bytes > 0 else { return .megabytes }
+
+        // Keep the threshold exact when the editor displays at most two fraction digits.
+        for unit in allCases.reversed()
+        where bytes >= unit.bytes &&
+            bytes.isMultiple(of: unit.bytes / 100) {
+            return unit
+        }
+        return .kilobytes
+    }
+}
+
 nonisolated struct PreparedFileBrowserQuery: Sendable {
     let normalizedText: String
+    let normalizedPathText: String
     let includesPath: Bool
     let itemKind: FileBrowserItemKindFilter?
     let allocatedSize: FileBrowserAllocatedSizeFilter?
@@ -113,6 +160,7 @@ nonisolated struct PreparedFileBrowserQuery: Sendable {
         return !hasText || SearchNormalizer.nodeMatches(
             node,
             normalizedQuery: normalizedText,
+            normalizedPathQuery: normalizedPathText,
             includesPath: includesPath
         )
     }

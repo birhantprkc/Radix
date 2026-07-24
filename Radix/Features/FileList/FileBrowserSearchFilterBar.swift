@@ -107,6 +107,7 @@ struct FileBrowserSearchFilterBar: View {
         .foregroundStyle(query.hasStructuredFilters ? Color.accentColor : .secondary)
         .help("Search Filters")
         .accessibilityLabel("Search Filters")
+        .accessibilityValue(Text(verbatim: "\(query.structuredFilterCount)"))
         .popover(isPresented: $showsFilterEditor, arrowEdge: .bottom) {
             FileBrowserFilterEditor(query: $query)
         }
@@ -158,7 +159,7 @@ private struct FileBrowserFilterEditor: View {
         GridRow {
             Text("Kind")
 
-            Picker("", selection: itemKindBinding) {
+            Picker("Kind", selection: itemKindBinding) {
                 Text("Any").tag(nil as FileBrowserItemKindFilter?)
                 Text("File").tag(FileBrowserItemKindFilter.file as FileBrowserItemKindFilter?)
                 Text("Folder").tag(FileBrowserItemKindFilter.folder as FileBrowserItemKindFilter?)
@@ -175,7 +176,7 @@ private struct FileBrowserFilterEditor: View {
         GridRow {
             Text("Size")
 
-            Picker("", selection: $sizeRelation) {
+            Picker("Size comparison", selection: $sizeRelation) {
                 Text("Greater Than").tag(FileBrowserSizeRelation.greaterThan)
                 Text("At Least").tag(FileBrowserSizeRelation.atLeast)
                 Text("Less Than").tag(FileBrowserSizeRelation.lessThan)
@@ -190,8 +191,9 @@ private struct FileBrowserFilterEditor: View {
                 format: .number.precision(.fractionLength(0...2))
             )
             .frame(width: 80)
+            .accessibilityLabel("Size value")
 
-            Picker("", selection: $sizeUnit) {
+            Picker("Size unit", selection: $sizeUnit) {
                 ForEach(FileBrowserSizeUnit.allCases) { unit in
                     Text(verbatim: unit.title).tag(unit)
                 }
@@ -218,52 +220,20 @@ private struct FileBrowserFilterEditor: View {
     }
 
     private func updateSizeFilter() {
-        guard let sizeValue,
-              sizeValue.isFinite,
-              sizeValue >= 0,
-              sizeValue <= Double(Int64.max) / Double(sizeUnit.bytes) else {
+        guard let sizeValue else {
+            query.allocatedSize = nil
+            return
+        }
+        guard let bytes = sizeUnit.byteCount(for: sizeValue) else {
+            self.sizeValue = nil
             query.allocatedSize = nil
             return
         }
 
         query.allocatedSize = FileBrowserAllocatedSizeFilter(
             relation: sizeRelation,
-            bytes: Int64((sizeValue * Double(sizeUnit.bytes)).rounded())
+            bytes: bytes
         )
-    }
-}
-
-private enum FileBrowserSizeUnit: CaseIterable, Identifiable {
-    case kilobytes
-    case megabytes
-    case gigabytes
-    case terabytes
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .kilobytes: "KB"
-        case .megabytes: "MB"
-        case .gigabytes: "GB"
-        case .terabytes: "TB"
-        }
-    }
-
-    var bytes: Int64 {
-        switch self {
-        case .kilobytes: 1_000
-        case .megabytes: 1_000_000
-        case .gigabytes: 1_000_000_000
-        case .terabytes: 1_000_000_000_000
-        }
-    }
-
-    static func bestUnit(for bytes: Int64) -> Self {
-        for unit in allCases.reversed() where bytes >= unit.bytes && bytes.isMultiple(of: unit.bytes) {
-            return unit
-        }
-        return .megabytes
     }
 }
 
