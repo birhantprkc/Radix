@@ -244,7 +244,6 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     nonisolated static let formatIdentifier = "dev.colinkim.radix.scan"
     nonisolated static let currentFormatVersion = 5
     private nonisolated static let oldestSupportedFormatVersion = 3
-    private nonisolated static let oldestExportFormatVersion = 4
 
     private nonisolated static let manifestFileName = "manifest.json"
     private nonisolated static let nodesFileName = "nodes.jsonl"
@@ -295,8 +294,13 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard snapshot.isComplete else {
             throw ScanArchiveError.incompleteSnapshot
         }
-        guard (Self.oldestExportFormatVersion...Self.currentFormatVersion)
-            .contains(options.formatVersion) else {
+        let sectionEncodings: ScanArchiveSectionEncodings
+        switch options.formatVersion {
+        case 4:
+            sectionEncodings = .identity
+        case 5:
+            sectionEncodings = .versionFive
+        default:
             throw ScanArchiveError.unsupportedVersion(options.formatVersion)
         }
         try validateArchiveExtension(destinationURL)
@@ -309,9 +313,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             }
         }
 
-        let sectionEncodings: ScanArchiveSectionEncodings = options.formatVersion >= 5
-            ? .versionFive
-            : .identity
+        let isVersionFive = options.formatVersion == 5
         let archiveSections = ScanArchiveSections(
             nodes: sectionEncodings.nodes == .lzfse
                 ? Self.compressedNodesFileName
@@ -363,12 +365,17 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             ScanArchiveStatsV1(snapshot.aggregateStats),
             to: statsURL
         )
-        let sectionByteCounts = try ScanArchiveSectionByteCounts(
-            nodes: fileByteCount(at: nodesURL),
-            topology: fileByteCount(at: topologyURL),
-            warnings: fileByteCount(at: warningsURL),
-            stats: fileByteCount(at: statsURL)
-        )
+        let sectionByteCounts: ScanArchiveSectionByteCounts?
+        if isVersionFive {
+            sectionByteCounts = try ScanArchiveSectionByteCounts(
+                nodes: fileByteCount(at: nodesURL),
+                topology: fileByteCount(at: topologyURL),
+                warnings: fileByteCount(at: warningsURL),
+                stats: fileByteCount(at: statsURL)
+            )
+        } else {
+            sectionByteCounts = nil
+        }
 
         let manifest = try ScanArchiveDocument(
             exportedAt: Date(),
@@ -377,12 +384,12 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             pathMode: options.pathMode,
             sections: archiveSections,
             nodeChecksum: nodeChecksum,
-            topologyChecksum: options.formatVersion >= 5 ? topologyChecksum : nil,
-            warningsChecksum: options.formatVersion >= 5 ? warningsChecksum : nil,
-            statsChecksum: options.formatVersion >= 5 ? statsChecksum : nil,
+            topologyChecksum: isVersionFive ? topologyChecksum : nil,
+            warningsChecksum: isVersionFive ? warningsChecksum : nil,
+            statsChecksum: isVersionFive ? statsChecksum : nil,
             formatVersion: options.formatVersion,
-            sectionEncodings: options.formatVersion >= 5 ? sectionEncodings : nil,
-            sectionByteCounts: options.formatVersion >= 5 ? sectionByteCounts : nil
+            sectionEncodings: isVersionFive ? sectionEncodings : nil,
+            sectionByteCounts: sectionByteCounts
         )
         _ = try writeJSON(manifest, to: manifestURL)
 
@@ -528,20 +535,15 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             legacyNodePayload = nil
         } else {
             let nodeReadingStartedAt = importProfileStart()
-            let encodedNodePayload = try await readNodes(
+            legacyNodePayload = try await readLegacyNodes(
                 from: nodesURL,
                 expectedChecksum: manifest.integrity.nodes,
                 expectedNodeCount: manifest.snapshot.nodeCount,
-                formatVersion: manifest.formatVersion,
                 encoding: sectionEncodings.nodes,
                 progressReporter: progressReporter
             )
             finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
-            guard case .legacy(let payload) = encodedNodePayload else {
-                throw ScanArchiveError.nodes(localized: "legacy node payload was not decoded")
-            }
             compactTreeStore = nil
-            legacyNodePayload = payload
         }
 
         let snapshotFinalizationStartedAt = importProfileStart()
@@ -702,6 +704,11 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard manifest.snapshot.nodeCount > 0 else {
             throw ScanArchiveError.manifest(localized: "snapshot has no nodes")
         }
+        guard manifest.snapshot.nodeCount <= Int(UInt32.max) else {
+            throw ScanArchiveError.nodes(localized:
+                "manifest expected \(manifest.snapshot.nodeCount) nodes, exceeding the supported node count"
+            )
+        }
         guard !manifest.snapshot.rootID.isEmpty,
               manifest.snapshot.rootID == manifest.snapshot.target.path else {
             throw ScanArchiveError.manifest(localized: "snapshot root does not match target path")
@@ -715,7 +722,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         guard manifest.integrity.algorithm == "sha256" else {
             throw ScanArchiveError.integrity(localized: "unsupported integrity algorithm \(manifest.integrity.algorithm)")
         }
-        if manifest.formatVersion >= 5 {
+        if manifest.formatVersion == 5 {
             guard manifest.integrity.domain == .decodedSectionBytes else {
                 throw ScanArchiveError.integrity(localized: "unsupported or missing integrity domain")
             }
@@ -743,15 +750,19 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
     private func resolvedSectionEncodings(
         for manifest: ScanArchiveDocument
     ) throws -> ScanArchiveSectionEncodings {
-        if manifest.formatVersion < 5 {
+        switch manifest.formatVersion {
+        case 3, 4:
             return .identity
+        case 5:
+            guard manifest.sectionEncodings == .versionFive else {
+                throw ScanArchiveError.manifest(localized:
+                    "snapshot section encodings are unsupported or incomplete"
+                )
+            }
+            return .versionFive
+        default:
+            throw ScanArchiveError.unsupportedVersion(manifest.formatVersion)
         }
-        guard manifest.sectionEncodings == .versionFive else {
-            throw ScanArchiveError.manifest(localized:
-                "snapshot section encodings are unsupported or incomplete"
-            )
-        }
-        return .versionFive
     }
 
     private func validateCounts(
@@ -916,6 +927,8 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
                 }
             }
             return data
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as ScanArchiveError {
             throw error
         } catch {
@@ -935,6 +948,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             var data = Data()
             data.reserveCapacity(min(maximumByteCount, Self.sectionReadChunkByteCount))
             while true {
+                try Task.checkCancellation()
                 let remainingByteCount = maximumByteCount - data.count
                 let nextReadByteCount = min(
                     Self.sectionReadChunkByteCount,
@@ -949,6 +963,8 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
                     throw mapError("section exceeds supported size")
                 }
             }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as ScanArchiveError {
             throw error
         } catch {

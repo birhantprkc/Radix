@@ -168,6 +168,9 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(reverse.summary.allocatedDelta, 0)
         XCTAssertEqual(forward.summary.fileCountDelta, 0)
         XCTAssertEqual(reverse.summary.fileCountDelta, 0)
+        XCTAssertEqual(forward.coverage, reverse.coverage)
+        XCTAssertEqual(forward.changeTree, reverse.changeTree)
+        XCTAssertEqual(forward.topLevelChanges, reverse.topLevelChanges)
     }
 
     func testCrossVersionComparisonMatchesSameVersionBaseline() async throws {
@@ -214,6 +217,12 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertEqual(fiveToFour.rows, baseline.rows)
         XCTAssertEqual(fourToFive.summary, baseline.summary)
         XCTAssertEqual(fiveToFour.summary, baseline.summary)
+        XCTAssertEqual(fourToFive.coverage, baseline.coverage)
+        XCTAssertEqual(fiveToFour.coverage, baseline.coverage)
+        XCTAssertEqual(fourToFive.changeTree, baseline.changeTree)
+        XCTAssertEqual(fiveToFour.changeTree, baseline.changeTree)
+        XCTAssertEqual(fourToFive.topLevelChanges, baseline.topLevelChanges)
+        XCTAssertEqual(fiveToFour.topLevelChanges, baseline.topLevelChanges)
     }
 
     func testLZFSESectionStreamRoundTripsChunkedDecodedBytes() throws {
@@ -1031,6 +1040,27 @@ final class ScanArchiveServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: wrongExtensionURL.path))
     }
 
+    func testExportRejectsUnsupportedInternalFormatVersions() async throws {
+        let service = ScanArchiveService()
+
+        for formatVersion in [3, 6] {
+            let archiveURL = try makeTemporaryArchiveURL()
+
+            do {
+                _ = try await service.export(
+                    snapshot: makeArchiveSnapshot(),
+                    to: archiveURL,
+                    options: ScanArchiveExportOptions(formatVersion: formatVersion)
+                )
+                XCTFail("Export should reject unsupported version \(formatVersion).")
+            } catch ScanArchiveError.unsupportedVersion(let rejectedVersion) {
+                XCTAssertEqual(rejectedVersion, formatVersion)
+            }
+
+            XCTAssertFalse(FileManager.default.fileExists(atPath: archiveURL.path))
+        }
+    }
+
     func testImportRejectsWrongArchiveExtension() async throws {
         let service = ScanArchiveService()
         let archiveURL = try makeTemporaryArchiveURL()
@@ -1695,6 +1725,7 @@ final class ScanArchiveServiceTests: XCTestCase {
             file: file,
             line: line
         )
+        XCTAssertEqual(lhs.treeStore.rootID, rhs.treeStore.rootID, file: file, line: line)
         XCTAssertEqual(
             lhs.treeStore.childIDsByID,
             rhs.treeStore.childIDsByID,
@@ -1746,6 +1777,18 @@ final class ScanArchiveServiceTests: XCTestCase {
             file: file,
             line: line
         )
+        if case .imported(let lhsContext) = lhs.source,
+           case .imported(let rhsContext) = rhs.source {
+            XCTAssertEqual(lhsContext.pathMode, rhsContext.pathMode, file: file, line: line)
+            XCTAssertEqual(
+                lhsContext.liveActionCapability,
+                rhsContext.liveActionCapability,
+                file: file,
+                line: line
+            )
+        } else {
+            XCTFail("Expected imported snapshot sources.", file: file, line: line)
+        }
     }
 
     private func readManifest(from archiveURL: URL) throws -> ScanArchiveDocument {

@@ -494,8 +494,8 @@ hard-link, clone, path, or size behavior that a zero-diff test could miss.
 Required before completion:
 
 ```sh
-swift test
-xcodebuild -project Radix.xcodeproj -scheme Radix \
+rtk swift test
+rtk xcodebuild -project Radix.xcodeproj -scheme Radix \
   -configuration Debug -destination 'platform=macOS' build
 ```
 

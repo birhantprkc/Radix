@@ -36,7 +36,7 @@ nonisolated struct ScanArchiveDocument: Codable, Sendable {
         topologyChecksum: String? = nil,
         warningsChecksum: String? = nil,
         statsChecksum: String? = nil,
-        formatVersion: Int = ScanArchiveService.currentFormatVersion,
+        formatVersion: Int,
         swiftSchema: String? = nil,
         sectionEncodings: ScanArchiveSectionEncodings? = nil,
         sectionByteCounts: ScanArchiveSectionByteCounts? = nil
@@ -57,7 +57,7 @@ nonisolated struct ScanArchiveDocument: Codable, Sendable {
             topology: topologyChecksum,
             warnings: warningsChecksum,
             stats: statsChecksum,
-            domain: formatVersion >= 5 ? .decodedSectionBytes : nil
+            domain: formatVersion == 5 ? .decodedSectionBytes : nil
         )
     }
 }
@@ -67,7 +67,7 @@ nonisolated struct ScanArchiveCreatedBy: Codable, Sendable {
     let appVersion: String
     let swiftSchema: String
 
-    init(appVersion: String, swiftSchema: String = "ScanArchiveV4") {
+    init(appVersion: String, swiftSchema: String) {
         self.app = "Radix"
         self.appVersion = appVersion
         self.swiftSchema = swiftSchema
