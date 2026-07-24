@@ -133,8 +133,10 @@ private struct FileBrowserFilterEditor: View {
             Text("Search Filters")
                 .font(.headline)
 
-            kindFilterRow
-            sizeFilterRow
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 14) {
+                kindFilterRow
+                sizeFilterRow
+            }
 
             if query.hasStructuredFilters {
                 Divider()
@@ -153,9 +155,8 @@ private struct FileBrowserFilterEditor: View {
     }
 
     private var kindFilterRow: some View {
-        HStack(spacing: 8) {
+        GridRow {
             Text("Kind")
-                .frame(width: 45, alignment: .leading)
 
             Picker("", selection: itemKindBinding) {
                 Text("Any").tag(nil as FileBrowserItemKindFilter?)
@@ -166,13 +167,13 @@ private struct FileBrowserFilterEditor: View {
             .labelsHidden()
             .pickerStyle(.segmented)
             .frame(maxWidth: .infinity)
+            .gridCellColumns(3)
         }
     }
 
     private var sizeFilterRow: some View {
-        HStack(spacing: 8) {
+        GridRow {
             Text("Size")
-                .frame(width: 45, alignment: .leading)
 
             Picker("", selection: $sizeRelation) {
                 Text("Greater Than").tag(FileBrowserSizeRelation.greaterThan)
@@ -181,7 +182,7 @@ private struct FileBrowserFilterEditor: View {
                 Text("At Most").tag(FileBrowserSizeRelation.atMost)
             }
             .labelsHidden()
-            .frame(width: 125)
+            .frame(minWidth: 120, maxWidth: .infinity)
 
             TextField(
                 "Any",
