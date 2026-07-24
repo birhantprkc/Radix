@@ -27,29 +27,23 @@ struct FileBrowserSearchFilterBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                scopeMenu
+        HStack(spacing: 10) {
+            scopeMenu
 
-                TextField(prompt, text: $query.text)
-                    .textFieldStyle(.plain)
-                    .focused($isFocused)
+            TextField(prompt, text: $query.text)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
 
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-
-                if !query.text.isEmpty {
-                    clearTextButton
-                }
-
-                filterEditorButton
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
             }
 
-            if query.hasStructuredFilters {
-                adaptiveFilterSummary
+            if !query.text.isEmpty {
+                clearTextButton
             }
+
+            filterEditorButton
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -97,17 +91,19 @@ struct FileBrowserSearchFilterBar: View {
         Button {
             showsFilterEditor = true
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: query.hasStructuredFilters
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease.circle")
+                Text("Filters")
                 if query.structuredFilterCount > 0 {
-                    Text(verbatim: "\(query.structuredFilterCount)")
+                    Text(verbatim: "(\(query.structuredFilterCount))")
                         .monospacedDigit()
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
         .foregroundStyle(query.hasStructuredFilters ? Color.accentColor : .secondary)
         .help("Search Filters")
         .accessibilityLabel("Search Filters")
@@ -115,126 +111,45 @@ struct FileBrowserSearchFilterBar: View {
             FileBrowserFilterEditor(query: $query)
         }
     }
-
-    private var adaptiveFilterSummary: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                filterChips
-                Spacer(minLength: 0)
-            }
-
-            HStack {
-                Button {
-                    showsFilterEditor = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "line.3.horizontal.decrease.circle.fill")
-                        Text("Search Filters")
-                        Text(verbatim: "(\(query.structuredFilterCount))")
-                            .monospacedDigit()
-                    }
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .controlSize(.mini)
-
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var filterChips: some View {
-        if let itemKind = query.itemKind {
-            filterChip(title: itemKind.title, accessibilityLabel: "Remove kind filter") {
-                query.itemKind = nil
-            }
-        }
-
-        if let allocatedSize = query.allocatedSize {
-            sizeFilterChip(allocatedSize)
-        }
-    }
-
-    private func sizeFilterChip(_ filter: FileBrowserAllocatedSizeFilter) -> some View {
-        filterChip(
-            title: "\(String(localized: "Allocated")) \(filter.relation.symbol) \(RadixFormatters.size(filter.bytes))",
-            accessibilityLabel: "Remove size filter"
-        ) {
-            query.allocatedSize = nil
-        }
-    }
-
-    private func filterChip(
-        title: String,
-        accessibilityLabel: LocalizedStringKey,
-        remove: @escaping () -> Void
-    ) -> some View {
-        Button(action: remove) {
-            HStack(spacing: 4) {
-                Text(title)
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.semibold))
-            }
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.mini)
-        .fixedSize()
-        .accessibilityLabel(accessibilityLabel)
-    }
 }
 
 private struct FileBrowserFilterEditor: View {
     @Binding var query: FileBrowserQuery
-    @Environment(\.dismiss) private var dismiss
+    @State private var sizeRelation: FileBrowserSizeRelation
+    @State private var sizeValue: Double?
+    @State private var sizeUnit: FileBrowserSizeUnit
 
-    private var allFiltersAreActive: Bool {
-        query.itemKind != nil && query.allocatedSize != nil
+    init(query: Binding<FileBrowserQuery>) {
+        _query = query
+        let filter = query.wrappedValue.allocatedSize
+        let unit = FileBrowserSizeUnit.bestUnit(for: filter?.bytes ?? 0)
+        _sizeRelation = State(initialValue: filter?.relation ?? .greaterThan)
+        _sizeValue = State(initialValue: filter.map { Double($0.bytes) / Double(unit.bytes) })
+        _sizeUnit = State(initialValue: unit)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Search Filters")
                 .font(.headline)
 
+            kindFilterRow
+            sizeFilterRow
+
             if query.hasStructuredFilters {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        if query.itemKind != nil {
-                            kindFilterRow
-                        }
-
-                        if query.allocatedSize != nil {
-                            FileBrowserSizeFilterRow(filter: $query.allocatedSize)
-                        }
-                    }
-                }
-                .frame(height: min(CGFloat(query.structuredFilterCount) * 48, 240))
-
                 Divider()
-            }
 
-            HStack {
-                if query.hasStructuredFilters {
-                    Button("Clear All") {
-                        query.itemKind = nil
-                        query.allocatedSize = nil
-                    }
+                Button("Clear Filters") {
+                    sizeValue = nil
+                    sizeRelation = .greaterThan
+                    sizeUnit = .megabytes
+                    query.itemKind = nil
+                    query.allocatedSize = nil
                 }
-
-                Spacer()
-
-                addFilterMenu
-
-                Button("Done") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
             }
         }
         .padding(16)
-        .frame(width: 440)
+        .frame(width: 400)
     }
 
     private var kindFilterRow: some View {
@@ -243,65 +158,23 @@ private struct FileBrowserFilterEditor: View {
                 .frame(width: 45, alignment: .leading)
 
             Picker("", selection: itemKindBinding) {
-                Text("File").tag(FileBrowserItemKindFilter.file)
-                Text("Folder").tag(FileBrowserItemKindFilter.folder)
-                Text("Package").tag(FileBrowserItemKindFilter.package)
+                Text("Any").tag(nil as FileBrowserItemKindFilter?)
+                Text("File").tag(FileBrowserItemKindFilter.file as FileBrowserItemKindFilter?)
+                Text("Folder").tag(FileBrowserItemKindFilter.folder as FileBrowserItemKindFilter?)
+                Text("Package").tag(FileBrowserItemKindFilter.package as FileBrowserItemKindFilter?)
             }
             .labelsHidden()
+            .pickerStyle(.segmented)
             .frame(maxWidth: .infinity)
-
-            removeFilterButton(accessibilityLabel: "Remove kind filter") {
-                query.itemKind = nil
-            }
         }
-        .filterRowStyle()
     }
 
-    private var itemKindBinding: Binding<FileBrowserItemKindFilter> {
-        Binding(
-            get: { query.itemKind ?? .file },
-            set: { query.itemKind = $0 }
-        )
-    }
-
-    private var addFilterMenu: some View {
-        Menu {
-            if query.itemKind == nil {
-                Button("Kind") {
-                    query.itemKind = .file
-                }
-            }
-
-            if query.allocatedSize == nil {
-                Button("Size") {
-                    query.allocatedSize = FileBrowserAllocatedSizeFilter(
-                        relation: .greaterThan,
-                        bytes: 500_000_000
-                    )
-                }
-            }
-        } label: {
-            Label("Add Filter", systemImage: "plus")
-        }
-        .disabled(allFiltersAreActive)
-    }
-}
-
-private struct FileBrowserSizeFilterRow: View {
-    @Binding var filter: FileBrowserAllocatedSizeFilter?
-    @State private var unit: FileBrowserSizeUnit
-
-    init(filter: Binding<FileBrowserAllocatedSizeFilter?>) {
-        _filter = filter
-        _unit = State(initialValue: FileBrowserSizeUnit.bestUnit(for: filter.wrappedValue?.bytes ?? 0))
-    }
-
-    var body: some View {
+    private var sizeFilterRow: some View {
         HStack(spacing: 8) {
             Text("Size")
                 .frame(width: 45, alignment: .leading)
 
-            Picker("", selection: relationBinding) {
+            Picker("", selection: $sizeRelation) {
                 Text("Greater Than").tag(FileBrowserSizeRelation.greaterThan)
                 Text("At Least").tag(FileBrowserSizeRelation.atLeast)
                 Text("Less Than").tag(FileBrowserSizeRelation.lessThan)
@@ -311,88 +184,51 @@ private struct FileBrowserSizeFilterRow: View {
             .frame(width: 125)
 
             TextField(
-                "Value",
-                value: valueBinding,
+                "Any",
+                value: $sizeValue,
                 format: .number.precision(.fractionLength(0...2))
             )
             .frame(width: 80)
 
-            Picker("", selection: $unit) {
+            Picker("", selection: $sizeUnit) {
                 ForEach(FileBrowserSizeUnit.allCases) { unit in
                     Text(verbatim: unit.title).tag(unit)
                 }
             }
             .labelsHidden()
             .frame(width: 70)
-            .onChange(of: unit) { previousUnit, nextUnit in
-                updateUnit(from: previousUnit, to: nextUnit)
-            }
-
-            removeFilterButton(accessibilityLabel: "Remove size filter") {
-                filter = nil
-            }
         }
-        .filterRowStyle()
+        .onChange(of: sizeRelation) {
+            updateSizeFilter()
+        }
+        .onChange(of: sizeValue) {
+            updateSizeFilter()
+        }
+        .onChange(of: sizeUnit) {
+            updateSizeFilter()
+        }
     }
 
-    private var relationBinding: Binding<FileBrowserSizeRelation> {
+    private var itemKindBinding: Binding<FileBrowserItemKindFilter?> {
         Binding(
-            get: { filter?.relation ?? .greaterThan },
-            set: { relation in
-                guard var updatedFilter = filter else { return }
-                updatedFilter.relation = relation
-                filter = updatedFilter
-            }
+            get: { query.itemKind },
+            set: { query.itemKind = $0 }
         )
     }
 
-    private var valueBinding: Binding<Double> {
-        Binding(
-            get: {
-                Double(filter?.bytes ?? 0) / Double(unit.bytes)
-            },
-            set: { value in
-                guard value.isFinite,
-                      value >= 0,
-                      value <= Double(Int64.max) / Double(unit.bytes),
-                      var updatedFilter = filter else {
-                    return
-                }
-                updatedFilter.bytes = Int64((value * Double(unit.bytes)).rounded())
-                filter = updatedFilter
-            }
+    private func updateSizeFilter() {
+        guard let sizeValue,
+              sizeValue.isFinite,
+              sizeValue >= 0,
+              sizeValue <= Double(Int64.max) / Double(sizeUnit.bytes) else {
+            query.allocatedSize = nil
+            return
+        }
+
+        query.allocatedSize = FileBrowserAllocatedSizeFilter(
+            relation: sizeRelation,
+            bytes: Int64((sizeValue * Double(sizeUnit.bytes)).rounded())
         )
-    }
-
-    private func updateUnit(
-        from previousUnit: FileBrowserSizeUnit,
-        to nextUnit: FileBrowserSizeUnit
-    ) {
-        guard var updatedFilter = filter else { return }
-        let displayedValue = Double(updatedFilter.bytes) / Double(previousUnit.bytes)
-        let nextBytes = displayedValue * Double(nextUnit.bytes)
-        guard nextBytes <= Double(Int64.max) else { return }
-        updatedFilter.bytes = Int64(nextBytes.rounded())
-        filter = updatedFilter
-    }
-}
-
-private func removeFilterButton(
-    accessibilityLabel: LocalizedStringKey,
-    action: @escaping () -> Void
-) -> some View {
-    Button(action: action) {
-        Image(systemName: "xmark.circle.fill")
-            .foregroundStyle(.tertiary)
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(accessibilityLabel)
-}
-
-private extension View {
-    func filterRowStyle() -> some View {
-        padding(8)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -433,29 +269,5 @@ private enum FileBrowserSizeUnit: CaseIterable, Identifiable {
 private extension FileBrowserQuery {
     var structuredFilterCount: Int {
         (itemKind == nil ? 0 : 1) + (allocatedSize == nil ? 0 : 1)
-    }
-}
-
-private extension FileBrowserItemKindFilter {
-    var title: String {
-        switch self {
-        case .file:
-            String(localized: "File", comment: "Search filter for regular files.")
-        case .folder:
-            String(localized: "Folder", comment: "Search filter for folders.")
-        case .package:
-            String(localized: "Package", comment: "Search filter for app bundles and packages.")
-        }
-    }
-}
-
-private extension FileBrowserSizeRelation {
-    var symbol: String {
-        switch self {
-        case .greaterThan: ">"
-        case .atLeast: "≥"
-        case .lessThan: "<"
-        case .atMost: "≤"
-        }
     }
 }
