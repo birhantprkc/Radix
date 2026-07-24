@@ -4,7 +4,7 @@ import AppKit
 class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSource {
     var onHover: (CGPoint?) -> Void = { _ in }
     var onClick: (CGPoint, Int) -> Void = { _, _ in }
-    var onPan: (CGSize) -> Void = { _ in }
+    var onPan: (CGSize, CGPoint) -> Void = { _, _ in }
     var onMagnify: (CGPoint, CGFloat) -> Void = { _, _ in }
     var canStartPan: (CGPoint) -> Bool = { _ in false }
     var onDragActiveChange: (Bool) -> Void = { _ in }
@@ -82,11 +82,14 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
             defer { self.lastDragLocation = location }
             guard isPanEnabled else { return }
 
-            onPan(CGSize(
-                width: location.x - lastDragLocation.x,
-                height: location.y - lastDragLocation.y
-            ))
-            updatePointerFeedback(at: location)
+            onPan(
+                CGSize(
+                    width: location.x - lastDragLocation.x,
+                    height: location.y - lastDragLocation.y
+                ),
+                location
+            )
+            toolTip = nil
             return
         }
 
@@ -101,11 +104,14 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
         defer { self.lastDragLocation = location }
         guard isPanEnabled else { return }
 
-        onPan(CGSize(
-            width: location.x - lastDragLocation.x,
-            height: location.y - lastDragLocation.y
-        ))
-        updatePointerFeedback(at: location)
+        onPan(
+            CGSize(
+                width: location.x - lastDragLocation.x,
+                height: location.y - lastDragLocation.y
+            ),
+            location
+        )
+        toolTip = nil
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -123,7 +129,7 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
     override func magnify(with event: NSEvent) {
         let location = eventLocation(event)
         onMagnify(location, max(0.75, 1 + event.magnification))
-        updatePointerFeedback(at: location)
+        toolTip = nil
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -137,14 +143,14 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
             guard scrollDelta != 0 else { return }
 
             onMagnify(location, pow(1.0025, scrollDelta))
-            updatePointerFeedback(at: location)
+            toolTip = nil
             return
         }
 
         if isPanEnabled {
             guard let panDelta = panDelta(for: event) else { return }
-            onPan(panDelta)
-            updatePointerFeedback(at: location)
+            onPan(panDelta, location)
+            toolTip = nil
             return
         }
 

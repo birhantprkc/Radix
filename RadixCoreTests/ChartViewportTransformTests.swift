@@ -65,6 +65,32 @@ final class ChartViewportTransformTests: XCTestCase {
         )
     }
 
+    func testInverseMappingCombinesZoomAndPanInNonSquareViewport() throws {
+        let baseFrame = CGRect(x: 0, y: 0, width: 300, height: 120)
+        let transform = ChartViewportTransform(
+            scale: 2.5,
+            offset: CGSize(width: -70, height: 35)
+        )
+        let pointer = CGPoint(x: 80, y: 60)
+
+        let chartPoint = try XCTUnwrap(
+            transform.localChartPoint(for: pointer, in: baseFrame)
+        )
+
+        XCTAssertEqual(chartPoint.point, CGPoint(x: 375, y: 115))
+        XCTAssertEqual(chartPoint.size, CGSize(width: 750, height: 300))
+        XCTAssertEqual(
+            chartPoint.point.x / chartPoint.size.width,
+            0.5,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            chartPoint.point.y / chartPoint.size.height,
+            115 / 300,
+            accuracy: 0.000_001
+        )
+    }
+
     func testPanOffsetIsConstrainedToKeepBaseFrameCovered() {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 100)
         let transform = ChartViewportTransform(scale: 2).panned(

@@ -199,11 +199,29 @@ struct SunburstChartView: View {
                         focusedWorkspaceTarget = .chart
                     },
                     isKeyboardFocused: focusedWorkspaceTarget == .chart,
-                    onPan: { delta in
-                        panViewport(by: delta, in: baseChartFrame)
+                    onPan: { delta, location in
+                        let nextTransform = panViewport(
+                            by: delta,
+                            in: baseChartFrame
+                        )
+                        updateHover(
+                            at: location,
+                            in: baseChartFrame,
+                            using: nextTransform
+                        )
                     },
                     onMagnify: { location, factor in
-                        zoomViewport(by: factor, anchor: location, in: baseChartFrame, animated: false)
+                        let nextTransform = zoomViewport(
+                            by: factor,
+                            anchor: location,
+                            in: baseChartFrame,
+                            animated: false
+                        )
+                        updateHover(
+                            at: location,
+                            in: baseChartFrame,
+                            using: nextTransform
+                        )
                     },
                     canStartPan: { location in
                         canStartPan(at: location, in: baseChartFrame)
@@ -228,10 +246,10 @@ struct SunburstChartView: View {
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(accessibilityHint)
             .accessibilityAction(named: String(localized: "Zoom In", comment: "Accessibility action for zooming into the disk map.")) {
-                zoomViewport(by: 1.25, anchor: nil, in: baseChartFrame, animated: true)
+                zoomViewport(by: ChartViewportTransform.zoomInFactor, anchor: nil, in: baseChartFrame, animated: true)
             }
             .accessibilityAction(named: String(localized: "Zoom Out", comment: "Accessibility action for zooming out of the disk map.")) {
-                zoomViewport(by: 0.8, anchor: nil, in: baseChartFrame, animated: true)
+                zoomViewport(by: ChartViewportTransform.zoomOutFactor, anchor: nil, in: baseChartFrame, animated: true)
             }
             .accessibilityAction(named: String(localized: "Reset Zoom", comment: "Accessibility action for resetting the disk map zoom.")) {
                 resetViewport(animated: true)
@@ -256,10 +274,10 @@ struct SunburstChartView: View {
                         canZoomOut: viewportTransform.isZoomed,
                         canZoomIn: viewportTransform.scale < ChartViewportTransform.maximumScale,
                         zoomOut: {
-                            zoomViewport(by: 0.8, anchor: nil, in: baseChartFrame, animated: true)
+                            zoomViewport(by: ChartViewportTransform.zoomOutFactor, anchor: nil, in: baseChartFrame, animated: true)
                         },
                         zoomIn: {
-                            zoomViewport(by: 1.25, anchor: nil, in: baseChartFrame, animated: true)
+                            zoomViewport(by: ChartViewportTransform.zoomInFactor, anchor: nil, in: baseChartFrame, animated: true)
                         },
                         reset: {
                             resetViewport(animated: true)
@@ -355,21 +373,27 @@ struct SunburstChartView: View {
         "\(Int((viewportTransform.scale * 100).rounded()))%"
     }
 
-    private func updateHover(at location: CGPoint?, in frame: CGRect) {
+    private func updateHover(
+        at location: CGPoint?,
+        in frame: CGRect,
+        using transform: ChartViewportTransform? = nil
+    ) {
         guard let location else {
             isHoveringCenter = false
             chartModel.setHoveredSegmentID(nil)
             return
         }
 
-        if parentNode != nil, isCenterHit(at: location, in: frame) {
+        let transform = transform ?? viewportTransform
+        if parentNode != nil,
+           isCenterHit(at: location, in: frame, using: transform) {
             isHoveringCenter = true
             chartModel.setHoveredSegmentID(nil)
             return
         }
 
         isHoveringCenter = false
-        let nextSegment = hitTest(at: location, in: frame)
+        let nextSegment = hitTest(at: location, in: frame, using: transform)
         chartModel.setHoveredSegmentID(nextSegment?.id)
     }
 
@@ -441,8 +465,13 @@ struct SunburstChartView: View {
         min(frame.width, frame.height) * SunburstLayout.centerRadius
     }
 
-    private func hitTest(at location: CGPoint, in frame: CGRect) -> SunburstSegment? {
-        guard let chartPoint = viewportTransform.localChartPoint(for: location, in: frame) else {
+    private func hitTest(
+        at location: CGPoint,
+        in frame: CGRect,
+        using transform: ChartViewportTransform? = nil
+    ) -> SunburstSegment? {
+        let transform = transform ?? viewportTransform
+        guard let chartPoint = transform.localChartPoint(for: location, in: frame) else {
             return nil
         }
 
@@ -480,8 +509,13 @@ struct SunburstChartView: View {
         ).canMoveToTrash
     }
 
-    private func isCenterHit(at location: CGPoint, in frame: CGRect) -> Bool {
-        guard let chartPoint = viewportTransform.localChartPoint(for: location, in: frame) else {
+    private func isCenterHit(
+        at location: CGPoint,
+        in frame: CGRect,
+        using transform: ChartViewportTransform? = nil
+    ) -> Bool {
+        let transform = transform ?? viewportTransform
+        guard let chartPoint = transform.localChartPoint(for: location, in: frame) else {
             return false
         }
 
@@ -529,31 +563,34 @@ struct SunburstChartView: View {
         return node.itemKind(activeTarget: activeTarget)
     }
 
+    @discardableResult
     private func zoomViewport(
         by factor: CGFloat,
         anchor: CGPoint?,
         in baseFrame: CGRect,
         animated: Bool
-    ) {
-        guard canAdjustViewport else { return }
+    ) -> ChartViewportTransform {
+        guard canAdjustViewport else { return viewportTransform }
 
-        setViewportTransform(
-            viewportTransform.zoomed(
-                by: factor,
-                anchor: anchor,
-                in: baseFrame
-            ),
-            animated: animated
+        let nextTransform = viewportTransform.zoomed(
+            by: factor,
+            anchor: anchor,
+            in: baseFrame
         )
+        setViewportTransform(nextTransform, animated: animated)
+        return nextTransform
     }
 
-    private func panViewport(by delta: CGSize, in baseFrame: CGRect) {
-        guard canAdjustViewport else { return }
+    @discardableResult
+    private func panViewport(
+        by delta: CGSize,
+        in baseFrame: CGRect
+    ) -> ChartViewportTransform {
+        guard canAdjustViewport else { return viewportTransform }
 
-        setViewportTransform(
-            viewportTransform.panned(by: delta, in: baseFrame),
-            animated: false
-        )
+        let nextTransform = viewportTransform.panned(by: delta, in: baseFrame)
+        setViewportTransform(nextTransform, animated: false)
+        return nextTransform
     }
 
     private func resetViewport(animated: Bool) {
@@ -566,9 +603,19 @@ struct SunburstChartView: View {
     ) {
         switch action {
         case .zoomIn:
-            zoomViewport(by: 1.25, anchor: nil, in: baseFrame, animated: true)
+            zoomViewport(
+                by: ChartViewportTransform.zoomInFactor,
+                anchor: nil,
+                in: baseFrame,
+                animated: true
+            )
         case .zoomOut:
-            zoomViewport(by: 0.8, anchor: nil, in: baseFrame, animated: true)
+            zoomViewport(
+                by: ChartViewportTransform.zoomOutFactor,
+                anchor: nil,
+                in: baseFrame,
+                animated: true
+            )
         case .reset:
             resetViewport(animated: true)
         }

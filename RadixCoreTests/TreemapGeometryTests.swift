@@ -187,9 +187,15 @@ final class TreemapGeometryTests: XCTestCase {
     }
 
     func testTransformedPointerHitsRenderedSegment() throws {
-        let segment = makeTreemapSegment(
-            id: "visible",
+        let parent = makeTreemapSegment(
+            id: "parent",
             rect: CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        )
+        let child = makeTreemapSegment(
+            id: "child",
+            rect: CGRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2),
+            depth: 1,
+            containerNodeID: parent.id
         )
         let baseFrame = CGRect(x: 20, y: 30, width: 400, height: 200)
         let transform = ChartViewportTransform(
@@ -198,7 +204,7 @@ final class TreemapGeometryTests: XCTestCase {
         )
         let contentFrame = transform.frame(for: baseFrame)
         let renderedRect = TreemapRenderer.displayRect(
-            for: segment,
+            for: child,
             in: contentFrame
         )
         let pointer = CGPoint(x: renderedRect.midX, y: renderedRect.midY)
@@ -208,11 +214,11 @@ final class TreemapGeometryTests: XCTestCase {
 
         XCTAssertTrue(baseFrame.contains(pointer))
         XCTAssertEqual(
-            TreemapHitTestIndex(segments: [segment]).segment(
+            TreemapHitTestIndex(segments: [parent, child]).segment(
                 at: chartPoint.point,
                 in: chartPoint.size
             )?.id,
-            segment.id
+            child.id
         )
     }
 
@@ -300,14 +306,19 @@ final class TreemapGeometryTests: XCTestCase {
     }
 }
 
-private func makeTreemapSegment(id: String, rect: CGRect) -> TreemapSegment {
+private func makeTreemapSegment(
+    id: String,
+    rect: CGRect,
+    depth: Int = 0,
+    containerNodeID: String = "/root"
+) -> TreemapSegment {
     TreemapSegment(
         id: id,
         nodeID: id,
-        containerNodeID: "/root",
+        containerNodeID: containerNodeID,
         label: id,
         rect: rect,
-        depth: 0,
+        depth: depth,
         colorToken: .single(id: id),
         totalSize: 1,
         isAggregate: false,

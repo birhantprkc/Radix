@@ -3,6 +3,7 @@ import SwiftUI
 struct TreemapChartView: View {
     private static let chartPadding: CGFloat = 18
     private static let loadingDiskMapDelay: Duration = .milliseconds(150)
+    private static let viewportControlsAvoidanceSize = CGSize(width: 160, height: 56)
     /// The tooltip sizes itself vertically. This maximum keeps edge placement safe
     /// when a long name wraps onto its second line.
     private static let tooltipMaximumSize = CGSize(width: 272, height: 122)
@@ -95,6 +96,7 @@ struct TreemapChartView: View {
             )
             let isDiskMapPending = isInputPending
                 || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutTaskID.requestID)
+            let canAdjustViewport = !isDiskMapPending && !chartModel.renderedSegments.isEmpty
 
             ZStack {
                 TreemapRenderedChartLayer(
@@ -144,10 +146,32 @@ struct TreemapChartView: View {
                         focusedWorkspaceTarget = .chart
                     },
                     isKeyboardFocused: focusedWorkspaceTarget == .chart,
+                    onPan: { delta, location in
+                        panViewport(
+                            by: delta,
+                            pointer: location,
+                            in: baseChartFrame
+                        )
+                    },
+                    onMagnify: { location, factor in
+                        zoomViewport(
+                            by: factor,
+                            anchor: location,
+                            in: baseChartFrame,
+                            animated: false
+                        )
+                    },
+                    canStartPan: { location in
+                        discardPileDragItem(
+                            at: location,
+                            in: baseChartFrame
+                        ) == nil
+                    },
                     discardPileDragItem: { location in
                         discardPileDragItem(at: location, in: baseChartFrame)
                     },
-                    onDiscardPileDragActiveChange: onDiscardPileDragActiveChange
+                    onDiscardPileDragActiveChange: onDiscardPileDragActiveChange,
+                    isPanEnabled: canAdjustViewport && viewportTransform.isZoomed
                 )
                 .accessibilityHidden(true)
                 .allowsHitTesting(!isDiskMapPending)
@@ -158,6 +182,25 @@ struct TreemapChartView: View {
             .accessibilityLabel("Treemap disk usage chart")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint("Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up.")
+            .accessibilityAction(named: String(localized: "Zoom In", comment: "Accessibility action for zooming into the disk map.")) {
+                zoomViewport(
+                    by: ChartViewportTransform.zoomInFactor,
+                    anchor: nil,
+                    in: baseChartFrame,
+                    animated: true
+                )
+            }
+            .accessibilityAction(named: String(localized: "Zoom Out", comment: "Accessibility action for zooming out of the disk map.")) {
+                zoomViewport(
+                    by: ChartViewportTransform.zoomOutFactor,
+                    anchor: nil,
+                    in: baseChartFrame,
+                    animated: true
+                )
+            }
+            .accessibilityAction(named: String(localized: "Reset Zoom", comment: "Accessibility action for resetting the disk map zoom.")) {
+                resetViewport(animated: true)
+            }
             .focusable()
             .focusEffectDisabled()
             .focused($focusedWorkspaceTarget, equals: .chart)
@@ -167,10 +210,46 @@ struct TreemapChartView: View {
                    let tooltipAnchor {
                     TreemapHoverTooltip(content: tooltipContent)
                         .frame(width: Self.tooltipMaximumSize.width)
-                        .offset(tooltipOrigin(at: tooltipAnchor, in: geometry.size))
+                        .offset(
+                            tooltipOrigin(
+                                at: tooltipAnchor,
+                                in: geometry.size,
+                                avoidingViewportControls: canAdjustViewport
+                            )
+                        )
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                         .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if canAdjustViewport {
+                    ChartViewportControls(
+                        zoomText: viewportZoomText,
+                        canZoomOut: viewportTransform.isZoomed,
+                        canZoomIn: viewportTransform.scale < ChartViewportTransform.maximumScale,
+                        zoomOut: {
+                            zoomViewport(
+                                by: ChartViewportTransform.zoomOutFactor,
+                                anchor: nil,
+                                in: baseChartFrame,
+                                animated: true
+                            )
+                        },
+                        zoomIn: {
+                            zoomViewport(
+                                by: ChartViewportTransform.zoomInFactor,
+                                anchor: nil,
+                                in: baseChartFrame,
+                                animated: true
+                            )
+                        },
+                        reset: {
+                            resetViewport(animated: true)
+                        }
+                    )
+                    .padding(.top, 16)
+                    .padding(.trailing, 18)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -186,12 +265,19 @@ struct TreemapChartView: View {
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
             .animation(loadingIndicatorAnimation, value: showsLoadingDiskMapProgress)
             .onChange(of: baseChartFrame) { _, nextFrame in
-                viewportTransform = viewportTransform.constrained(
-                    to: CGRect(origin: .zero, size: nextFrame.size)
+                setViewportTransform(
+                    viewportTransform.constrained(
+                        to: localViewportFrame(in: nextFrame.size)
+                    ),
+                    animated: false
                 )
+                clearHover()
             }
             .onChange(of: layoutID) { _, _ in
-                viewportTransform = .identity
+                resetViewport(animated: false)
+            }
+            .focusedSceneValue(\.chartViewportAction) { action in
+                handleViewportAction(action, in: baseChartFrame)
             }
             .task(id: "\(layoutTaskID.requestID)|\(isDiskMapPending)") {
                 await updateLoadingDiskMapProgress(
@@ -223,8 +309,29 @@ struct TreemapChartView: View {
         ) else {
             return false
         }
-        tooltipAnchor = nil
-        chartModel.setHoveredSegmentID(nil)
+
+        if let selectedSegment = chartModel.selectedSegment(nodeID: nodeID) {
+            let transformedContentFrame = viewportTransform.frame(
+                for: localViewportFrame(in: size)
+            )
+            let navigationRect = TreemapRenderer.navigationRect(
+                for: selectedSegment,
+                in: transformedContentFrame
+            )
+            let selectionPoint = CGPoint(
+                x: navigationRect.midX,
+                y: navigationRect.midY
+            )
+            setViewportTransform(
+                viewportTransform.revealing(
+                    point: selectionPoint,
+                    within: localViewportFrame(in: size),
+                    padding: 12
+                ),
+                animated: false
+            )
+        }
+        clearHover()
         onSelect(nodeID)
         return true
     }
@@ -240,6 +347,14 @@ struct TreemapChartView: View {
 
     private var loadingIndicatorAnimation: Animation {
         reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.12)
+    }
+
+    private var viewportAnimation: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.16)
+    }
+
+    private var viewportZoomText: String {
+        "\(Int((viewportTransform.scale * 100).rounded()))%"
     }
 
     private var accessibilityValue: String {
@@ -262,15 +377,36 @@ struct TreemapChartView: View {
 
     private func viewportContentFrame(in baseChartFrame: CGRect) -> CGRect {
         viewportTransform.frame(
-            for: CGRect(origin: .zero, size: baseChartFrame.size)
+            for: localViewportFrame(in: baseChartFrame.size)
         )
     }
 
-    private func updateHover(at location: CGPoint?, in frame: CGRect) {
+    private func localViewportFrame(in size: CGSize) -> CGRect {
+        CGRect(origin: .zero, size: size)
+    }
+
+    private func localViewportPoint(
+        for location: CGPoint,
+        in frame: CGRect
+    ) -> CGPoint {
+        CGPoint(
+            x: location.x - frame.minX,
+            y: location.y - frame.minY
+        )
+    }
+
+    private func updateHover(
+        at location: CGPoint?,
+        in frame: CGRect,
+        using transform: ChartViewportTransform? = nil
+    ) {
         guard let location,
-              let segment = hitTest(at: location, in: frame) else {
-            tooltipAnchor = nil
-            chartModel.setHoveredSegmentID(nil)
+              let segment = hitTest(
+                at: location,
+                in: frame,
+                using: transform
+              ) else {
+            clearHover()
             return
         }
 
@@ -278,11 +414,27 @@ struct TreemapChartView: View {
         chartModel.setHoveredSegmentID(segment.id)
     }
 
-    private func tooltipOrigin(at location: CGPoint, in size: CGSize) -> CGSize {
+    private func tooltipOrigin(
+        at location: CGPoint,
+        in size: CGSize,
+        avoidingViewportControls: Bool
+    ) -> CGSize {
+        let controlsFrame: CGRect?
+        if avoidingViewportControls {
+            controlsFrame = CGRect(
+                x: max(size.width - Self.viewportControlsAvoidanceSize.width, 0),
+                y: 0,
+                width: min(Self.viewportControlsAvoidanceSize.width, size.width),
+                height: min(Self.viewportControlsAvoidanceSize.height, size.height)
+            )
+        } else {
+            controlsFrame = nil
+        }
         let origin = TreemapTooltipPlacement.origin(
             for: location,
             tooltipSize: Self.tooltipMaximumSize,
-            in: CGRect(origin: .zero, size: size)
+            in: CGRect(origin: .zero, size: size),
+            avoiding: controlsFrame
         )
         return CGSize(width: origin.x, height: origin.y)
     }
@@ -307,16 +459,16 @@ struct TreemapChartView: View {
         }
     }
 
-    private func hitTest(at location: CGPoint, in frame: CGRect) -> TreemapSegment? {
+    private func hitTest(
+        at location: CGPoint,
+        in frame: CGRect,
+        using transform: ChartViewportTransform? = nil
+    ) -> TreemapSegment? {
         guard frame.contains(location) else { return nil }
-        let localViewportPoint = CGPoint(
-            x: location.x - frame.minX,
-            y: location.y - frame.minY
-        )
-        let localViewportFrame = CGRect(origin: .zero, size: frame.size)
-        guard let chartPoint = viewportTransform.localChartPoint(
-            for: localViewportPoint,
-            in: localViewportFrame
+        let transform = transform ?? viewportTransform
+        guard let chartPoint = transform.localChartPoint(
+            for: localViewportPoint(for: location, in: frame),
+            in: localViewportFrame(in: frame.size)
         ) else {
             return nil
         }
@@ -354,6 +506,111 @@ struct TreemapChartView: View {
         DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id)
             ? String(localized: "Available Space", comment: "Chart status for free capacity on a volume.")
             : node.itemKind(activeTarget: activeTarget)
+    }
+
+    private func zoomViewport(
+        by factor: CGFloat,
+        anchor: CGPoint?,
+        in baseFrame: CGRect,
+        animated: Bool
+    ) {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending,
+              !chartModel.renderedSegments.isEmpty else {
+            return
+        }
+
+        let localFrame = localViewportFrame(in: baseFrame.size)
+        let localAnchor = anchor.map {
+            localViewportPoint(for: $0, in: baseFrame)
+        }
+        let nextTransform = viewportTransform.zoomed(
+            by: factor,
+            anchor: localAnchor,
+            in: localFrame
+        )
+        setViewportTransform(nextTransform, animated: animated)
+
+        if let anchor {
+            updateHover(
+                at: anchor,
+                in: baseFrame,
+                using: nextTransform
+            )
+        } else {
+            clearHover()
+        }
+    }
+
+    private func panViewport(
+        by delta: CGSize,
+        pointer: CGPoint,
+        in baseFrame: CGRect
+    ) {
+        guard !isInputPending, !chartModel.layoutReadiness.isPending,
+              !chartModel.renderedSegments.isEmpty else {
+            return
+        }
+
+        let nextTransform = viewportTransform.panned(
+            by: delta,
+            in: localViewportFrame(in: baseFrame.size)
+        )
+        setViewportTransform(nextTransform, animated: false)
+        updateHover(
+            at: pointer,
+            in: baseFrame,
+            using: nextTransform
+        )
+    }
+
+    private func resetViewport(animated: Bool) {
+        setViewportTransform(.identity, animated: animated)
+        clearHover()
+    }
+
+    private func handleViewportAction(
+        _ action: ChartViewportAction,
+        in baseFrame: CGRect
+    ) {
+        switch action {
+        case .zoomIn:
+            zoomViewport(
+                by: ChartViewportTransform.zoomInFactor,
+                anchor: nil,
+                in: baseFrame,
+                animated: true
+            )
+        case .zoomOut:
+            zoomViewport(
+                by: ChartViewportTransform.zoomOutFactor,
+                anchor: nil,
+                in: baseFrame,
+                animated: true
+            )
+        case .reset:
+            resetViewport(animated: true)
+        }
+    }
+
+    private func setViewportTransform(
+        _ nextTransform: ChartViewportTransform,
+        animated: Bool
+    ) {
+        guard viewportTransform != nextTransform else { return }
+
+        let update = {
+            viewportTransform = nextTransform
+        }
+        if animated {
+            withAnimation(viewportAnimation, update)
+        } else {
+            update()
+        }
+    }
+
+    private func clearHover() {
+        tooltipAnchor = nil
+        chartModel.setHoveredSegmentID(nil)
     }
 
     private func updateLoadingDiskMapProgress(

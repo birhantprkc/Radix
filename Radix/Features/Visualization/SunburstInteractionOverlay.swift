@@ -13,7 +13,7 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
     let onMove: (ChartSpatialSelectionDirection) -> Bool
     let onKeyboardFocus: () -> Void
     let isKeyboardFocused: Bool
-    let onPan: (CGSize) -> Void
+    let onPan: (CGSize, CGPoint) -> Void
     let onMagnify: (CGPoint, CGFloat) -> Void
     let canStartPan: (CGPoint) -> Bool
     let discardPileDragItem: (CGPoint) -> SunburstDiscardPileDragItem?

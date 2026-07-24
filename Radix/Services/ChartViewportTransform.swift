@@ -4,6 +4,8 @@ nonisolated struct ChartViewportTransform: Equatable {
     static let identity = ChartViewportTransform()
     static let minimumScale: CGFloat = 1
     static let maximumScale: CGFloat = 4
+    static let zoomInFactor: CGFloat = 1.25
+    static let zoomOutFactor: CGFloat = 0.8
 
     var scale: CGFloat
     var offset: CGSize
