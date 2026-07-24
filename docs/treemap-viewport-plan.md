@@ -163,3 +163,31 @@ rtk xcodebuild -project Radix.xcodeproj -scheme Radix \
 Before the final handoff, review every touched production file for redundant
 state, repeated coordinate conversion, unnecessary abstractions, full-array
 work inside pointer events, and divergence between rendering and hit testing.
+
+## Implementation record
+
+Completed on 2026-07-23 in the dedicated
+`/Users/colin/Programming/Radix/.build/worktrees/treemap-viewport` worktree on
+branch `feat/treemap-viewport`.
+
+Checkpoint commits:
+
+- `5f46a57 docs: add treemap viewport implementation plan`
+- `1850009 refactor(charts): share viewport primitives`
+- `67cc666 feat(treemap): add viewport rendering`
+- `d177b51 feat(treemap): add viewport interactions`
+
+Review and validation completed:
+
+- Full `swift test`: 708 tests executed, 18 skipped, 0 failures.
+- Complete Debug app build with `xcodebuild`.
+- Hands-on app checks at 100%, 125%, 156%, and 400% for HUD controls,
+  shortcuts, transformed selection and folder navigation, keyboard reveal,
+  hover/tooltip behavior, mouse and scroll pan, discard-drag arbitration,
+  accessibility zoom, visualization switching, and window resizing.
+- Verified the sunburst viewport still zooms after the shared refactor.
+- Verified resize keeps the prior normalized treemap interactive when its
+  replacement layout request is cancelled; interaction remains blocked while
+  a layout request is actively pending.
+- Final review found no viewport value in treemap layout identity, no enlarged
+  Canvas surface, no persisted viewport state, and no new cache or dependency.

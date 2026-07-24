@@ -94,8 +94,9 @@ struct TreemapChartView: View {
                 size: baseChartFrame.size,
                 retryGeneration: layoutRetryGeneration
             )
-            let isDiskMapPending = isInputPending
-                || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutTaskID.requestID)
+            // A cancelled resize request can leave the last normalized layout
+            // usable even though its request ID differs from the current size.
+            let isDiskMapPending = isInputPending || chartModel.layoutReadiness.isPending
             let canAdjustViewport = !isDiskMapPending && !chartModel.renderedSegments.isEmpty
 
             ZStack {
