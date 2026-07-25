@@ -19,11 +19,6 @@ nonisolated struct ScanArchiveNodePayload: Sendable {
     let orderedNodeIDs: [String]
 }
 
-nonisolated enum ScanArchiveEncodedNodePayload: Sendable {
-    case legacy(ScanArchiveNodePayload)
-    case compact([ScanArchiveCompactNode])
-}
-
 nonisolated private struct ScanArchiveNodeLocation {
     let id: String
     let path: String
@@ -41,11 +36,17 @@ nonisolated private struct ScanArchiveCompactTopology {
 nonisolated private struct ScanArchiveStreamingJSONWriter {
     private static let flushByteCount = 1024 * 1024
 
-    let fileHandle: FileHandle
+    private var sectionWriter: ScanArchiveSectionWriter
     private var buffer = Data()
 
-    init(fileHandle: FileHandle) {
-        self.fileHandle = fileHandle
+    init(
+        fileHandle: FileHandle,
+        encoding: ScanArchiveSectionEncoding
+    ) throws {
+        self.sectionWriter = try ScanArchiveSectionWriter(
+            fileHandle: fileHandle,
+            encoding: encoding
+        )
         buffer.reserveCapacity(Self.flushByteCount)
     }
 
@@ -63,13 +64,14 @@ nonisolated private struct ScanArchiveStreamingJSONWriter {
         }
     }
 
-    mutating func finish() throws {
+    mutating func finish() throws -> String {
         try flush()
+        return try sectionWriter.finish()
     }
 
     private mutating func flush() throws {
         guard !buffer.isEmpty else { return }
-        try fileHandle.write(contentsOf: buffer)
+        try sectionWriter.append(buffer)
         buffer.removeAll(keepingCapacity: true)
     }
 }
@@ -78,6 +80,7 @@ extension ScanArchiveService {
     func writeNodes(
         _ treeStore: FileTreeStore,
         to url: URL,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> String {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
@@ -87,12 +90,14 @@ extension ScanArchiveService {
         let fileHandle = try FileHandle(forWritingTo: url)
         defer { try? fileHandle.close() }
 
-        var hasher = SHA256()
         let encoder = Self.makeJSONLineEncoder()
         let totalNodeCount = treeStore.nodeCount
         var processedNodeCount = 0
         let orderedNodeIndices = treeStore.indexedNodeIndices()
-        var writer = ScanArchiveStreamingJSONWriter(fileHandle: fileHandle)
+        var writer = try ScanArchiveStreamingJSONWriter(
+            fileHandle: fileHandle,
+            encoding: encoding
+        )
 
         for nodeIndex in orderedNodeIndices {
             try Task.checkCancellation()
@@ -107,7 +112,6 @@ extension ScanArchiveService {
                 )
             )
             lineData.append(ScanArchiveNodeIOConstants.newlineData)
-            hasher.update(data: lineData)
             try writer.append(lineData)
             processedNodeCount += 1
 
@@ -121,9 +125,7 @@ extension ScanArchiveService {
                 await Task.yield()
             }
         }
-        try writer.finish()
-
-        return Data(hasher.finalize()).base64EncodedString()
+        return try writer.finish()
     }
 
     /// Writes topology incrementally. Building and encoding the complete
@@ -131,8 +133,9 @@ extension ScanArchiveService {
     func writeTopology(
         _ treeStore: FileTreeStore,
         to url: URL,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
-    ) async throws {
+    ) async throws -> String {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw ScanArchiveError.topology(localized: "could not create topology section")
         }
@@ -143,6 +146,9 @@ extension ScanArchiveService {
         let orderedNodeIndices = treeStore.indexedNodeIndices()
         var ordinalByNodeOffset = Array(repeating: -1, count: treeStore.nodeCount)
         for (ordinal, nodeIndex) in orderedNodeIndices.enumerated() {
+            if ordinal.isMultiple(of: 256) {
+                try Task.checkCancellation()
+            }
             let offset = Int(nodeIndex.rawValue)
             guard ordinalByNodeOffset.indices.contains(offset) else {
                 throw ScanArchiveError.topology(localized: "node index is out of range")
@@ -159,7 +165,10 @@ extension ScanArchiveService {
             throw ScanArchiveError.topology(localized: "root node is missing from node order")
         }
 
-        var writer = ScanArchiveStreamingJSONWriter(fileHandle: fileHandle)
+        var writer = try ScanArchiveStreamingJSONWriter(
+            fileHandle: fileHandle,
+            encoding: encoding
+        )
         try writer.append("{\"r\":\(ordinalByNodeOffset[rootOffset]),\"c\":{")
         var wroteParent = false
 
@@ -180,6 +189,9 @@ extension ScanArchiveService {
                 try writer.append("\"\(ordinalByNodeOffset[parentOffset])\":[")
 
                 for (childOffset, childIndex) in childIndices.enumerated() {
+                    if childOffset.isMultiple(of: 256) {
+                        try Task.checkCancellation()
+                    }
                     let nodeOffset = Int(childIndex.rawValue)
                     guard ordinalByNodeOffset.indices.contains(nodeOffset),
                           ordinalByNodeOffset[nodeOffset] >= 0 else {
@@ -207,59 +219,47 @@ extension ScanArchiveService {
         }
 
         try writer.append("}}")
-        try writer.finish()
+        return try writer.finish()
     }
 
-    func readNodes(
+    func readLegacyNodes(
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
-        formatVersion: Int,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
-    ) async throws -> ScanArchiveEncodedNodePayload {
-        if formatVersion == 3 {
-            let records: [ScanArchiveNode] = try await readNodeRecords(
-                from: url,
-                expectedChecksum: expectedChecksum,
-                expectedNodeCount: expectedNodeCount,
-                progressReporter: progressReporter
-            )
-            var nodesByID: [String: FileNodeRecord] = [:]
-            var orderedNodeIDs: [String] = []
-            orderedNodeIDs.reserveCapacity(records.count)
-            for record in records {
-                let node = try record.modelNode()
-                guard nodesByID[node.id] == nil else {
-                    throw ScanArchiveError.nodes(localized: "duplicate node ID \(node.id)")
-                }
-                nodesByID[node.id] = node
-                orderedNodeIDs.append(node.id)
-            }
-            return .legacy(ScanArchiveNodePayload(
-                nodesByID: nodesByID,
-                orderedNodeIDs: orderedNodeIDs
-            ))
-        }
-
-        let records: [ScanArchiveCompactNode] = try await readNodeRecords(
+    ) async throws -> ScanArchiveNodePayload {
+        let records: [ScanArchiveNode] = try await readNodeRecords(
             from: url,
             expectedChecksum: expectedChecksum,
             expectedNodeCount: expectedNodeCount,
+            encoding: encoding,
             progressReporter: progressReporter
         )
-        return .compact(records)
+        var nodesByID: [String: FileNodeRecord] = [:]
+        var orderedNodeIDs: [String] = []
+        orderedNodeIDs.reserveCapacity(records.count)
+        for (index, record) in records.enumerated() {
+            if index.isMultiple(of: 256) {
+                try Task.checkCancellation()
+            }
+            let node = try record.modelNode()
+            guard nodesByID[node.id] == nil else {
+                throw ScanArchiveError.nodes(localized: "duplicate node ID \(node.id)")
+            }
+            nodesByID[node.id] = node
+            orderedNodeIDs.append(node.id)
+        }
+        return ScanArchiveNodePayload(
+            nodesByID: nodesByID,
+            orderedNodeIDs: orderedNodeIDs
+        )
     }
 
     private func prepareCompactTopology(
         _ topology: ScanArchiveTopology,
         expectedNodeCount: Int
     ) throws -> ScanArchiveCompactTopology {
-        guard expectedNodeCount > 0,
-              expectedNodeCount <= Int(UInt32.max) else {
-            throw ScanArchiveError.nodes(localized:
-                "manifest expected \(expectedNodeCount) nodes, exceeding the supported node count"
-            )
-        }
         guard (0..<expectedNodeCount).contains(topology.rootOrdinal) else {
             throw ScanArchiveError.topology(localized: "root ordinal \(topology.rootOrdinal) is out of range")
         }
@@ -273,6 +273,9 @@ extension ScanArchiveService {
                 throw ScanArchiveError.topology(localized: "parent ordinal \(parentKey) is invalid")
             }
             for childOrdinal in childOrdinals {
+                if edgeCount.isMultiple(of: 256) {
+                    try Task.checkCancellation()
+                }
                 guard (0..<expectedNodeCount).contains(childOrdinal) else {
                     throw ScanArchiveError.topology(localized: "child ordinal \(childOrdinal) is out of range")
                 }
@@ -305,6 +308,9 @@ extension ScanArchiveService {
             let parentOrdinal = Int(parentKey)!
             let childStart = childIndices.count
             for childOrdinal in childOrdinals {
+                if childIndices.count.isMultiple(of: 256) {
+                    try Task.checkCancellation()
+                }
                 if childOrdinal == parentOrdinal {
                     let subject = childOrdinal == topology.rootOrdinal ? "root node" : "node ordinal \(childOrdinal)"
                     throw ScanArchiveError.topology(localized: "\(subject) references itself as a child")
@@ -379,9 +385,14 @@ extension ScanArchiveService {
     ) throws {
         var parentByChild: [Int: Int] = [:]
         parentByChild.reserveCapacity(min(edgeCount, ScanArchiveNodeIOConstants.maximumInitialRecordCapacity))
+        var processedChildCount = 0
         for (parentKey, childOrdinals) in topology.childOrdinalsByOrdinal {
             let parentOrdinal = Int(parentKey)!
             for childOrdinal in childOrdinals {
+                if processedChildCount.isMultiple(of: 256) {
+                    try Task.checkCancellation()
+                }
+                processedChildCount += 1
                 if childOrdinal == parentOrdinal {
                     let subject = childOrdinal == rootOrdinal ? "root node" : "node ordinal \(childOrdinal)"
                     throw ScanArchiveError.topology(localized: "\(subject) references itself as a child")
@@ -603,6 +614,7 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        encoding: ScanArchiveSectionEncoding,
         topology archivedTopology: ScanArchiveTopology,
         expectedRootID: String,
         expectedTargetPath: String,
@@ -620,6 +632,7 @@ extension ScanArchiveService {
                 from: url,
                 expectedChecksum: expectedChecksum,
                 expectedNodeCount: expectedNodeCount,
+                encoding: encoding,
                 progressReporter: progressReporter
             )
             finishImportProfile(.readAndMaterializeNodes, startedAt: nodeReadingStartedAt)
@@ -651,6 +664,7 @@ extension ScanArchiveService {
             from: url,
             expectedChecksum: expectedChecksum,
             expectedNodeCount: expectedNodeCount,
+            encoding: encoding,
             progressReporter: progressReporter
         ) { (batch: [ScanArchiveCompactNode]) in
             for record in batch {
@@ -734,6 +748,7 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?
     ) async throws -> [Record] {
         var records: [Record] = []
@@ -745,6 +760,7 @@ extension ScanArchiveService {
             from: url,
             expectedChecksum: expectedChecksum,
             expectedNodeCount: expectedNodeCount,
+            encoding: encoding,
             progressReporter: progressReporter
         ) { batch in
             records.append(contentsOf: batch)
@@ -756,16 +772,20 @@ extension ScanArchiveService {
         from url: URL,
         expectedChecksum: String,
         expectedNodeCount: Int,
+        encoding: ScanArchiveSectionEncoding,
         progressReporter: ScanArchiveProgressReporter?,
         consumeBatch: ([Record]) throws -> Void
     ) async throws {
-        let fileHandle: FileHandle
+        let sectionReader: ScanArchiveSectionReader
         do {
-            fileHandle = try FileHandle(forReadingFrom: url)
+            sectionReader = try ScanArchiveSectionReader(
+                url: url,
+                encoding: encoding
+            )
         } catch {
             throw ScanArchiveError.nodes(error.localizedDescription)
         }
-        defer { try? fileHandle.close() }
+        defer { sectionReader.close() }
 
         var buffer = Data()
         var hasher = SHA256()
@@ -833,7 +853,11 @@ extension ScanArchiveService {
                 let ioStartedAt = importProfileStart()
                 let chunk: Data
                 do {
-                    chunk = try fileHandle.read(upToCount: ScanArchiveNodeIOConstants.readChunkSize) ?? Data()
+                    chunk = try sectionReader.read(
+                        upToCount: ScanArchiveNodeIOConstants.readChunkSize
+                    )
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch let error as ScanArchiveError {
                     throw error
                 } catch {

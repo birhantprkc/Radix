@@ -35,6 +35,36 @@
         }
       }
     },
+    "%@ checksum mismatch" : {
+      "comment" : "Archive integrity error detail. The placeholder names the section whose decoded checksum did not match.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Prüfsumme von %@ stimmt nicht überein" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La suma de comprobación de %@ no coincide" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La somme de contrôle de %@ ne correspond pas" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il checksum di %@ non corrisponde" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 校验和不匹配" } }
+      }
+    },
+    "%@ section is missing or unreadable" : {
+      "comment" : "Archive integrity error detail. The placeholder names a package section that could not be read.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Abschnitt %@ fehlt oder ist nicht lesbar" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección %@ no existe o no se puede leer" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section %@ est manquante ou illisible" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione %@ è mancante o illeggibile" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 区段缺失或无法读取" } }
+      }
+    },
+    "%@ stored byte count mismatch" : {
+      "comment" : "Archive integrity error detail. The placeholder names the section whose stored byte count did not match.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Gespeicherte Byteanzahl von %@ stimmt nicht überein" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El recuento de bytes almacenados de %@ no coincide" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le nombre d’octets stockés de %@ ne correspond pas" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il numero di byte memorizzati di %@ non corrisponde" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 的存储字节数不匹配" } }
+      }
+    },
     "%@ updated" : {
       "comment" : "Confirmation shown after one folder was refreshed inside an existing scan.",
       "localizations" : {
@@ -68,6 +98,126 @@
             "value" : "%@ 已更新"
           }
         }
+      }
+    },
+    "Archive section compression could not be initialized." : {
+      "comment" : "Archive error detail when the system compression stream cannot be initialized.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts konnte nicht initialisiert werden." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudo inicializar la compresión de la sección del archivo." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive n’a pas pu être initialisée." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Impossibile inizializzare la compressione della sezione dell’archivio." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法初始化归档区段压缩。" } }
+      }
+    },
+    "Archive section compression failed." : {
+      "comment" : "Archive error detail when compressing an archive section fails.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts ist fehlgeschlagen." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La compresión de la sección del archivo ha fallado." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive a échoué." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La compressione della sezione dell’archivio non è riuscita." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段压缩失败。" } }
+      }
+    },
+    "Archive section compression made no progress." : {
+      "comment" : "Archive error detail when a compression stream stalls.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts hat keinen Fortschritt erzielt." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La compresión de la sección del archivo no ha progresado." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive n’a pas progressé." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La compressione della sezione dell’archivio non ha fatto progressi." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段压缩未取得进展。" } }
+      }
+    },
+    "Archive section compression was already finished." : {
+      "comment" : "Archive error detail when a completed compression stream is used again.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts war bereits abgeschlossen." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La compresión de la sección del archivo ya había finalizado." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive était déjà terminée." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La compressione della sezione dell’archivio era già terminata." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段压缩已完成。" } }
+      }
+    },
+    "archive section is not a regular file" : {
+      "comment" : "Archive integrity error detail when a package section is not a regular file.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Archivabschnitt ist keine reguläre Datei" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección del archivo no es un archivo normal" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive n’est pas un fichier ordinaire" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione dell’archivio non è un file regolare" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段不是常规文件" } }
+      }
+    },
+    "snapshot section byte counts are incomplete or invalid" : {
+      "comment" : "Archive integrity error detail when v5 section byte counts are missing or invalid.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Byteanzahlen der Snapshot-Abschnitte sind unvollständig oder ungültig" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Los recuentos de bytes de las secciones de la instantánea están incompletos o no son válidos" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les nombres d’octets des sections de l’instantané sont incomplets ou non valides" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "I conteggi dei byte delle sezioni dell’istantanea sono incompleti o non validi" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照区段字节数不完整或无效" } }
+      }
+    },
+    "snapshot section checksums are incomplete" : {
+      "comment" : "Archive integrity error detail when v5 section checksums are missing.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Prüfsummen der Snapshot-Abschnitte sind unvollständig" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Las sumas de comprobación de las secciones de la instantánea están incompletas" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les sommes de contrôle des sections de l’instantané sont incomplètes" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "I checksum delle sezioni dell’istantanea sono incompleti" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照区段校验和不完整" } }
+      }
+    },
+    "snapshot section encodings are unsupported or incomplete" : {
+      "comment" : "Archive manifest error detail when v5 section encoding metadata is missing or unsupported.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Kodierungen der Snapshot-Abschnitte werden nicht unterstützt oder sind unvollständig" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Las codificaciones de las secciones de la instantánea no son compatibles o están incompletas" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les encodages des sections de l’instantané ne sont pas pris en charge ou sont incomplets" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Le codifiche delle sezioni dell’istantanea non sono supportate o sono incomplete" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照区段编码不受支持或不完整" } }
+      }
+    },
+    "The compressed archive section contains trailing data." : {
+      "comment" : "Archive error detail when bytes follow a compressed archive section end marker.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der komprimierte Archivabschnitt enthält nachgestellte Daten." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección comprimida del archivo contiene datos finales adicionales." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive compressée contient des données de fin supplémentaires." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione compressa dell’archivio contiene dati finali aggiuntivi." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "压缩的归档区段包含尾随数据。" } }
+      }
+    },
+    "The compressed archive section is corrupt." : {
+      "comment" : "Archive error detail when a compressed archive section cannot be decoded.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der komprimierte Archivabschnitt ist beschädigt." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección comprimida del archivo está dañada." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive compressée est endommagée." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione compressa dell’archivio è danneggiata." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "压缩的归档区段已损坏。" } }
+      }
+    },
+    "The compressed archive section is truncated." : {
+      "comment" : "Archive error detail when a compressed archive section ends before its end marker.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der komprimierte Archivabschnitt ist abgeschnitten." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección comprimida del archivo está truncada." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive compressée est tronquée." } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione compressa dell’archivio è troncata." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "压缩的归档区段已截断。" } }
+      }
+    },
+    "unsupported or missing integrity domain" : {
+      "comment" : "Archive integrity error detail when the checksum domain is absent or unsupported.",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Integritätsdomäne wird nicht unterstützt oder fehlt" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Falta el dominio de integridad o no es compatible" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Domaine d’intégrité manquant ou non pris en charge" } },
+        "it" : { "stringUnit" : { "state" : "translated", "value" : "Dominio di integrità mancante o non supportato" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整性域缺失或不受支持" } }
       }
     },
     "Checking for changes in %@" : {

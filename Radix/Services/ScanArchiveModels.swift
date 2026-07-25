@@ -22,6 +22,8 @@ nonisolated struct ScanArchiveDocument: Codable, Sendable {
     let exportedAt: Date
     let snapshot: ScanArchiveSnapshotSummary
     let sections: ScanArchiveSections
+    let sectionEncodings: ScanArchiveSectionEncodings?
+    let sectionByteCounts: ScanArchiveSectionByteCounts?
     let integrity: ScanArchiveIntegrity
 
     init(
@@ -31,16 +33,32 @@ nonisolated struct ScanArchiveDocument: Codable, Sendable {
         pathMode: ScanArchivePathMode,
         sections: ScanArchiveSections,
         nodeChecksum: String,
-        formatVersion: Int = ScanArchiveService.currentFormatVersion,
-        swiftSchema: String = "ScanArchiveV4"
+        topologyChecksum: String? = nil,
+        warningsChecksum: String? = nil,
+        statsChecksum: String? = nil,
+        formatVersion: Int,
+        swiftSchema: String? = nil,
+        sectionEncodings: ScanArchiveSectionEncodings? = nil,
+        sectionByteCounts: ScanArchiveSectionByteCounts? = nil
     ) throws {
         self.format = ScanArchiveService.formatIdentifier
         self.formatVersion = formatVersion
-        self.createdBy = ScanArchiveCreatedBy(appVersion: appVersion, swiftSchema: swiftSchema)
+        self.createdBy = ScanArchiveCreatedBy(
+            appVersion: appVersion,
+            swiftSchema: swiftSchema ?? "ScanArchiveV\(formatVersion)"
+        )
         self.exportedAt = exportedAt
         self.snapshot = try ScanArchiveSnapshotSummary(snapshot, pathMode: pathMode)
         self.sections = sections
-        self.integrity = ScanArchiveIntegrity(nodes: nodeChecksum)
+        self.sectionEncodings = sectionEncodings
+        self.sectionByteCounts = sectionByteCounts
+        self.integrity = ScanArchiveIntegrity(
+            nodes: nodeChecksum,
+            topology: topologyChecksum,
+            warnings: warningsChecksum,
+            stats: statsChecksum,
+            domain: formatVersion == 5 ? .decodedSectionBytes : nil
+        )
     }
 }
 
@@ -49,7 +67,7 @@ nonisolated struct ScanArchiveCreatedBy: Codable, Sendable {
     let appVersion: String
     let swiftSchema: String
 
-    init(appVersion: String, swiftSchema: String = "ScanArchiveV4") {
+    init(appVersion: String, swiftSchema: String) {
         self.app = "Radix"
         self.appVersion = appVersion
         self.swiftSchema = swiftSchema
@@ -114,13 +132,68 @@ nonisolated struct ScanArchiveSections: Codable, Sendable {
     let stats: String
 }
 
+nonisolated enum ScanArchiveSectionEncoding: String, Codable, Sendable {
+    case identity
+    case lzfse
+}
+
+nonisolated struct ScanArchiveSectionEncodings: Codable, Equatable, Sendable {
+    let nodes: ScanArchiveSectionEncoding
+    let topology: ScanArchiveSectionEncoding
+    let warnings: ScanArchiveSectionEncoding
+    let stats: ScanArchiveSectionEncoding
+
+    static let identity = ScanArchiveSectionEncodings(
+        nodes: .identity,
+        topology: .identity,
+        warnings: .identity,
+        stats: .identity
+    )
+
+    static let versionFive = ScanArchiveSectionEncodings(
+        nodes: .lzfse,
+        topology: .lzfse,
+        warnings: .identity,
+        stats: .identity
+    )
+}
+
+nonisolated struct ScanArchiveSectionByteCounts: Codable, Equatable, Sendable {
+    let nodes: Int64
+    let topology: Int64
+    let warnings: Int64
+    let stats: Int64
+
+    var areValid: Bool {
+        nodes >= 0 && topology >= 0 && warnings >= 0 && stats >= 0
+    }
+}
+
+nonisolated enum ScanArchiveIntegrityDomain: String, Codable, Sendable {
+    case decodedSectionBytes = "decoded-section-bytes"
+}
+
 nonisolated struct ScanArchiveIntegrity: Codable, Sendable {
     let algorithm: String
     let nodes: String
+    let topology: String?
+    let warnings: String?
+    let stats: String?
+    let domain: ScanArchiveIntegrityDomain?
 
-    init(nodes: String) {
+    init(
+        nodes: String,
+        topology: String? = nil,
+        warnings: String? = nil,
+        stats: String? = nil,
+        domain: ScanArchiveIntegrityDomain? = nil
+    ) {
         self.algorithm = "sha256"
         self.nodes = nodes
+        self.topology = topology
+        self.warnings = warnings
+        self.stats = stats
+        self.domain = domain
     }
 }
 

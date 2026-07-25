@@ -1983,7 +1983,8 @@ final class AppModelDependencyTests: XCTestCase {
                 warnings: "warnings.json",
                 stats: "stats.json"
             ),
-            nodeChecksum: "checksum"
+            nodeChecksum: "checksum",
+            formatVersion: 4
         )
         let archiveService = SpyScanArchiveService(
             previewResult: ScanArchivePreview(
@@ -2065,7 +2066,8 @@ final class AppModelDependencyTests: XCTestCase {
                 warnings: "warnings.json",
                 stats: "stats.json"
             ),
-            nodeChecksum: "checksum"
+            nodeChecksum: "checksum",
+            formatVersion: 4
         )
         let archiveService = SpyScanArchiveService(
             previewResult: ScanArchivePreview(
@@ -2129,7 +2131,8 @@ final class AppModelDependencyTests: XCTestCase {
                 warnings: "warnings.json",
                 stats: "stats.json"
             ),
-            nodeChecksum: "checksum"
+            nodeChecksum: "checksum",
+            formatVersion: 4
         )
         let archiveService = SpyScanArchiveService(
             previewResult: ScanArchivePreview(
@@ -2488,7 +2491,8 @@ final class AppModelDependencyTests: XCTestCase {
                 warnings: "warnings.json",
                 stats: "stats.json"
             ),
-            nodeChecksum: "checksum"
+            nodeChecksum: "checksum",
+            formatVersion: 4
         )
         let importProbe = AsyncValueProbe<Void>()
         let archiveService = SpyScanArchiveService(
@@ -2561,7 +2565,8 @@ final class AppModelDependencyTests: XCTestCase {
                 warnings: "warnings.json",
                 stats: "stats.json"
             ),
-            nodeChecksum: "checksum"
+            nodeChecksum: "checksum",
+            formatVersion: 4
         )
         let importProbe = AsyncValueProbe<Void>()
         let archiveService = SpyScanArchiveService(
@@ -3473,7 +3478,8 @@ private func makeArchiveImportResult(
             warnings: "warnings.json",
             stats: "stats.json"
         ),
-        nodeChecksum: "checksum"
+        nodeChecksum: "checksum",
+        formatVersion: 4
     )
     return ScanArchiveImportResult(
         archiveURL: archiveURL,
@@ -3497,7 +3503,8 @@ private func makeArchivePreview(
             warnings: "warnings.json",
             stats: "stats.json"
         ),
-        nodeChecksum: "checksum"
+        nodeChecksum: "checksum",
+        formatVersion: 4
     )
     return ScanArchivePreview(
         archiveURL: archiveURL,
