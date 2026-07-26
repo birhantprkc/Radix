@@ -150,6 +150,19 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyDiscardPileCanPresentReview() {
+        let model = AppModel(dependencies: makeDependencies())
+        model.dismissOnboarding()
+
+        XCTAssertTrue(model.discardPile.isEmpty)
+
+        model.presentDiscardPileReview()
+
+        XCTAssertTrue(model.showsDiscardPileReview)
+        XCTAssertEqual(model.presentationCoordinator.activeSheet, .discardPileReview)
+    }
+
+    @MainActor
     func testVisualizationModeUpdatePublishesAfterViewUpdate() async throws {
         let model = AppModel(dependencies: makeDependencies())
         var publicationCount = 0

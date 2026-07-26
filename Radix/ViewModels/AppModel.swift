@@ -504,7 +504,6 @@ final class AppModel: ObservableObject {
     }
 
     func presentDiscardPileReview() {
-        guard !discardPile.isEmpty else { return }
         showsDiscardPileReview = true
     }
 
