@@ -214,26 +214,31 @@ beneath any overlay corner, but both charts already use the same
 `ChartViewportControls` component. One shared behavior is smaller and easier to
 reason about than adding per-chart presentation modes.
 
-Implement the compact control as a native SwiftUI `Menu`, not a custom
-hover-expanding view. The menu label is the persistent compact HUD and the menu
-contains the existing Zoom Out, Zoom In, and Reset actions. Native menu
-presentation owns opening, dismissal, pointer tracking, keyboard focus, Escape,
-and accessibility behavior, so the feature requires no new explicit state.
+Implement the compact control as a button presenting a native SwiftUI popover,
+not a custom hover-expanding view. The button is the persistent compact HUD and
+the popover contains the existing Zoom Out, percentage, Zoom In, and Reset row.
+Native popover presentation owns placement, outside-click and Escape dismissal,
+and keyboard focus behavior. The only new explicit state is the Boolean binding
+required by `.popover(isPresented:)`.
+
+A SwiftUI `Menu` would require no explicit state, but macOS marks
+`MenuActionDismissBehavior.disabled` unavailable. Each Zoom In or Zoom Out
+action would therefore close the menu and force the user to reopen it for every
+step. The one-Boolean popover is the smallest design that preserves efficient
+repeated zoom actions.
 
 ### Interaction contract
 
-- The persistent menu label displays a magnification symbol, current zoom
+- The persistent button displays a magnification symbol, current zoom
   percentage, and disclosure indicator. Keep a normal macOS hit target while
   making its visual footprint materially smaller than the current full HUD.
-- Opening the menu reveals Zoom Out, Zoom In, and Reset with their existing
-  symbols, localized labels, actions, and disabled states.
-- Apply `.menuActionDismissBehavior(.disabled)` to Zoom Out and Zoom In so
-  repeated zoom steps do not require reopening the menu. Let Reset use native
-  dismissal because it completes the interaction.
-- Use a borderless menu style inside the existing material background. Do not
-  add hover handlers, timers, focus state, manual Escape handling, custom
+- Opening the popover reveals the existing control row with unchanged symbols,
+  localized labels, actions, and disabled states. The popover remains open for
+  repeated actions until the user dismisses it.
+- Use a plain button style inside the existing material background. Do not add
+  hover handlers, timers, focus state, manual Escape handling, custom
   transitions, or Reduce Motion branches.
-- Give the menu a localized “Zoom Controls” accessibility label and expose the
+- Give the button a localized “Zoom Controls” accessibility label and expose the
   current percentage as its accessibility value.
 - Zoom shortcuts, gestures, accessibility chart actions, render geometry, hit
   testing, and the 100–400% viewport bounds remain unchanged.
@@ -241,20 +246,20 @@ and accessibility behavior, so the feature requires no new explicit state.
 The compact control still occupies a small plot region. This is an intentional
 tradeoff: it greatly reduces persistent obstruction without adaptive movement,
 plot shrinkage, workspace-layout changes, or custom disclosure state. The
-expanded system menu is transient and only covers plot content while the user is
-actively operating it.
+popover is transient and only covers plot content while the user is actively
+operating it.
 
 ### Focused implementation
 
-1. Replace the shared control row in `ChartViewportControls` with one native
-   `Menu` whose label includes `zoomText`.
-2. Reuse the existing action closures and enabled-state inputs directly in menu
-   buttons; remove the row-only `controlButton` helper.
+1. Add one local `showsControls` Boolean to `ChartViewportControls` and replace
+   the persistent row with a compact button whose label includes `zoomText`.
+2. Present the existing control row in a native popover, reusing its action
+   closures, enabled-state inputs, and `controlButton` helper.
 3. Keep both chart call sites and all viewport logic unchanged.
 4. Keep treemap tooltip placement's existing conservative avoidance rectangle.
    It safely covers both states and avoids a new geometry preference or binding.
-5. Add the menu’s user-facing accessibility string to `Localizable.xcstrings` for
-   `en`, `de`, `es`, `fr`, `it`, and `zh-Hans`.
+5. Add the compact button’s user-facing accessibility string to
+   `Localizable.xcstrings` for `en`, `de`, `es`, `fr`, `it`, and `zh-Hans`.
 
 Checkpoint commit:
 
@@ -262,16 +267,17 @@ Checkpoint commit:
 
 ### Review and validation
 
-- Review the production diff for any explicit disclosure state, per-chart
-  configuration, duplicated actions, or geometry measurement.
-- At 100%, an intermediate zoom, and 400%, verify menu presentation, disabled
-  limits, repeated Zoom In/Out actions without dismissal, Reset dismissal, and
-  percentage updates after menu actions, shortcuts, and gestures.
-- With Full Keyboard Access, verify focus entry, menu activation, arrow
+- Review the production diff for state beyond the required popover Boolean,
+  per-chart configuration, duplicated actions, or geometry measurement.
+- At 100%, an intermediate zoom, and 400%, verify popover presentation, disabled
+  limits, repeated Zoom In/Out actions, Reset, dismissal, and percentage updates
+  after popover actions, shortcuts, and gestures.
+- With Full Keyboard Access, verify focus entry, popover activation, button
   traversal, action activation, Escape dismissal, and focus return.
-- With VoiceOver, verify the menu label/value and all menu-item labels.
-- Verify tooltip placement remains clear of the compact label and the menu is
+- With VoiceOver, verify the compact button label/value and all popover button
+  labels.
+- Verify tooltip placement remains clear of the compact button and the popover is
   usable in the narrowest supported chart pane.
 - Switch repeatedly between treemap and sunburst and confirm both use identical
-  compact-menu behavior with unchanged zoom actions.
+  compact-popover behavior with unchanged zoom actions.
 - Run `rtk swift test` and the complete Debug app build before committing.
