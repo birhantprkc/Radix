@@ -19,13 +19,13 @@
         },
         "es": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Radix"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Radix"
           }
         },
@@ -37,7 +37,7 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
+            "state": "translated",
             "value": "Radix"
           }
         }
@@ -59,7 +59,25 @@
             "value": "Radix"
           }
         },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
+        },
         "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Radix"
@@ -83,7 +101,25 @@
             "value": "Copyright © 2026 Colin Kim."
           }
         },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright © 2026 Colin Kim."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright © 2026 Colin Kim."
+          }
+        },
         "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright © 2026 Colin Kim."
+          }
+        },
+        "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Copyright © 2026 Colin Kim."
@@ -106,10 +142,28 @@
             "value": "Radix Discard Pile Drag Payload"
           }
         },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datos de arrastre de la pila de descarte de Radix"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Données de glissement de la pile de suppression de Radix"
+          }
+        },
         "it": {
           "stringUnit": {
             "state": "translated",
             "value": "Dati di trascinamento dell'elenco di eliminazione Radix"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix 待处理列表拖放数据"
           }
         }
       }
@@ -129,10 +183,28 @@
             "value": "Radix Scan Snapshot"
           }
         },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instantánea de análisis de Radix"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instantané d’analyse Radix"
+          }
+        },
         "it": {
           "stringUnit": {
             "state": "translated",
             "value": "Istantanea di scansione Radix"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix 扫描快照"
           }
         }
       }

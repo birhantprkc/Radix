@@ -35,328 +35,6 @@
         }
       }
     },
-    "%@ checksum mismatch" : {
-      "comment" : "Archive integrity error detail. The placeholder names the section whose decoded checksum did not match.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Prüfsumme von %@ stimmt nicht überein" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La suma de comprobación de %@ no coincide" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La somme de contrôle de %@ ne correspond pas" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il checksum di %@ non corrisponde" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 校验和不匹配" } }
-      }
-    },
-    "%@ section is missing or unreadable" : {
-      "comment" : "Archive integrity error detail. The placeholder names a package section that could not be read.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Abschnitt %@ fehlt oder ist nicht lesbar" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección %@ no existe o no se puede leer" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section %@ est manquante ou illisible" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione %@ è mancante o illeggibile" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 区段缺失或无法读取" } }
-      }
-    },
-    "%@ stored byte count mismatch" : {
-      "comment" : "Archive integrity error detail. The placeholder names the section whose stored byte count did not match.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Gespeicherte Byteanzahl von %@ stimmt nicht überein" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "El recuento de bytes almacenados de %@ no coincide" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le nombre d’octets stockés de %@ ne correspond pas" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Il numero di byte memorizzati di %@ non corrisponde" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 的存储字节数不匹配" } }
-      }
-    },
-    "%@ updated" : {
-      "comment" : "Confirmation shown after one folder was refreshed inside an existing scan.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ aktualisiert"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ actualizado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ mis à jour"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ aggiornato"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 已更新"
-          }
-        }
-      }
-    },
-    "Archive section compression could not be initialized." : {
-      "comment" : "Archive error detail when the system compression stream cannot be initialized.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts konnte nicht initialisiert werden." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "No se pudo inicializar la compresión de la sección del archivo." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive n’a pas pu être initialisée." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Impossibile inizializzare la compressione della sezione dell’archivio." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法初始化归档区段压缩。" } }
-      }
-    },
-    "Archive section compression failed." : {
-      "comment" : "Archive error detail when compressing an archive section fails.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts ist fehlgeschlagen." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La compresión de la sección del archivo ha fallado." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive a échoué." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La compressione della sezione dell’archivio non è riuscita." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段压缩失败。" } }
-      }
-    },
-    "Archive section compression made no progress." : {
-      "comment" : "Archive error detail when a compression stream stalls.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts hat keinen Fortschritt erzielt." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La compresión de la sección del archivo no ha progresado." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive n’a pas progressé." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La compressione della sezione dell’archivio non ha fatto progressi." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段压缩未取得进展。" } }
-      }
-    },
-    "Archive section compression was already finished." : {
-      "comment" : "Archive error detail when a completed compression stream is used again.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Komprimierung des Archivabschnitts war bereits abgeschlossen." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La compresión de la sección del archivo ya había finalizado." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La compression de la section d’archive était déjà terminée." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La compressione della sezione dell’archivio era già terminata." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段压缩已完成。" } }
-      }
-    },
-    "archive section is not a regular file" : {
-      "comment" : "Archive integrity error detail when a package section is not a regular file.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Archivabschnitt ist keine reguläre Datei" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección del archivo no es un archivo normal" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive n’est pas un fichier ordinaire" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione dell’archivio non è un file regolare" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "归档区段不是常规文件" } }
-      }
-    },
-    "snapshot section byte counts are incomplete or invalid" : {
-      "comment" : "Archive integrity error detail when v5 section byte counts are missing or invalid.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Byteanzahlen der Snapshot-Abschnitte sind unvollständig oder ungültig" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Los recuentos de bytes de las secciones de la instantánea están incompletos o no son válidos" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les nombres d’octets des sections de l’instantané sont incomplets ou non valides" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "I conteggi dei byte delle sezioni dell’istantanea sono incompleti o non validi" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照区段字节数不完整或无效" } }
-      }
-    },
-    "snapshot section checksums are incomplete" : {
-      "comment" : "Archive integrity error detail when v5 section checksums are missing.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Prüfsummen der Snapshot-Abschnitte sind unvollständig" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Las sumas de comprobación de las secciones de la instantánea están incompletas" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les sommes de contrôle des sections de l’instantané sont incomplètes" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "I checksum delle sezioni dell’istantanea sono incompleti" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照区段校验和不完整" } }
-      }
-    },
-    "snapshot section encodings are unsupported or incomplete" : {
-      "comment" : "Archive manifest error detail when v5 section encoding metadata is missing or unsupported.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Kodierungen der Snapshot-Abschnitte werden nicht unterstützt oder sind unvollständig" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Las codificaciones de las secciones de la instantánea no son compatibles o están incompletas" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les encodages des sections de l’instantané ne sont pas pris en charge ou sont incomplets" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Le codifiche delle sezioni dell’istantanea non sono supportate o sono incomplete" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "快照区段编码不受支持或不完整" } }
-      }
-    },
-    "The compressed archive section contains trailing data." : {
-      "comment" : "Archive error detail when bytes follow a compressed archive section end marker.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der komprimierte Archivabschnitt enthält nachgestellte Daten." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección comprimida del archivo contiene datos finales adicionales." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive compressée contient des données de fin supplémentaires." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione compressa dell’archivio contiene dati finali aggiuntivi." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "压缩的归档区段包含尾随数据。" } }
-      }
-    },
-    "The compressed archive section is corrupt." : {
-      "comment" : "Archive error detail when a compressed archive section cannot be decoded.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der komprimierte Archivabschnitt ist beschädigt." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección comprimida del archivo está dañada." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive compressée est endommagée." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione compressa dell’archivio è danneggiata." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "压缩的归档区段已损坏。" } }
-      }
-    },
-    "The compressed archive section is truncated." : {
-      "comment" : "Archive error detail when a compressed archive section ends before its end marker.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der komprimierte Archivabschnitt ist abgeschnitten." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La sección comprimida del archivo está truncada." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La section d’archive compressée est tronquée." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La sezione compressa dell’archivio è troncata." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "压缩的归档区段已截断。" } }
-      }
-    },
-    "unsupported or missing integrity domain" : {
-      "comment" : "Archive integrity error detail when the checksum domain is absent or unsupported.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Integritätsdomäne wird nicht unterstützt oder fehlt" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Falta el dominio de integridad o no es compatible" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Domaine d’intégrité manquant ou non pris en charge" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Dominio di integrità mancante o non supportato" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整性域缺失或不受支持" } }
-      }
-    },
-    "Checking for changes in %@" : {
-      "comment" : "Progress title while Radix prepares an incremental rescan.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen in %@ werden geprüft" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Comprobando si hay cambios en %@" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Recherche de modifications dans %@" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Verifica delle modifiche in %@" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在检查 %@ 中的更改" } }
-      }
-    },
-    "Complete rescan finished" : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Vollständiger erneuter Scan abgeschlossen" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Nuevo análisis completo finalizado" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Nouvelle analyse complète terminée" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Nuova scansione completa terminata" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "完整重新扫描已完成" } }
-      }
-    },
-    "Disk rescans need a complete scan to keep storage totals accurate." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Erneute Festplattenscans benötigen einen vollständigen Scan, damit die Speicherwerte korrekt bleiben." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Volver a analizar un disco requiere un análisis completo para mantener exactos los totales de almacenamiento." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La nouvelle analyse d’un disque nécessite une analyse complète pour conserver des totaux de stockage exacts." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La nuova scansione di un disco richiede una scansione completa per mantenere accurati i totali di archiviazione." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新扫描磁盘需要完整扫描，以确保储存空间总量准确。" } }
-      }
-    },
-    "No changes since the previous scan" : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Änderungen seit dem vorherigen Scan" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "No hay cambios desde el análisis anterior" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune modification depuis l’analyse précédente" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Nessuna modifica dalla scansione precedente" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自上次扫描以来没有更改" } }
-      }
-    },
-    "Radix couldn’t safely apply the recent changes." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Radix konnte die letzten Änderungen nicht sicher übernehmen." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Radix no pudo aplicar de forma segura los cambios recientes." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Radix n’a pas pu appliquer les modifications récentes en toute sécurité." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Radix non ha potuto applicare in modo sicuro le modifiche recenti." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 无法安全地应用最近的更改。" } }
-      }
-    },
-    "Radix is scanning the entire location to ensure accurate results." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Radix scannt den gesamten Speicherort, um genaue Ergebnisse zu gewährleisten." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Radix está analizando toda la ubicación para garantizar resultados precisos." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Radix analyse l’emplacement entier afin de garantir des résultats exacts." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Radix sta analizzando l’intera posizione per garantire risultati accurati." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 正在扫描整个位置，以确保结果准确。" } }
-      }
-    },
-    "Why a complete scan?" : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Warum ein vollständiger Scan?" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "¿Por qué un análisis completo?" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pourquoi une analyse complète ?" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Perché una scansione completa?" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "为什么要进行完整扫描？" } }
-      }
-    },
-    "Why Radix is performing a complete scan" : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Warum Radix einen vollständigen Scan durchführt" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Por qué Radix está realizando un análisis completo" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pourquoi Radix effectue une analyse complète" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Perché Radix sta eseguendo una scansione completa" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 为什么要进行完整扫描" } }
-      }
-    },
-    "Radix scanned the entire location." : {
-      "comment" : "Result shown after an incremental rescan safely completed as a full scan.",
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Radix hat den gesamten Speicherort gescannt." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Radix analizó toda la ubicación." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Radix a analysé l’emplacement entier." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Radix ha analizzato l’intera posizione." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 已扫描整个位置。" } }
-      }
-    },
-    "Recent file history isn’t available." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der letzte Dateiverlauf ist nicht verfügbar." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "El historial reciente de archivos no está disponible." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’historique récent des fichiers n’est pas disponible." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La cronologia recente dei file non è disponibile." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最近的文件历史记录不可用。" } }
-      }
-    },
-    "Scan settings changed." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Die Scaneinstellungen wurden geändert." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La configuración del análisis cambió." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Les réglages d’analyse ont changé." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Le impostazioni di scansione sono cambiate." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "扫描设置已更改。" } }
-      }
-    },
-    "Scan updated from recent changes" : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Scan mit den letzten Änderungen aktualisiert" } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Análisis actualizado con los cambios recientes" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Analyse mise à jour avec les modifications récentes" } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Scansione aggiornata con le modifiche recenti" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "扫描已根据最近的更改更新" } }
-      }
-    },
-    "The previous scan can’t be safely reused." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der vorherige Scan kann nicht sicher wiederverwendet werden." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "El análisis anterior no se puede reutilizar de forma segura." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’analyse précédente ne peut pas être réutilisée en toute sécurité." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La scansione precedente non può essere riutilizzata in modo sicuro." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法安全地重复使用上次扫描。" } }
-      }
-    },
-    "The scan location changed while Radix was checking it." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der Scanort hat sich geändert, während Radix ihn geprüft hat." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "La ubicación del análisis cambió mientras Radix la comprobaba." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L’emplacement d’analyse a changé pendant que Radix le vérifiait." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "La posizione della scansione è cambiata mentre Radix la controllava." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Radix 检查扫描位置时，该位置发生了变化。" } }
-      }
-    },
-    "Too much changed for a quick rescan." : {
-      "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Für einen schnellen erneuten Scan hat sich zu viel geändert." } },
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Hubo demasiados cambios para un nuevo análisis rápido." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Trop d’éléments ont changé pour une nouvelle analyse rapide." } },
-        "it" : { "stringUnit" : { "state" : "translated", "value" : "Sono cambiate troppe cose per una nuova scansione rapida." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更改过多，无法快速重新扫描。" } }
-      }
-    },
     " files, " : {
       "localizations" : {
         "de" : {
@@ -568,48 +246,6 @@
         }
       }
     },
-    "%@ %@ • %@" : {
-      "comment" : "Discard Pile subtitle showing item count and total allocated size.\nDiscard Pile summary showing item count and total allocated size.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %@ • %@"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ %2$@ • %3$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %@ • %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %@ • %@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %@ • %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %@ • %@"
-          }
-        }
-      }
-    },
     "%@ added or grew  •  %@ reclaimed" : {
       "localizations" : {
         "de" : {
@@ -680,6 +316,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已汇总 %@ 项变化"
+          }
+        }
+      }
+    },
+    "%@ checksum mismatch" : {
+      "comment" : "Archive integrity error detail. The placeholder names the section whose decoded checksum did not match.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfsumme von %@ stimmt nicht überein"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La suma de comprobación de %@ no coincide"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La somme de contrôle de %@ ne correspond pas"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il checksum di %@ non corrisponde"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 校验和不匹配"
           }
         }
       }
@@ -907,6 +578,111 @@
         }
       }
     },
+    "%@ section is missing or unreadable" : {
+      "comment" : "Archive integrity error detail. The placeholder names a package section that could not be read.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abschnitt %@ fehlt oder ist nicht lesbar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sección %@ no existe o no se puede leer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La section %@ est manquante ou illisible"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sezione %@ è mancante o illeggibile"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 区段缺失或无法读取"
+          }
+        }
+      }
+    },
+    "%@ stored byte count mismatch" : {
+      "comment" : "Archive integrity error detail. The placeholder names the section whose stored byte count did not match.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gespeicherte Byteanzahl von %@ stimmt nicht überein"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El recuento de bytes almacenados de %@ no coincide"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nombre d’octets stockés de %@ ne correspond pas"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il numero di byte memorizzati di %@ non corrisponde"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的存储字节数不匹配"
+          }
+        }
+      }
+    },
+    "%@ updated" : {
+      "comment" : "Confirmation shown after one folder was refreshed inside an existing scan.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ aktualisiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ actualizado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ mis à jour"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ aggiornato"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已更新"
+          }
+        }
+      }
+    },
     "%@, %@, %@" : {
       "comment" : "Accessibility value describing the selected sunburst segment.\nAccessibility value describing the selected treemap tile.",
       "localizations" : {
@@ -1085,42 +861,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 个层级"
-          }
-        }
-      }
-    },
-    "%lld location had limited access or a scan warning." : {
-      "comment" : "Warning summary when one location had limited access or a scan warning.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Standort hatte eingeschränkten Zugriff oder eine Scan-Warnung."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld ubicación tuvo acceso limitado o una advertencia de análisis."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld emplacement avait un accès limité ou un avertissement d’analyse."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld posizione aveva un accesso limitato o un avviso di scansione."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个位置访问受限或存在扫描警告。"
           }
         }
       }
@@ -1334,42 +1074,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "%lld system location is protected by macOS and was skipped." : {
-      "comment" : "Warning summary when one macOS-protected location was skipped despite Full Disk Access.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Systemstandort ist durch macOS geschützt und wurde übersprungen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld ubicación del sistema está protegida por macOS y se omitió."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld emplacement système est protégé par macOS et a été ignoré."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld posizione di sistema è protetta da macOS ed è stata ignorata."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个系统位置受 macOS 保护，已跳过。"
           }
         }
       }
@@ -1860,42 +1564,6 @@
         }
       }
     },
-    "Add %@ Items to Discard Pile" : {
-      "comment" : "Action for marking multiple selected items for possible deletion.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Elemente zur Löschliste hinzufügen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir %@ elementos a la pila de descarte"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter %@ éléments à la pile de suppression"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi %@ elementi all'elenco di eliminazione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 %@ 个项目加入待处理列表"
-          }
-        }
-      }
-    },
     "Add %lld Items to Discard Pile" : {
       "comment" : "Action for marking multiple selected items for possible deletion.",
       "localizations" : {
@@ -2209,41 +1877,6 @@
         }
       }
     },
-    "All meaningful contributors" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle relevanten Verursacher"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Todos los elementos relevantes"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tous les contributeurs significatifs"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tutti i contributori significativi"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "所有重要贡献项"
-          }
-        }
-      }
-    },
     "All Types" : {
       "comment" : "Comparison filter menu option when all change types are selected.",
       "localizations" : {
@@ -2417,6 +2050,181 @@
         }
       }
     },
+    "Archive section compression could not be initialized." : {
+      "comment" : "Archive error detail when the system compression stream cannot be initialized.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Komprimierung des Archivabschnitts konnte nicht initialisiert werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo inicializar la compresión de la sección del archivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compression de la section d’archive n’a pas pu être initialisée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile inizializzare la compressione della sezione dell’archivio."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法初始化归档区段压缩。"
+          }
+        }
+      }
+    },
+    "Archive section compression failed." : {
+      "comment" : "Archive error detail when compressing an archive section fails.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Komprimierung des Archivabschnitts ist fehlgeschlagen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compresión de la sección del archivo ha fallado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compression de la section d’archive a échoué."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compressione della sezione dell’archivio non è riuscita."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "归档区段压缩失败。"
+          }
+        }
+      }
+    },
+    "Archive section compression made no progress." : {
+      "comment" : "Archive error detail when a compression stream stalls.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Komprimierung des Archivabschnitts hat keinen Fortschritt erzielt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compresión de la sección del archivo no ha progresado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compression de la section d’archive n’a pas progressé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compressione della sezione dell’archivio non ha fatto progressi."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "归档区段压缩未取得进展。"
+          }
+        }
+      }
+    },
+    "Archive section compression was already finished." : {
+      "comment" : "Archive error detail when a completed compression stream is used again.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Komprimierung des Archivabschnitts war bereits abgeschlossen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compresión de la sección del archivo ya había finalizado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compression de la section d’archive était déjà terminée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La compressione della sezione dell’archivio era già terminata."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "归档区段压缩已完成。"
+          }
+        }
+      }
+    },
+    "archive section is not a regular file" : {
+      "comment" : "Archive integrity error detail when a package section is not a regular file.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivabschnitt ist keine reguläre Datei"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sección del archivo no es un archivo normal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La section d’archive n’est pas un fichier ordinaire"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sezione dell’archivio non è un file regolare"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "归档区段不是常规文件"
+          }
+        }
+      }
+    },
     "Archive stats did not match node payload. Radix repaired totals during import." : {
       "comment" : "Warning shown when imported archive statistics are repaired.",
       "localizations" : {
@@ -2448,6 +2256,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "归档统计信息与节点数据不一致。Radix 已在导入时修复总计。"
+          }
+        }
+      }
+    },
+    "At Least" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mindestens"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como mínimo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au moins"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almeno"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少"
+          }
+        }
+      }
+    },
+    "At Most" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höchstens"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como máximo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au maximum"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al massimo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至多"
           }
         }
       }
@@ -2825,6 +2701,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "检查更新…"
+          }
+        }
+      }
+    },
+    "Checking for changes in %@" : {
+      "comment" : "Progress title while Radix prepares an incremental rescan.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen in %@ werden geprüft"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobando si hay cambios en %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche de modifications dans %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifica delle modifiche in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查 %@ 中的更改"
           }
         }
       }
@@ -3928,6 +3839,110 @@
         }
       }
     },
+    "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in." : {
+      "comment" : "Accessibility hint for the sunburst chart.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klicken Sie auf ein Segment oder verwenden Sie die Pfeiltasten, um es auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en un segmento o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur un segment ou utilisez les touches fléchées pour le sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fai clic su un segmento o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按分区或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。"
+          }
+        }
+      }
+    },
+    "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Click the center or press Command-Up Arrow to go up." : {
+      "comment" : "Accessibility hint for the sunburst chart when navigating upward is available.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klicken Sie auf ein Segment oder verwenden Sie die Pfeiltasten, um es auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern. Klicken Sie auf die Mitte oder drücken Sie Befehl–Aufwärtspfeil, um nach oben zu navigieren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en un segmento o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte. Haz clic en el centro o pulsa Comando–Flecha arriba para subir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur un segment ou utilisez les touches fléchées pour le sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer. Cliquez au centre ou appuyez sur Commande–Flèche vers le haut pour remonter."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fai clic su un segmento o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire. Fai clic al centro o premi Comando–Freccia su per salire."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按分区或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。点按中心或按下 Command–上箭头键以上移。"
+          }
+        }
+      }
+    },
+    "Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klicken Sie auf eine Kachel oder verwenden Sie die Pfeiltasten, um sie auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern. Verwenden Sie die Breadcrumb-Navigation oder drücken Sie Befehl–Aufwärtspfeil, um nach oben zu navigieren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en un mosaico o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte. Usa la ruta de navegación o pulsa Comando–Flecha arriba para subir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur une tuile ou utilisez les touches fléchées pour la sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer. Utilisez le fil d’Ariane ou appuyez sur Commande–Flèche vers le haut pour remonter."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fai clic su un riquadro o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire. Usa il percorso di navigazione o premi Comando–Freccia su per salire."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按磁贴或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。使用面包屑路径或按下 Command–上箭头键以上移。"
+          }
+        }
+      }
+    },
     "Cloud Storage" : {
       "comment" : "Fallback title for a cloud-storage confirmation dialog.",
       "localizations" : {
@@ -4273,70 +4288,36 @@
         }
       }
     },
-    "At Least" : {
+    "Complete rescan finished" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mindestens"
+            "value" : "Vollständiger erneuter Scan abgeschlossen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Como mínimo"
+            "value" : "Nuevo análisis completo finalizado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Au moins"
+            "value" : "Nouvelle analyse complète terminée"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Almeno"
+            "value" : "Nuova scansione completa terminata"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "至少"
-          }
-        }
-      }
-    },
-    "At Most" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Höchstens"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Como máximo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Au maximum"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al massimo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "至多"
+            "value" : "完整重新扫描已完成"
           }
         }
       }
@@ -5201,6 +5182,40 @@
         }
       }
     },
+    "Disk rescans need a complete scan to keep storage totals accurate." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneute Festplattenscans benötigen einen vollständigen Scan, damit die Speicherwerte korrekt bleiben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a analizar un disco requiere un análisis completo para mantener exactos los totales de almacenamiento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La nouvelle analyse d’un disque nécessite une analyse complète pour conserver des totaux de stockage exacts."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La nuova scansione di un disco richiede una scansione completa per mantenere accurati i totali di archiviazione."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新扫描磁盘需要完整扫描，以确保储存空间总量准确。"
+          }
+        }
+      }
+    },
     "Disk usage chart" : {
       "localizations" : {
         "de" : {
@@ -5577,41 +5592,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "较早的扫描"
-          }
-        }
-      }
-    },
-    "Enable" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktivieren"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activé"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abilita"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已启用"
           }
         }
       }
@@ -6244,6 +6224,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法展开“%@”：%@"
+          }
+        }
+      }
+    },
+    "Failed to rescan %@: %@" : {
+      "comment" : "Error shown when refreshing one folder in an existing scan fails.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ konnte nicht erneut gescannt werden: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo volver a analizar %@: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de réanalyser %@ : %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile scansionare nuovamente %@: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法重新扫描 %@：%@"
           }
         }
       }
@@ -8350,42 +8365,6 @@
         }
       }
     },
-    "legacy node payload was not decoded" : {
-      "comment" : "Error message when the node payload is not in the legacy format.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Legacy-Knotendaten wurden nicht decodiert"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se decodificaron los datos del nodo heredado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les données de l’ancien format de nœud n’ont pas été décodées"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I dati del nodo nel formato precedente non sono stati decodificati"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未解码旧版节点数据"
-          }
-        }
-      }
-    },
     "Less Than" : {
       "localizations" : {
         "de" : {
@@ -8556,48 +8535,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "覆盖范围有限：%lld 个位置无法读取。其下缺失的项目不一定已删除。"
-          }
-        }
-      }
-    },
-    "Limited coverage: %lld unreadable location%@. Missing entries below them are not necessarily deleted." : {
-      "comment" : "Comparison coverage message when some locations could not be read.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eingeschränkte Abdeckung: %lld nicht lesbare Standorte%@. Darunter fehlende Einträge wurden nicht unbedingt gelöscht."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Limited coverage: %1$lld unreadable location%2$@. Missing entries below them are not necessarily deleted."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cobertura limitada: %lld ubicaciones ilegibles%@. Las entradas que faltan debajo no se han eliminado necesariamente."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couverture limitée : %lld emplacements illisibles%@. Les éléments manquants ne sont pas nécessairement supprimés."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copertura limitata: %1$lld posizioni illeggibili%2$@. Le voci mancanti al di sotto di esse non sono necessariamente state eliminate."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "覆盖范围有限：%lld 个位置无法读取%@。其下缺失的项目不一定已删除。"
           }
         }
       }
@@ -9190,48 +9127,6 @@
         }
       }
     },
-    "Move %@ %@ to Trash" : {
-      "comment" : "Destructive action showing how many marked items will be moved to the Trash.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ %@ in den Papierkorb bewegen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Move %1$@ %2$@ to Trash"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mover %@ %@ a la papelera"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer %@ %@ dans la corbeille"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sposta %1$@ %2$@ nel Cestino"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 %@ %@ 移到废纸篓"
-          }
-        }
-      }
-    },
     "Move %@ Item to Trash" : {
       "comment" : "Destructive action for moving one marked item to the Trash.",
       "localizations" : {
@@ -9757,6 +9652,40 @@
         }
       }
     },
+    "No changes since the previous scan" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Änderungen seit dem vorherigen Scan"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay cambios desde el análisis anterior"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune modification depuis l’analyse précédente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna modifica dalla scansione precedente"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自上次扫描以来没有更改"
+          }
+        }
+      }
+    },
     "No decrease" : {
       "comment" : "Accessibility label when a comparison row has no decrease.",
       "localizations" : {
@@ -10271,41 +10200,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "节点 %@ 包含重复的子项 %@"
-          }
-        }
-      }
-    },
-    "node %@ disappeared while exporting" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Knoten %@ ist während des Exports verschwunden"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El nodo %@ desapareció durante la exportación"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le nœud %@ a disparu pendant l’exportation"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "il nodo %@ è scomparso durante l'esportazione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "节点 %@ 在导出期间消失"
           }
         }
       }
@@ -11104,41 +10998,6 @@
         }
       }
     },
-    "Nothing" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nichts"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nada"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rien"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nulla"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无"
-          }
-        }
-      }
-    },
     "Nothing to Show" : {
       "localizations" : {
         "de" : {
@@ -11864,6 +11723,41 @@
         }
       }
     },
+    "Preparing folder scan" : {
+      "comment" : "Progress detail before a focused folder rescan reports its current item.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordnerscan wird vorbereitet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparando el análisis de la carpeta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Préparation de l’analyse du dossier"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparazione della scansione della cartella"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备文件夹扫描"
+          }
+        }
+      }
+    },
     "Privacy" : {
       "localizations" : {
         "de" : {
@@ -12462,6 +12356,40 @@
         }
       }
     },
+    "Radix couldn’t safely apply the recent changes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix konnte die letzten Änderungen nicht sicher übernehmen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix no pudo aplicar de forma segura los cambios recientes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix n’a pas pu appliquer les modifications récentes en toute sécurité."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix non ha potuto applicare in modo sicuro le modifiche recenti."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix 无法安全地应用最近的更改。"
+          }
+        }
+      }
+    },
     "Radix does not currently have Full Disk Access. Normal scans still work; protected folders may be skipped." : {
       "comment" : "Onboarding status shown when Full Disk Access is not granted.",
       "localizations" : {
@@ -12497,6 +12425,40 @@
         }
       }
     },
+    "Radix is scanning the entire location to ensure accurate results." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix scannt den gesamten Speicherort, um genaue Ergebnisse zu gewährleisten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix está analizando toda la ubicación para garantizar resultados precisos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix analyse l’emplacement entier afin de garantir des résultats exacts."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix sta analizzando l’intera posizione per garantire risultati accurati."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix 正在扫描整个位置，以确保结果准确。"
+          }
+        }
+      }
+    },
     "Radix scan snapshot integrity check failed: %@" : {
       "comment" : "Error shown when an imported snapshot fails its integrity check.",
       "localizations" : {
@@ -12528,6 +12490,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Radix 扫描快照完整性检查失败：%@"
+          }
+        }
+      }
+    },
+    "Radix scanned the entire location." : {
+      "comment" : "Result shown after an incremental rescan safely completed as a full scan.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix hat den gesamten Speicherort gescannt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix analizó toda la ubicación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix a analysé l’emplacement entier."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix ha analizzato l’intera posizione."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix 已扫描整个位置。"
           }
         }
       }
@@ -13062,6 +13059,40 @@
         }
       }
     },
+    "Recent file history isn’t available." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der letzte Dateiverlauf ist nicht verfügbar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El historial reciente de archivos no está disponible."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique récent des fichiers n’est pas disponible."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cronologia recente dei file non è disponibile."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近的文件历史记录不可用。"
+          }
+        }
+      }
+    },
     "Recent scan locations are stored locally so they can appear in the sidebar." : {
       "localizations" : {
         "de" : {
@@ -13434,76 +13465,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "报告问题…"
-          }
-        }
-      }
-    },
-    "Failed to rescan %@: %@" : {
-      "comment" : "Error shown when refreshing one folder in an existing scan fails.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ konnte nicht erneut gescannt werden: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo volver a analizar %@: %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossible de réanalyser %@ : %@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impossibile scansionare nuovamente %@: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法重新扫描 %@：%@"
-          }
-        }
-      }
-    },
-    "Preparing folder scan" : {
-      "comment" : "Progress detail before a focused folder rescan reports its current item.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ordnerscan wird vorbereitet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preparando el análisis de la carpeta"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Préparation de l’analyse du dossier"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preparazione della scansione della cartella"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在准备文件夹扫描"
           }
         }
       }
@@ -14501,6 +14462,74 @@
         }
       }
     },
+    "Scan settings changed." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Scaneinstellungen wurden geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La configuración del análisis cambió."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les réglages d’analyse ont changé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le impostazioni di scansione sono cambiate."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扫描设置已更改。"
+          }
+        }
+      }
+    },
+    "Scan updated from recent changes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan mit den letzten Änderungen aktualisiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Análisis actualizado con los cambios recientes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse mise à jour avec les modifications récentes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scansione aggiornata con le modifiche recenti"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扫描已根据最近的更改更新"
+          }
+        }
+      }
+    },
     "Scanned" : {
       "comment" : "Workspace metric label for allocated storage scanned.",
       "localizations" : {
@@ -14979,110 +15008,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择一行以查看详情。双击文件夹以放大，或双击摘要文件夹以展开。按空格键使用“快速查看”。"
-          }
-        }
-      }
-    },
-    "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in." : {
-      "comment" : "Accessibility hint for the sunburst chart.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Klicken Sie auf ein Segment oder verwenden Sie die Pfeiltasten, um es auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic en un segmento o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cliquez sur un segment ou utilisez les touches fléchées pour le sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fai clic su un segmento o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点按分区或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。"
-          }
-        }
-      }
-    },
-    "Click a segment or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Click the center or press Command-Up Arrow to go up." : {
-      "comment" : "Accessibility hint for the sunburst chart when navigating upward is available.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Klicken Sie auf ein Segment oder verwenden Sie die Pfeiltasten, um es auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern. Klicken Sie auf die Mitte oder drücken Sie Befehl–Aufwärtspfeil, um nach oben zu navigieren."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic en un segmento o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte. Haz clic en el centro o pulsa Comando–Flecha arriba para subir."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cliquez sur un segment ou utilisez les touches fléchées pour le sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer. Cliquez au centre ou appuyez sur Commande–Flèche vers le haut pour remonter."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fai clic su un segmento o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire. Fai clic al centro o premi Comando–Freccia su per salire."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点按分区或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。点按中心或按下 Command–上箭头键以上移。"
-          }
-        }
-      }
-    },
-    "Click a tile or use the arrow keys to select it. Double-click a folder or press Command-Down Arrow to zoom in. Use the breadcrumb or press Command-Up Arrow to go up." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Klicken Sie auf eine Kachel oder verwenden Sie die Pfeiltasten, um sie auszuwählen. Doppelklicken Sie auf einen Ordner oder drücken Sie Befehl–Abwärtspfeil, um ihn zu vergrößern. Verwenden Sie die Breadcrumb-Navigation oder drücken Sie Befehl–Aufwärtspfeil, um nach oben zu navigieren."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic en un mosaico o usa las teclas de flecha para seleccionarlo. Haz doble clic en una carpeta o pulsa Comando–Flecha abajo para acercarte. Usa la ruta de navegación o pulsa Comando–Flecha arriba para subir."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cliquez sur une tuile ou utilisez les touches fléchées pour la sélectionner. Double-cliquez sur un dossier ou appuyez sur Commande–Flèche vers le bas pour zoomer. Utilisez le fil d’Ariane ou appuyez sur Commande–Flèche vers le haut pour remonter."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fai clic su un riquadro o usa i tasti freccia per selezionarlo. Fai doppio clic su una cartella o premi Comando–Freccia giù per ingrandire. Usa il percorso di navigazione o premi Comando–Freccia su per salire."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点按磁贴或使用箭头键进行选择。双击文件夹或按下 Command–下箭头键以放大查看。使用面包屑路径或按下 Command–上箭头键以上移。"
           }
         }
       }
@@ -15987,6 +15912,111 @@
         }
       }
     },
+    "snapshot section byte counts are incomplete or invalid" : {
+      "comment" : "Archive integrity error detail when v5 section byte counts are missing or invalid.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Byteanzahlen der Snapshot-Abschnitte sind unvollständig oder ungültig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los recuentos de bytes de las secciones de la instantánea están incompletos o no son válidos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les nombres d’octets des sections de l’instantané sont incomplets ou non valides"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I conteggi dei byte delle sezioni dell’istantanea sono incompleti o non validi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快照区段字节数不完整或无效"
+          }
+        }
+      }
+    },
+    "snapshot section checksums are incomplete" : {
+      "comment" : "Archive integrity error detail when v5 section checksums are missing.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfsummen der Snapshot-Abschnitte sind unvollständig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las sumas de comprobación de las secciones de la instantánea están incompletas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les sommes de contrôle des sections de l’instantané sont incomplètes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I checksum delle sezioni dell’istantanea sono incompleti"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快照区段校验和不完整"
+          }
+        }
+      }
+    },
+    "snapshot section encodings are unsupported or incomplete" : {
+      "comment" : "Archive manifest error detail when v5 section encoding metadata is missing or unsupported.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kodierungen der Snapshot-Abschnitte werden nicht unterstützt oder sind unvollständig"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las codificaciones de las secciones de la instantánea no son compatibles o están incompletas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les encodages des sections de l’instantané ne sont pas pris en charge ou sont incomplets"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le codifiche delle sezioni dell’istantanea non sono supportate o sono incomplete"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快照区段编码不受支持或不完整"
+          }
+        }
+      }
+    },
     "snapshot size exceeds supported range" : {
       "localizations" : {
         "de" : {
@@ -16677,6 +16707,111 @@
         }
       }
     },
+    "The compressed archive section contains trailing data." : {
+      "comment" : "Archive error detail when bytes follow a compressed archive section end marker.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der komprimierte Archivabschnitt enthält nachgestellte Daten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sección comprimida del archivo contiene datos finales adicionales."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La section d’archive compressée contient des données de fin supplémentaires."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sezione compressa dell’archivio contiene dati finali aggiuntivi."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩的归档区段包含尾随数据。"
+          }
+        }
+      }
+    },
+    "The compressed archive section is corrupt." : {
+      "comment" : "Archive error detail when a compressed archive section cannot be decoded.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der komprimierte Archivabschnitt ist beschädigt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sección comprimida del archivo está dañada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La section d’archive compressée est endommagée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sezione compressa dell’archivio è danneggiata."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩的归档区段已损坏。"
+          }
+        }
+      }
+    },
+    "The compressed archive section is truncated." : {
+      "comment" : "Archive error detail when a compressed archive section ends before its end marker.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der komprimierte Archivabschnitt ist abgeschnitten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sección comprimida del archivo está truncada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La section d’archive compressée est tronquée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La sezione compressa dell’archivio è troncata."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩的归档区段已截断。"
+          }
+        }
+      }
+    },
     "The FSEvents history stream ended before reporting HistoryDone." : {
       "comment" : "Error shown when an FSEvents history stream ends unexpectedly.",
       "localizations" : {
@@ -16887,6 +17022,40 @@
         }
       }
     },
+    "The previous scan can’t be safely reused." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der vorherige Scan kann nicht sicher wiederverwendet werden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El análisis anterior no se puede reutilizar de forma segura."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’analyse précédente ne peut pas être réutilisée en toute sécurité."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La scansione precedente non può essere riutilizzata in modo sicuro."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法安全地重复使用上次扫描。"
+          }
+        }
+      }
+    },
     "The Radix scan snapshot package is invalid: %@" : {
       "comment" : "Error shown when an imported snapshot package is malformed.",
       "localizations" : {
@@ -16988,6 +17157,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "扫描无法组装根节点。"
+          }
+        }
+      }
+    },
+    "The scan location changed while Radix was checking it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Scanort hat sich geändert, während Radix ihn geprüft hat."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ubicación del análisis cambió mientras Radix la comprobaba."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’emplacement d’analyse a changé pendant que Radix le vérifiait."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La posizione della scansione è cambiata mentre Radix la controllava."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix 检查扫描位置时，该位置发生了变化。"
           }
         }
       }
@@ -17479,6 +17682,40 @@
         }
       }
     },
+    "Too much changed for a quick rescan." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für einen schnellen erneuten Scan hat sich zu viel geändert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hubo demasiados cambios para un nuevo análisis rápido."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop d’éléments ont changé pour une nouvelle analyse rapide."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sono cambiate troppe cose per una nuova scansione rapida."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改过多，无法快速重新扫描。"
+          }
+        }
+      }
+    },
     "Too small to show individually" : {
       "comment" : "Chart detail explaining why grouped items are combined.",
       "localizations" : {
@@ -17855,6 +18092,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支持的完整性算法 %@"
+          }
+        }
+      }
+    },
+    "unsupported or missing integrity domain" : {
+      "comment" : "Archive integrity error detail when the checksum domain is absent or unsupported.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integritätsdomäne wird nicht unterstützt oder fehlt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta el dominio de integridad o no es compatible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Domaine d’intégrité manquant ou non pris en charge"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dominio di integrità mancante o non supportato"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完整性域缺失或不受支持"
           }
         }
       }
@@ -18301,6 +18573,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启用后，包含数千个小文件（如 node_modules 或缓存）的目录会汇总显示，而不会展开每个文件，从而显著提高扫描速度。"
+          }
+        }
+      }
+    },
+    "Why a complete scan?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warum ein vollständiger Scan?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Por qué un análisis completo?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pourquoi une analyse complète ?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perché una scansione completa?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为什么要进行完整扫描？"
+          }
+        }
+      }
+    },
+    "Why Radix is performing a complete scan" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warum Radix einen vollständigen Scan durchführt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Por qué Radix está realizando un análisis completo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pourquoi Radix effectue une analyse complète"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perché Radix sta eseguendo una scansione completa"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Radix 为什么要进行完整扫描"
           }
         }
       }

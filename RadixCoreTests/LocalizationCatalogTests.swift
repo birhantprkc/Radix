@@ -2,6 +2,8 @@ import Foundation
 import XCTest
 
 final class LocalizationCatalogTests: XCTestCase {
+    private let supportedLocales = ["de", "es", "fr", "it", "zh-Hans"]
+
     private struct LocalizedSourceLiteral {
         let value: String
         let file: String
@@ -20,11 +22,12 @@ final class LocalizationCatalogTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(strings.count, 400)
         XCTAssertEqual(catalogs["Interface"]?.count, 8)
 
-        let supportedLocales = Set(["es", "fr", "zh-Hans", "de", "it"])
+        let supportedLocaleSet = Set(supportedLocales)
         for (key, value) in strings {
             let entry = try XCTUnwrap(value as? [String: Any], "Invalid catalog entry for \(key)")
+            XCTAssertNotEqual(entry["extractionState"] as? String, "stale", "Stale localization key \(key)")
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
-            XCTAssertTrue(supportedLocales.isSubset(of: Set(localizations.keys)), "Missing supported locale for \(key)")
+            XCTAssertTrue(supportedLocaleSet.isSubset(of: Set(localizations.keys)), "Missing supported locale for \(key)")
 
             for locale in supportedLocales {
                 let localization = try XCTUnwrap(localizations[locale] as? [String: Any])
@@ -63,7 +66,7 @@ final class LocalizationCatalogTests: XCTestCase {
         for (key, value) in strings {
             let entry = try XCTUnwrap(value as? [String: Any], "Invalid metadata catalog entry for \(key)")
             let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
-            for locale in ["de", "it"] {
+            for locale in supportedLocales {
                 let localization = try XCTUnwrap(
                     localizations[locale] as? [String: Any],
                     "Missing \(locale) localization for \(key)"
@@ -179,7 +182,7 @@ final class LocalizationCatalogTests: XCTestCase {
             region.trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
         })
-        for locale in ["en", "es", "fr", "zh-Hans", "de"] {
+        for locale in ["en"] + supportedLocales {
             XCTAssertTrue(knownRegions.contains(locale), "Xcode project is missing supported locale \(locale).")
         }
     }
