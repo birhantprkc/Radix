@@ -92,7 +92,7 @@ struct FileBrowserSearchFilterBar: View {
             showsFilterEditor = true
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: query.hasStructuredFilters
+                Image(systemName: query.structuredFilterCount > 0
                     ? "line.3.horizontal.decrease.circle.fill"
                     : "line.3.horizontal.decrease.circle")
                 Text("Filters")
@@ -104,7 +104,7 @@ struct FileBrowserSearchFilterBar: View {
         }
         .buttonStyle(.bordered)
         .buttonBorderShape(.capsule)
-        .foregroundStyle(query.hasStructuredFilters ? Color.accentColor : .secondary)
+        .foregroundStyle(query.structuredFilterCount > 0 ? Color.accentColor : .secondary)
         .help("Search Filters")
         .accessibilityLabel("Search Filters")
         .accessibilityValue(Text(verbatim: "\(query.structuredFilterCount)"))
@@ -125,7 +125,7 @@ private struct FileBrowserFilterEditor: View {
         let filter = query.wrappedValue.allocatedSize
         let unit = FileBrowserSizeUnit.bestUnit(for: filter?.bytes ?? 0)
         _sizeRelation = State(initialValue: filter?.relation ?? .greaterThan)
-        _sizeValue = State(initialValue: filter.map { unit.value(for: $0.bytes) })
+        _sizeValue = State(initialValue: filter.map { Double($0.bytes) / Double(unit.bytes) })
         _sizeUnit = State(initialValue: unit)
     }
 
@@ -139,7 +139,7 @@ private struct FileBrowserFilterEditor: View {
                 sizeFilterRow
             }
 
-            if query.hasStructuredFilters {
+            if query.structuredFilterCount > 0 {
                 Divider()
 
                 Button("Clear Filters") {
@@ -188,10 +188,9 @@ private struct FileBrowserFilterEditor: View {
             TextField(
                 "Any",
                 value: $sizeValue,
-                // Two fractional KB digits require up to 11 when displayed as TB.
-                format: .number.precision(.fractionLength(0...11))
+                format: .number.precision(.fractionLength(0...2))
             )
-            .frame(width: 100)
+            .frame(width: 80)
             .accessibilityLabel("Size value")
 
             Picker("Size unit", selection: $sizeUnit) {
@@ -200,7 +199,7 @@ private struct FileBrowserFilterEditor: View {
                 }
             }
             .labelsHidden()
-            .frame(width: 60)
+            .frame(width: 70)
         }
         .onChange(of: sizeRelation) {
             updateSizeFilter()
@@ -208,9 +207,8 @@ private struct FileBrowserFilterEditor: View {
         .onChange(of: sizeValue) {
             updateSizeFilter()
         }
-        .onChange(of: sizeUnit) { _, newUnit in
-            guard let bytes = query.allocatedSize?.bytes else { return }
-            sizeValue = newUnit.value(for: bytes)
+        .onChange(of: sizeUnit) {
+            updateSizeFilter()
         }
     }
 

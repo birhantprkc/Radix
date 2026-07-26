@@ -21,17 +21,14 @@ Keep fixes narrowly scoped to verified problems.
 7. Run core tests, a complete macOS build, rendered UI checks, and a final diff
    review.
 
-## Follow-up visual and SwiftUI review
+## Follow-up semantics clarification
 
-1. Recheck the filter editor at its current fixed width, including localized
-   control titles and the active/inactive layouts.
-2. Exercise keyboard focus, dismissal/reopening, unit changes, and clearing.
-3. Preserve the represented byte threshold when the user changes units; the
-   current picker keeps the numeric value fixed and silently rescales the
-   filter.
-4. Remove only redundant SwiftUI plumbing encountered in the confirmed fix.
-5. Rebuild and repeat the rendered and accessibility checks before updating the
-   pull request.
+1. Treat the numeric value and unit as one directly editable threshold. Changing
+   GB to KB intentionally reinterprets 83 GB as 83 KB.
+2. Remove conversion-only display precision, helpers, tests, and width changes.
+3. Retain only simplifications that reduce redundant binding or query updates.
+4. Rebuild and verify the direct unit-change behavior before updating the pull
+   request.
 
 ## Findings
 
@@ -43,13 +40,13 @@ Keep fixes narrowly scoped to verified problems.
   detection behavior produces matching results.
 - Exposed structured-filter state and field purposes to accessibility clients,
   including the active filter count and labels for the size controls.
-- Preserved the represented threshold when changing display units and
-  reallocated unused unit-picker width so converted fractional values remain
-  visible without widening the popover.
+- Kept unit changes direct: the numeric value stays fixed while the chosen unit
+  changes the threshold.
 - Verified that Current Contents and Entire Scan keep independent structured
   queries and that clearing one scope does not affect the other.
 - Removed an unused production search-text mutation API and stale localization
-  entries from an abandoned filter-chip design.
+  entries from an abandoned filter-chip design, plus a model-level structured
+  filter Boolean that duplicated the view's filter count.
 - Kept the existing single-pass search, stale-result rejection, hidden-node
   handling, sorting, and index invalidation architecture; the audit found no
   reason to add another cache or state owner.
@@ -61,7 +58,6 @@ Keep fixes narrowly scoped to verified problems.
   and 0 failures.
 - Complete Debug macOS app build passed.
 - The built app was exercised with Current Contents and Entire Scan, fractional
-  size thresholds, cross-unit conversions, a nonrepresentable size value,
-  compact and full-width popovers, dismissal/reopening, and accessibility
-  inspection.
+  size thresholds, direct unit changes, a nonrepresentable size value, compact
+  and full-width popovers, dismissal/reopening, and accessibility inspection.
 - The final diff was reviewed for redundant state, branches, helpers, and tests.

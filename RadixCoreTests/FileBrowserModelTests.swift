@@ -245,14 +245,6 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 1_500_000_000), .gigabytes)
         XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 1_234_560), .kilobytes)
         XCTAssertEqual(FileBrowserSizeUnit.kilobytes.byteCount(for: 1.234), 1_234)
-
-        let originalBytes: Int64 = 12_340
-        XCTAssertEqual(FileBrowserSizeUnit.kilobytes.byteCount(for: 12.34), originalBytes)
-        let megabyteValue = FileBrowserSizeUnit.megabytes.value(for: originalBytes)
-        let terabyteValue = FileBrowserSizeUnit.terabytes.value(for: originalBytes)
-        XCTAssertEqual(FileBrowserSizeUnit.megabytes.byteCount(for: megabyteValue), originalBytes)
-        XCTAssertEqual(FileBrowserSizeUnit.terabytes.byteCount(for: terabyteValue), originalBytes)
-
         XCTAssertNil(FileBrowserSizeUnit.megabytes.byteCount(for: -.infinity))
         XCTAssertNil(FileBrowserSizeUnit.megabytes.byteCount(for: -1))
         XCTAssertNil(

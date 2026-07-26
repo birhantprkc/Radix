@@ -13,10 +13,6 @@ nonisolated struct FileBrowserQuery: Hashable, Sendable {
         !trimmedText.isEmpty
     }
 
-    var hasStructuredFilters: Bool {
-        itemKind != nil || allocatedSize != nil
-    }
-
     var trimmedText: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -106,10 +102,6 @@ nonisolated enum FileBrowserSizeUnit: CaseIterable, Hashable, Identifiable, Send
     func byteCount(for value: Double) -> Int64? {
         guard value.isFinite, value >= 0 else { return nil }
         return Int64(exactly: (value * Double(bytes)).rounded())
-    }
-
-    func value(for bytes: Int64) -> Double {
-        Double(bytes) / Double(self.bytes)
     }
 
     static func bestUnit(for bytes: Int64) -> Self {
