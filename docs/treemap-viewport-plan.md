@@ -203,3 +203,82 @@ Post-implementation audit:
   its prior render usable.
 - Removed duplicated sunburst representable updates and the encoded treemap
   request/cache identifiers.
+
+## Follow-up plan: compact viewport controls
+
+### Decision and scope
+
+Use compact-by-default controls for both treemap and sunburst. The treemap has
+the stronger need because its rectangular layout can place an important tile
+beneath any overlay corner, but both charts already use the same
+`ChartViewportControls` component. One shared behavior is smaller and easier to
+reason about than adding a presentation mode and preserving a separate
+persistent branch for the sunburst.
+
+Keep all expansion state inside `ChartViewportControls`. Do not add per-chart
+configuration, duplicate the control implementation, or move disclosure state
+into either chart model.
+
+### Interaction contract
+
+- The compact resting control displays a magnification symbol and the current
+  zoom percentage. Keep its hit target large enough for ordinary macOS pointer
+  use while making its visual footprint materially smaller than the full HUD.
+- Hovering the compact control expands the existing Zoom Out, percentage, Zoom
+  In, and Reset controls in place. Keep the trailing edge fixed so expansion
+  grows leftward rather than making the control jump.
+- Pointer-driven expansion remains active while the pointer crosses from the
+  compact trigger into the revealed buttons, then collapses when the pointer
+  leaves the complete control.
+- Activating the compact trigger with click, Space, or Return opens the controls
+  for keyboard use and transfers focus to an enabled zoom command.
+- Keep the controls expanded while keyboard focus is inside them. Collapse when
+  focus leaves; Escape collapses and returns focus to the compact trigger.
+- Do not add an inactivity timer. Deterministic hover and focus rules avoid
+  delayed state changes, timer lifetime bugs, and surprising collapses during
+  keyboard use.
+- The compact trigger exposes a localized “Show Zoom Controls” accessibility
+  label and the current percentage as its accessibility value. Expanded buttons
+  retain their existing labels, help, disabled states, and actions.
+- Respect Reduce Motion: use a short width/opacity transition normally and no
+  animated geometry change when Reduce Motion is enabled.
+- Zoom shortcuts, gestures, accessibility chart actions, render geometry, hit
+  testing, and the 100–400% viewport bounds remain unchanged.
+
+The compact control still occupies a small plot region. This is an intentional
+tradeoff: it greatly reduces persistent obstruction without adaptive movement,
+plot shrinkage, or workspace-layout changes.
+
+### Focused implementation
+
+1. Add narrow local hover/focus/disclosure state to
+   `ChartViewportControls`.
+2. Compose the full control row from the existing buttons; do not fork separate
+   compact and expanded control implementations.
+3. Keep both chart call sites unchanged; the shared component supplies the same
+   behavior to each visualization.
+4. Keep treemap tooltip placement's existing full-control avoidance rectangle.
+   It safely covers both states and avoids a new geometry preference or binding.
+5. Add the compact trigger’s user-facing string to `Localizable.xcstrings` for
+   `en`, `de`, `es`, `fr`, `it`, and `zh-Hans`.
+
+Checkpoint commit:
+
+`feat(charts): compact viewport controls`
+
+### Review and validation
+
+- Review the production diff for state outside the shared control, per-chart
+  configuration, duplicated buttons, timers, or geometry measurement.
+- At 100%, an intermediate zoom, and 400%, verify hover expansion, movement onto
+  every revealed button, button actions, pointer exit, and compact percentage
+  updates after menu shortcuts and gestures.
+- With Full Keyboard Access, verify focus entry, activation, focus transfer,
+  Tab/Shift-Tab traversal, Escape, disabled limits, and collapse on focus exit.
+- With VoiceOver, verify the compact trigger label/value and all expanded button
+  labels. Verify Reduce Motion does not animate the size change.
+- Verify tooltip placement does not collide with either control state and the
+  expanded HUD remains usable in the narrowest supported chart pane.
+- Switch repeatedly between treemap and sunburst and confirm both use identical
+  compact, expanded, and keyboard behavior with unchanged zoom actions.
+- Run `rtk swift test` and the complete Debug app build before committing.
