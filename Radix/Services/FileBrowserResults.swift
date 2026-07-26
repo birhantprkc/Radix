@@ -8,37 +8,6 @@ import Foundation
 enum FileBrowserResults {
     nonisolated static func filteredAndSortedCurrentContents(
         _ nodes: [FileNodeRecord],
-        searchText: String,
-        sortOrder: [FileNodeTableComparator],
-        fileTreeStore: FileTreeStore? = nil
-    ) -> [FileNodeRecord] {
-        (try? filteredAndSortedCurrentContents(
-            nodes,
-            query: FileBrowserQuery(text: searchText),
-            sortOrder: sortOrder,
-            fileTreeStore: fileTreeStore,
-            cancellationCheck: {}
-        )) ?? []
-    }
-
-    nonisolated static func filteredAndSortedCurrentContents(
-        _ nodes: [FileNodeRecord],
-        searchText: String,
-        sortOrder: [FileNodeTableComparator],
-        fileTreeStore: FileTreeStore? = nil,
-        cancellationCheck: @Sendable () throws -> Void
-    ) throws -> [FileNodeRecord] {
-        try filteredAndSortedCurrentContents(
-            nodes,
-            query: FileBrowserQuery(text: searchText),
-            sortOrder: sortOrder,
-            fileTreeStore: fileTreeStore,
-            cancellationCheck: cancellationCheck
-        )
-    }
-
-    nonisolated static func filteredAndSortedCurrentContents(
-        _ nodes: [FileNodeRecord],
         query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil

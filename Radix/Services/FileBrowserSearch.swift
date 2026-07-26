@@ -144,12 +144,7 @@ actor FileSearchService: FileSearching {
                 id: id,
                 normalizedNameKindHaystack: SearchNormalizer.normalizedNameKindHaystack(for: node),
                 allocatedSize: node.allocatedSize,
-                itemKind: FileBrowserItemKindFilter.classification(
-                    isDirectory: node.isDirectory,
-                    isSymbolicLink: node.isSymbolicLink,
-                    isPackage: node.isPackage,
-                    isSynthetic: node.isSynthetic
-                )
+                itemKind: FileBrowserItemKindFilter.classification(for: node)
             ))
         }
 

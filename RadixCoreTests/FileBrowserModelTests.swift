@@ -72,7 +72,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let result = FileBrowserResults.filteredAndSortedCurrentContents(
             [smallMatch, ignored, largeMatch],
-            searchText: "match",
+            query: FileBrowserQuery(text: "match"),
             sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
 
@@ -90,7 +90,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "resume",
+                query: FileBrowserQuery(text: "resume"),
                 sortOrder: sortOrder
             ).map(\.id),
             [resume.id]
@@ -98,7 +98,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "report",
+                query: FileBrowserQuery(text: "report"),
                 sortOrder: sortOrder
             ).map(\.id),
             [report.id]
@@ -106,7 +106,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "/library/caches",
+                query: FileBrowserQuery(text: "/library/caches"),
                 sortOrder: sortOrder
             ).map(\.id),
             [cache.id]
@@ -114,7 +114,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertTrue(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "Library",
+                query: FileBrowserQuery(text: "Library"),
                 sortOrder: sortOrder
             ).isEmpty
         )
@@ -142,7 +142,7 @@ final class FileBrowserModelTests: XCTestCase {
         for searchCase in cases {
             let currentContentsResults = FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: searchCase.query,
+                query: FileBrowserQuery(text: searchCase.query),
                 sortOrder: sortOrder,
                 fileTreeStore: store
             )
@@ -255,49 +255,17 @@ final class FileBrowserModelTests: XCTestCase {
     }
 
     func testStructuredKindClassificationDistinguishesSearchableItemTypes() {
-        XCTAssertEqual(
-            FileBrowserItemKindFilter.classification(
-                isDirectory: false,
-                isSymbolicLink: false,
-                isPackage: false,
-                isSynthetic: false
-            ),
-            .file
-        )
-        XCTAssertEqual(
-            FileBrowserItemKindFilter.classification(
-                isDirectory: true,
-                isSymbolicLink: false,
-                isPackage: false,
-                isSynthetic: false
-            ),
-            .folder
-        )
-        XCTAssertEqual(
-            FileBrowserItemKindFilter.classification(
-                isDirectory: true,
-                isSymbolicLink: false,
-                isPackage: true,
-                isSynthetic: false
-            ),
-            .package
-        )
-        XCTAssertNil(
-            FileBrowserItemKindFilter.classification(
-                isDirectory: false,
-                isSymbolicLink: true,
-                isPackage: false,
-                isSynthetic: false
-            )
-        )
-        XCTAssertNil(
-            FileBrowserItemKindFilter.classification(
-                isDirectory: true,
-                isSymbolicLink: false,
-                isPackage: false,
-                isSynthetic: true
-            )
-        )
+        let file = makeTestFileNode(id: "/root/file", name: "file")
+        let folder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: [])
+        let package = makeTestDirectoryNode(id: "/root/app", name: "app", children: [], isPackage: true)
+        let symbolicLink = makeTestFileNode(id: "/root/link", name: "link", isSymbolicLink: true)
+        let synthetic = makeTestFileNode(id: "/root/system-data", name: "system-data", isSynthetic: true)
+
+        XCTAssertEqual(FileBrowserItemKindFilter.classification(for: file), .file)
+        XCTAssertEqual(FileBrowserItemKindFilter.classification(for: folder), .folder)
+        XCTAssertEqual(FileBrowserItemKindFilter.classification(for: package), .package)
+        XCTAssertNil(FileBrowserItemKindFilter.classification(for: symbolicLink))
+        XCTAssertNil(FileBrowserItemKindFilter.classification(for: synthetic))
     }
 
     @MainActor
@@ -426,7 +394,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let currentContents = FileBrowserResults.filteredAndSortedCurrentContents(
             [beta, alphaB, alphaA],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: sortOrder
         )
         XCTAssertEqual(currentContents.map(\.id), [alphaA.id, alphaB.id, beta.id])
@@ -479,7 +447,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let fileCountResults = FileBrowserResults.filteredAndSortedCurrentContents(
             [smallFolder, largeFolder, hiddenPackage, oldFile],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: [FileNodeTableComparator(field: .descendantFileCount, order: .reverse)]
         )
         XCTAssertEqual(fileCountResults.map(\.id), [largeFolder.id, oldFile.id, smallFolder.id, hiddenPackage.id])
@@ -495,7 +463,7 @@ final class FileBrowserModelTests: XCTestCase {
         ])
         let visibleFileCountResults = FileBrowserResults.filteredAndSortedCurrentContents(
             [largeFolder, hiddenPackage, oldFile],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: [FileNodeTableComparator(field: .descendantFileCount, order: .reverse)],
             fileTreeStore: visiblePackageStore
         )
@@ -503,7 +471,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let modifiedResults = FileBrowserResults.filteredAndSortedCurrentContents(
             [newFile, unknownFile, oldFile],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: [FileNodeTableComparator(field: .lastModified)]
         )
         XCTAssertEqual(modifiedResults.map(\.id), [unknownFile.id, oldFile.id, newFile.id])

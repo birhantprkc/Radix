@@ -81,14 +81,16 @@ func makeTestFileNode(
     unduplicatedAllocatedSize: Int64? = nil,
     lastModified: Date? = nil,
     fileIdentity: FileIdentity? = nil,
-    linkCount: UInt64 = 1
+    linkCount: UInt64 = 1,
+    isSymbolicLink: Bool = false,
+    isSynthetic: Bool = false
 ) -> FileNodeRecord {
     FileNodeRecord(
         id: id,
         url: URL(filePath: id),
         name: name,
         isDirectory: false,
-        isSymbolicLink: false,
+        isSymbolicLink: isSymbolicLink,
         allocatedSize: size,
         unduplicatedAllocatedSize: unduplicatedAllocatedSize,
         logicalSize: size,
@@ -99,7 +101,7 @@ func makeTestFileNode(
         isPackage: false,
         isAccessible: true,
         isSelfAccessible: true,
-        isSynthetic: false,
+        isSynthetic: isSynthetic,
         isAutoSummarized: false
     )
 }

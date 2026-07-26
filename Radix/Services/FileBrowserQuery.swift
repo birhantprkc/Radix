@@ -34,17 +34,12 @@ nonisolated enum FileBrowserItemKindFilter: Hashable, Sendable {
     case folder
     case package
 
-    static func classification(
-        isDirectory: Bool,
-        isSymbolicLink: Bool,
-        isPackage: Bool,
-        isSynthetic: Bool
-    ) -> Self? {
-        guard !isSymbolicLink, !isSynthetic else { return nil }
-        if isPackage {
+    static func classification(for node: FileNodeRecord) -> Self? {
+        guard !node.isSymbolicLink, !node.isSynthetic else { return nil }
+        if node.isPackage {
             return .package
         }
-        return isDirectory ? .folder : .file
+        return node.isDirectory ? .folder : .file
     }
 }
 
@@ -143,12 +138,7 @@ nonisolated struct PreparedFileBrowserQuery: Sendable {
     func matches(_ node: FileNodeRecord) -> Bool {
         guard matchesMetadata(
             allocatedSize: node.allocatedSize,
-            itemKind: FileBrowserItemKindFilter.classification(
-                isDirectory: node.isDirectory,
-                isSymbolicLink: node.isSymbolicLink,
-                isPackage: node.isPackage,
-                isSynthetic: node.isSynthetic
-            )
+            itemKind: FileBrowserItemKindFilter.classification(for: node)
         ) else {
             return false
         }
