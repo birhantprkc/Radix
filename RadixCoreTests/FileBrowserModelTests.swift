@@ -2,6 +2,15 @@ import Combine
 import XCTest
 @testable import RadixCore
 
+private extension FileBrowserModel {
+    @MainActor
+    func setActiveSearchText(_ text: String) {
+        var query = activeQuery
+        query.text = text
+        setActiveQuery(query)
+    }
+}
+
 final class FileBrowserModelTests: XCTestCase {
     @MainActor
     func testCurrentContentsSortsFiltersAndFindsDisplayedNodes() {
@@ -63,7 +72,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let result = FileBrowserResults.filteredAndSortedCurrentContents(
             [smallMatch, ignored, largeMatch],
-            searchText: "match",
+            query: FileBrowserQuery(text: "match"),
             sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
 
@@ -81,7 +90,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "resume",
+                query: FileBrowserQuery(text: "resume"),
                 sortOrder: sortOrder
             ).map(\.id),
             [resume.id]
@@ -89,7 +98,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "report",
+                query: FileBrowserQuery(text: "report"),
                 sortOrder: sortOrder
             ).map(\.id),
             [report.id]
@@ -97,7 +106,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "/library/caches",
+                query: FileBrowserQuery(text: "/library/caches"),
                 sortOrder: sortOrder
             ).map(\.id),
             [cache.id]
@@ -105,7 +114,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertTrue(
             FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: "Library",
+                query: FileBrowserQuery(text: "Library"),
                 sortOrder: sortOrder
             ).isEmpty
         )
@@ -126,21 +135,21 @@ final class FileBrowserModelTests: XCTestCase {
             ("resume", [resume.id]),
             ("report", [report.id]),
             ("/library/caches", [cache.id]),
+            ("\\library\\caches", [cache.id]),
             ("Library", [])
         ]
 
         for searchCase in cases {
             let currentContentsResults = FileBrowserResults.filteredAndSortedCurrentContents(
                 nodes,
-                searchText: searchCase.query,
+                query: FileBrowserQuery(text: searchCase.query),
                 sortOrder: sortOrder,
                 fileTreeStore: store
             )
             let entireScanResults = try await service.search(
                 snapshotID: snapshotID,
                 treeStore: store,
-                normalizedQuery: SearchNormalizer.normalize(searchCase.query),
-                includesPath: SearchNormalizer.queryIncludesPath(searchCase.query),
+                query: FileBrowserQuery(text: searchCase.query),
                 sortOrder: sortOrder
             )
 
@@ -155,6 +164,169 @@ final class FileBrowserModelTests: XCTestCase {
                 "Entire scan query: \(searchCase.query)"
             )
         }
+    }
+
+    func testStructuredQueryCombinesTextKindAndAllocatedSizeAcrossScopes() async throws {
+        let smallTarget = makeTestFileNode(
+            id: "/root/small-target.bin",
+            name: "small-target.bin",
+            size: 499_999_999
+        )
+        let boundaryTarget = makeTestFileNode(
+            id: "/root/boundary-target.bin",
+            name: "boundary-target.bin",
+            size: 500_000_000
+        )
+        let largeTarget = makeTestFileNode(
+            id: "/root/large-target.bin",
+            name: "large-target.bin",
+            size: 500_000_001
+        )
+        let largeOther = makeTestFileNode(
+            id: "/root/large-other.bin",
+            name: "large-other.bin",
+            size: 700_000_000
+        )
+        let largeFolder = makeTestDirectoryNode(
+            id: "/root/target-folder",
+            name: "target-folder",
+            children: [largeOther]
+        )
+        let nodes = [smallTarget, boundaryTarget, largeTarget, largeFolder]
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: nodes)
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: nodes,
+            largeFolder.id: [largeOther],
+        ])
+        let query = FileBrowserQuery(
+            text: "target",
+            itemKind: .file,
+            allocatedSize: FileBrowserAllocatedSizeFilter(
+                relation: .greaterThan,
+                bytes: 500_000_000
+            )
+        )
+        let sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
+
+        let currentContentsResults = FileBrowserResults.filteredAndSortedCurrentContents(
+            nodes,
+            query: query,
+            sortOrder: sortOrder,
+            fileTreeStore: store
+        )
+        let entireScanResults = try await FileSearchService().search(
+            snapshotID: UUID(),
+            treeStore: store,
+            query: query,
+            sortOrder: sortOrder
+        )
+
+        XCTAssertEqual(currentContentsResults.map(\.id), [largeTarget.id])
+        XCTAssertEqual(entireScanResults.map(\.id), [largeTarget.id])
+    }
+
+    func testAllocatedSizeRelationsHandleExactBoundary() {
+        let boundary: Int64 = 500_000_000
+
+        XCTAssertFalse(FileBrowserAllocatedSizeFilter(relation: .greaterThan, bytes: boundary).matches(boundary))
+        XCTAssertTrue(FileBrowserAllocatedSizeFilter(relation: .atLeast, bytes: boundary).matches(boundary))
+        XCTAssertFalse(FileBrowserAllocatedSizeFilter(relation: .lessThan, bytes: boundary).matches(boundary))
+        XCTAssertTrue(FileBrowserAllocatedSizeFilter(relation: .atMost, bytes: boundary).matches(boundary))
+    }
+
+    func testSizeUnitsPreserveEditablePrecisionAndRejectInvalidByteCounts() {
+        let fractionalKilobytes: Int64 = 1_500
+        let unit = FileBrowserSizeUnit.bestUnit(for: fractionalKilobytes)
+        let reopenedValue = Double(fractionalKilobytes) / Double(unit.bytes)
+
+        XCTAssertEqual(unit, .kilobytes)
+        XCTAssertEqual(unit.byteCount(for: reopenedValue), fractionalKilobytes)
+        XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 500_000_000), .megabytes)
+        XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 1_500_000_000), .gigabytes)
+        XCTAssertEqual(FileBrowserSizeUnit.bestUnit(for: 1_234_560), .kilobytes)
+        XCTAssertEqual(FileBrowserSizeUnit.kilobytes.byteCount(for: 1.234), 1_234)
+        XCTAssertNil(FileBrowserSizeUnit.megabytes.byteCount(for: -.infinity))
+        XCTAssertNil(FileBrowserSizeUnit.megabytes.byteCount(for: -1))
+        XCTAssertNil(
+            FileBrowserSizeUnit.kilobytes.byteCount(
+                for: Double(Int64.max) / Double(FileBrowserSizeUnit.kilobytes.bytes)
+            )
+        )
+    }
+
+    func testStructuredKindClassificationDistinguishesSearchableItemTypes() {
+        let file = makeTestFileNode(id: "/root/file", name: "file")
+        let folder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: [])
+        let package = makeTestDirectoryNode(id: "/root/app", name: "app", children: [], isPackage: true)
+        let symbolicLink = makeTestFileNode(id: "/root/link", name: "link", isSymbolicLink: true)
+        let synthetic = makeTestFileNode(id: "/root/system-data", name: "system-data", isSynthetic: true)
+
+        XCTAssertEqual(FileBrowserItemKindFilter.classification(for: file), .file)
+        XCTAssertEqual(FileBrowserItemKindFilter.classification(for: folder), .folder)
+        XCTAssertEqual(FileBrowserItemKindFilter.classification(for: package), .package)
+        XCTAssertNil(FileBrowserItemKindFilter.classification(for: symbolicLink))
+        XCTAssertNil(FileBrowserItemKindFilter.classification(for: synthetic))
+    }
+
+    @MainActor
+    func testEntireScanSupportsStructuredFilterWithoutSearchText() async throws {
+        let small = makeTestFileNode(id: "/root/small.bin", name: "small.bin", size: 100)
+        let large = makeTestFileNode(id: "/root/large.bin", name: "large.bin", size: 1_000)
+        let folder = makeTestDirectoryNode(id: "/root/folder", name: "folder", children: [large])
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [small, folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [small, folder],
+            folder.id: [large],
+        ])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        let model = FileBrowserModel(searchDebounceDuration: .zero)
+
+        model.updateContent(
+            nodes: store.children(of: root.id),
+            contentID: "\(snapshot.id.uuidString)|\(root.id)",
+            snapshot: snapshot,
+            fileTreeStore: store
+        )
+        model.setSearchScope(.entireScan)
+        model.setActiveQuery(
+            FileBrowserQuery(
+                itemKind: .file,
+                allocatedSize: FileBrowserAllocatedSizeFilter(relation: .greaterThan, bytes: 500)
+            )
+        )
+
+        XCTAssertTrue(model.isShowingEntireScanResults)
+        try await waitForSearchToFinish(model)
+        XCTAssertEqual(model.displayedNodes.map(\.id), [large.id])
+    }
+
+    @MainActor
+    func testSearchScopesKeepAndClearIndependentStructuredQueries() {
+        let model = FileBrowserModel()
+        let currentContentsQuery = FileBrowserQuery(
+            itemKind: .folder,
+            allocatedSize: FileBrowserAllocatedSizeFilter(
+                relation: .atLeast,
+                bytes: 500_000_000
+            )
+        )
+        let entireScanQuery = FileBrowserQuery(
+            itemKind: .package
+        )
+
+        model.setActiveQuery(currentContentsQuery)
+        model.setSearchScope(.entireScan)
+        XCTAssertEqual(model.activeQuery, FileBrowserQuery())
+
+        model.setActiveQuery(entireScanQuery)
+        model.setSearchScope(.currentContents)
+        XCTAssertEqual(model.activeQuery, currentContentsQuery)
+
+        model.clearActiveQuery()
+        XCTAssertEqual(model.activeQuery, FileBrowserQuery())
+
+        model.setSearchScope(.entireScan)
+        XCTAssertEqual(model.activeQuery, entireScanQuery)
     }
 
     @MainActor
@@ -222,7 +394,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let currentContents = FileBrowserResults.filteredAndSortedCurrentContents(
             [beta, alphaB, alphaA],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: sortOrder
         )
         XCTAssertEqual(currentContents.map(\.id), [alphaA.id, alphaB.id, beta.id])
@@ -233,8 +405,7 @@ final class FileBrowserModelTests: XCTestCase {
         let searchResults = try await service.search(
             snapshotID: UUID(),
             treeStore: store,
-            normalizedQuery: SearchNormalizer.normalize("txt"),
-            includesPath: false,
+            query: FileBrowserQuery(text: "txt"),
             sortOrder: sortOrder
         )
 
@@ -276,7 +447,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let fileCountResults = FileBrowserResults.filteredAndSortedCurrentContents(
             [smallFolder, largeFolder, hiddenPackage, oldFile],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: [FileNodeTableComparator(field: .descendantFileCount, order: .reverse)]
         )
         XCTAssertEqual(fileCountResults.map(\.id), [largeFolder.id, oldFile.id, smallFolder.id, hiddenPackage.id])
@@ -292,7 +463,7 @@ final class FileBrowserModelTests: XCTestCase {
         ])
         let visibleFileCountResults = FileBrowserResults.filteredAndSortedCurrentContents(
             [largeFolder, hiddenPackage, oldFile],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: [FileNodeTableComparator(field: .descendantFileCount, order: .reverse)],
             fileTreeStore: visiblePackageStore
         )
@@ -300,7 +471,7 @@ final class FileBrowserModelTests: XCTestCase {
 
         let modifiedResults = FileBrowserResults.filteredAndSortedCurrentContents(
             [newFile, unknownFile, oldFile],
-            searchText: "",
+            query: FileBrowserQuery(),
             sortOrder: [FileNodeTableComparator(field: .lastModified)]
         )
         XCTAssertEqual(modifiedResults.map(\.id), [unknownFile.id, oldFile.id, newFile.id])
@@ -611,8 +782,7 @@ final class FileBrowserModelTests: XCTestCase {
         let photoMatches = try await service.search(
             snapshotID: snapshotID,
             treeStore: store,
-            normalizedQuery: SearchNormalizer.normalize("vacation"),
-            includesPath: false,
+            query: FileBrowserQuery(text: "vacation"),
             sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
         XCTAssertEqual(photoMatches.map(\.id), [photo.id])
@@ -620,8 +790,7 @@ final class FileBrowserModelTests: XCTestCase {
         let nonPathMatches = try await service.search(
             snapshotID: snapshotID,
             treeStore: store,
-            normalizedQuery: SearchNormalizer.normalize("/Library/Caches"),
-            includesPath: false,
+            query: FileBrowserQuery(text: "Caches"),
             sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
         XCTAssertTrue(nonPathMatches.isEmpty)
@@ -629,8 +798,7 @@ final class FileBrowserModelTests: XCTestCase {
         let pathMatches = try await service.search(
             snapshotID: snapshotID,
             treeStore: store,
-            normalizedQuery: SearchNormalizer.normalize("/Library/Caches"),
-            includesPath: true,
+            query: FileBrowserQuery(text: "/Library/Caches"),
             sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
         XCTAssertEqual(pathMatches.map(\.id), [cache.id])
@@ -669,22 +837,19 @@ final class FileBrowserModelTests: XCTestCase {
         let originalMatches = try await service.search(
             snapshotID: snapshotID,
             treeStore: originalStore,
-            normalizedQuery: "alpha",
-            includesPath: false,
+            query: FileBrowserQuery(text: "alpha"),
             sortOrder: []
         )
         let replacementMatches = try await service.search(
             snapshotID: snapshotID,
             treeStore: replacementStore,
-            normalizedQuery: "beta",
-            includesPath: false,
+            query: FileBrowserQuery(text: "beta"),
             sortOrder: []
         )
         let restoredOriginalMatches = try await service.search(
             snapshotID: snapshotID,
             treeStore: originalStore,
-            normalizedQuery: "alpha",
-            includesPath: false,
+            query: FileBrowserQuery(text: "alpha"),
             sortOrder: []
         )
 
@@ -1213,10 +1378,10 @@ private actor DelayedFileSearchService: FileSearching {
     func search(
         snapshotID: UUID,
         treeStore: FileTreeStore,
-        normalizedQuery: String,
-        includesPath: Bool,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator]
     ) async throws -> [FileNodeRecord] {
+        let normalizedQuery = query.prepared().normalizedText
         markStarted(normalizedQuery)
 
         let matchedIDs: [FileNodeRecord.ID]
@@ -1259,8 +1424,7 @@ private actor PruningFileSearchService: FileSearching {
     func search(
         snapshotID: UUID,
         treeStore: FileTreeStore,
-        normalizedQuery: String,
-        includesPath: Bool,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator]
     ) async throws -> [FileNodeRecord] {
         []
@@ -1283,8 +1447,7 @@ private actor CancellablePruningFileSearchService: FileSearching {
     func search(
         snapshotID: UUID,
         treeStore: FileTreeStore,
-        normalizedQuery: String,
-        includesPath: Bool,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator]
     ) async throws -> [FileNodeRecord] {
         []

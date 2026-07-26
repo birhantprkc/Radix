@@ -53,6 +53,7 @@ let package = Package(
                 "Services/AppUsageStatsStore.swift",
                 "Services/FileBrowserDisplayState.swift",
                 "Services/FileBrowserModel.swift",
+                "Services/FileBrowserQuery.swift",
                 "Services/FileBrowserResults.swift",
                 "Services/FileBrowserSearch.swift",
                 "Services/FileBrowserSorting.swift",

@@ -15,7 +15,7 @@ struct FileBrowserDisplayContext: Equatable, Sendable {
     let contentRevision: Int
     let snapshotID: UUID?
     let searchScope: FileBrowserFindTarget
-    let searchText: String
+    let query: FileBrowserQuery
     let sortOrder: [FileNodeTableComparator]
     let hiddenNodeIDs: Set<FileNodeRecord.ID>
 
@@ -24,7 +24,7 @@ struct FileBrowserDisplayContext: Equatable, Sendable {
         contentRevision: 0,
         snapshotID: nil,
         searchScope: .currentContents,
-        searchText: "",
+        query: FileBrowserQuery(),
         sortOrder: [],
         hiddenNodeIDs: []
     )

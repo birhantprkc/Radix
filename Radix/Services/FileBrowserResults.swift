@@ -8,13 +8,13 @@ import Foundation
 enum FileBrowserResults {
     nonisolated static func filteredAndSortedCurrentContents(
         _ nodes: [FileNodeRecord],
-        searchText: String,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil
     ) -> [FileNodeRecord] {
         (try? filteredAndSortedCurrentContents(
             nodes,
-            searchText: searchText,
+            query: query,
             sortOrder: sortOrder,
             fileTreeStore: fileTreeStore,
             cancellationCheck: {}
@@ -23,14 +23,12 @@ enum FileBrowserResults {
 
     nonisolated static func filteredAndSortedCurrentContents(
         _ nodes: [FileNodeRecord],
-        searchText: String,
+        query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil,
         cancellationCheck: @Sendable () throws -> Void
     ) throws -> [FileNodeRecord] {
-        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !trimmedSearchText.isEmpty else {
+        guard query.isActive else {
             try cancellationCheck()
             return try sorted(
                 nodes,
@@ -40,8 +38,7 @@ enum FileBrowserResults {
             )
         }
 
-        let normalizedSearchText = SearchNormalizer.normalize(trimmedSearchText)
-        let includesPath = SearchNormalizer.queryIncludesPath(trimmedSearchText)
+        let preparedQuery = query.prepared()
         var filteredNodes: [FileNodeRecord] = []
         filteredNodes.reserveCapacity(min(nodes.count, 256))
 
@@ -50,11 +47,7 @@ enum FileBrowserResults {
                 try cancellationCheck()
             }
 
-            if SearchNormalizer.nodeMatches(
-                node,
-                normalizedQuery: normalizedSearchText,
-                includesPath: includesPath
-            ) {
+            if preparedQuery.matches(node) {
                 filteredNodes.append(node)
             }
         }
