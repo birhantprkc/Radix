@@ -229,9 +229,10 @@ repeated zoom actions.
 
 ### Interaction contract
 
-- The persistent button displays a magnification symbol, current zoom
-  percentage, and disclosure indicator. Keep a normal macOS hit target while
-  making its visual footprint materially smaller than the current full HUD.
+- The persistent button displays only a magnification symbol and disclosure
+  indicator. Keep a normal macOS hit target while making its visual footprint
+  materially smaller than the current full HUD. The current percentage remains
+  visible in the popover.
 - Opening the popover reveals the existing control row with unchanged symbols,
   localized labels, actions, and disabled states. The popover remains open for
   repeated actions until the user dismisses it.
@@ -239,7 +240,7 @@ repeated zoom actions.
   hover handlers, timers, focus state, manual Escape handling, custom
   transitions, or Reduce Motion branches.
 - Give the button a localized “Zoom Controls” accessibility label and expose the
-  current percentage as its accessibility value.
+  otherwise-hidden current percentage as its accessibility value.
 - Zoom shortcuts, gestures, accessibility chart actions, render geometry, hit
   testing, and the 100–400% viewport bounds remain unchanged.
 
@@ -252,7 +253,7 @@ operating it.
 ### Focused implementation
 
 1. Add one local `showsControls` Boolean to `ChartViewportControls` and replace
-   the persistent row with a compact button whose label includes `zoomText`.
+   the persistent row with a compact magnification/disclosure button.
 2. Present the existing control row in a native popover, reusing its action
    closures, enabled-state inputs, and `controlButton` helper.
 3. Keep both chart call sites and all viewport logic unchanged.
