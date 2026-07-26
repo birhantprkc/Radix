@@ -16,7 +16,6 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
-    @State private var sidebarWasAutoHiddenForComparison = false
     @State private var showsInspector = true
     @State private var inspectorPresentationBeforeComparison: Bool?
     @State private var discardPileDragIsActive = false
@@ -26,7 +25,7 @@ struct ContentView: View {
     var body: some View {
         let discardPileSnapshot = appModel.discardPileSnapshot
 
-        NavigationSplitView(columnVisibility: $splitViewVisibility) {
+        NavigationSplitView(columnVisibility: workspaceColumnVisibility) {
             SidebarView(
                 model: appModel.sidebar,
                 scanState: appModel.scanState,
@@ -56,15 +55,15 @@ struct ContentView: View {
                     appModel.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: focusNode)
                 },
                 closeScanComparison: {
-                    closeScanComparison()
+                    appModel.closeScanComparison()
                 },
-                workspaceDidAppear: workspaceDidAppear,
                 comparisonRowActions: comparisonRowActions,
                 actions: workspaceActions
             )
         }
         .navigationSplitViewStyle(.balanced)
         .focusedSceneValue(\.workspaceFocusAction) { target in
+            guard appModel.scanComparison == nil else { return }
             if target == .sidebar {
                 splitViewVisibility = .all
             }
@@ -83,22 +82,17 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
         }
         .focusedSceneValue(\.inspectorVisibility, $showsInspector)
-        .onChange(of: appModel.scanComparison?.id) { previousID, currentID in
-            Task { @MainActor in
-                await Task.yield()
-                guard appModel.scanComparison?.id == currentID else { return }
-                updateSidebarPresentationForComparison(
-                    wasComparing: previousID != nil,
-                    isComparing: currentID != nil
-                )
+        .onChange(of: appModel.scanComparison != nil) { _, isComparing in
+            if isComparing {
+                focusedWorkspaceTarget = nil
+                hideInspectorForComparison()
+            } else {
+                Task { @MainActor in
+                    await Task.yield()
+                    guard appModel.scanComparison == nil else { return }
+                    restoreInspectorAfterComparison()
+                }
             }
-        }
-        .onChange(of: appModel.archiveOperation) { previousOperation, currentOperation in
-            guard previousOperation?.kind == .compare,
-                  currentOperation == nil else {
-                return
-            }
-            restoreInspectorIfComparisonInactive()
         }
         .overlay(alignment: .top) {
             if let archiveOperation = appModel.archiveOperation {
@@ -191,13 +185,12 @@ struct ContentView: View {
                             appModel.swapPendingComparisonSetup()
                         },
                         onCancel: {
-                            cancelComparisonSetup()
+                            appModel.cancelComparisonSetup()
                         },
                         onCompare: {
-                            confirmComparisonSetup()
+                            appModel.confirmComparisonSetup()
                         }
                     )
-                    .onAppear(perform: comparisonSetupDidAppear)
                     .interactiveDismissDisabled()
                 }
             }
@@ -686,7 +679,6 @@ private struct WorkspaceDetailView: View {
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
     let closeScanComparison: () -> Void
-    let workspaceDidAppear: () -> Void
     let comparisonRowActions: ScanComparisonRowActions
     let actions: WorkspaceActions
 
@@ -712,7 +704,6 @@ private struct WorkspaceDetailView: View {
                 freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
                 actions: actions
             )
-                .onAppear(perform: workspaceDidAppear)
                 .toolbar {
                     ToolbarItemGroup(placement: .navigation) {
                         Button {
@@ -737,55 +728,27 @@ private struct WorkspaceDetailView: View {
 }
 
 private extension ContentView {
-    func updateSidebarPresentationForComparison(wasComparing: Bool, isComparing: Bool) {
-        if !wasComparing, isComparing, splitViewVisibility == .all {
-            sidebarWasAutoHiddenForComparison = true
-            splitViewVisibility = .detailOnly
-            return
-        }
-
-        guard wasComparing, !isComparing, sidebarWasAutoHiddenForComparison else { return }
-        sidebarWasAutoHiddenForComparison = false
-
-        if splitViewVisibility == .detailOnly {
-            splitViewVisibility = .all
-        }
+    var workspaceColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: {
+                appModel.scanComparison == nil ? splitViewVisibility : .detailOnly
+            },
+            set: { visibility in
+                guard appModel.scanComparison == nil else { return }
+                splitViewVisibility = visibility
+            }
+        )
     }
 
-    func comparisonSetupDidAppear() {
+    func hideInspectorForComparison() {
         guard inspectorPresentationBeforeComparison == nil else { return }
 
         inspectorPresentationBeforeComparison = showsInspector
         setInspectorPresented(false)
     }
 
-    func cancelComparisonSetup() {
-        appModel.cancelComparisonSetup()
-        restoreInspectorIfComparisonInactive()
-    }
-
-    func confirmComparisonSetup() {
-        appModel.confirmComparisonSetup()
-    }
-
-    func closeScanComparison() {
-        appModel.closeScanComparison()
-    }
-
-    func workspaceDidAppear() {
-        guard inspectorPresentationBeforeComparison != nil else { return }
-
-        Task { @MainActor in
-            await Task.yield()
-            restoreInspectorIfComparisonInactive()
-        }
-    }
-
-    func restoreInspectorIfComparisonInactive() {
-        guard appModel.pendingComparisonSetup == nil,
-              appModel.archiveOperation?.kind != .compare,
-              appModel.scanComparison == nil,
-              let previousPresentation = inspectorPresentationBeforeComparison else {
+    func restoreInspectorAfterComparison() {
+        guard let previousPresentation = inspectorPresentationBeforeComparison else {
             return
         }
 

@@ -17,7 +17,7 @@ struct RadixCommands: Commands {
                 workspaceFocusAction?(.sidebar)
             }
             .keyboardShortcut("1")
-            .disabled(workspaceFocusAction == nil)
+            .disabled(!appModel.canUseWorkspaceCommands || workspaceFocusAction == nil)
 
             Button("Focus Chart", systemImage: "chart.pie") {
                 workspaceFocusAction?(.chart)
