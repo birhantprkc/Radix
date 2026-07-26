@@ -140,6 +140,7 @@ private struct ExclusionPatternsEditor: View {
                 }
                 .labelStyle(.iconOnly)
                 .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
 
                 Spacer()
 
@@ -153,6 +154,7 @@ private struct ExclusionPatternsEditor: View {
                 }
                 .menuStyle(.button)
                 .controlSize(.small)
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
         .onChange(of: patterns) { _, newPatterns in
