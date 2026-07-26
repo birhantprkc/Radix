@@ -6,7 +6,7 @@ enum WorkspaceFocusTarget: Hashable {
     case contents
 }
 
-enum SunburstViewportAction {
+enum ChartViewportAction {
     case zoomIn
     case zoomOut
     case reset
@@ -24,8 +24,8 @@ private struct WorkspaceFocusActionKey: FocusedValueKey {
     typealias Value = (WorkspaceFocusTarget) -> Void
 }
 
-private struct SunburstViewportActionKey: FocusedValueKey {
-    typealias Value = (SunburstViewportAction) -> Void
+private struct ChartViewportActionKey: FocusedValueKey {
+    typealias Value = (ChartViewportAction) -> Void
 }
 
 extension FocusedValues {
@@ -44,8 +44,8 @@ extension FocusedValues {
         set { self[WorkspaceFocusActionKey.self] = newValue }
     }
 
-    var sunburstViewportAction: ((SunburstViewportAction) -> Void)? {
-        get { self[SunburstViewportActionKey.self] }
-        set { self[SunburstViewportActionKey.self] = newValue }
+    var chartViewportAction: ((ChartViewportAction) -> Void)? {
+        get { self[ChartViewportActionKey.self] }
+        set { self[ChartViewportActionKey.self] = newValue }
     }
 }

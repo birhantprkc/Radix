@@ -55,4 +55,19 @@ final class TreemapTooltipPlacementTests: XCTestCase {
 
         XCTAssertEqual(origin, CGPoint(x: 5, y: 4))
     }
+
+    func testAvoidsViewportControlsWhenAlternatePlacementIsAvailable() {
+        let origin = TreemapTooltipPlacement.origin(
+            for: CGPoint(x: 350, y: 20),
+            tooltipSize: tooltipSize,
+            in: bounds,
+            avoiding: CGRect(x: 440, y: 0, width: 160, height: 56)
+        )
+
+        XCTAssertEqual(origin, CGPoint(x: 136, y: 34))
+        XCTAssertFalse(
+            CGRect(origin: origin, size: tooltipSize)
+                .intersects(CGRect(x: 440, y: 0, width: 160, height: 56))
+        )
+    }
 }

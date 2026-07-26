@@ -4,15 +4,27 @@ struct TreemapBaseCanvas: View, Equatable {
     let segments: [TreemapSegment]
     let renderVersion: Int
     let colorScheme: ColorScheme
+    let contentFrame: CGRect
 
     static func == (lhs: TreemapBaseCanvas, rhs: TreemapBaseCanvas) -> Bool {
-        lhs.renderVersion == rhs.renderVersion && lhs.colorScheme == rhs.colorScheme
+        lhs.renderVersion == rhs.renderVersion
+            && lhs.colorScheme == rhs.colorScheme
+            && lhs.contentFrame == rhs.contentFrame
     }
 
     var body: some View {
         Canvas { context, size in
+            let viewportBounds = CGRect(origin: .zero, size: size)
+            context.clip(to: Path(viewportBounds))
+
             for segment in segments {
-                let path = tilePath(for: segment, in: size)
+                let displayRect = TreemapRenderer.displayRect(
+                    for: segment,
+                    in: contentFrame
+                )
+                guard displayRect.intersects(viewportBounds) else { continue }
+
+                let path = tilePath(in: displayRect)
                 let style = TreemapChartStyler.baseStyle(
                     for: segment,
                     colorScheme: colorScheme
@@ -28,26 +40,42 @@ struct TreemapLabelCanvas: View, Equatable {
     let segments: [TreemapSegment]
     let renderVersion: Int
     let colorScheme: ColorScheme
+    let contentFrame: CGRect
 
     static func == (lhs: TreemapLabelCanvas, rhs: TreemapLabelCanvas) -> Bool {
-        lhs.renderVersion == rhs.renderVersion && lhs.colorScheme == rhs.colorScheme
+        lhs.renderVersion == rhs.renderVersion
+            && lhs.colorScheme == rhs.colorScheme
+            && lhs.contentFrame == rhs.contentFrame
     }
 
     var body: some View {
         Canvas { context, size in
+            let viewportBounds = CGRect(origin: .zero, size: size)
+            context.clip(to: Path(viewportBounds))
+
             for segment in segments {
-                drawLabel(for: segment, in: size, context: &context)
+                drawLabel(
+                    for: segment,
+                    in: contentFrame,
+                    viewportBounds: viewportBounds,
+                    context: &context
+                )
             }
         }
     }
 
     private func drawLabel(
         for segment: TreemapSegment,
-        in size: CGSize,
+        in contentFrame: CGRect,
+        viewportBounds: CGRect,
         context: inout GraphicsContext
     ) {
-        let rect = TreemapRenderer.displayRect(for: segment, in: size)
-        guard rect.width >= 42, rect.height >= 20 else { return }
+        let rect = TreemapRenderer.displayRect(for: segment, in: contentFrame)
+        guard rect.intersects(viewportBounds),
+              rect.width >= 42,
+              rect.height >= 20 else {
+            return
+        }
 
         let horizontalPadding: CGFloat = 6
         let availableWidth = rect.width - (horizontalPadding * 2)
@@ -105,18 +133,27 @@ struct TreemapLabelCanvas: View, Equatable {
 
 struct TreemapSelectionOverlay: View, Equatable {
     let segment: TreemapSegment?
+    let contentFrame: CGRect
 
     var body: some View {
         Canvas { context, size in
             guard let segment else { return }
+            let viewportBounds = CGRect(origin: .zero, size: size)
+            let displayRect = TreemapRenderer.displayRect(
+                for: segment,
+                in: contentFrame
+            )
+            guard displayRect.intersects(viewportBounds) else { return }
+            context.clip(to: Path(viewportBounds))
+
             let style = TreemapChartStyler.selectionOverlayStyle()
             guard let accentPath = strokedTilePath(
                 for: segment,
-                in: size,
+                in: contentFrame,
                 lineWidth: style.strokeWidth
             ) else {
                 context.fill(
-                    tilePath(for: segment, in: size),
+                    tilePath(in: displayRect),
                     with: .color(style.strokeColor.opacity(0.72))
                 )
                 return
@@ -133,18 +170,27 @@ struct TreemapSelectionOverlay: View, Equatable {
 struct TreemapHoverOverlay: View, Equatable {
     let segment: TreemapSegment?
     let colorScheme: ColorScheme
+    let contentFrame: CGRect
 
     var body: some View {
         Canvas { context, size in
             guard let segment else { return }
-            let path = tilePath(for: segment, in: size)
+            let viewportBounds = CGRect(origin: .zero, size: size)
+            let displayRect = TreemapRenderer.displayRect(
+                for: segment,
+                in: contentFrame
+            )
+            guard displayRect.intersects(viewportBounds) else { return }
+            context.clip(to: Path(viewportBounds))
+
+            let path = tilePath(in: displayRect)
             let style = TreemapChartStyler.hoverOverlayStyle(colorScheme: colorScheme)
             if style.fillOpacity > 0 {
                 context.fill(path, with: .color(style.fillColor.opacity(style.fillOpacity)))
             }
             if let strokePath = strokedTilePath(
                 for: segment,
-                in: size,
+                in: contentFrame,
                 lineWidth: style.strokeWidth
             ) {
                 context.stroke(
@@ -158,11 +204,9 @@ struct TreemapHoverOverlay: View, Equatable {
 }
 
 private func tilePath(
-    for segment: TreemapSegment,
-    in size: CGSize,
+    in displayRect: CGRect,
     insetBy additionalInset: CGFloat = 0
 ) -> Path {
-    let displayRect = TreemapRenderer.displayRect(for: segment, in: size)
     let baseRadius = min(CGFloat(5), min(displayRect.width, displayRect.height) * 0.1)
     let maximumInset = max(min(displayRect.width, displayRect.height) / 2, 0)
     let inset = min(max(additionalInset, 0), maximumInset)
@@ -173,12 +217,12 @@ private func tilePath(
 
 private func strokedTilePath(
     for segment: TreemapSegment,
-    in size: CGSize,
+    in contentFrame: CGRect,
     lineWidth: CGFloat
 ) -> Path? {
     guard let strokeRect = TreemapRenderer.strokeRect(
         for: segment,
-        in: size,
+        in: contentFrame,
         lineWidth: lineWidth
     ) else {
         return nil

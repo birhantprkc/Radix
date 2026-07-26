@@ -13,8 +13,12 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
     let onMove: (ChartSpatialSelectionDirection) -> Bool
     let onKeyboardFocus: () -> Void
     let isKeyboardFocused: Bool
+    let onPan: (CGSize, CGPoint) -> Void
+    let onMagnify: (CGPoint, CGFloat) -> Void
+    let canStartPan: (CGPoint) -> Bool
     let discardPileDragItem: (CGPoint) -> TreemapDiscardPileDragItem?
     let onDiscardPileDragActiveChange: (Bool) -> Void
+    let isPanEnabled: Bool
 
     func makeNSView(context: Context) -> InteractionView {
         let view = InteractionView()
@@ -32,112 +36,22 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         view.onMove = onMove
         view.onKeyboardFocus = onKeyboardFocus
         view.isKeyboardFocused = isKeyboardFocused
+        view.onPan = onPan
+        view.onMagnify = onMagnify
+        view.canStartPan = canStartPan
         view.discardPileDragItem = discardPileDragItem
-        view.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
+        view.onDragActiveChange = onDiscardPileDragActiveChange
+        view.isPanEnabled = isPanEnabled
         view.acquireKeyboardFocusIfNeeded()
     }
 
-    final class InteractionView: ChartKeyboardInteractionView, NSDraggingSource {
-        var onHover: (CGPoint?) -> Void = { _ in }
-        var onClick: (CGPoint, Int) -> Void = { _, _ in }
+    final class InteractionView: ChartViewportInteractionView {
         var discardPileDragItem: (CGPoint) -> TreemapDiscardPileDragItem? = { _ in nil }
-        var onDiscardPileDragActiveChange: (Bool) -> Void = { _ in }
 
-        private static let dragThreshold: CGFloat = 3
         private static let dragImageSize = NSSize(width: 54, height: 38)
-        private var trackingArea: NSTrackingArea?
-        private var mouseDownLocation: CGPoint?
-        private var didDrag = false
 
-        override var isFlipped: Bool { true }
-
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            if let trackingArea { removeTrackingArea(trackingArea) }
-
-            let nextTrackingArea = NSTrackingArea(
-                rect: .zero,
-                options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
-                owner: self,
-                userInfo: nil
-            )
-            addTrackingArea(nextTrackingArea)
-            trackingArea = nextTrackingArea
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            onHover(eventLocation(event))
-        }
-
-        override func mouseMoved(with event: NSEvent) {
-            onHover(eventLocation(event))
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            onHover(nil)
-        }
-
-        override func mouseDown(with event: NSEvent) {
-            focusForKeyboardInput()
-            mouseDownLocation = eventLocation(event)
-            didDrag = false
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            guard !didDrag,
-                  let mouseDownLocation,
-                  didExceedDragThreshold(from: mouseDownLocation, to: eventLocation(event)),
-                  let dragItem = discardPileDragItem(mouseDownLocation),
-                  let draggingItem = draggingItem(for: dragItem, at: mouseDownLocation) else {
-                return
-            }
-
-            didDrag = true
-            onDiscardPileDragActiveChange(true)
-            beginDraggingSession(with: [draggingItem], event: event, source: self)
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            if !didDrag {
-                onClick(eventLocation(event), event.clickCount)
-            }
-            mouseDownLocation = nil
-            didDrag = false
-        }
-
-        func draggingSession(
-            _ session: NSDraggingSession,
-            sourceOperationMaskFor context: NSDraggingContext
-        ) -> NSDragOperation {
-            .copy
-        }
-
-        func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
-            true
-        }
-
-        func draggingSession(
-            _ session: NSDraggingSession,
-            endedAt screenPoint: NSPoint,
-            operation: NSDragOperation
-        ) {
-            onDiscardPileDragActiveChange(false)
-        }
-
-        private func eventLocation(_ event: NSEvent) -> CGPoint {
-            convert(event.locationInWindow, from: nil)
-        }
-
-        private func didExceedDragThreshold(from start: CGPoint, to end: CGPoint) -> Bool {
-            let dx = end.x - start.x
-            let dy = end.y - start.y
-            return ((dx * dx) + (dy * dy)) >= (Self.dragThreshold * Self.dragThreshold)
-        }
-
-        private func draggingItem(
-            for item: TreemapDiscardPileDragItem,
-            at location: CGPoint
-        ) -> NSDraggingItem? {
+        override func draggingItem(at location: CGPoint) -> NSDraggingItem? {
+            guard let item = discardPileDragItem(location) else { return nil }
             guard let data = try? JSONEncoder().encode(item.payload) else { return nil }
 
             let pasteboardItem = NSPasteboardItem()

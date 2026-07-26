@@ -13,7 +13,7 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
     let onMove: (ChartSpatialSelectionDirection) -> Bool
     let onKeyboardFocus: () -> Void
     let isKeyboardFocused: Bool
-    let onPan: (CGSize) -> Void
+    let onPan: (CGSize, CGPoint) -> Void
     let onMagnify: (CGPoint, CGFloat) -> Void
     let canStartPan: (CGPoint) -> Bool
     let discardPileDragItem: (CGPoint) -> SunburstDiscardPileDragItem?
@@ -23,6 +23,15 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
 
     func makeNSView(context: Context) -> InteractionView {
         let view = InteractionView()
+        update(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: InteractionView, context: Context) {
+        update(nsView)
+    }
+
+    private func update(_ view: InteractionView) {
         view.onHover = onHover
         view.onClick = onClick
         view.onMove = onMove
@@ -32,248 +41,18 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         view.onMagnify = onMagnify
         view.canStartPan = canStartPan
         view.discardPileDragItem = discardPileDragItem
-        view.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
+        view.onDragActiveChange = onDiscardPileDragActiveChange
         view.help = help
         view.isPanEnabled = isPanEnabled
         view.acquireKeyboardFocusIfNeeded()
-        return view
     }
 
-    func updateNSView(_ nsView: InteractionView, context: Context) {
-        nsView.onHover = onHover
-        nsView.onClick = onClick
-        nsView.onMove = onMove
-        nsView.onKeyboardFocus = onKeyboardFocus
-        nsView.isKeyboardFocused = isKeyboardFocused
-        nsView.onPan = onPan
-        nsView.onMagnify = onMagnify
-        nsView.canStartPan = canStartPan
-        nsView.discardPileDragItem = discardPileDragItem
-        nsView.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
-        nsView.help = help
-        nsView.isPanEnabled = isPanEnabled
-        nsView.acquireKeyboardFocusIfNeeded()
-    }
-
-    final class InteractionView: ChartKeyboardInteractionView, NSDraggingSource {
-        var onHover: (CGPoint?) -> Void = { _ in }
-        var onClick: (CGPoint, Int) -> Void = { _, _ in }
-        var onPan: (CGSize) -> Void = { _ in }
-        var onMagnify: (CGPoint, CGFloat) -> Void = { _, _ in }
-        var canStartPan: (CGPoint) -> Bool = { _ in false }
+    final class InteractionView: ChartViewportInteractionView {
         var discardPileDragItem: (CGPoint) -> SunburstDiscardPileDragItem? = { _ in nil }
-        var onDiscardPileDragActiveChange: (Bool) -> Void = { _ in }
-        var help: (CGPoint) -> String? = { _ in nil }
-        var isPanEnabled = false
 
-        private static let dragThreshold: CGFloat = 3
         private static let discardPileDragImageSize = NSSize(width: 42, height: 42)
-        private static let lineScrollScale: CGFloat = 10
-        fileprivate static let maximumScrollPanDelta: CGFloat = 80
-        private var trackingArea: NSTrackingArea?
-        private var mouseDownLocation: CGPoint?
-        private var lastDragLocation: CGPoint?
-        private var shouldPanFromMouseDownLocation = false
-        private var didPan = false
-        private var didStartDiscardPileDrag = false
-
-        override var isFlipped: Bool {
-            true
-        }
-
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-
-            if let trackingArea {
-                removeTrackingArea(trackingArea)
-            }
-
-            let trackingArea = NSTrackingArea(
-                rect: .zero,
-                options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
-                owner: self,
-                userInfo: nil
-            )
-            addTrackingArea(trackingArea)
-            self.trackingArea = trackingArea
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            updatePointerFeedback(at: eventLocation(event))
-        }
-
-        override func mouseMoved(with event: NSEvent) {
-            updatePointerFeedback(at: eventLocation(event))
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            onHover(nil)
-            toolTip = nil
-        }
-
-        override func mouseDown(with event: NSEvent) {
-            focusForKeyboardInput()
-            let location = eventLocation(event)
-            mouseDownLocation = location
-            lastDragLocation = location
-            shouldPanFromMouseDownLocation = isPanEnabled && canStartPan(location)
-            didPan = false
-            didStartDiscardPileDrag = false
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            guard let mouseDownLocation,
-                  let lastDragLocation else { return }
-
-            let location = eventLocation(event)
-            if !didPan {
-                guard didExceedDragThreshold(from: mouseDownLocation, to: location) else {
-                    return
-                }
-                didPan = true
-            }
-
-            if shouldPanFromMouseDownLocation {
-                defer { self.lastDragLocation = location }
-                guard isPanEnabled else { return }
-
-                onPan(CGSize(
-                    width: location.x - lastDragLocation.x,
-                    height: location.y - lastDragLocation.y
-                ))
-                updatePointerFeedback(at: location)
-                return
-            }
-
-            if !didStartDiscardPileDrag,
-               let discardPileDragItem = discardPileDragItem(mouseDownLocation),
-               let draggingItem = discardPileDraggingItem(
-                   for: discardPileDragItem,
-                   at: mouseDownLocation
-               ) {
-                didStartDiscardPileDrag = true
-                onDiscardPileDragActiveChange(true)
-                beginDraggingSession(with: [draggingItem], event: event, source: self)
-                return
-            }
-
-            defer { self.lastDragLocation = location }
-            guard isPanEnabled else { return }
-
-            onPan(CGSize(
-                width: location.x - lastDragLocation.x,
-                height: location.y - lastDragLocation.y
-            ))
-            updatePointerFeedback(at: location)
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            let location = eventLocation(event)
-            if !didPan {
-                onClick(location, event.clickCount)
-            }
-            mouseDownLocation = nil
-            lastDragLocation = nil
-            shouldPanFromMouseDownLocation = false
-            didPan = false
-            didStartDiscardPileDrag = false
-        }
-
-        override func magnify(with event: NSEvent) {
-            let location = eventLocation(event)
-            onMagnify(location, max(0.75, 1 + event.magnification))
-            updatePointerFeedback(at: location)
-        }
-
-        override func scrollWheel(with event: NSEvent) {
-            let location = eventLocation(event)
-            let zoomModifiers: NSEvent.ModifierFlags = [.command, .option]
-
-            if !event.modifierFlags.intersection(zoomModifiers).isEmpty {
-                let scrollDelta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : -event.scrollingDeltaX
-                guard scrollDelta != 0 else { return }
-
-                onMagnify(location, pow(1.0025, scrollDelta))
-                updatePointerFeedback(at: location)
-                return
-            }
-
-            if isPanEnabled {
-                guard let panDelta = panDelta(for: event) else { return }
-                onPan(panDelta)
-                updatePointerFeedback(at: location)
-                return
-            }
-
-            super.scrollWheel(with: event)
-        }
-
-        private func updateHelp(at location: CGPoint) {
-            toolTip = help(location)
-        }
-
-        private func updatePointerFeedback(at location: CGPoint) {
-            onHover(location)
-            updateHelp(at: location)
-        }
-
-        private func eventLocation(_ event: NSEvent) -> CGPoint {
-            convert(event.locationInWindow, from: nil)
-        }
-
-        private func didExceedDragThreshold(from start: CGPoint, to end: CGPoint) -> Bool {
-            let dx = end.x - start.x
-            let dy = end.y - start.y
-            return ((dx * dx) + (dy * dy)) >= (Self.dragThreshold * Self.dragThreshold)
-        }
-
-        private func panDelta(for event: NSEvent) -> CGSize? {
-            var delta = CGSize(
-                width: event.scrollingDeltaX,
-                height: event.scrollingDeltaY
-            )
-
-            guard delta != .zero else { return nil }
-
-            if !event.isDirectionInvertedFromDevice {
-                delta.width *= -1
-                delta.height *= -1
-            }
-
-            if !event.hasPreciseScrollingDeltas {
-                delta.width *= Self.lineScrollScale
-                delta.height *= Self.lineScrollScale
-            }
-
-            return CGSize(
-                width: delta.width.clampedScrollPanDelta,
-                height: delta.height.clampedScrollPanDelta
-            )
-        }
-
-        func draggingSession(
-            _ session: NSDraggingSession,
-            sourceOperationMaskFor context: NSDraggingContext
-        ) -> NSDragOperation {
-            .copy
-        }
-
-        func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
-            true
-        }
-
-        func draggingSession(
-            _ session: NSDraggingSession,
-            endedAt screenPoint: NSPoint,
-            operation: NSDragOperation
-        ) {
-            onDiscardPileDragActiveChange(false)
-        }
-
-        private func discardPileDraggingItem(
-            for item: SunburstDiscardPileDragItem,
-            at location: CGPoint
-        ) -> NSDraggingItem? {
+        override func draggingItem(at location: CGPoint) -> NSDraggingItem? {
+            guard let item = discardPileDragItem(location) else { return nil }
             guard let data = try? JSONEncoder().encode(item.payload) else { return nil }
 
             let pasteboardItem = NSPasteboardItem()
@@ -381,14 +160,5 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         private func degrees(_ radians: Double) -> CGFloat {
             CGFloat(radians * 180 / .pi)
         }
-    }
-}
-
-private extension CGFloat {
-    var clampedScrollPanDelta: CGFloat {
-        Swift.min(
-            Swift.max(self, -SunburstInteractionOverlay.InteractionView.maximumScrollPanDelta),
-            SunburstInteractionOverlay.InteractionView.maximumScrollPanDelta
-        )
     }
 }

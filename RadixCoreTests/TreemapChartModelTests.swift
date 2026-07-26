@@ -427,7 +427,7 @@ final class TreemapChartModelTests: XCTestCase {
         XCTAssertNil(model.layoutReadiness.failure)
     }
 
-    func testCancellationPreservesLastRenderWithoutPublishingError() async {
+    func testSameSemanticLayoutCancellationPreservesResolvedRender() async {
         let service = ControllableTreemapLayoutService(resumesOnCancellation: true)
         let model = TreemapChartModel(layoutService: service)
         let store = makeTreemapStore()
@@ -454,7 +454,7 @@ final class TreemapChartModelTests: XCTestCase {
                 rootID: store.rootID,
                 depthLimit: 2,
                 size: CGSize(width: 800, height: 400),
-                layoutID: "cancelled"
+                layoutID: "initial"
             )
         }
         await service.waitForIssuedRequestCount(2)
@@ -466,6 +466,8 @@ final class TreemapChartModelTests: XCTestCase {
         XCTAssertEqual(model.renderedSegments.map(\.id), [initialSegment.id])
         XCTAssertNil(model.layoutReadiness.failure)
         XCTAssertFalse(model.layoutReadiness.isPending)
+        XCTAssertFalse(model.layoutReadiness.isRenderingPending(layoutID: "initial"))
+        XCTAssertTrue(model.layoutReadiness.isRenderingPending(layoutID: "different"))
     }
 }
 

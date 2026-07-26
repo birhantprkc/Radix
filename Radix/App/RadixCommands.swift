@@ -7,7 +7,7 @@ struct RadixCommands: Commands {
     @FocusedValue(\.fileListFilterAction) private var fileListFilterAction
     @FocusedValue(\.inspectorVisibility) private var inspectorVisibility
     @FocusedValue(\.workspaceFocusAction) private var workspaceFocusAction
-    @FocusedValue(\.sunburstViewportAction) private var sunburstViewportAction
+    @FocusedValue(\.chartViewportAction) private var chartViewportAction
 
     var body: some Commands {
         SidebarCommands()
@@ -50,32 +50,32 @@ struct RadixCommands: Commands {
             Divider()
 
             Button("Zoom In", systemImage: "plus.magnifyingglass") {
-                sunburstViewportAction?(.zoomIn)
+                chartViewportAction?(.zoomIn)
             }
             .keyboardShortcut("+", modifiers: [.command])
             .disabled(
                 !appModel.canUseWorkspaceCommands ||
-                    sunburstViewportAction == nil ||
+                    chartViewportAction == nil ||
                     scanState.snapshot == nil
             )
 
             Button("Zoom Out", systemImage: "minus.magnifyingglass") {
-                sunburstViewportAction?(.zoomOut)
+                chartViewportAction?(.zoomOut)
             }
             .keyboardShortcut("-", modifiers: [.command])
             .disabled(
                 !appModel.canUseWorkspaceCommands ||
-                    sunburstViewportAction == nil ||
+                    chartViewportAction == nil ||
                     scanState.snapshot == nil
             )
 
             Button("Actual Size", systemImage: "arrow.counterclockwise") {
-                sunburstViewportAction?(.reset)
+                chartViewportAction?(.reset)
             }
             .keyboardShortcut("0", modifiers: [.command])
             .disabled(
                 !appModel.canUseWorkspaceCommands ||
-                    sunburstViewportAction == nil ||
+                    chartViewportAction == nil ||
                     scanState.snapshot == nil
             )
         }

@@ -1,10 +1,10 @@
 import XCTest
 @testable import RadixCore
 
-final class SunburstViewportTransformTests: XCTestCase {
+final class ChartViewportTransformTests: XCTestCase {
     func testZoomExpandsChartAroundBaseCenter() {
         let baseFrame = CGRect(x: 10, y: 20, width: 200, height: 100)
-        let transform = SunburstViewportTransform().zoomed(
+        let transform = ChartViewportTransform().zoomed(
             by: 2,
             anchor: nil,
             in: baseFrame
@@ -18,7 +18,7 @@ final class SunburstViewportTransformTests: XCTestCase {
     func testZoomAroundAnchorKeepsAnchoredPointStable() throws {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 200)
         let anchor = CGPoint(x: 150, y: 100)
-        let transform = SunburstViewportTransform().zoomed(
+        let transform = ChartViewportTransform().zoomed(
             by: 2,
             anchor: anchor,
             in: baseFrame
@@ -31,9 +31,69 @@ final class SunburstViewportTransformTests: XCTestCase {
         XCTAssertEqual(localChartPoint.size, CGSize(width: 400, height: 400))
     }
 
+    func testZoomAroundAnchorKeepsPannedContentStable() throws {
+        let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 100)
+        let anchor = CGPoint(x: 60, y: 40)
+        let transform = ChartViewportTransform(
+            scale: 2,
+            offset: CGSize(width: 30, height: -10)
+        )
+        let originalPoint = try XCTUnwrap(
+            transform.localChartPoint(for: anchor, in: baseFrame)
+        )
+
+        let zoomed = transform.zoomed(
+            by: 1.5,
+            anchor: anchor,
+            in: baseFrame
+        )
+        let zoomedPoint = try XCTUnwrap(
+            zoomed.localChartPoint(for: anchor, in: baseFrame)
+        )
+
+        XCTAssertEqual(zoomed.scale, 3)
+        XCTAssertEqual(zoomed.offset, CGSize(width: 65, height: -10))
+        XCTAssertEqual(
+            zoomedPoint.point.x / zoomedPoint.size.width,
+            originalPoint.point.x / originalPoint.size.width,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            zoomedPoint.point.y / zoomedPoint.size.height,
+            originalPoint.point.y / originalPoint.size.height,
+            accuracy: 0.000_001
+        )
+    }
+
+    func testInverseMappingCombinesZoomAndPanInNonSquareViewport() throws {
+        let baseFrame = CGRect(x: 0, y: 0, width: 300, height: 120)
+        let transform = ChartViewportTransform(
+            scale: 2.5,
+            offset: CGSize(width: -70, height: 35)
+        )
+        let pointer = CGPoint(x: 80, y: 60)
+
+        let chartPoint = try XCTUnwrap(
+            transform.localChartPoint(for: pointer, in: baseFrame)
+        )
+
+        XCTAssertEqual(chartPoint.point, CGPoint(x: 375, y: 115))
+        XCTAssertEqual(chartPoint.size, CGSize(width: 750, height: 300))
+        XCTAssertEqual(
+            chartPoint.point.x / chartPoint.size.width,
+            0.5,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            chartPoint.point.y / chartPoint.size.height,
+            115 / 300,
+            accuracy: 0.000_001
+        )
+    }
+
     func testPanOffsetIsConstrainedToKeepBaseFrameCovered() {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 100)
-        let transform = SunburstViewportTransform(scale: 2).panned(
+        let transform = ChartViewportTransform(scale: 2).panned(
             by: CGSize(width: 500, height: -500),
             in: baseFrame
         )
@@ -44,7 +104,7 @@ final class SunburstViewportTransformTests: XCTestCase {
 
     func testRevealingPointPansZoomedViewportIntoSafeFrame() {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 200)
-        let transform = SunburstViewportTransform(scale: 2)
+        let transform = ChartViewportTransform(scale: 2)
 
         let revealed = transform.revealing(
             point: CGPoint(x: 280, y: 100),
@@ -57,7 +117,7 @@ final class SunburstViewportTransformTests: XCTestCase {
 
     func testRevealingVisiblePointPreservesViewport() {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 200)
-        let transform = SunburstViewportTransform(
+        let transform = ChartViewportTransform(
             scale: 2,
             offset: CGSize(width: 20, height: -10)
         )
@@ -74,7 +134,7 @@ final class SunburstViewportTransformTests: XCTestCase {
 
     func testConstrainedShrinksOffsetForSmallerFrame() {
         let smallerFrame = CGRect(x: 0, y: 0, width: 120, height: 80)
-        let transform = SunburstViewportTransform(
+        let transform = ChartViewportTransform(
             scale: 2,
             offset: CGSize(width: 100, height: -100)
         ).constrained(to: smallerFrame)
@@ -85,7 +145,7 @@ final class SunburstViewportTransformTests: XCTestCase {
 
     func testZoomOutToMinimumResetsOffset() {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 100)
-        let transform = SunburstViewportTransform(
+        let transform = ChartViewportTransform(
             scale: 2,
             offset: CGSize(width: 40, height: -20)
         ).zoomed(
@@ -99,7 +159,7 @@ final class SunburstViewportTransformTests: XCTestCase {
 
     func testZoomRespectsCustomMaximumScale() {
         let baseFrame = CGRect(x: 0, y: 0, width: 200, height: 100)
-        let transform = SunburstViewportTransform().zoomed(
+        let transform = ChartViewportTransform().zoomed(
             by: 4,
             anchor: nil,
             in: baseFrame,

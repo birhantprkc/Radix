@@ -46,6 +46,36 @@ struct ChartLayoutReadiness: Equatable, Sendable {
     }
 }
 
+struct ChartLayoutPresentationState: Equatable, Sendable {
+    let isAwaitingLayout: Bool
+    let canUseRenderedLayout: Bool
+    let showsFailure: Bool
+
+    init(
+        readiness: ChartLayoutReadiness,
+        layoutID: String,
+        isInputPending: Bool
+    ) {
+        let hasCurrentRenderedLayout = readiness.renderedLayoutID == layoutID
+        let hasCurrentFailure = readiness.failedLayoutID == layoutID
+
+        isAwaitingLayout = isInputPending
+            || readiness.isPending
+            || (!hasCurrentRenderedLayout && !hasCurrentFailure)
+        canUseRenderedLayout = !isInputPending
+            && !readiness.isPending
+            && hasCurrentRenderedLayout
+        showsFailure = !isInputPending
+            && !readiness.isPending
+            && hasCurrentFailure
+            && readiness.failure != nil
+    }
+
+    var shouldObscureRenderedLayout: Bool {
+        !canUseRenderedLayout
+    }
+}
+
 struct ChartLayoutRequest<Output: Sendable> {
     let generation: Int
     let layoutID: String
