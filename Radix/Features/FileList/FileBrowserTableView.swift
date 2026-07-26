@@ -536,12 +536,12 @@ struct FileBrowserTableView: View {
     }
 
     private var exitCommandHandler: (() -> Void)? {
-        guard isSearchFieldFocused || model.activeQuery.isActive else { return nil }
+        guard isSearchFieldFocused || model.activeQuery != FileBrowserQuery() else { return nil }
         return handleExitCommand
     }
 
     private func handleExitCommand() {
-        if model.activeQuery.isActive {
+        if model.activeQuery != FileBrowserQuery() {
             model.clearActiveQuery()
         } else {
             isSearchFieldFocused = false
