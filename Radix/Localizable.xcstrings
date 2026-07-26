@@ -17882,6 +17882,41 @@
         }
       }
     },
+    "Zoom Controls" : {
+      "comment" : "Accessibility label for opening the disk map zoom controls.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoomsteuerung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controles de zoom"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commandes de zoom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlli zoom"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缩放控制"
+          }
+        }
+      }
+    },
     "Zoom In" : {
       "comment" : "Accessibility action for zooming into the disk map.\nAccessibility label for zooming into the disk map.",
       "localizations" : {

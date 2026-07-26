@@ -7,8 +7,42 @@ struct ChartViewportControls: View {
     let zoomOut: () -> Void
     let zoomIn: () -> Void
     let reset: () -> Void
+    @State private var showsControls = false
 
     var body: some View {
+        let accessibilityLabel = String(
+            localized: "Zoom Controls",
+            comment: "Accessibility label for opening the disk map zoom controls."
+        )
+
+        Button {
+            showsControls.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .semibold))
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(zoomText)
+        .help(accessibilityLabel)
+        .popover(isPresented: $showsControls, arrowEdge: .trailing) {
+            controlRow
+                .padding(10)
+        }
+    }
+
+    private var controlRow: some View {
         HStack(spacing: 6) {
             controlButton(
                 systemName: "minus.magnifyingglass",
@@ -39,9 +73,6 @@ struct ChartViewportControls: View {
             )
             .disabled(!canZoomOut)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func controlButton(

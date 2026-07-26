@@ -282,3 +282,13 @@ Checkpoint commit:
 - Switch repeatedly between treemap and sunburst and confirm both use identical
   compact-popover behavior with unchanged zoom actions.
 - Run `rtk swift test` and the complete Debug app build before committing.
+
+Implementation completed on 2026-07-25:
+
+- The production change is confined to `ChartViewportControls` and one localized
+  accessibility string; both chart call sites and all viewport logic are
+  unchanged.
+- Full `swift test`: 713 tests executed, 18 skipped, 0 failures.
+- Complete Debug app build succeeded.
+- Real-app checks confirmed repeated Zoom In, live percentage and disabled-state
+  updates, Reset, Escape dismissal, and identical treemap/sunburst behavior.
