@@ -183,7 +183,7 @@ private struct FileBrowserFilterEditor: View {
                 Text("At Most").tag(FileBrowserSizeRelation.atMost)
             }
             .labelsHidden()
-            .frame(minWidth: 120, maxWidth: .infinity)
+            .frame(width: 164)
 
             TextField(
                 "Any",
