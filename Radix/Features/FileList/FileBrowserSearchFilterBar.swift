@@ -72,7 +72,8 @@ struct FileBrowserSearchFilterBar: View {
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
     }
 
     private var clearTextButton: some View {
