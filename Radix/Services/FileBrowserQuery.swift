@@ -108,6 +108,10 @@ nonisolated enum FileBrowserSizeUnit: CaseIterable, Hashable, Identifiable, Send
         return Int64(exactly: (value * Double(bytes)).rounded())
     }
 
+    func value(for bytes: Int64) -> Double {
+        Double(bytes) / Double(self.bytes)
+    }
+
     static func bestUnit(for bytes: Int64) -> Self {
         guard bytes > 0 else { return .megabytes }
 

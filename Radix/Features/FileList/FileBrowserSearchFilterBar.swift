@@ -125,7 +125,7 @@ private struct FileBrowserFilterEditor: View {
         let filter = query.wrappedValue.allocatedSize
         let unit = FileBrowserSizeUnit.bestUnit(for: filter?.bytes ?? 0)
         _sizeRelation = State(initialValue: filter?.relation ?? .greaterThan)
-        _sizeValue = State(initialValue: filter.map { Double($0.bytes) / Double(unit.bytes) })
+        _sizeValue = State(initialValue: filter.map { unit.value(for: $0.bytes) })
         _sizeUnit = State(initialValue: unit)
     }
 
@@ -159,7 +159,7 @@ private struct FileBrowserFilterEditor: View {
         GridRow {
             Text("Kind")
 
-            Picker("Kind", selection: itemKindBinding) {
+            Picker("Kind", selection: $query.itemKind) {
                 Text("Any").tag(nil as FileBrowserItemKindFilter?)
                 Text("File").tag(FileBrowserItemKindFilter.file as FileBrowserItemKindFilter?)
                 Text("Folder").tag(FileBrowserItemKindFilter.folder as FileBrowserItemKindFilter?)
@@ -188,9 +188,10 @@ private struct FileBrowserFilterEditor: View {
             TextField(
                 "Any",
                 value: $sizeValue,
-                format: .number.precision(.fractionLength(0...2))
+                // Two fractional KB digits require up to 11 when displayed as TB.
+                format: .number.precision(.fractionLength(0...11))
             )
-            .frame(width: 80)
+            .frame(width: 100)
             .accessibilityLabel("Size value")
 
             Picker("Size unit", selection: $sizeUnit) {
@@ -199,7 +200,7 @@ private struct FileBrowserFilterEditor: View {
                 }
             }
             .labelsHidden()
-            .frame(width: 70)
+            .frame(width: 60)
         }
         .onChange(of: sizeRelation) {
             updateSizeFilter()
@@ -207,21 +208,17 @@ private struct FileBrowserFilterEditor: View {
         .onChange(of: sizeValue) {
             updateSizeFilter()
         }
-        .onChange(of: sizeUnit) {
-            updateSizeFilter()
+        .onChange(of: sizeUnit) { _, newUnit in
+            guard let bytes = query.allocatedSize?.bytes else { return }
+            sizeValue = newUnit.value(for: bytes)
         }
-    }
-
-    private var itemKindBinding: Binding<FileBrowserItemKindFilter?> {
-        Binding(
-            get: { query.itemKind },
-            set: { query.itemKind = $0 }
-        )
     }
 
     private func updateSizeFilter() {
         guard let sizeValue else {
-            query.allocatedSize = nil
+            if query.allocatedSize != nil {
+                query.allocatedSize = nil
+            }
             return
         }
         guard let bytes = sizeUnit.byteCount(for: sizeValue) else {
@@ -230,10 +227,13 @@ private struct FileBrowserFilterEditor: View {
             return
         }
 
-        query.allocatedSize = FileBrowserAllocatedSizeFilter(
+        let filter = FileBrowserAllocatedSizeFilter(
             relation: sizeRelation,
             bytes: bytes
         )
+        if query.allocatedSize != filter {
+            query.allocatedSize = filter
+        }
     }
 }
 

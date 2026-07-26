@@ -21,6 +21,18 @@ Keep fixes narrowly scoped to verified problems.
 7. Run core tests, a complete macOS build, rendered UI checks, and a final diff
    review.
 
+## Follow-up visual and SwiftUI review
+
+1. Recheck the filter editor at its current fixed width, including localized
+   control titles and the active/inactive layouts.
+2. Exercise keyboard focus, dismissal/reopening, unit changes, and clearing.
+3. Preserve the represented byte threshold when the user changes units; the
+   current picker keeps the numeric value fixed and silently rescales the
+   filter.
+4. Remove only redundant SwiftUI plumbing encountered in the confirmed fix.
+5. Rebuild and repeat the rendered and accessibility checks before updating the
+   pull request.
+
 ## Findings
 
 - Prevented an integer-conversion trap for nonrepresentable size thresholds.
@@ -31,6 +43,9 @@ Keep fixes narrowly scoped to verified problems.
   detection behavior produces matching results.
 - Exposed structured-filter state and field purposes to accessibility clients,
   including the active filter count and labels for the size controls.
+- Preserved the represented threshold when changing display units and
+  reallocated unused unit-picker width so converted fractional values remain
+  visible without widening the popover.
 - Verified that Current Contents and Entire Scan keep independent structured
   queries and that clearing one scope does not affect the other.
 - Removed an unused production search-text mutation API and stale localization
@@ -46,6 +61,7 @@ Keep fixes narrowly scoped to verified problems.
   and 0 failures.
 - Complete Debug macOS app build passed.
 - The built app was exercised with Current Contents and Entire Scan, fractional
-  size thresholds, a nonrepresentable size value, popover dismissal/reopening,
-  and accessibility inspection.
+  size thresholds, cross-unit conversions, a nonrepresentable size value,
+  compact and full-width popovers, dismissal/reopening, and accessibility
+  inspection.
 - The final diff was reviewed for redundant state, branches, helpers, and tests.
