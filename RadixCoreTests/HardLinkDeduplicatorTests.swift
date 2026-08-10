@@ -288,6 +288,34 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         XCTAssertEqual(updatedStore.aggregateStats.totalAllocatedSize, 100)
     }
 
+    func testRemovingWinningOwnerRepairsAndResortsPromotedOwnerAncestors() throws {
+        let identity = FileIdentity(device: 1, inode: 43)
+        let winner = makeFile(id: "/root/A/a.bin", allocatedSize: 100, identity: identity)
+        let promoted = makeFile(
+            id: "/root/B/z.bin",
+            allocatedSize: 0,
+            unduplicatedAllocatedSize: 100,
+            identity: identity
+        )
+        let sibling = makeFile(id: "/root/B/m.bin", allocatedSize: 50, linkCount: 1)
+        let firstDirectory = makeDirectory(id: "/root/A", children: [winner])
+        let secondDirectory = makeDirectory(id: "/root/B", children: [sibling, promoted])
+        let root = makeDirectory(id: "/root", children: [firstDirectory, secondDirectory])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [firstDirectory, secondDirectory],
+            firstDirectory.id: [winner],
+            secondDirectory.id: [sibling, promoted],
+        ])
+
+        let updatedStore = try XCTUnwrap(store.removingSubtree(id: firstDirectory.id))
+
+        XCTAssertEqual(updatedStore.node(id: promoted.id)?.allocatedSize, 100)
+        XCTAssertEqual(updatedStore.node(id: secondDirectory.id)?.allocatedSize, 150)
+        XCTAssertEqual(updatedStore.childIDs(of: secondDirectory.id), [promoted.id, sibling.id])
+        XCTAssertEqual(updatedStore.root.allocatedSize, 150)
+        XCTAssertEqual(updatedStore.aggregateStats.totalAllocatedSize, 150)
+    }
+
     func testBatchRemovalPromotesRemainingHardLinkOwnerOnce() {
         let identity = FileIdentity(device: 1, inode: 142)
         let winner = makeFile(id: "/root/A/a.bin", allocatedSize: 100, identity: identity)

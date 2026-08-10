@@ -272,30 +272,66 @@ nonisolated struct HardLinkDeduplicator {
             claimNodeIndices.append(nodeIndex)
         }
 
-        guard !hardLinkAccumulator.isEmpty else { return store }
+        return try rebalancedStore(
+            store,
+            hardLinkAccumulator: hardLinkAccumulator,
+            claimNodeIndices: claimNodeIndices,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    nonisolated static func rebalancedStore(
+        _ store: FileTreeStore,
+        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        claimNodeIndices: [FileTreeNodeIndex],
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore {
+        let replacements = try rebalancedAllocatedSizeReplacements(
+            hardLinkAccumulator: hardLinkAccumulator,
+            claimNodeIndices: claimNodeIndices,
+            nodeAt: { nodeIndex in
+                guard let node = store.node(at: nodeIndex) else {
+                    preconditionFailure("Hard-link claim index is out of range.")
+                }
+                return node
+            },
+            cancellationCheck: cancellationCheck
+        )
+        guard !replacements.isEmpty else { return store }
+
+        return try store.replacingAllocatedSizes(
+            replacements,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    nonisolated static func rebalancedAllocatedSizeReplacements(
+        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        claimNodeIndices: [FileTreeNodeIndex],
+        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
+        cancellationCheck: () throws -> Void
+    ) throws -> [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)] {
+        guard !hardLinkAccumulator.isEmpty else { return [] }
 
         let duplicateAllocatedSizeByOwner = try hardLinkAccumulator.duplicateAllocatedSizeByOwner(
             cancellationCheck: cancellationCheck
         )
-        var targetAllocatedSizeByNodeID: [String: Int64] = [:]
-        targetAllocatedSizeByNodeID.reserveCapacity(claimNodeIndices.count)
+        var replacements: [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)] = []
+        replacements.reserveCapacity(claimNodeIndices.count)
         for (offset, nodeIndex) in claimNodeIndices.enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            guard let node = store.node(at: nodeIndex) else { continue }
+            let node = nodeAt(nodeIndex)
             let duplicateAllocatedSize = duplicateAllocatedSizeByOwner[node.id] ?? 0
-            let targetAllocatedSize = max(0, node.unduplicatedAllocatedSize - duplicateAllocatedSize)
+            let targetAllocatedSize = max(
+                0,
+                node.unduplicatedAllocatedSize - duplicateAllocatedSize
+            )
             guard node.allocatedSize != targetAllocatedSize else { continue }
-            targetAllocatedSizeByNodeID[node.id] = targetAllocatedSize
+            replacements.append((nodeIndex, targetAllocatedSize))
         }
-
-        guard !targetAllocatedSizeByNodeID.isEmpty else { return store }
-
-        return try store.replacingAllocatedSizes(
-            targetAllocatedSizeByNodeID,
-            cancellationCheck: cancellationCheck
-        )
+        return replacements
     }
 
     private nonisolated static func rebuildAffectedAncestorDirectories(
@@ -405,7 +441,7 @@ nonisolated struct HardLinkDeduplicator {
         }
     }
 
-    private nonisolated static func claim(for node: FileNodeRecord) -> HardLinkClaim? {
+    nonisolated static func claim(for node: FileNodeRecord) -> HardLinkClaim? {
         guard !node.isDirectory,
               !node.isSymbolicLink,
               !node.isSynthetic else {

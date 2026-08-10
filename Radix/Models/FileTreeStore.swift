@@ -289,6 +289,54 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
         }
         return result
     }
+
+    static func preorderNodeIndices(
+        rootIndex: FileTreeNodeIndex,
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
+        includedByOffset: [Bool],
+        capacity: Int,
+        cancellationCheck: () throws -> Void
+    ) rethrows -> [FileTreeNodeIndex] {
+        precondition(includedByOffset.count == childSpans.count)
+        guard includedByOffset[Int(rootIndex.rawValue)] else { return [] }
+
+        var result: [FileTreeNodeIndex] = []
+        result.reserveCapacity(capacity)
+        var stack = [rootIndex]
+        while let nodeIndex = stack.popLast() {
+            try cancellationCheck()
+            result.append(nodeIndex)
+
+            let span = childSpans[Int(nodeIndex.rawValue)]
+            let start = Int(span.start)
+            let end = start + Int(span.count)
+            for (offset, childIndex) in childIndices[start..<end].reversed().enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                if includedByOffset[Int(childIndex.rawValue)] {
+                    stack.append(childIndex)
+                }
+            }
+        }
+        return result
+    }
+
+    func preorderNodeIndices(
+        includedByOffset: [Bool],
+        capacity: Int,
+        cancellationCheck: () throws -> Void
+    ) rethrows -> [FileTreeNodeIndex] {
+        try Self.preorderNodeIndices(
+            rootIndex: rootIndex,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            includedByOffset: includedByOffset,
+            capacity: capacity,
+            cancellationCheck: cancellationCheck
+        )
+    }
 }
 
 nonisolated struct FileTreeStore: Sendable {
@@ -739,6 +787,50 @@ nonisolated struct FileTreeStore: Sendable {
         return lhs.allocatedSize > rhs.allocatedSize
     }
 
+    private nonisolated static func restoringDisplayOrderAfterChanges(
+        _ childIndices: [FileTreeNodeIndex],
+        changedByOffset: [Bool],
+        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord
+    ) -> [FileTreeNodeIndex] {
+        var changedPosition: Int?
+        for (position, childIndex) in childIndices.enumerated()
+        where changedByOffset[Int(childIndex.rawValue)] {
+            guard changedPosition == nil else {
+                return childIndices.sorted {
+                    areInDisplayOrder(nodeAt($0), nodeAt($1))
+                }
+            }
+            changedPosition = position
+        }
+        guard let changedPosition else { return childIndices }
+
+        var reorderedChildren = childIndices
+        let changedChild = reorderedChildren.remove(at: changedPosition)
+        let changedNode = nodeAt(changedChild)
+        var lowerBound = 0
+        var upperBound = reorderedChildren.count
+        while lowerBound < upperBound {
+            let candidatePosition = lowerBound + (upperBound - lowerBound) / 2
+            let candidateNode = nodeAt(reorderedChildren[candidatePosition])
+            if areInDisplayOrder(changedNode, candidateNode) {
+                upperBound = candidatePosition
+            } else if areInDisplayOrder(candidateNode, changedNode) {
+                lowerBound = candidatePosition + 1
+            } else {
+                let originalCandidatePosition = candidatePosition < changedPosition
+                    ? candidatePosition
+                    : candidatePosition + 1
+                if changedPosition < originalCandidatePosition {
+                    upperBound = candidatePosition
+                } else {
+                    lowerBound = candidatePosition + 1
+                }
+            }
+        }
+        reorderedChildren.insert(changedChild, at: lowerBound)
+        return reorderedChildren
+    }
+
     private nonisolated static func uniqueChildrenAndDroppedIDs(
         _ children: [FileNodeRecord],
         seenNodeIDs: inout Set<String>
@@ -933,64 +1025,22 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func replacingAllocatedSizes(
-        _ allocatedSizeByNodeID: [String: Int64],
+        _ replacements: [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)],
         cancellationCheck: () throws -> Void
     ) throws -> FileTreeStore {
-        guard !allocatedSizeByNodeID.isEmpty else { return self }
+        guard !replacements.isEmpty else { return self }
 
         var updatedRecords = nodeRecords
-        var changedOffsets = Set<Int>()
-        changedOffsets.reserveCapacity(allocatedSizeByNodeID.count)
-        for (nodeID, allocatedSize) in allocatedSizeByNodeID {
-            try cancellationCheck()
-            guard let nodeIndex = nodeIndex(id: nodeID) else { continue }
-            let offset = Int(nodeIndex.rawValue)
-            guard updatedRecords[offset].allocatedSize != allocatedSize else { continue }
-            updatedRecords[offset] = updatedRecords[offset].replacingAllocatedSize(allocatedSize)
-            changedOffsets.insert(offset)
-        }
-        guard !changedOffsets.isEmpty else { return self }
-
-        var affectedAncestors = Array(repeating: false, count: nodeRecords.count)
-        for changedOffset in changedOffsets {
-            var cursor = topologyArena.parentIndex(
-                of: FileTreeNodeIndex(rawValue: UInt32(changedOffset))
-            )
-            while let ancestorIndex = cursor {
-                try cancellationCheck()
-                let ancestorOffset = Int(ancestorIndex.rawValue)
-                guard !affectedAncestors[ancestorOffset] else { break }
-                affectedAncestors[ancestorOffset] = true
-                cursor = topologyArena.parentIndex(of: ancestorIndex)
-            }
-        }
-
         var updatedChildIndices = topologyArena.childIndices
-        for nodeIndex in topologyArena.orderedNodeIndices.reversed() {
-            let nodeOffset = Int(nodeIndex.rawValue)
-            if nodeOffset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            guard affectedAncestors[nodeOffset], updatedRecords[nodeOffset].isDirectory else {
-                continue
-            }
-
-            let span = topologyArena.childSpans[nodeOffset]
-            let start = Int(span.start)
-            let end = start + Int(span.count)
-            var children = Array(updatedChildIndices[start..<end])
-            children.sort { lhsIndex, rhsIndex in
-                Self.areInDisplayOrder(
-                    updatedRecords[Int(lhsIndex.rawValue)],
-                    updatedRecords[Int(rhsIndex.rawValue)]
-                )
-            }
-            updatedRecords[nodeOffset] = Self.repairingDirectoryRecord(
-                updatedRecords[nodeOffset],
-                children: children.map { updatedRecords[Int($0.rawValue)] }
-            )
-            updatedChildIndices.replaceSubrange(start..<end, with: children)
-        }
+        guard try Self.applyAllocatedSizeReplacements(
+            replacements,
+            to: &updatedRecords,
+            rootIndex: topologyArena.rootIndex,
+            parentRawIndices: topologyArena.parentRawIndices,
+            childSpans: topologyArena.childSpans,
+            childIndices: &updatedChildIndices,
+            cancellationCheck: cancellationCheck
+        ) else { return self }
 
         let existingStats = aggregateStats
         let updatedRoot = updatedRecords[Int(topologyArena.rootIndex.rawValue)]
@@ -1011,6 +1061,84 @@ nonisolated struct FileTreeStore: Sendable {
             ),
             aggregateStats: updatedStats
         )
+    }
+
+    private nonisolated static func applyAllocatedSizeReplacements(
+        _ replacements: [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)],
+        to nodes: inout [FileNodeRecord],
+        rootIndex: FileTreeNodeIndex,
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: inout [FileTreeNodeIndex],
+        cancellationCheck: () throws -> Void
+    ) throws -> Bool {
+        precondition(parentRawIndices.count == nodes.count)
+        precondition(childSpans.count == nodes.count)
+
+        var changedByOffset = Array(repeating: false, count: nodes.count)
+        var changedOffsets: [Int] = []
+        changedOffsets.reserveCapacity(replacements.count)
+        for replacement in replacements {
+            try cancellationCheck()
+            let offset = Int(replacement.nodeIndex.rawValue)
+            precondition(
+                offset < nodes.count,
+                "Allocated-size replacement index is out of range."
+            )
+            precondition(
+                !nodes[offset].isDirectory,
+                "Allocated-size replacement cannot target a directory."
+            )
+            guard nodes[offset].allocatedSize != replacement.allocatedSize else { continue }
+            nodes[offset] = nodes[offset].replacingAllocatedSize(replacement.allocatedSize)
+            if !changedByOffset[offset] {
+                changedByOffset[offset] = true
+                changedOffsets.append(offset)
+            }
+        }
+        guard !changedOffsets.isEmpty else { return false }
+
+        var changedRecordCount = changedOffsets.count
+        for changedOffset in changedOffsets {
+            var rawAncestorIndex = parentRawIndices[changedOffset]
+            while rawAncestorIndex != UInt32.max {
+                try cancellationCheck()
+                let ancestorOffset = Int(rawAncestorIndex)
+                guard !changedByOffset[ancestorOffset] else { break }
+                changedByOffset[ancestorOffset] = true
+                changedRecordCount += 1
+                rawAncestorIndex = parentRawIndices[ancestorOffset]
+            }
+        }
+
+        let changedNodeIndices = try FileTreeTopologyArena.preorderNodeIndices(
+            rootIndex: rootIndex,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            includedByOffset: changedByOffset,
+            capacity: changedRecordCount,
+            cancellationCheck: cancellationCheck
+        )
+        for nodeIndex in changedNodeIndices.reversed() {
+            try cancellationCheck()
+            let nodeOffset = Int(nodeIndex.rawValue)
+            guard nodes[nodeOffset].isDirectory else { continue }
+
+            let span = childSpans[nodeOffset]
+            let start = Int(span.start)
+            let end = start + Int(span.count)
+            let children = Self.restoringDisplayOrderAfterChanges(
+                Array(childIndices[start..<end]),
+                changedByOffset: changedByOffset,
+                nodeAt: { nodes[Int($0.rawValue)] }
+            )
+            nodes[nodeOffset] = Self.repairingDirectoryRecord(
+                nodes[nodeOffset],
+                children: children.map { nodes[Int($0.rawValue)] }
+            )
+            childIndices.replaceSubrange(start..<end, with: children)
+        }
+        return true
     }
 
     nonisolated func parentIndex(of index: FileTreeNodeIndex) -> FileTreeNodeIndex? {
@@ -1314,13 +1442,15 @@ nonisolated struct FileTreeStore: Sendable {
         var reorderedChildrenByOffset: [Int: [FileTreeNodeIndex]] = [:]
         reorderedChildrenByOffset.reserveCapacity(affectedAncestorCount)
 
-        for oldIndex in topologyArena.orderedNodeIndices.reversed() {
+        let affectedNodeIndices = try topologyArena.preorderNodeIndices(
+            includedByOffset: affectedAncestors,
+            capacity: affectedAncestorCount,
+            cancellationCheck: cancellationCheck
+        )
+        for oldIndex in affectedNodeIndices.reversed() {
             let oldOffset = Int(oldIndex.rawValue)
-            if oldOffset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            guard affectedAncestors[oldOffset],
-                  !removed[oldOffset],
+            try cancellationCheck()
+            guard !removed[oldOffset],
                   nodeRecords[oldOffset].isDirectory else {
                 continue
             }
@@ -1328,13 +1458,14 @@ nonisolated struct FileTreeStore: Sendable {
             var survivingChildren = topologyArena.children(of: oldIndex).filter {
                 !removed[Int($0.rawValue)]
             }
-            survivingChildren.sort { lhsIndex, rhsIndex in
-                let lhsOffset = Int(lhsIndex.rawValue)
-                let rhsOffset = Int(rhsIndex.rawValue)
-                let lhs = repairedRecordsByOffset[lhsOffset] ?? nodeRecords[lhsOffset]
-                let rhs = repairedRecordsByOffset[rhsOffset] ?? nodeRecords[rhsOffset]
-                return Self.areInDisplayOrder(lhs, rhs)
-            }
+            survivingChildren = Self.restoringDisplayOrderAfterChanges(
+                survivingChildren,
+                changedByOffset: affectedAncestors,
+                nodeAt: { childIndex in
+                    let childOffset = Int(childIndex.rawValue)
+                    return repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset]
+                }
+            )
             let children = survivingChildren.map { childIndex in
                 let childOffset = Int(childIndex.rawValue)
                 return repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset]
@@ -1343,7 +1474,7 @@ nonisolated struct FileTreeStore: Sendable {
                 nodeRecords[oldOffset],
                 children: children
             )
-            reorderedChildrenByOffset[oldOffset] = Array(survivingChildren)
+            reorderedChildrenByOffset[oldOffset] = survivingChildren
         }
 
         let retainedCount = nodeRecords.count - removedCount
@@ -1373,6 +1504,8 @@ nonisolated struct FileTreeStore: Sendable {
         var compactedChildIndices: [FileTreeNodeIndex] = []
         compactedChildIndices.reserveCapacity(max(retainedCount - 1, 0))
         var statsAccumulator = AggregateStatsAccumulator()
+        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var hardLinkClaimNodeIndices: [FileTreeNodeIndex] = []
 
         for oldOffset in nodeRecords.indices where !removed[oldOffset] {
             let newOffset = Int(oldToNewRawIndex[oldOffset])
@@ -1407,7 +1540,27 @@ nonisolated struct FileTreeStore: Sendable {
                 compactedNodes[newOffset],
                 hasMaterializedChildren: childCount > 0
             )
+            if let claim = HardLinkDeduplicator.claim(for: compactedNodes[newOffset]) {
+                hardLinkAccumulator.record(claim)
+                hardLinkClaimNodeIndices.append(FileTreeNodeIndex(rawValue: UInt32(newOffset)))
+            }
         }
+
+        let hardLinkReplacements = try HardLinkDeduplicator.rebalancedAllocatedSizeReplacements(
+            hardLinkAccumulator: hardLinkAccumulator,
+            claimNodeIndices: hardLinkClaimNodeIndices,
+            nodeAt: { compactedNodes[Int($0.rawValue)] },
+            cancellationCheck: cancellationCheck
+        )
+        _ = try Self.applyAllocatedSizeReplacements(
+            hardLinkReplacements,
+            to: &compactedNodes,
+            rootIndex: compactedRootIndex,
+            parentRawIndices: compactedParentRawIndices,
+            childSpans: compactedChildSpans,
+            childIndices: &compactedChildIndices,
+            cancellationCheck: cancellationCheck
+        )
 
         let compactedOrder = try FileTreeTopologyArena.preorderNodeIndices(
             rootIndex: compactedRootIndex,
@@ -1436,10 +1589,7 @@ nonisolated struct FileTreeStore: Sendable {
             topologyArena: compactedTopology,
             aggregateStats: compactedStats
         )
-        return try HardLinkDeduplicator.rebalancedStore(
-            compactedStore,
-            cancellationCheck: cancellationCheck
-        )
+        return compactedStore
     }
 
     private nonisolated func emptyRootNode() -> FileNodeRecord {
