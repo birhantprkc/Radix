@@ -74,12 +74,15 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
         baseInput: DiskMapVisualizationInput,
         request: DiskMapVisualizationFilterRequest
     ) {
-        filterTask?.cancel()
+        let previousTask = filterTask
+        previousTask?.cancel()
         pendingRequest = request
         setIsFiltering(true)
 
         filterTask = Task { [weak self, filterOperation] in
             do {
+                await previousTask?.value
+                try Task.checkCancellation()
                 let input = try await filterOperation(
                     baseInput,
                     request.hiddenNodeIDs,
@@ -113,15 +116,15 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
     }
 
     private func clearFilter() {
-        guard filterTask != nil || pendingRequest != nil || cachedResult != nil else { return }
+        guard pendingRequest != nil || cachedResult != nil || isFiltering else { return }
         cancelPendingFilter()
         cachedResult = nil
     }
 
     private func cancelPendingFilter() {
-        guard filterTask != nil || pendingRequest != nil || isFiltering else { return }
+        guard pendingRequest != nil || isFiltering else { return }
         filterTask?.cancel()
-        filterTask = nil
+        // Keep the cancelled task as a drain barrier for the next request.
         pendingRequest = nil
         setIsFiltering(false)
     }

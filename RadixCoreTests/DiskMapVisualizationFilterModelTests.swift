@@ -235,6 +235,79 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         XCTAssertEqual(hiddenNodeIDCalls, [[firstHidden.id], [secondHidden.id]])
     }
 
+    func testReplacementWaitsForCancelledFilterBeforeStartingNextWorker() async throws {
+        let firstHidden = makeTestFileNode(id: "/root/first-hidden.bin", name: "first-hidden.bin", size: 20)
+        let secondHidden = makeTestFileNode(id: "/root/second-hidden.bin", name: "second-hidden.bin", size: 30)
+        let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 40)
+        let root = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [firstHidden, secondHidden, visible]
+        )
+        let store = FileTreeStore(
+            root: root,
+            childrenByID: [root.id: [firstHidden, secondHidden, visible]]
+        )
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        let operation = ControlledVisualizationFilterOperation(
+            pausedHiddenNodeIDs: [firstHidden.id]
+        )
+        let model = DiskMapVisualizationFilterModel { baseInput, hiddenNodeIDs, layoutIDComponent in
+            try await operation.pauseIfNeeded(hiddenNodeIDs: hiddenNodeIDs)
+            return try await filteredVisualizationInput(
+                baseInput: baseInput,
+                hiddenNodeIDs: hiddenNodeIDs,
+                layoutIDComponent: layoutIDComponent
+            )
+        }
+        let baseInput = DiskMapFreeSpaceVisualization.input(
+            snapshot: snapshot,
+            focusNode: root,
+            showFreeSpace: false,
+            availableCapacity: nil
+        )
+        let firstRequest = DiskMapVisualizationFilterRequest(
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [firstHidden.id]
+        )
+        let secondRequest = DiskMapVisualizationFilterRequest(
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: [secondHidden.id]
+        )
+        let unfilteredRequest = DiskMapVisualizationFilterRequest(
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: root.id,
+            hiddenNodeIDs: []
+        )
+
+        model.update(baseInput: baseInput, request: firstRequest)
+        await operation.waitUntilPaused()
+        model.update(baseInput: baseInput, request: unfilteredRequest)
+        model.update(baseInput: baseInput, request: secondRequest)
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        let callsBeforeCancelledWorkerExited = await operation.recordedHiddenNodeIDs()
+        XCTAssertEqual(callsBeforeCancelledWorkerExited, [[firstHidden.id]])
+
+        await operation.resume()
+        let filteredInput = try await waitForFilteredInput(
+            model: model,
+            baseInput: baseInput,
+            request: secondRequest,
+            removedNodeID: secondHidden.id
+        )
+
+        XCTAssertNotNil(filteredInput.treeStore.node(id: firstHidden.id))
+        XCTAssertNil(filteredInput.treeStore.node(id: secondHidden.id))
+        let finalCalls = await operation.recordedHiddenNodeIDs()
+        XCTAssertEqual(finalCalls, [[firstHidden.id], [secondHidden.id]])
+    }
+
     func testDiscardPileFilterInvalidatesWhenBaseTreeContentChanges() async throws {
         let hidden = makeTestFileNode(id: "/root/hidden.bin", name: "hidden.bin", size: 20)
         let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 30)

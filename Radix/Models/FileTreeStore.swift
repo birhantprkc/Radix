@@ -968,10 +968,12 @@ nonisolated struct FileTreeStore: Sendable {
         var updatedChildIndices = topologyArena.childIndices
         for nodeIndex in topologyArena.orderedNodeIndices.reversed() {
             let nodeOffset = Int(nodeIndex.rawValue)
+            if nodeOffset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
             guard affectedAncestors[nodeOffset], updatedRecords[nodeOffset].isDirectory else {
                 continue
             }
-            try cancellationCheck()
 
             let span = topologyArena.childSpans[nodeOffset]
             let start = Int(span.start)
@@ -1314,12 +1316,14 @@ nonisolated struct FileTreeStore: Sendable {
 
         for oldIndex in topologyArena.orderedNodeIndices.reversed() {
             let oldOffset = Int(oldIndex.rawValue)
+            if oldOffset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
             guard affectedAncestors[oldOffset],
                   !removed[oldOffset],
                   nodeRecords[oldOffset].isDirectory else {
                 continue
             }
-            try cancellationCheck()
 
             var survivingChildren = topologyArena.children(of: oldIndex).filter {
                 !removed[Int($0.rawValue)]
@@ -1346,13 +1350,19 @@ nonisolated struct FileTreeStore: Sendable {
         var oldToNewRawIndex = Array(repeating: UInt32.max, count: nodeRecords.count)
         var compactedNodes: [FileNodeRecord] = []
         compactedNodes.reserveCapacity(retainedCount)
+        var compactedIndexByNodeID: [String: FileTreeNodeIndex] = [:]
+        compactedIndexByNodeID.reserveCapacity(retainedCount)
 
         for oldOffset in nodeRecords.indices where !removed[oldOffset] {
             if oldOffset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            oldToNewRawIndex[oldOffset] = UInt32(compactedNodes.count)
-            compactedNodes.append(repairedRecordsByOffset[oldOffset] ?? nodeRecords[oldOffset])
+            let compactedIndex = FileTreeNodeIndex(rawValue: UInt32(compactedNodes.count))
+            let record = repairedRecordsByOffset[oldOffset] ?? nodeRecords[oldOffset]
+            oldToNewRawIndex[oldOffset] = compactedIndex.rawValue
+            compactedNodes.append(record)
+            let previous = compactedIndexByNodeID.updateValue(compactedIndex, forKey: record.id)
+            precondition(previous == nil, "Subtree compaction produced duplicate node IDs.")
         }
 
         let compactedRootRawIndex = oldToNewRawIndex[Int(topologyArena.rootIndex.rawValue)]
@@ -1414,6 +1424,7 @@ nonisolated struct FileTreeStore: Sendable {
         let compactedTopology = FileTreeTopologyArena(
             verifiedRootIndex: compactedRootIndex,
             nodes: compactedNodes,
+            indexByNodeID: compactedIndexByNodeID,
             parentRawIndices: compactedParentRawIndices,
             childSpans: compactedChildSpans,
             childIndices: compactedChildIndices,

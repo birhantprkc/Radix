@@ -31,17 +31,29 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
     }
 
     nonisolated var duplicateAllocatedSizeByOwner: [String: Int64] {
+        duplicateAllocatedSizeByOwner(cancellationCheck: {})
+    }
+
+    nonisolated func duplicateAllocatedSizeByOwner(
+        cancellationCheck: () throws -> Void
+    ) rethrows -> [String: Int64] {
         var corrections = hardLinkDuplicateAllocatedSizeByOwner
         var cloneWinnerByIdentity: [CloneIdentity: HardLinkClaim] = [:]
 
-        for claim in hardLinkWinnerByIdentity.values {
+        for (offset, claim) in hardLinkWinnerByIdentity.values.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
             Self.recordCloneCorrection(
                 for: claim,
                 winnerByIdentity: &cloneWinnerByIdentity,
                 corrections: &corrections
             )
         }
-        for claim in standaloneCloneWinnerByFile.values {
+        for (offset, claim) in standaloneCloneWinnerByFile.values.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
             Self.recordCloneCorrection(
                 for: claim,
                 winnerByIdentity: &cloneWinnerByIdentity,

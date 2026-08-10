@@ -177,7 +177,9 @@ nonisolated struct HardLinkDeduplicator {
         minimumAllocatedSizeByNodeID: [String: Int64],
         cancellationCheck: () throws -> Void
     ) rethrows -> FileTreeStore {
-        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        let duplicateAllocatedSizeByOwner = try hardLinkAccumulator.duplicateAllocatedSizeByOwner(
+            cancellationCheck: cancellationCheck
+        )
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
             return try FileTreeStore(
                 verifiedRootIndex: rootIndex,
@@ -272,7 +274,9 @@ nonisolated struct HardLinkDeduplicator {
 
         guard !hardLinkAccumulator.isEmpty else { return store }
 
-        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        let duplicateAllocatedSizeByOwner = try hardLinkAccumulator.duplicateAllocatedSizeByOwner(
+            cancellationCheck: cancellationCheck
+        )
         var targetAllocatedSizeByNodeID: [String: Int64] = [:]
         targetAllocatedSizeByNodeID.reserveCapacity(claimNodeIndices.count)
         for (offset, nodeIndex) in claimNodeIndices.enumerated() {

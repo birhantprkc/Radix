@@ -99,6 +99,29 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
         XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [repeated.ownerNodeID: 256])
     }
 
+    func testCorrectionMaterializationChecksCancellationDuringTraversal() {
+        let claims = (0..<512).map { index in
+            claim(
+                FileIdentity(device: 6, inode: UInt64(index)),
+                owner: "/owner-\(index)",
+                path: "/file-\(index)",
+                size: 1
+            )
+        }
+        let accumulator = HardLinkIdentityOwnerAccumulator(claims)
+        var checkCount = 0
+
+        XCTAssertThrowsError(try accumulator.duplicateAllocatedSizeByOwner {
+            checkCount += 1
+            if checkCount == 2 {
+                throw CancellationError()
+            }
+        }) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(checkCount, 2)
+    }
+
     func testHardLinkedCloneEntersCloneAccountingOnlyOnce() {
         let fileIdentity = FileIdentity(device: 1, inode: 10)
         let cloneIdentity = CloneIdentity(device: 1, cloneID: 99)
