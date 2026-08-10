@@ -89,8 +89,6 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
                     request.discardPileLayoutComponent
                 )
                 self?.cache(input, for: request)
-            } catch is CancellationError {
-                self?.clearPendingFilter(for: request)
             } catch {
                 self?.clearPendingFilter(for: request)
             }
@@ -195,9 +193,14 @@ nonisolated struct DiskMapVisualizationFilterRequest: Equatable, Sendable {
     }
 
     nonisolated var discardPileLayoutComponent: String {
-        hiddenNodeIDs.reduce("discard-pile:\(hiddenNodeIDs.count)") { component, id in
-            component + ":\(id.count):\(id)"
+        var component = "discard-pile:\(hiddenNodeIDs.count)"
+        for id in hiddenNodeIDs {
+            component.append(":")
+            component.append(String(id.count))
+            component.append(":")
+            component.append(id)
         }
+        return component
     }
 
     nonisolated func hasSameBase(as other: Self) -> Bool {
