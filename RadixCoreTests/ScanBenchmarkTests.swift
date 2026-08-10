@@ -205,14 +205,17 @@ final class ScanBenchmarkTests: XCTestCase {
             throw XCTSkip("Set RADIX_BENCH_TREE_REMOVAL=1 to run the tree-removal benchmark.")
         }
 
+        let usesHardLinks = environment["RADIX_BENCH_TREE_HARD_LINKS"] == "1"
+        let removesDirectory = environment["RADIX_BENCH_TREE_REMOVE_DIRECTORY"] == "1"
         let directoryCount = environment["RADIX_BENCH_TREE_DIRECTORIES"]
             .flatMap(Int.init)
-            .map { max(1, $0) } ?? 200
+            .map { max(usesHardLinks ? 2 : 1, $0) } ?? 200
         let filesPerDirectory = environment["RADIX_BENCH_TREE_FILES_PER_DIRECTORY"]
             .flatMap(Int.init)
             .map { max(1, $0) } ?? 1_000
         let fileCount = directoryCount * filesPerDirectory
         let nodeCount = fileCount + directoryCount + 1
+        let totalAllocatedSize = usesHardLinks ? filesPerDirectory : fileCount
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
         var nodes = [FileNodeRecord(
             id: "/benchmark",
@@ -220,7 +223,7 @@ final class ScanBenchmarkTests: XCTestCase {
             name: "benchmark",
             isDirectory: true,
             isSymbolicLink: false,
-            allocatedSize: Int64(fileCount),
+            allocatedSize: Int64(totalAllocatedSize),
             logicalSize: Int64(fileCount),
             descendantFileCount: fileCount,
             lastModified: nil,
@@ -246,7 +249,7 @@ final class ScanBenchmarkTests: XCTestCase {
                 name: URL(filePath: directoryID).lastPathComponent,
                 isDirectory: true,
                 isSymbolicLink: false,
-                allocatedSize: Int64(filesPerDirectory),
+                allocatedSize: Int64(usesHardLinks && directoryOffset > 0 ? 0 : filesPerDirectory),
                 logicalSize: Int64(filesPerDirectory),
                 descendantFileCount: filesPerDirectory,
                 lastModified: nil,
@@ -258,22 +261,32 @@ final class ScanBenchmarkTests: XCTestCase {
             ))
             parentIndices[Int(directoryIndex.rawValue)] = rootIndex
             rootChildren.append(directoryIndex)
+            if removesDirectory, directoryOffset == 0 {
+                removalID = directoryID
+            }
 
             var directoryChildren: [FileTreeNodeIndex] = []
             directoryChildren.reserveCapacity(filesPerDirectory)
             for fileOffset in 0..<filesPerDirectory {
                 let fileIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
                 let fileID = directoryID + String(format: "/file-%06d.bin", fileOffset)
+                let allocatedSize: Int64 = usesHardLinks && directoryOffset > 0 ? 0 : 1
                 nodes.append(FileNodeRecord(
                     id: fileID,
                     url: URL(filePath: fileID),
                     name: URL(filePath: fileID).lastPathComponent,
                     isDirectory: false,
                     isSymbolicLink: false,
-                    allocatedSize: 1,
+                    allocatedSize: allocatedSize,
+                    unduplicatedAllocatedSize: 1,
+                    dataAllocatedSize: 1,
                     logicalSize: 1,
                     descendantFileCount: 1,
                     lastModified: nil,
+                    fileIdentity: usesHardLinks
+                        ? FileIdentity(device: 1, inode: UInt64(fileOffset + 1))
+                        : nil,
+                    linkCount: usesHardLinks ? UInt64(directoryCount) : 1,
                     isPackage: false,
                     isAccessible: true,
                     isSelfAccessible: true,
@@ -282,7 +295,9 @@ final class ScanBenchmarkTests: XCTestCase {
                 ))
                 parentIndices[Int(fileIndex.rawValue)] = directoryIndex
                 directoryChildren.append(fileIndex)
-                if directoryOffset == 0, fileOffset == filesPerDirectory / 2 {
+                if !removesDirectory,
+                   directoryOffset == 0,
+                   fileOffset == filesPerDirectory / 2 {
                     removalID = fileID
                 }
             }
@@ -297,7 +312,7 @@ final class ScanBenchmarkTests: XCTestCase {
             parentIndices: parentIndices,
             orderedNodeIndices: orderedNodeIndices,
             aggregateStats: ScanAggregateStats(
-                totalAllocatedSize: Int64(fileCount),
+                totalAllocatedSize: Int64(totalAllocatedSize),
                 totalLogicalSize: Int64(fileCount),
                 fileCount: fileCount,
                 directoryCount: directoryCount + 1,
@@ -308,15 +323,48 @@ final class ScanBenchmarkTests: XCTestCase {
 
         let startedAt = ContinuousClock.now
         let updatedStore = try XCTUnwrap(store.removingSubtree(id: removalID))
-        let elapsed = startedAt.duration(to: .now)
-        let elapsedSeconds = Double(elapsed.components.seconds) +
-            (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        let filterFinishedAt = ContinuousClock.now
+        let sunburstSegments = SunburstLayout.segments(
+            in: updatedStore,
+            rootID: updatedStore.root.id,
+            depthLimit: 4
+        )
+        let sunburstFinishedAt = ContinuousClock.now
+        let treemapSegments = TreemapLayout.segments(
+            in: updatedStore,
+            rootID: updatedStore.root.id,
+            depthLimit: 4,
+            size: CGSize(width: 1_200, height: 800)
+        )
+        let finishedAt = ContinuousClock.now
+        let filterElapsedSeconds = Self.durationSeconds(
+            startedAt.duration(to: filterFinishedAt)
+        )
+        let sunburstElapsedSeconds = Self.durationSeconds(
+            filterFinishedAt.duration(to: sunburstFinishedAt)
+        )
+        let treemapElapsedSeconds = Self.durationSeconds(
+            sunburstFinishedAt.duration(to: finishedAt)
+        )
+        let endToEndElapsedSeconds = Self.durationSeconds(startedAt.duration(to: finishedAt))
 
-        XCTAssertEqual(updatedStore.nodeCount, nodeCount - 1)
-        XCTAssertEqual(updatedStore.aggregateStats.fileCount, fileCount - 1)
+        let removedNodeCount = removesDirectory ? filesPerDirectory + 1 : 1
+        let removedFileCount = removesDirectory ? filesPerDirectory : 1
+        XCTAssertEqual(updatedStore.nodeCount, nodeCount - removedNodeCount)
+        XCTAssertEqual(updatedStore.aggregateStats.fileCount, fileCount - removedFileCount)
+        XCTAssertEqual(
+            updatedStore.aggregateStats.totalAllocatedSize,
+            Int64(usesHardLinks ? filesPerDirectory : fileCount - removedFileCount)
+        )
         print(
             "RADIX_BENCH_TREE_REMOVAL_RESULT nodes=\(nodeCount) " +
-            "removed=1 elapsed=\(String(format: "%.6f", elapsedSeconds))s"
+            "removed=\(removedNodeCount) hard_links=\(usesHardLinks) " +
+            "filter=\(String(format: "%.6f", filterElapsedSeconds))s " +
+            "sunburst=\(String(format: "%.6f", sunburstElapsedSeconds))s " +
+            "sunburst_segments=\(sunburstSegments.count) " +
+            "treemap=\(String(format: "%.6f", treemapElapsedSeconds))s " +
+            "treemap_segments=\(treemapSegments.count) " +
+            "end_to_end=\(String(format: "%.6f", endToEndElapsedSeconds))s"
         )
     }
 
@@ -1168,9 +1216,12 @@ final class ScanBenchmarkTests: XCTestCase {
     }
 
     private static func elapsedSeconds(since start: ContinuousClock.Instant) -> Double {
-        let elapsed = start.duration(to: .now)
-        return Double(elapsed.components.seconds) +
-            Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
+        durationSeconds(start.duration(to: .now))
+    }
+
+    private static func durationSeconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) +
+            Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
     }
 
     private static func resultFingerprint(_ store: FileTreeStore) -> String {
