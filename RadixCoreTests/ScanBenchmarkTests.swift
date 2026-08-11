@@ -208,6 +208,8 @@ final class ScanBenchmarkTests: XCTestCase {
 
         let usesHardLinks = environment["RADIX_BENCH_TREE_HARD_LINKS"] == "1"
         let removesDirectory = environment["RADIX_BENCH_TREE_REMOVE_DIRECTORY"] == "1"
+        let waitsForSettledFirstFilter =
+            environment["RADIX_BENCH_TREE_SETTLED_REPLACEMENT"] == "1"
         let replacementIterationCount = environment["RADIX_BENCH_TREE_ITERATIONS"]
             .flatMap(Int.init)
             .map { max(1, $0) } ?? 3
@@ -408,7 +410,18 @@ final class ScanBenchmarkTests: XCTestCase {
             let model = DiskMapVisualizationFilterModel()
 
             model.update(baseInput: baseInput, request: firstRequest)
-            await Task.yield()
+            if waitsForSettledFirstFilter {
+                let timeoutAt = ContinuousClock.now.advanced(by: .seconds(60))
+                while model.isInputPending(for: firstRequest), ContinuousClock.now < timeoutAt {
+                    await Task.yield()
+                }
+                guard !model.isInputPending(for: firstRequest) else {
+                    XCTFail("Timed out waiting for the first discard filter.")
+                    return
+                }
+            } else {
+                await Task.yield()
+            }
             let replacementStartedAt = ContinuousClock.now
             model.update(baseInput: baseInput, request: replacementRequest)
 
@@ -457,7 +470,9 @@ final class ScanBenchmarkTests: XCTestCase {
         let medianEndToEndDuration = endToEndDurations.sorted()[endToEndDurations.count / 2]
         print(
             "RADIX_BENCH_DISCARD_REPLACEMENT_RESULT nodes=\(nodeCount) " +
-            "hidden=2 hard_links=\(usesHardLinks) iterations=\(replacementIterationCount) " +
+            "hidden=2 hard_links=\(usesHardLinks) " +
+            "first_filter=\(waitsForSettledFirstFilter ? "settled" : "rapid") " +
+            "iterations=\(replacementIterationCount) " +
             "filter_median=\(String(format: "%.6f", medianFilterDuration))s " +
             "filter_max=\(String(format: "%.6f", filterDurations.max() ?? 0))s " +
             "sunburst_segments=\(replacementSunburstSegmentCount) " +

@@ -29,6 +29,7 @@ struct TreemapChartView: View {
     @State private var tooltipAnchor: CGPoint?
     @State private var viewportTransform = ChartViewportTransform.identity
     @State private var layoutRetryGeneration = 0
+    @State private var settledViewportLayoutID: String?
 
     init(
         rootNode: FileNodeRecord,
@@ -92,6 +93,7 @@ struct TreemapChartView: View {
             let layoutTaskID = TreemapLayoutTaskID(
                 layoutID: layoutID,
                 size: baseChartFrame.size,
+                isInputPending: isInputPending,
                 retryGeneration: layoutRetryGeneration
             )
             let layoutPresentation = layoutPresentationState
@@ -276,8 +278,11 @@ struct TreemapChartView: View {
                 )
                 clearHover()
             }
-            .onChange(of: layoutID) { _, _ in
-                resetViewport(animated: false)
+            .onChange(of: layoutID, initial: true) { _, _ in
+                updateViewportForSettledLayout()
+            }
+            .onChange(of: isInputPending) { _, _ in
+                updateViewportForSettledLayout()
             }
             .focusedSceneValue(\.chartViewportAction) { action in
                 handleViewportAction(action, in: baseChartFrame)
@@ -292,6 +297,7 @@ struct TreemapChartView: View {
                 )
             }
             .task(id: layoutTaskID) {
+                guard !isInputPending else { return }
                 await chartModel.loadLayout(
                     treeStore: treeStore,
                     rootID: rootNode.id,
@@ -582,6 +588,16 @@ struct TreemapChartView: View {
         clearHover()
     }
 
+    private func updateViewportForSettledLayout() {
+        guard !isInputPending,
+              settledViewportLayoutID != layoutID else { return }
+        let shouldReset = settledViewportLayoutID != nil
+        settledViewportLayoutID = layoutID
+        if shouldReset {
+            resetViewport(animated: false)
+        }
+    }
+
     private func handleViewportAction(
         _ action: ChartViewportAction,
         in baseFrame: CGRect
@@ -715,12 +731,19 @@ private struct TreemapLayoutTaskID: Hashable {
     let layoutID: String
     let widthBucket: Int
     let heightBucket: Int
+    let isInputPending: Bool
     let retryGeneration: Int
 
-    init(layoutID: String, size: CGSize, retryGeneration: Int) {
+    init(
+        layoutID: String,
+        size: CGSize,
+        isInputPending: Bool,
+        retryGeneration: Int
+    ) {
         self.layoutID = layoutID
         widthBucket = Int((size.width / Self.sizeBucket).rounded())
         heightBucket = Int((size.height / Self.sizeBucket).rounded())
+        self.isInputPending = isInputPending
         self.retryGeneration = retryGeneration
     }
 }

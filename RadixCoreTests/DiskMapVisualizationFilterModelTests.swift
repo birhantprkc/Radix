@@ -76,7 +76,7 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         XCTAssertFalse(model.isInputPending(for: request))
     }
 
-    func testDiscardPileFilterRetainsCompatibleCachedInputWhileNextFilterRuns() async throws {
+    func testDiscardPileFilterReleasesCachedInputBeforeReplacementCompletes() async throws {
         let firstHidden = makeTestFileNode(id: "/root/first-hidden.bin", name: "first-hidden.bin", size: 20)
         let secondHidden = makeTestFileNode(id: "/root/second-hidden.bin", name: "second-hidden.bin", size: 30)
         let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 40)
@@ -131,13 +131,19 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
             request: secondRequest
         )
 
-        XCTAssertNil(immediateInput.treeStore.node(id: firstHidden.id))
+        XCTAssertNotNil(immediateInput.treeStore.node(id: firstHidden.id))
         XCTAssertNotNil(immediateInput.treeStore.node(id: secondHidden.id))
         XCTAssertTrue(model.isInputPending(for: secondRequest))
         model.update(
             baseInput: baseInput,
             request: secondRequest
         )
+        let inputWhileFiltering = model.input(
+            baseInput: baseInput,
+            request: secondRequest
+        )
+        XCTAssertNotNil(inputWhileFiltering.treeStore.node(id: firstHidden.id))
+        XCTAssertNotNil(inputWhileFiltering.treeStore.node(id: secondHidden.id))
 
         let secondFilteredInput = try await waitForFilteredInput(
             model: model,
@@ -150,7 +156,7 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         XCTAssertNil(secondFilteredInput.treeStore.node(id: secondHidden.id))
     }
 
-    func testReturningToExactCacheCancelsObsoletePendingFilter() async throws {
+    func testReturningToPreviousRequestRebuildsReleasedCache() async throws {
         let firstHidden = makeTestFileNode(id: "/root/first-hidden.bin", name: "first-hidden.bin", size: 20)
         let secondHidden = makeTestFileNode(id: "/root/second-hidden.bin", name: "second-hidden.bin", size: 30)
         let visible = makeTestFileNode(id: "/root/visible.bin", name: "visible.bin", size: 40)
@@ -210,29 +216,29 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         await operation.waitUntilPaused()
         XCTAssertTrue(model.isFiltering)
 
-        let exactCachedInput = model.input(
+        let immediateInput = model.input(
             baseInput: baseInput,
             request: firstRequest
         )
-        XCTAssertNil(exactCachedInput.treeStore.node(id: firstHidden.id))
-        XCTAssertNotNil(exactCachedInput.treeStore.node(id: secondHidden.id))
+        XCTAssertNotNil(immediateInput.treeStore.node(id: firstHidden.id))
+        XCTAssertNotNil(immediateInput.treeStore.node(id: secondHidden.id))
 
         model.update(
             baseInput: baseInput,
             request: firstRequest
         )
-        XCTAssertFalse(model.isFiltering)
+        XCTAssertTrue(model.isFiltering)
         await operation.resume()
-        try await Task.sleep(nanoseconds: 10_000_000)
-
-        let retainedCachedInput = model.input(
+        let rebuiltInput = try await waitForFilteredInput(
+            model: model,
             baseInput: baseInput,
-            request: firstRequest
+            request: firstRequest,
+            removedNodeID: firstHidden.id
         )
-        XCTAssertNil(retainedCachedInput.treeStore.node(id: firstHidden.id))
-        XCTAssertNotNil(retainedCachedInput.treeStore.node(id: secondHidden.id))
+        XCTAssertNil(rebuiltInput.treeStore.node(id: firstHidden.id))
+        XCTAssertNotNil(rebuiltInput.treeStore.node(id: secondHidden.id))
         let hiddenNodeIDCalls = await operation.recordedHiddenNodeIDs()
-        XCTAssertEqual(hiddenNodeIDCalls, [[firstHidden.id], [secondHidden.id]])
+        XCTAssertEqual(hiddenNodeIDCalls, [[firstHidden.id], [secondHidden.id], [firstHidden.id]])
     }
 
     func testReplacementWaitsForCancelledFilterBeforeStartingNextWorker() async throws {

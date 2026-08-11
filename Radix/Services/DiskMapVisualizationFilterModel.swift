@@ -39,8 +39,7 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
             return baseInput
         }
 
-        if let cachedResult,
-           cachedResult.request == request || cachedResult.request.hasSameBase(as: request) {
+        if let cachedResult, cachedResult.request == request {
             return cachedResult.input
         }
 
@@ -76,6 +75,9 @@ final class DiskMapVisualizationFilterModel: ObservableObject {
     ) {
         let previousTask = filterTask
         previousTask?.cancel()
+        if cachedResult != nil {
+            cachedResult = nil
+        }
         pendingRequest = request
         setIsFiltering(true)
 
@@ -201,13 +203,5 @@ nonisolated struct DiskMapVisualizationFilterRequest: Equatable, Sendable {
             component.append(id)
         }
         return component
-    }
-
-    nonisolated func hasSameBase(as other: Self) -> Bool {
-        snapshotID == other.snapshotID
-            && focusNodeID == other.focusNodeID
-            && rootNodeID == other.rootNodeID
-            && baseTreeContentID == other.baseTreeContentID
-            && baseLayoutIDComponent == other.baseLayoutIDComponent
     }
 }

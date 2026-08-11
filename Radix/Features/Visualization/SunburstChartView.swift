@@ -30,6 +30,7 @@ struct SunburstChartView: View {
     @State private var showsLoadingDiskMapProgress = false
     @State private var viewportTransform = ChartViewportTransform.identity
     @State private var layoutRetryGeneration = 0
+    @State private var settledViewportLayoutID: String?
 
     init(
         rootNode: FileNodeRecord,
@@ -316,8 +317,11 @@ struct SunburstChartView: View {
             .onChange(of: baseChartFrame) { _, nextFrame in
                 viewportTransform = viewportTransform.constrained(to: nextFrame)
             }
-            .onChange(of: layoutID) { _, _ in
-                resetViewport(animated: false)
+            .onChange(of: layoutID, initial: true) { _, _ in
+                updateViewportForSettledLayout()
+            }
+            .onChange(of: isInputPending) { _, _ in
+                updateViewportForSettledLayout()
             }
             .focusedSceneValue(\.chartViewportAction) { action in
                 handleViewportAction(action, in: baseChartFrame)
@@ -325,7 +329,12 @@ struct SunburstChartView: View {
             .task(id: loadingDiskMapProgressTaskID) {
                 await updateLoadingDiskMapProgress(isPending: isAwaitingLayout)
             }
-            .task(id: SunburstLayoutTaskID(layoutID: layoutID, retryGeneration: layoutRetryGeneration)) {
+            .task(id: SunburstLayoutTaskID(
+                layoutID: layoutID,
+                isInputPending: isInputPending,
+                retryGeneration: layoutRetryGeneration
+            )) {
+                guard !isInputPending else { return }
                 await chartModel.loadLayout(
                     treeStore: treeStore,
                     rootID: rootNode.id,
@@ -610,6 +619,16 @@ struct SunburstChartView: View {
         setViewportTransform(.identity, animated: animated)
     }
 
+    private func updateViewportForSettledLayout() {
+        guard !isInputPending,
+              settledViewportLayoutID != layoutID else { return }
+        let shouldReset = settledViewportLayoutID != nil
+        settledViewportLayoutID = layoutID
+        if shouldReset {
+            resetViewport(animated: false)
+        }
+    }
+
     private func handleViewportAction(
         _ action: ChartViewportAction,
         in baseFrame: CGRect
@@ -681,6 +700,7 @@ private struct SunburstCenterAffordance: View, Equatable {
 
 private struct SunburstLayoutTaskID: Hashable {
     let layoutID: String
+    let isInputPending: Bool
     let retryGeneration: Int
 }
 
