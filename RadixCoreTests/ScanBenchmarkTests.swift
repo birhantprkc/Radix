@@ -199,7 +199,8 @@ final class ScanBenchmarkTests: XCTestCase {
         )
     }
 
-    func testTreeRemovalBenchmark() throws {
+    @MainActor
+    func testTreeRemovalBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_TREE_REMOVAL"] == "1" else {
             throw XCTSkip("Set RADIX_BENCH_TREE_REMOVAL=1 to run the tree-removal benchmark.")
@@ -207,9 +208,12 @@ final class ScanBenchmarkTests: XCTestCase {
 
         let usesHardLinks = environment["RADIX_BENCH_TREE_HARD_LINKS"] == "1"
         let removesDirectory = environment["RADIX_BENCH_TREE_REMOVE_DIRECTORY"] == "1"
+        let replacementIterationCount = environment["RADIX_BENCH_TREE_ITERATIONS"]
+            .flatMap(Int.init)
+            .map { max(1, $0) } ?? 3
         let directoryCount = environment["RADIX_BENCH_TREE_DIRECTORIES"]
             .flatMap(Int.init)
-            .map { max(usesHardLinks ? 2 : 1, $0) } ?? 200
+            .map { max(2, $0) } ?? 200
         let filesPerDirectory = environment["RADIX_BENCH_TREE_FILES_PER_DIRECTORY"]
             .flatMap(Int.init)
             .map { max(1, $0) } ?? 1_000
@@ -239,6 +243,7 @@ final class ScanBenchmarkTests: XCTestCase {
         var rootChildren: [FileTreeNodeIndex] = []
         rootChildren.reserveCapacity(directoryCount)
         var removalID = ""
+        var replacementRemovalID = ""
 
         for directoryOffset in 0..<directoryCount {
             let directoryIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
@@ -263,6 +268,9 @@ final class ScanBenchmarkTests: XCTestCase {
             rootChildren.append(directoryIndex)
             if removesDirectory, directoryOffset == 0 {
                 removalID = directoryID
+            }
+            if removesDirectory, directoryOffset == 1 {
+                replacementRemovalID = directoryID
             }
 
             var directoryChildren: [FileTreeNodeIndex] = []
@@ -299,6 +307,11 @@ final class ScanBenchmarkTests: XCTestCase {
                    directoryOffset == 0,
                    fileOffset == filesPerDirectory / 2 {
                     removalID = fileID
+                }
+                if !removesDirectory,
+                   directoryOffset == 1,
+                   fileOffset == filesPerDirectory / 2 {
+                    replacementRemovalID = fileID
                 }
             }
             childIndicesByIndex[Int(directoryIndex.rawValue)] = directoryChildren
@@ -365,6 +378,92 @@ final class ScanBenchmarkTests: XCTestCase {
             "treemap=\(String(format: "%.6f", treemapElapsedSeconds))s " +
             "treemap_segments=\(treemapSegments.count) " +
             "end_to_end=\(String(format: "%.6f", endToEndElapsedSeconds))s"
+        )
+
+        let baseInput = DiskMapVisualizationInput(
+            rootNode: store.root,
+            treeStore: DiskMapTreeStore(store),
+            treeContentID: store.contentID,
+            layoutIDComponent: "benchmark"
+        )
+        let snapshotID = UUID()
+        let firstRequest = DiskMapVisualizationFilterRequest(
+            baseInput: baseInput,
+            snapshotID: snapshotID,
+            focusNodeID: store.root.id,
+            hiddenNodeIDs: [removalID]
+        )
+        let replacementRequest = DiskMapVisualizationFilterRequest(
+            baseInput: baseInput,
+            snapshotID: snapshotID,
+            focusNodeID: store.root.id,
+            hiddenNodeIDs: [removalID, replacementRemovalID]
+        )
+        var filterDurations: [Double] = []
+        var endToEndDurations: [Double] = []
+        var replacementSunburstSegmentCount = 0
+        var replacementTreemapSegmentCount = 0
+
+        for iteration in 0...replacementIterationCount {
+            let model = DiskMapVisualizationFilterModel()
+
+            model.update(baseInput: baseInput, request: firstRequest)
+            await Task.yield()
+            let replacementStartedAt = ContinuousClock.now
+            model.update(baseInput: baseInput, request: replacementRequest)
+
+            let timeoutAt = ContinuousClock.now.advanced(by: .seconds(60))
+            while model.isInputPending(for: replacementRequest), ContinuousClock.now < timeoutAt {
+                await Task.yield()
+            }
+            guard !model.isInputPending(for: replacementRequest) else {
+                XCTFail("Timed out waiting for the replacement discard filter.")
+                return
+            }
+
+            let replacementInput = model.input(
+                baseInput: baseInput,
+                request: replacementRequest
+            )
+            let replacementFilterFinishedAt = ContinuousClock.now
+            let replacementSunburstSegments = SunburstLayout.segments(
+                in: replacementInput.treeStore,
+                rootID: replacementInput.rootNode.id,
+                depthLimit: 4
+            )
+            let replacementTreemapSegments = TreemapLayout.segments(
+                in: replacementInput.treeStore,
+                rootID: replacementInput.rootNode.id,
+                depthLimit: 4,
+                size: CGSize(width: 1_200, height: 800)
+            )
+            let replacementFinishedAt = ContinuousClock.now
+            replacementSunburstSegmentCount = replacementSunburstSegments.count
+            replacementTreemapSegmentCount = replacementTreemapSegments.count
+            XCTAssertNil(replacementInput.treeStore.node(id: removalID))
+            XCTAssertNil(replacementInput.treeStore.node(id: replacementRemovalID))
+
+            if iteration > 0 {
+                filterDurations.append(Self.durationSeconds(
+                    replacementStartedAt.duration(to: replacementFilterFinishedAt)
+                ))
+                endToEndDurations.append(Self.durationSeconds(
+                    replacementStartedAt.duration(to: replacementFinishedAt)
+                ))
+            }
+        }
+
+        let medianFilterDuration = filterDurations.sorted()[filterDurations.count / 2]
+        let medianEndToEndDuration = endToEndDurations.sorted()[endToEndDurations.count / 2]
+        print(
+            "RADIX_BENCH_DISCARD_REPLACEMENT_RESULT nodes=\(nodeCount) " +
+            "hidden=2 hard_links=\(usesHardLinks) iterations=\(replacementIterationCount) " +
+            "filter_median=\(String(format: "%.6f", medianFilterDuration))s " +
+            "filter_max=\(String(format: "%.6f", filterDurations.max() ?? 0))s " +
+            "sunburst_segments=\(replacementSunburstSegmentCount) " +
+            "treemap_segments=\(replacementTreemapSegmentCount) " +
+            "end_to_end_median=\(String(format: "%.6f", medianEndToEndDuration))s " +
+            "end_to_end_max=\(String(format: "%.6f", endToEndDurations.max() ?? 0))s"
         )
     }
 
