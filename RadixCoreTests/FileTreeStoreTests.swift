@@ -373,7 +373,7 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertNotNil(store.node(id: folder.id))
     }
 
-    func testRemovingWideSiblingHonorsCancellationDuringAncestorTraversal() {
+    func testRemovingWideSiblingHonorsCancellationAcrossRepairPasses() {
         let children = (0..<1_025).map { index in
             makeFileNode(
                 id: "/root/item-\(index).bin",
@@ -383,18 +383,20 @@ final class FileTreeStoreTests: XCTestCase {
         }
         let root = makeDirectoryNode(id: "/root", name: "root", children: children)
         let store = FileTreeStore(root: root, childrenByID: [root.id: children])
-        var checkCount = 0
-
-        XCTAssertThrowsError(try store.removingSubtree(
-            id: children[512].id,
-            cancellationCheck: {
-                checkCount += 1
-                if checkCount == 6 {
-                    throw CancellationError()
+        for cancellationCheckLimit in [6, 21] {
+            var cancellationCheckCount = 0
+            XCTAssertThrowsError(try store.removingSubtree(
+                id: children[512].id,
+                cancellationCheck: {
+                    cancellationCheckCount += 1
+                    if cancellationCheckCount == cancellationCheckLimit {
+                        throw CancellationError()
+                    }
                 }
+            )) { error in
+                XCTAssertTrue(error is CancellationError)
             }
-        )) { error in
-            XCTAssertTrue(error is CancellationError)
+            XCTAssertEqual(cancellationCheckCount, cancellationCheckLimit)
         }
         XCTAssertEqual(store.nodeCount, children.count + 1)
         XCTAssertNotNil(store.node(id: children[512].id))

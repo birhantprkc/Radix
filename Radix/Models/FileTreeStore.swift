@@ -862,8 +862,7 @@ nonisolated struct FileTreeStore: Sendable {
         var unchangedChildren: [DisplayOrderEntry] = []
         var changedChildren: [DisplayOrderEntry] = []
         unchangedChildren.reserveCapacity(childIndices.count)
-        for (position, childIndex) in childIndices.enumerated()
-        {
+        for (position, childIndex) in childIndices.enumerated() {
             if position.isMultiple(of: 256) {
                 try cancellationCheck()
             }
@@ -875,7 +874,15 @@ nonisolated struct FileTreeStore: Sendable {
             }
         }
         guard !changedChildren.isEmpty else {
-            return unchangedChildren.map(\.nodeIndex)
+            var result: [FileTreeNodeIndex] = []
+            result.reserveCapacity(unchangedChildren.count)
+            for (offset, child) in unchangedChildren.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                result.append(child.nodeIndex)
+            }
+            return result
         }
 
         try cancellablySortByDisplayOrder(
