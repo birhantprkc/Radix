@@ -859,9 +859,66 @@ nonisolated struct FileTreeStore: Sendable {
         cancellationCheck: () throws -> Void
     ) throws -> [FileTreeNodeIndex]
     where Children: Collection, Children.Element == FileTreeNodeIndex {
+        func copiedChildren() throws -> [FileTreeNodeIndex] {
+            var result: [FileTreeNodeIndex] = []
+            result.reserveCapacity(childIndices.count)
+            for (offset, childIndex) in childIndices.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                result.append(childIndex)
+            }
+            return result
+        }
+
+        var firstChangedPosition: Int?
+        var changedCount = 0
+        for (position, childIndex) in childIndices.enumerated() {
+            if position.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            if changedByOffset[Int(childIndex.rawValue)] {
+                firstChangedPosition = firstChangedPosition ?? position
+                changedCount += 1
+            }
+        }
+        guard let firstChangedPosition else {
+            return try copiedChildren()
+        }
+        if changedCount == 1 {
+            var result = try copiedChildren()
+            let changedChild = DisplayOrderEntry(
+                nodeIndex: result.remove(at: firstChangedPosition),
+                originalPosition: firstChangedPosition
+            )
+            try cancellationCheck()
+            var lowerBound = 0
+            var upperBound = result.count
+            while lowerBound < upperBound {
+                try cancellationCheck()
+                let candidatePosition = lowerBound + (upperBound - lowerBound) / 2
+                let originalPosition = candidatePosition < firstChangedPosition
+                    ? candidatePosition
+                    : candidatePosition + 1
+                let candidate = DisplayOrderEntry(
+                    nodeIndex: result[candidatePosition],
+                    originalPosition: originalPosition
+                )
+                if precedesInDisplayOrder(changedChild, candidate, nodeAt: nodeAt) {
+                    upperBound = candidatePosition
+                } else {
+                    lowerBound = candidatePosition + 1
+                }
+            }
+            result.insert(changedChild.nodeIndex, at: lowerBound)
+            try cancellationCheck()
+            return result
+        }
+
         var unchangedChildren: [DisplayOrderEntry] = []
         var changedChildren: [DisplayOrderEntry] = []
-        unchangedChildren.reserveCapacity(childIndices.count)
+        unchangedChildren.reserveCapacity(childIndices.count - changedCount)
+        changedChildren.reserveCapacity(changedCount)
         for (position, childIndex) in childIndices.enumerated() {
             if position.isMultiple(of: 256) {
                 try cancellationCheck()
@@ -872,17 +929,6 @@ nonisolated struct FileTreeStore: Sendable {
             } else {
                 unchangedChildren.append(entry)
             }
-        }
-        guard !changedChildren.isEmpty else {
-            var result: [FileTreeNodeIndex] = []
-            result.reserveCapacity(unchangedChildren.count)
-            for (offset, child) in unchangedChildren.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                result.append(child.nodeIndex)
-            }
-            return result
         }
 
         try cancellablySortByDisplayOrder(

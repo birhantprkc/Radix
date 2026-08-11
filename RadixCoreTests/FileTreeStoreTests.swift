@@ -277,6 +277,30 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updatedStore.root.allocatedSize, store.root.allocatedSize)
     }
 
+    func testReplacingOneAllocatedSizeReinsertsChangedChild() throws {
+        let first = makeFileNode(id: "/root/first.bin", name: "first.bin", size: 40)
+        let second = makeFileNode(id: "/root/second.bin", name: "second.bin", size: 30)
+        let third = makeFileNode(id: "/root/third.bin", name: "third.bin", size: 20)
+        let fourth = makeFileNode(id: "/root/fourth.bin", name: "fourth.bin", size: 10)
+        let children = [first, second, third, fourth]
+        let root = makeDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+        let secondIndex = try XCTUnwrap(store.nodeIndex(id: second.id))
+        let thirdIndex = try XCTUnwrap(store.nodeIndex(id: third.id))
+
+        let movedLater = try store.replacingAllocatedSizes(
+            [(nodeIndex: secondIndex, allocatedSize: 5)],
+            cancellationCheck: {}
+        )
+        let movedEarlier = try store.replacingAllocatedSizes(
+            [(nodeIndex: thirdIndex, allocatedSize: 50)],
+            cancellationCheck: {}
+        )
+
+        XCTAssertEqual(movedLater.childIDs(of: root.id), [first.id, third.id, fourth.id, second.id])
+        XCTAssertEqual(movedEarlier.childIDs(of: root.id), [third.id, first.id, second.id, fourth.id])
+    }
+
     func testReplacingAllocatedSizesHonorsCancellationDuringDisplayOrdering() throws {
         let children = (0..<1_024).map { index in
             makeFileNode(
