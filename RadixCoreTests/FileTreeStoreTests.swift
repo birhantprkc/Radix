@@ -253,6 +253,64 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updatedStore.aggregateStats.fileCount, 3)
     }
 
+    func testReplacingAllocatedSizesResortsManyChangedChildren() throws {
+        let children = (0..<16).map { index in
+            makeFileNode(
+                id: "/root/item-\(index).bin",
+                name: "item-\(index).bin",
+                size: Int64(16 - index)
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+        let replacements = try children.enumerated().map { index, child in
+            let nodeIndex = try XCTUnwrap(store.nodeIndex(id: child.id))
+            return (nodeIndex: nodeIndex, allocatedSize: Int64(index + 1))
+        }
+
+        let updatedStore = try store.replacingAllocatedSizes(
+            replacements,
+            cancellationCheck: {}
+        )
+
+        XCTAssertEqual(updatedStore.childIDs(of: root.id), children.reversed().map(\.id))
+        XCTAssertEqual(updatedStore.root.allocatedSize, store.root.allocatedSize)
+    }
+
+    func testReplacingAllocatedSizesHonorsCancellationDuringDisplayOrdering() throws {
+        let children = (0..<1_024).map { index in
+            makeFileNode(
+                id: "/root/item-\(index).bin",
+                name: "item-\(index).bin",
+                size: Int64(1_024 - index)
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+        let replacements = try children.enumerated().map { index, child in
+            let nodeIndex = try XCTUnwrap(store.nodeIndex(id: child.id))
+            return (nodeIndex: nodeIndex, allocatedSize: Int64(index + 1))
+        }
+        // The replacement, ancestor, traversal, and repair passes account for
+        // four checks per child; this margin reaches the ordering merge.
+        let cancellationCheckLimit = children.count * 4 + 12
+        var cancellationCheckCount = 0
+
+        XCTAssertThrowsError(try store.replacingAllocatedSizes(
+            replacements,
+            cancellationCheck: {
+                cancellationCheckCount += 1
+                if cancellationCheckCount == cancellationCheckLimit {
+                    throw CancellationError()
+                }
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(cancellationCheckCount, cancellationCheckLimit)
+        XCTAssertEqual(store.childIDs(of: root.id), children.map(\.id))
+    }
+
     func testRemovingSubtreeSaturatesAncestorTotalsAndRepairsAccessibility() throws {
         let maximum = makeFileNode(id: "/root/maximum.bin", name: "maximum.bin", size: .max)
         let tiny = makeFileNode(id: "/root/tiny.bin", name: "tiny.bin", size: 1)

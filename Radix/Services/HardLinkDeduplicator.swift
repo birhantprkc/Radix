@@ -317,7 +317,6 @@ nonisolated struct HardLinkDeduplicator {
             cancellationCheck: cancellationCheck
         )
         var replacements: [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)] = []
-        replacements.reserveCapacity(claimNodeIndices.count)
         for (offset, nodeIndex) in claimNodeIndices.enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()

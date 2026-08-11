@@ -787,48 +787,126 @@ nonisolated struct FileTreeStore: Sendable {
         return lhs.allocatedSize > rhs.allocatedSize
     }
 
-    private nonisolated static func restoringDisplayOrderAfterChanges(
-        _ childIndices: [FileTreeNodeIndex],
-        changedByOffset: [Bool],
-        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord
-    ) -> [FileTreeNodeIndex] {
-        var changedPosition: Int?
-        for (position, childIndex) in childIndices.enumerated()
-        where changedByOffset[Int(childIndex.rawValue)] {
-            guard changedPosition == nil else {
-                return childIndices.sorted {
-                    areInDisplayOrder(nodeAt($0), nodeAt($1))
-                }
-            }
-            changedPosition = position
-        }
-        guard let changedPosition else { return childIndices }
+    private typealias DisplayOrderEntry = (
+        nodeIndex: FileTreeNodeIndex,
+        originalPosition: Int
+    )
 
-        var reorderedChildren = childIndices
-        let changedChild = reorderedChildren.remove(at: changedPosition)
-        let changedNode = nodeAt(changedChild)
-        var lowerBound = 0
-        var upperBound = reorderedChildren.count
-        while lowerBound < upperBound {
-            let candidatePosition = lowerBound + (upperBound - lowerBound) / 2
-            let candidateNode = nodeAt(reorderedChildren[candidatePosition])
-            if areInDisplayOrder(changedNode, candidateNode) {
-                upperBound = candidatePosition
-            } else if areInDisplayOrder(candidateNode, changedNode) {
-                lowerBound = candidatePosition + 1
-            } else {
-                let originalCandidatePosition = candidatePosition < changedPosition
-                    ? candidatePosition
-                    : candidatePosition + 1
-                if changedPosition < originalCandidatePosition {
-                    upperBound = candidatePosition
-                } else {
-                    lowerBound = candidatePosition + 1
+    private nonisolated static func precedesInDisplayOrder(
+        _ lhs: DisplayOrderEntry,
+        _ rhs: DisplayOrderEntry,
+        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord
+    ) -> Bool {
+        let lhsNode = nodeAt(lhs.nodeIndex)
+        let rhsNode = nodeAt(rhs.nodeIndex)
+        if areInDisplayOrder(lhsNode, rhsNode) {
+            return true
+        }
+        if areInDisplayOrder(rhsNode, lhsNode) {
+            return false
+        }
+        return lhs.originalPosition < rhs.originalPosition
+    }
+
+    private nonisolated static func cancellablySortByDisplayOrder(
+        _ entries: inout [DisplayOrderEntry],
+        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
+        cancellationCheck: () throws -> Void
+    ) throws {
+        guard entries.count > 1 else { return }
+
+        var source = entries
+        var destination = entries
+        var width = 1
+        while width < source.count {
+            var start = 0
+            while start < source.count {
+                try cancellationCheck()
+                let middle = min(start + width, source.count)
+                let end = min(start + width + width, source.count)
+                var left = start
+                var right = middle
+                for output in start..<end {
+                    if output.isMultiple(of: 256) {
+                        try cancellationCheck()
+                    }
+                    let takesLeft = left < middle
+                        && (right >= end || !precedesInDisplayOrder(
+                            source[right],
+                            source[left],
+                            nodeAt: nodeAt
+                        ))
+                    if takesLeft {
+                        destination[output] = source[left]
+                        left += 1
+                    } else {
+                        destination[output] = source[right]
+                        right += 1
+                    }
                 }
+                start = end
+            }
+            swap(&source, &destination)
+            width = width > source.count / 2 ? source.count : width * 2
+        }
+        entries = source
+    }
+
+    private nonisolated static func restoringDisplayOrderAfterChanges<Children>(
+        _ childIndices: Children,
+        changedByOffset: [Bool],
+        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
+        cancellationCheck: () throws -> Void
+    ) throws -> [FileTreeNodeIndex]
+    where Children: Collection, Children.Element == FileTreeNodeIndex {
+        var unchangedChildren: [DisplayOrderEntry] = []
+        var changedChildren: [DisplayOrderEntry] = []
+        unchangedChildren.reserveCapacity(childIndices.count)
+        for (position, childIndex) in childIndices.enumerated()
+        {
+            if position.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let entry = (nodeIndex: childIndex, originalPosition: position)
+            if changedByOffset[Int(childIndex.rawValue)] {
+                changedChildren.append(entry)
+            } else {
+                unchangedChildren.append(entry)
             }
         }
-        reorderedChildren.insert(changedChild, at: lowerBound)
-        return reorderedChildren
+        guard !changedChildren.isEmpty else {
+            return unchangedChildren.map(\.nodeIndex)
+        }
+
+        try cancellablySortByDisplayOrder(
+            &changedChildren,
+            nodeAt: nodeAt,
+            cancellationCheck: cancellationCheck
+        )
+
+        var result: [FileTreeNodeIndex] = []
+        result.reserveCapacity(childIndices.count)
+        var unchangedOffset = 0
+        var changedOffset = 0
+        while unchangedOffset < unchangedChildren.count || changedOffset < changedChildren.count {
+            if result.count.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let takesUnchanged = unchangedOffset < unchangedChildren.count
+                && (changedOffset >= changedChildren.count || !precedesInDisplayOrder(
+                    changedChildren[changedOffset],
+                    unchangedChildren[unchangedOffset],
+                    nodeAt: nodeAt
+                ))
+            if takesUnchanged {
+                result.append(unchangedChildren[unchangedOffset].nodeIndex)
+                unchangedOffset += 1
+            } else {
+                result.append(changedChildren[changedOffset].nodeIndex)
+                changedOffset += 1
+            }
+        }
+        return result
     }
 
     private nonisolated static func uniqueChildrenAndDroppedIDs(
@@ -1127,14 +1205,23 @@ nonisolated struct FileTreeStore: Sendable {
             let span = childSpans[nodeOffset]
             let start = Int(span.start)
             let end = start + Int(span.count)
-            let children = Self.restoringDisplayOrderAfterChanges(
-                Array(childIndices[start..<end]),
+            let children = try Self.restoringDisplayOrderAfterChanges(
+                childIndices[start..<end],
                 changedByOffset: changedByOffset,
-                nodeAt: { nodes[Int($0.rawValue)] }
+                nodeAt: { nodes[Int($0.rawValue)] },
+                cancellationCheck: cancellationCheck
             )
+            var childRecords: [FileNodeRecord] = []
+            childRecords.reserveCapacity(children.count)
+            for (offset, childIndex) in children.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                childRecords.append(nodes[Int(childIndex.rawValue)])
+            }
             nodes[nodeOffset] = Self.repairingDirectoryRecord(
                 nodes[nodeOffset],
-                children: children.map { nodes[Int($0.rawValue)] }
+                children: childRecords
             )
             childIndices.replaceSubrange(start..<end, with: children)
         }
@@ -1455,20 +1542,34 @@ nonisolated struct FileTreeStore: Sendable {
                 continue
             }
 
-            var survivingChildren = topologyArena.children(of: oldIndex).filter {
-                !removed[Int($0.rawValue)]
+            let existingChildren = topologyArena.children(of: oldIndex)
+            var survivingChildren: [FileTreeNodeIndex] = []
+            survivingChildren.reserveCapacity(existingChildren.count)
+            for (offset, childIndex) in existingChildren.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                if !removed[Int(childIndex.rawValue)] {
+                    survivingChildren.append(childIndex)
+                }
             }
-            survivingChildren = Self.restoringDisplayOrderAfterChanges(
+            survivingChildren = try Self.restoringDisplayOrderAfterChanges(
                 survivingChildren,
                 changedByOffset: affectedAncestors,
                 nodeAt: { childIndex in
                     let childOffset = Int(childIndex.rawValue)
                     return repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset]
-                }
+                },
+                cancellationCheck: cancellationCheck
             )
-            let children = survivingChildren.map { childIndex in
+            var children: [FileNodeRecord] = []
+            children.reserveCapacity(survivingChildren.count)
+            for (offset, childIndex) in survivingChildren.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
                 let childOffset = Int(childIndex.rawValue)
-                return repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset]
+                children.append(repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset])
             }
             repairedRecordsByOffset[oldOffset] = Self.repairingDirectoryRecord(
                 nodeRecords[oldOffset],
