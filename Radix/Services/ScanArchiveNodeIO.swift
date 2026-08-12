@@ -33,6 +33,49 @@ nonisolated private struct ScanArchiveCompactTopology {
     let parentsPrecedeChildren: Bool
 }
 
+nonisolated private enum ScanArchiveNodeOrdinalLookup {
+    case dense([Int])
+    case sparse([FileTreeNodeIndex: Int])
+
+    init(
+        orderedNodeIndices: [FileTreeNodeIndex],
+        backingNodeCapacity: Int,
+        cancellationCheck: () throws -> Void
+    ) throws {
+        if backingNodeCapacity <= max(orderedNodeIndices.count * 4, 4_096) {
+            var ordinals = Array(repeating: -1, count: backingNodeCapacity)
+            for (ordinal, nodeIndex) in orderedNodeIndices.enumerated() {
+                if ordinal.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                ordinals[Int(nodeIndex.rawValue)] = ordinal
+            }
+            self = .dense(ordinals)
+        } else {
+            var ordinals: [FileTreeNodeIndex: Int] = [:]
+            ordinals.reserveCapacity(orderedNodeIndices.count)
+            for (ordinal, nodeIndex) in orderedNodeIndices.enumerated() {
+                if ordinal.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                ordinals[nodeIndex] = ordinal
+            }
+            self = .sparse(ordinals)
+        }
+    }
+
+    subscript(nodeIndex: FileTreeNodeIndex) -> Int? {
+        switch self {
+        case .dense(let ordinals):
+            let offset = Int(nodeIndex.rawValue)
+            guard ordinals.indices.contains(offset), ordinals[offset] >= 0 else { return nil }
+            return ordinals[offset]
+        case .sparse(let ordinals):
+            return ordinals[nodeIndex]
+        }
+    }
+}
+
 nonisolated private struct ScanArchiveStreamingJSONWriter {
     private static let flushByteCount = 1024 * 1024
 
@@ -144,24 +187,16 @@ extension ScanArchiveService {
         defer { try? fileHandle.close() }
 
         let orderedNodeIndices = treeStore.indexedNodeIndices()
-        var ordinalByNodeOffset = Array(repeating: -1, count: treeStore.nodeCount)
-        for (ordinal, nodeIndex) in orderedNodeIndices.enumerated() {
-            if ordinal.isMultiple(of: 256) {
-                try Task.checkCancellation()
-            }
-            let offset = Int(nodeIndex.rawValue)
-            guard ordinalByNodeOffset.indices.contains(offset) else {
-                throw ScanArchiveError.topology(localized: "node index is out of range")
-            }
-            ordinalByNodeOffset[offset] = ordinal
-        }
+        let ordinalByNodeIndex = try ScanArchiveNodeOrdinalLookup(
+            orderedNodeIndices: orderedNodeIndices,
+            backingNodeCapacity: treeStore.backingNodeCapacity,
+            cancellationCheck: Task.checkCancellation
+        )
 
         guard let rootIndex = treeStore.nodeIndex(id: treeStore.rootID) else {
             throw ScanArchiveError.topology(localized: "root node is missing from node order")
         }
-        let rootOffset = Int(rootIndex.rawValue)
-        guard ordinalByNodeOffset.indices.contains(rootOffset),
-              ordinalByNodeOffset[rootOffset] >= 0 else {
+        guard let rootOrdinal = ordinalByNodeIndex[rootIndex] else {
             throw ScanArchiveError.topology(localized: "root node is missing from node order")
         }
 
@@ -169,16 +204,14 @@ extension ScanArchiveService {
             fileHandle: fileHandle,
             encoding: encoding
         )
-        try writer.append("{\"r\":\(ordinalByNodeOffset[rootOffset]),\"c\":{")
+        try writer.append("{\"r\":\(rootOrdinal),\"c\":{")
         var wroteParent = false
 
         for (processedOffset, parentIndex) in orderedNodeIndices.enumerated() {
             try Task.checkCancellation()
             let childIndices = treeStore.childIndices(of: parentIndex)
             if !childIndices.isEmpty {
-                let parentOffset = Int(parentIndex.rawValue)
-                guard ordinalByNodeOffset.indices.contains(parentOffset),
-                      ordinalByNodeOffset[parentOffset] >= 0 else {
+                guard let parentOrdinal = ordinalByNodeIndex[parentIndex] else {
                     throw ScanArchiveError.topology(localized: "parent node is missing from node order")
                 }
 
@@ -186,21 +219,19 @@ extension ScanArchiveService {
                     try writer.append(",")
                 }
                 wroteParent = true
-                try writer.append("\"\(ordinalByNodeOffset[parentOffset])\":[")
+                try writer.append("\"\(parentOrdinal)\":[")
 
                 for (childOffset, childIndex) in childIndices.enumerated() {
                     if childOffset.isMultiple(of: 256) {
                         try Task.checkCancellation()
                     }
-                    let nodeOffset = Int(childIndex.rawValue)
-                    guard ordinalByNodeOffset.indices.contains(nodeOffset),
-                          ordinalByNodeOffset[nodeOffset] >= 0 else {
+                    guard let childOrdinal = ordinalByNodeIndex[childIndex] else {
                         throw ScanArchiveError.topology(localized: "child node is missing from node order")
                     }
                     if childOffset > 0 {
                         try writer.append(",")
                     }
-                    try writer.append(String(ordinalByNodeOffset[nodeOffset]))
+                    try writer.append(String(childOrdinal))
                 }
                 try writer.append("]")
             }

@@ -567,6 +567,10 @@ nonisolated struct FileTreeStore: Sendable {
         logicalScope?.orderedNodeIndices.count ?? nodeRecords.count
     }
 
+    nonisolated var backingNodeCapacity: Int {
+        nodeRecords.count
+    }
+
     nonisolated var aggregateStats: ScanAggregateStats {
         if let logicalScope {
             return logicalScope.aggregateStats
@@ -1153,6 +1157,14 @@ nonisolated struct FileTreeStore: Sendable {
               let parentIndex = nodeIndex(id: parentID) else {
             return nil
         }
+        if logicalScope != nil {
+            return try? materialized(cancellationCheck: {}).replacingRecordsPreservingTopology(
+                replacements,
+                orderedChildIDs: orderedChildIDs,
+                of: parentID,
+                aggregateStats: aggregateStats
+            )
+        }
 
         var indexedReplacements: [(Int, FileNodeRecord)] = []
         indexedReplacements.reserveCapacity(replacements.count)
@@ -1200,6 +1212,15 @@ nonisolated struct FileTreeStore: Sendable {
         guard replacementRoot.id == rootID,
               let oldRootIndex = nodeIndex(id: rootID) else {
             return nil
+        }
+        if logicalScope != nil {
+            return try? materialized(cancellationCheck: {}).replacingRootLeaf(
+                removing: removedLeafID,
+                adding: addedLeaf,
+                root: replacementRoot,
+                orderedChildIDs: orderedChildIDs,
+                aggregateStats: aggregateStats
+            )
         }
 
         let oldRootChildren = topologyArena.children(of: oldRootIndex)
@@ -1304,6 +1325,28 @@ nonisolated struct FileTreeStore: Sendable {
         cancellationCheck: () throws -> Void
     ) throws -> FileTreeStore {
         guard !replacements.isEmpty else { return self }
+        if logicalScope != nil {
+            var replacementsByID: [(String, Int64)] = []
+            replacementsByID.reserveCapacity(replacements.count)
+            for replacement in replacements {
+                try cancellationCheck()
+                guard let nodeID = node(at: replacement.nodeIndex)?.id else {
+                    preconditionFailure("Allocated-size replacement index is out of range.")
+                }
+                replacementsByID.append((nodeID, replacement.allocatedSize))
+            }
+            let materializedStore = try materialized(cancellationCheck: cancellationCheck)
+            let remappedReplacements = replacementsByID.map { nodeID, allocatedSize in
+                guard let nodeIndex = materializedStore.nodeIndex(id: nodeID) else {
+                    preconditionFailure("Materialized scope is missing an allocated-size replacement.")
+                }
+                return (nodeIndex: nodeIndex, allocatedSize: allocatedSize)
+            }
+            return try materializedStore.replacingAllocatedSizes(
+                remappedReplacements,
+                cancellationCheck: cancellationCheck
+            )
+        }
 
         var updatedRecords = nodeRecords
         var updatedChildIndices = topologyArena.childIndices
@@ -1663,6 +1706,12 @@ nonisolated struct FileTreeStore: Sendable {
         if removalIDs.contains(rootID) {
             return FileTreeStore(root: emptyRootNode())
         }
+        if logicalScope != nil {
+            return try materialized(cancellationCheck: cancellationCheck).removingSubtrees(
+                rootedAt: removalIDs,
+                cancellationCheck: cancellationCheck
+            )
+        }
         let removalRootIndices = removalIDs.compactMap { nodeIndex(id: $0) }
         return try compactedStore(
             removingSubtreesAt: removalRootIndices,
@@ -1682,6 +1731,12 @@ nonisolated struct FileTreeStore: Sendable {
         guard let targetIndex = nodeIndex(id: targetID),
               parentIndex(of: targetIndex) != nil else {
             return nil
+        }
+        if logicalScope != nil {
+            return try materialized(cancellationCheck: cancellationCheck).removingSubtree(
+                id: targetID,
+                cancellationCheck: cancellationCheck
+            )
         }
         return try compactedStore(
             removingSubtreesAt: [targetIndex],
@@ -1927,6 +1982,13 @@ nonisolated struct FileTreeStore: Sendable {
     ) throws -> FileTreeStore? {
         try cancellationCheck()
         guard nodeIndex(id: targetID) != nil else { return nil }
+        if logicalScope != nil {
+            return try materialized(cancellationCheck: cancellationCheck).replacingSubtree(
+                id: targetID,
+                with: replacement,
+                cancellationCheck: cancellationCheck
+            )
+        }
 
         let replacementNodesByID = replacement.nodesByID
         let replacementChildIDsByID = replacement.childIDsByID
@@ -2041,6 +2103,12 @@ nonisolated struct FileTreeStore: Sendable {
            replacement.rootID == rootID {
             return try HardLinkDeduplicator.rebalancedStore(
                 replacement,
+                cancellationCheck: cancellationCheck
+            )
+        }
+        if logicalScope != nil {
+            return try materialized(cancellationCheck: cancellationCheck).replacingSubtrees(
+                replacements,
                 cancellationCheck: cancellationCheck
             )
         }
@@ -2263,6 +2331,21 @@ nonisolated struct FileTreeStore: Sendable {
         }
 
         return accumulator.stats(root: root)
+    }
+
+    /// Returns an independently mutable compact store for the visible scope.
+    /// Unscoped stores already own a complete backing arena and pass through.
+    nonisolated func materialized(
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore {
+        guard logicalScope != nil else { return self }
+        guard let store = try subtree(
+            rootedAt: rootID,
+            cancellationCheck: cancellationCheck
+        ) else {
+            preconditionFailure("Logical scope root is missing from its backing store.")
+        }
+        return store
     }
 
     /// Creates an immutable view rooted inside the same compact backing store.

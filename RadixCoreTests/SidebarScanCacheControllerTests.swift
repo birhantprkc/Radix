@@ -276,6 +276,8 @@ final class SidebarScanCacheControllerTests: XCTestCase {
         let restoredSnapshot = try XCTUnwrap(recorder.restoredSnapshots.first)
         XCTAssertEqual(restoredSnapshot.root.id, scoped.id)
         XCTAssertEqual(restoredSnapshot.root.allocatedSize, 100)
+        XCTAssertEqual(restoredSnapshot.treeStore.nodeCount, 2)
+        XCTAssertNotEqual(restoredSnapshot.treeStore.nodeIndex(id: scoped.id)?.rawValue, 0)
         XCTAssertEqual(restoredSnapshot.treeStore.node(id: scopedFile.id)?.allocatedSize, 100)
         XCTAssertTrue(recorder.startedTargets.isEmpty)
     }

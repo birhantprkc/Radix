@@ -651,6 +651,27 @@ final class FileTreeStoreTests: XCTestCase {
         )
         XCTAssertNil(scope.node(id: outsideHardLink.id))
         XCTAssertNil(scope.node(id: outsideClone.id))
+
+        let filtered = try XCTUnwrap(try scope.removingSubtree(
+            id: regular.id,
+            cancellationCheck: {}
+        ))
+        XCTAssertEqual(filtered.root.allocatedSize, 200)
+        XCTAssertEqual(filtered.nodeCount, 3)
+        XCTAssertNil(filtered.node(id: regular.id))
+        XCTAssertNil(filtered.node(id: outsideHardLink.id))
+        XCTAssertEqual(filtered.node(id: visibleHardLink.id)?.allocatedSize, 100)
+        XCTAssertEqual(filtered.node(id: visibleClone.id)?.allocatedSize, 100)
+
+        let rescannedRegular = makeFileNode(id: regular.id, name: regular.name, size: 75)
+        let replaced = try XCTUnwrap(try scope.replacingSubtree(
+            id: regular.id,
+            with: FileTreeStore(root: rescannedRegular),
+            cancellationCheck: {}
+        ))
+        XCTAssertEqual(replaced.root.allocatedSize, 275)
+        XCTAssertEqual(replaced.node(id: regular.id)?.allocatedSize, 75)
+        XCTAssertNil(replaced.node(id: outsideHardLink.id))
     }
 
     func testWideTreeChildMapDoesNotReserveOneEntryPerChild() {
