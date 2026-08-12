@@ -89,6 +89,51 @@ final class SidebarScanCacheControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testControllerKeepsCurrentCachedParentWhenChildScopeIsPending() async {
+        let controller = SidebarScanCacheController(minimumRetainedSnapshotCount: 2, maxTotalNodeCount: 100)
+        let recorder = SidebarScanCacheRecorder()
+        let tree = makeParentAndChildSnapshot()
+        let options = ScanOptions(includeHiddenFiles: true)
+
+        controller.prepareForScanStart(target: tree.snapshot.target, options: options)
+        controller.handleCompletedScanSnapshot(tree.snapshot)
+
+        func apply(_ target: ScanTarget) -> Bool {
+            controller.applyCachedOrContainedSidebarTarget(
+                target,
+                options: options,
+                currentSnapshot: tree.snapshot,
+                isTargetActive: { target in
+                    recorder.activeTargetID == target.id
+                },
+                cancelDeferredScanStart: {
+                    recorder.cancelDeferredScanStartCount += 1
+                },
+                restoreSnapshot: { snapshot, target in
+                    recorder.restoredSnapshots.append(snapshot)
+                    recorder.restoredTargets.append(target)
+                },
+                startScan: { target in
+                    recorder.startedTargets.append(target)
+                }
+            )
+        }
+
+        recorder.activeTargetID = tree.childTarget.id
+        XCTAssertFalse(apply(tree.childTarget))
+
+        recorder.activeTargetID = tree.snapshot.target.id
+        XCTAssertFalse(apply(tree.snapshot.target))
+
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(recorder.cancelDeferredScanStartCount, 2)
+        XCTAssertTrue(recorder.restoredSnapshots.isEmpty)
+        XCTAssertTrue(recorder.startedTargets.isEmpty)
+    }
+
+    @MainActor
     func testControllerScopesCurrentSidebarSnapshotWhenDisplayedOptionsMatch() async throws {
         let controller = SidebarScanCacheController(minimumRetainedSnapshotCount: 2, maxTotalNodeCount: 100)
         let recorder = SidebarScanCacheRecorder()

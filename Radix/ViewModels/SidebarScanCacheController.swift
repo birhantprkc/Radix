@@ -191,14 +191,20 @@ final class SidebarScanCacheController {
         }
 
         let cacheKey = ScanCacheKey(target: target, options: options)
-        if let cachedSnapshot = completedScanCache.snapshot(for: cacheKey),
-           currentSnapshot?.id != cachedSnapshot.id {
-            restoreCachedSnapshot(
-                cachedSnapshot,
-                cacheKey: cacheKey,
-                cancelDeferredScanStart: cancelDeferredScanStart,
-                restoreSnapshot: restoreSnapshot
-            )
+        if let cachedSnapshot = completedScanCache.snapshot(for: cacheKey) {
+            if currentSnapshot?.id == cachedSnapshot.id {
+                cancelPendingSidebarTargetRestore()
+                cancelDeferredScanStart()
+                activeScanCacheKey = nil
+                displayedScanCacheKey = cacheKey
+            } else {
+                restoreCachedSnapshot(
+                    cachedSnapshot,
+                    cacheKey: cacheKey,
+                    cancelDeferredScanStart: cancelDeferredScanStart,
+                    restoreSnapshot: restoreSnapshot
+                )
+            }
             return false
         }
 
