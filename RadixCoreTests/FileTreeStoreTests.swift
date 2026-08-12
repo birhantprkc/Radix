@@ -422,6 +422,23 @@ final class FileTreeStoreTests: XCTestCase {
             }
             XCTAssertEqual(cancellationCheckCount, cancellationCheckLimit)
         }
+        guard let logicalScope = store.logicalScope(rootedAt: root.id) else {
+            XCTFail("Expected logical scope.")
+            return
+        }
+        var logicalScopeCheckCount = 0
+        XCTAssertThrowsError(try logicalScope.removingSubtree(
+            id: children[512].id,
+            cancellationCheck: {
+                logicalScopeCheckCount += 1
+                if logicalScopeCheckCount == 10 {
+                    throw CancellationError()
+                }
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(logicalScopeCheckCount, 10)
         XCTAssertEqual(store.nodeCount, children.count + 1)
         XCTAssertNotNil(store.node(id: children[512].id))
     }
@@ -652,16 +669,27 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertNil(scope.node(id: outsideHardLink.id))
         XCTAssertNil(scope.node(id: outsideClone.id))
 
+        let materializedScope = try scope.materialized(cancellationCheck: {})
+        let expectedFiltered = try XCTUnwrap(try materializedScope.removingSubtree(
+            id: regular.id,
+            cancellationCheck: {}
+        ))
         let filtered = try XCTUnwrap(try scope.removingSubtree(
             id: regular.id,
             cancellationCheck: {}
         ))
+        assertEquivalent(filtered, expectedFiltered)
         XCTAssertEqual(filtered.root.allocatedSize, 200)
         XCTAssertEqual(filtered.nodeCount, 3)
         XCTAssertNil(filtered.node(id: regular.id))
         XCTAssertNil(filtered.node(id: outsideHardLink.id))
         XCTAssertEqual(filtered.node(id: visibleHardLink.id)?.allocatedSize, 100)
         XCTAssertEqual(filtered.node(id: visibleClone.id)?.allocatedSize, 100)
+
+        let batchRemovalIDs = [regular.id, visibleClone.id]
+        let expectedBatch = materializedScope.removingSubtrees(rootedAt: batchRemovalIDs)
+        let filteredBatch = scope.removingSubtrees(rootedAt: batchRemovalIDs)
+        assertEquivalent(filteredBatch, expectedBatch)
 
         let rescannedRegular = makeFileNode(id: regular.id, name: regular.name, size: 75)
         let replaced = try XCTUnwrap(try scope.replacingSubtree(
@@ -1314,6 +1342,55 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(restored.aggregateStats.accessibleItemCount, originalStats.accessibleItemCount)
         XCTAssertEqual(restored.aggregateStats.inaccessibleItemCount, originalStats.inaccessibleItemCount)
     }
+}
+
+private func assertEquivalent(
+    _ actual: FileTreeStore,
+    _ expected: FileTreeStore,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    let expectedNodeIDs = expected.indexedNodeIDs()
+    XCTAssertEqual(actual.indexedNodeIDs(), expectedNodeIDs, file: file, line: line)
+    XCTAssertEqual(actual.nodesByID, expected.nodesByID, file: file, line: line)
+    XCTAssertEqual(actual.childIDsByID, expected.childIDsByID, file: file, line: line)
+    XCTAssertEqual(actual.parentIDByID, expected.parentIDByID, file: file, line: line)
+    XCTAssertEqual(
+        actual.aggregateStats.totalAllocatedSize,
+        expected.aggregateStats.totalAllocatedSize,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        actual.aggregateStats.totalLogicalSize,
+        expected.aggregateStats.totalLogicalSize,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        actual.aggregateStats.fileCount,
+        expected.aggregateStats.fileCount,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        actual.aggregateStats.directoryCount,
+        expected.aggregateStats.directoryCount,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        actual.aggregateStats.accessibleItemCount,
+        expected.aggregateStats.accessibleItemCount,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        actual.aggregateStats.inaccessibleItemCount,
+        expected.aggregateStats.inaccessibleItemCount,
+        file: file,
+        line: line
+    )
 }
 
 private func makeFileNode(

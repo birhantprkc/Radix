@@ -207,6 +207,7 @@ final class ScanBenchmarkTests: XCTestCase {
         }
 
         let usesHardLinks = environment["RADIX_BENCH_TREE_HARD_LINKS"] == "1"
+        let usesLogicalScope = environment["RADIX_BENCH_TREE_LOGICAL_SCOPE"] == "1"
         let removesDirectory = environment["RADIX_BENCH_TREE_REMOVE_DIRECTORY"] == "1"
         let waitsForSettledFirstFilter =
             environment["RADIX_BENCH_TREE_SETTLED_REPLACEMENT"] == "1"
@@ -335,9 +336,12 @@ final class ScanBenchmarkTests: XCTestCase {
                 inaccessibleItemCount: 0
             )
         )
+        let benchmarkStore = usesLogicalScope
+            ? try XCTUnwrap(store.logicalScope(rootedAt: store.rootID))
+            : store
 
         let startedAt = ContinuousClock.now
-        let updatedStore = try XCTUnwrap(store.removingSubtree(id: removalID))
+        let updatedStore = try XCTUnwrap(benchmarkStore.removingSubtree(id: removalID))
         let filterFinishedAt = ContinuousClock.now
         let sunburstSegments = SunburstLayout.segments(
             in: updatedStore,
@@ -374,6 +378,7 @@ final class ScanBenchmarkTests: XCTestCase {
         print(
             "RADIX_BENCH_TREE_REMOVAL_RESULT nodes=\(nodeCount) " +
             "removed=\(removedNodeCount) hard_links=\(usesHardLinks) " +
+            "logical_scope=\(usesLogicalScope) " +
             "filter=\(String(format: "%.6f", filterElapsedSeconds))s " +
             "sunburst=\(String(format: "%.6f", sunburstElapsedSeconds))s " +
             "sunburst_segments=\(sunburstSegments.count) " +
@@ -383,22 +388,22 @@ final class ScanBenchmarkTests: XCTestCase {
         )
 
         let baseInput = DiskMapVisualizationInput(
-            rootNode: store.root,
-            treeStore: DiskMapTreeStore(store),
-            treeContentID: store.contentID,
+            rootNode: benchmarkStore.root,
+            treeStore: DiskMapTreeStore(benchmarkStore),
+            treeContentID: benchmarkStore.contentID,
             layoutIDComponent: "benchmark"
         )
         let snapshotID = UUID()
         let firstRequest = DiskMapVisualizationFilterRequest(
             baseInput: baseInput,
             snapshotID: snapshotID,
-            focusNodeID: store.root.id,
+            focusNodeID: benchmarkStore.root.id,
             hiddenNodeIDs: [removalID]
         )
         let replacementRequest = DiskMapVisualizationFilterRequest(
             baseInput: baseInput,
             snapshotID: snapshotID,
-            focusNodeID: store.root.id,
+            focusNodeID: benchmarkStore.root.id,
             hiddenNodeIDs: [removalID, replacementRemovalID]
         )
         var filterDurations: [Double] = []
@@ -471,6 +476,7 @@ final class ScanBenchmarkTests: XCTestCase {
         print(
             "RADIX_BENCH_DISCARD_REPLACEMENT_RESULT nodes=\(nodeCount) " +
             "hidden=2 hard_links=\(usesHardLinks) " +
+            "logical_scope=\(usesLogicalScope) " +
             "first_filter=\(waitsForSettledFirstFilter ? "settled" : "rapid") " +
             "iterations=\(replacementIterationCount) " +
             "filter_median=\(String(format: "%.6f", medianFilterDuration))s " +

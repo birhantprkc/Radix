@@ -347,9 +347,14 @@ nonisolated struct FileTreeStore: Sendable {
             words = Array(repeating: 0, count: (nodeCapacity + 63) / 64)
         }
 
-        mutating func insert(_ index: FileTreeNodeIndex) {
+        @discardableResult
+        mutating func insert(_ index: FileTreeNodeIndex) -> Bool {
             let offset = Int(index.rawValue)
-            words[offset >> 6] |= UInt64(1) << UInt64(offset & 63)
+            let wordIndex = offset >> 6
+            let mask = UInt64(1) << UInt64(offset & 63)
+            let inserted = words[wordIndex] & mask == 0
+            words[wordIndex] |= mask
+            return inserted
         }
 
         func contains(_ index: FileTreeNodeIndex) -> Bool {
@@ -1747,13 +1752,14 @@ nonisolated struct FileTreeStore: Sendable {
         if removalIDs.contains(rootID) {
             return FileTreeStore(root: emptyRootNode())
         }
+        let removalRootIndices = removalIDs.compactMap { nodeIndex(id: $0) }
         if logicalScope != nil {
-            return try materialized(cancellationCheck: cancellationCheck).removingSubtrees(
-                rootedAt: removalIDs,
+            return try compactedSubtree(
+                rootedAt: activeRootIndex,
+                excludingSubtreesAt: removalRootIndices,
                 cancellationCheck: cancellationCheck
             )
         }
-        let removalRootIndices = removalIDs.compactMap { nodeIndex(id: $0) }
         return try compactedStore(
             removingSubtreesAt: removalRootIndices,
             cancellationCheck: cancellationCheck
@@ -1774,8 +1780,9 @@ nonisolated struct FileTreeStore: Sendable {
             return nil
         }
         if logicalScope != nil {
-            return try materialized(cancellationCheck: cancellationCheck).removingSubtree(
-                id: targetID,
+            return try compactedSubtree(
+                rootedAt: activeRootIndex,
+                excludingSubtreesAt: [targetIndex],
                 cancellationCheck: cancellationCheck
             )
         }
@@ -2548,20 +2555,59 @@ nonisolated struct FileTreeStore: Sendable {
     ) throws -> FileTreeStore? {
         try cancellationCheck()
         guard let targetIndex = nodeIndex(id: targetID) else { return nil }
+        return try compactedSubtree(
+            rootedAt: targetIndex,
+            excludingSubtreesAt: [],
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    private nonisolated func compactedSubtree(
+        rootedAt targetIndex: FileTreeNodeIndex,
+        excludingSubtreesAt excludedRootIndices: [FileTreeNodeIndex],
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore {
+        let excludesSubtrees = !excludedRootIndices.isEmpty
+        var excludedMembership: NodeMembership?
+        var affectedAncestorMembership: NodeMembership?
+        var affectedAncestorCount = 0
+        if excludesSubtrees {
+            var excluded = NodeMembership(nodeCapacity: nodeRecords.count)
+            var affected = NodeMembership(nodeCapacity: nodeRecords.count)
+            for excludedRootIndex in excludedRootIndices {
+                excluded.insert(excludedRootIndex)
+                var cursor = topologyArena.parentIndex(of: excludedRootIndex)
+                while let ancestorIndex = cursor {
+                    try cancellationCheck()
+                    if affected.insert(ancestorIndex) {
+                        affectedAncestorCount += 1
+                    }
+                    guard ancestorIndex != targetIndex else { break }
+                    cursor = topologyArena.parentIndex(of: ancestorIndex)
+                }
+            }
+            excludedMembership = excluded
+            affectedAncestorMembership = affected
+        }
 
         var scopedNodes: [FileNodeRecord] = []
         var parentRawIndices: [UInt32] = []
         var orderedNodeIndices: [FileTreeNodeIndex] = []
+        var affectedScopedIndices: [FileTreeNodeIndex] = []
         var statsAccumulator = AggregateStatsAccumulator()
         var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
         var hardLinkClaimIndices: [FileTreeNodeIndex] = []
         var stack = [(sourceIndex: targetIndex, scopedParentRawIndex: UInt32.max)]
+        affectedScopedIndices.reserveCapacity(affectedAncestorCount)
 
         while let entry = stack.popLast() {
             if scopedNodes.count.isMultiple(of: 256) {
                 try cancellationCheck()
             }
             let sourceIndex = entry.sourceIndex
+            if excludedMembership?.contains(sourceIndex) == true {
+                continue
+            }
             let sourceOffset = Int(sourceIndex.rawValue)
             let scopedIndex = FileTreeNodeIndex(rawValue: UInt32(scopedNodes.count))
             let node = nodeRecords[sourceOffset]
@@ -2569,6 +2615,9 @@ nonisolated struct FileTreeStore: Sendable {
             scopedNodes.append(node)
             parentRawIndices.append(entry.scopedParentRawIndex)
             orderedNodeIndices.append(scopedIndex)
+            if affectedAncestorMembership?.contains(sourceIndex) == true {
+                affectedScopedIndices.append(scopedIndex)
+            }
             statsAccumulator.include(node, hasMaterializedChildren: !sourceChildren.isEmpty)
             if let claim = HardLinkDeduplicator.claim(for: node) {
                 hardLinkAccumulator.record(claim)
@@ -2615,6 +2664,31 @@ nonisolated struct FileTreeStore: Sendable {
             let childRawOffset = nextChildRawOffset[parentOffset]
             childIndices[Int(childRawOffset)] = FileTreeNodeIndex(rawValue: UInt32(scopedOffset))
             nextChildRawOffset[parentOffset] += 1
+        }
+
+        if !affectedScopedIndices.isEmpty {
+            let affectedScopedIndexSet = Set(affectedScopedIndices)
+            for scopedIndex in affectedScopedIndices.reversed() {
+                try cancellationCheck()
+                let scopedOffset = Int(scopedIndex.rawValue)
+                guard scopedNodes[scopedOffset].isDirectory else { continue }
+
+                let span = childSpans[scopedOffset]
+                let childStart = Int(span.start)
+                let childEnd = childStart + Int(span.count)
+                let reorderedChildren = try Self.restoringDisplayOrderAfterChanges(
+                    childIndices[childStart..<childEnd],
+                    isChanged: { affectedScopedIndexSet.contains($0) },
+                    nodeAt: { scopedNodes[Int($0.rawValue)] },
+                    cancellationCheck: cancellationCheck
+                )
+                childIndices.replaceSubrange(childStart..<childEnd, with: reorderedChildren)
+                let children = reorderedChildren.map { scopedNodes[Int($0.rawValue)] }
+                scopedNodes[scopedOffset] = Self.repairingDirectoryRecord(
+                    scopedNodes[scopedOffset],
+                    children: children
+                )
+            }
         }
 
         let scopedRootIndex = FileTreeNodeIndex(rawValue: 0)
