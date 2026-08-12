@@ -2389,6 +2389,8 @@ nonisolated struct FileTreeStore: Sendable {
                 hardLinkAccumulator.record(claim)
                 hardLinkClaimIndices.append(nodeIndex)
             }
+            guard !children.isEmpty else { continue }
+            stack.reserveCapacity(stack.count + children.count)
             for (offset, childIndex) in children.reversed().enumerated() {
                 if offset.isMultiple(of: 256) {
                     try cancellationCheck()
