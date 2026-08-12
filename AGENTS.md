@@ -50,6 +50,22 @@ Build the complete app:
     xcodebuild -project Radix.xcodeproj -scheme Radix \
       -configuration Debug -destination 'platform=macOS' build
 
+For manual testing with Xcode and Computer Use:
+
+- Target Xcode as `com.apple.dt.Xcode`, open this checkout's
+  `Radix.xcodeproj`, click Run, and wait for Xcode's Run control to become Stop.
+- Resolve the running Debug app bundle with:
+
+      rtk proxy pgrep -alf '/Build/Products/Debug/Radix.app/Contents/MacOS/[R]adix' | \
+        rtk proxy sed -E 's/^[0-9]+ (.*Radix\.app)\/Contents\/MacOS\/Radix.*/\1/'
+
+- Require exactly one result and use that full `.app` path for every Computer
+  Use `app` argument. If there are zero or multiple results, correct the Xcode
+  run state before testing.
+- Never target the app as `Radix` or `com.colinkim.Radix`. Installed, archived,
+  release, and DerivedData builds share that identity, so generic lookup can
+  launch the wrong copy, including `/Applications/Radix.app`.
+
 Use small, focused Conventional Commits and Conventional Commit PR titles.
 
 ## Simplicity and Code Economy
