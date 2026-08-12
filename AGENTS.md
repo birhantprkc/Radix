@@ -45,26 +45,35 @@ Run core tests:
 
     swift test
 
-Build the complete app:
+Build the complete app into a deterministic DerivedData location:
 
     xcodebuild -project Radix.xcodeproj -scheme Radix \
-      -configuration Debug -destination 'platform=macOS' build
+      -configuration Debug -destination 'platform=macOS' \
+      -derivedDataPath .build/xcode-derived-data build
 
-For manual testing with Xcode and Computer Use:
+For routine manual testing with Computer Use:
 
-- Target Xcode as `com.apple.dt.Xcode`, open this checkout's
-  `Radix.xcodeproj`, click Run, and wait for Xcode's Run control to become Stop.
-- Resolve the running Debug app bundle with:
+- Stop any other running Radix instances, then launch this checkout's exact
+  Debug bundle:
 
-      rtk proxy pgrep -alf '/Build/Products/Debug/Radix.app/Contents/MacOS/[R]adix' | \
-        rtk proxy sed -E 's/^[0-9]+ (.*Radix\.app)\/Contents\/MacOS\/Radix.*/\1/'
+      open -n .build/xcode-derived-data/Build/Products/Debug/Radix.app
 
-- Require exactly one result and use that full `.app` path for every Computer
-  Use `app` argument. If there are zero or multiple results, correct the Xcode
-  run state before testing.
+- Use the full absolute path to that bundle for every Computer Use `app`
+  argument. Require exactly one running Radix instance before testing; the
+  `open -n` command deliberately starts a new instance.
 - Never target the app as `Radix` or `com.colinkim.Radix`. Installed, archived,
   release, and DerivedData builds share that identity, so generic lookup can
   launch the wrong copy, including `/Applications/Radix.app`.
+
+When the test specifically requires LLDB, scheme launch arguments, sanitizers,
+or other Xcode diagnostics, start the shared scheme from the command line
+instead of clicking Xcode's Run button with Computer Use:
+
+    xed -b Radix.xcodeproj
+    xcrun xcdebug -s Radix -B -b
+
+`xcdebug -B` performs the scheme's Build and Run action and attaches Xcode's
+debugger; the `-b` options leave Xcode in the background.
 
 Use small, focused Conventional Commits and Conventional Commit PR titles.
 
