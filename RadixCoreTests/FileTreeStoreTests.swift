@@ -512,6 +512,145 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertNil(scopedStore.node(id: sibling.id))
         XCTAssertEqual(scopedStore.aggregateStats.fileCount, 1)
         XCTAssertEqual(scopedStore.aggregateStats.directoryCount, 1)
+
+        let logicalScope = try XCTUnwrap(store.logicalScope(rootedAt: folder.id))
+
+        XCTAssertNotEqual(logicalScope.contentID, store.contentID)
+        XCTAssertEqual(logicalScope.rootID, folder.id)
+        XCTAssertEqual(logicalScope.root, folder)
+        XCTAssertEqual(logicalScope.nodeCount, 2)
+        XCTAssertEqual(logicalScope.indexedNodeIndices(), [folderIndex, nestedIndex])
+        XCTAssertEqual(logicalScope.indexedNodeIDs(), [folder.id, nested.id])
+        XCTAssertEqual(logicalScope.indexedNodeIDs(excludingRoot: true), [nested.id])
+        XCTAssertEqual(logicalScope.nodesByID, [folder.id: folder, nested.id: nested])
+        XCTAssertEqual(logicalScope.childIDsByID, [folder.id: [nested.id]])
+        XCTAssertEqual(logicalScope.parentIDByID, [nested.id: folder.id])
+        XCTAssertEqual(logicalScope.childIndices(of: folderIndex), [nestedIndex])
+        XCTAssertEqual(logicalScope.parentIndex(of: nestedIndex), folderIndex)
+        XCTAssertNil(logicalScope.parentIndex(of: folderIndex))
+        XCTAssertNil(logicalScope.node(id: root.id))
+        XCTAssertNil(logicalScope.node(id: sibling.id))
+        XCTAssertNil(logicalScope.node(at: rootIndex))
+        XCTAssertNil(logicalScope.parentID(of: folder.id))
+        XCTAssertEqual(logicalScope.path(to: nested.id).map(\.id), [folder.id, nested.id])
+        XCTAssertTrue(logicalScope.isAncestor(folder.id, of: nested.id))
+        XCTAssertFalse(logicalScope.isAncestor(root.id, of: nested.id))
+        XCTAssertEqual(logicalScope.aggregateStats.fileCount, 1)
+        XCTAssertEqual(logicalScope.aggregateStats.directoryCount, 1)
+    }
+
+    func testLogicalScopePreservesCountsAccessibilityAndNestedScoping() throws {
+        let summarized = makeTestSummarizedDirectoryNode(
+            id: "/root/Home/Summary",
+            name: "Summary",
+            size: 30,
+            descendantFileCount: 7
+        )
+        let inaccessible = makeFileNode(
+            id: "/root/Home/Private.bin",
+            name: "Private.bin",
+            size: 20,
+            isAccessible: false
+        )
+        let home = makeDirectoryNode(
+            id: "/root/Home",
+            name: "Home",
+            children: [summarized, inaccessible]
+        )
+        let sibling = makeFileNode(id: "/root/System.bin", name: "System.bin", size: 100)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [home, sibling])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [home, sibling],
+            home.id: [summarized, inaccessible],
+        ])
+
+        let homeScope = try XCTUnwrap(store.logicalScope(rootedAt: home.id))
+
+        XCTAssertEqual(homeScope.root.allocatedSize, 50)
+        XCTAssertEqual(homeScope.aggregateStats.fileCount, 8)
+        XCTAssertEqual(homeScope.aggregateStats.directoryCount, 2)
+        XCTAssertEqual(homeScope.aggregateStats.accessibleItemCount, 1)
+        XCTAssertEqual(homeScope.aggregateStats.inaccessibleItemCount, 2)
+        XCTAssertEqual(homeScope.subtreeNodeCount(rootedAt: home.id), 3)
+        XCTAssertEqual(homeScope.subtreeNodeCount(rootedAt: root.id), 0)
+
+        let nestedScope = try XCTUnwrap(homeScope.logicalScope(rootedAt: summarized.id))
+
+        XCTAssertEqual(nestedScope.rootID, summarized.id)
+        XCTAssertEqual(nestedScope.nodeCount, 1)
+        XCTAssertEqual(nestedScope.aggregateStats.fileCount, 7)
+        XCTAssertEqual(nestedScope.aggregateStats.directoryCount, 1)
+        XCTAssertNil(nestedScope.node(id: inaccessible.id))
+        XCTAssertNil(nestedScope.parent(of: summarized.id))
+    }
+
+    func testLogicalScopeReownsHardLinkAndCloneAllocationAndRepairsOrder() throws {
+        let hardLinkIdentity = FileIdentity(device: 9, inode: 1)
+        let cloneIdentity = CloneIdentity(device: 9, cloneID: 2)
+        let outsideHardLink = sharedFileNode(
+            id: "/root/A/hard.bin",
+            allocatedSize: 100,
+            fileIdentity: hardLinkIdentity,
+            linkCount: 2
+        )
+        let visibleHardLink = sharedFileNode(
+            id: "/root/Home/z-hard.bin",
+            allocatedSize: 0,
+            unduplicatedAllocatedSize: 100,
+            fileIdentity: hardLinkIdentity,
+            linkCount: 2
+        )
+        let outsideClone = sharedFileNode(
+            id: "/root/A/clone.bin",
+            allocatedSize: 100,
+            dataAllocatedSize: 80,
+            fileIdentity: FileIdentity(device: 9, inode: 2),
+            cloneIdentity: cloneIdentity
+        )
+        let visibleClone = sharedFileNode(
+            id: "/root/Home/z-clone.bin",
+            allocatedSize: 20,
+            unduplicatedAllocatedSize: 100,
+            dataAllocatedSize: 80,
+            fileIdentity: FileIdentity(device: 9, inode: 3),
+            cloneIdentity: cloneIdentity
+        )
+        let regular = makeFileNode(id: "/root/Home/regular.bin", name: "regular.bin", size: 50)
+        let outside = makeDirectoryNode(
+            id: "/root/A",
+            name: "A",
+            children: [outsideHardLink, outsideClone]
+        )
+        let home = makeDirectoryNode(
+            id: "/root/Home",
+            name: "Home",
+            children: [visibleHardLink, visibleClone, regular]
+        )
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [outside, home])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [outside, home],
+            outside.id: [outsideHardLink, outsideClone],
+            home.id: [visibleHardLink, visibleClone, regular],
+        ])
+
+        XCTAssertEqual(store.childIDs(of: home.id), [regular.id, visibleClone.id, visibleHardLink.id])
+
+        let scope = try XCTUnwrap(store.logicalScope(rootedAt: home.id))
+
+        XCTAssertEqual(scope.root.allocatedSize, 250)
+        XCTAssertEqual(scope.aggregateStats.totalAllocatedSize, 250)
+        XCTAssertEqual(scope.node(id: visibleHardLink.id)?.allocatedSize, 100)
+        XCTAssertEqual(scope.node(id: visibleClone.id)?.allocatedSize, 100)
+        XCTAssertEqual(
+            scope.childIDs(of: home.id),
+            [visibleClone.id, visibleHardLink.id, regular.id]
+        )
+        XCTAssertEqual(
+            scope.indexedNodeIDs(),
+            [home.id, visibleClone.id, visibleHardLink.id, regular.id]
+        )
+        XCTAssertNil(scope.node(id: outsideHardLink.id))
+        XCTAssertNil(scope.node(id: outsideClone.id))
     }
 
     func testWideTreeChildMapDoesNotReserveOneEntryPerChild() {
@@ -997,6 +1136,20 @@ final class FileTreeStoreTests: XCTestCase {
             XCTAssertTrue(error is CancellationError)
         }
         XCTAssertGreaterThanOrEqual(cancellationCheckCount, 4)
+
+        cancellationCheckCount = 0
+        XCTAssertThrowsError(try store.logicalScope(
+            rootedAt: root.id,
+            cancellationCheck: {
+                cancellationCheckCount += 1
+                if cancellationCheckCount >= 4 {
+                    throw CancellationError()
+                }
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertGreaterThanOrEqual(cancellationCheckCount, 4)
     }
 
     func testVolumeReconciliationUpdatesAndReordersExistingRemainderWithoutChangingTopology() throws {
@@ -1161,6 +1314,38 @@ private func makeFileNode(
         isPackage: false,
         isAccessible: isAccessible,
         isSelfAccessible: isAccessible,
+        isSynthetic: false,
+        isAutoSummarized: false
+    )
+}
+
+private func sharedFileNode(
+    id: String,
+    allocatedSize: Int64,
+    unduplicatedAllocatedSize: Int64? = nil,
+    dataAllocatedSize: Int64? = nil,
+    fileIdentity: FileIdentity,
+    linkCount: UInt64 = 1,
+    cloneIdentity: CloneIdentity? = nil
+) -> FileNodeRecord {
+    FileNodeRecord(
+        id: id,
+        url: URL(filePath: id),
+        name: URL(filePath: id).lastPathComponent,
+        isDirectory: false,
+        isSymbolicLink: false,
+        allocatedSize: allocatedSize,
+        unduplicatedAllocatedSize: unduplicatedAllocatedSize,
+        dataAllocatedSize: dataAllocatedSize,
+        logicalSize: unduplicatedAllocatedSize ?? allocatedSize,
+        descendantFileCount: 1,
+        lastModified: nil,
+        fileIdentity: fileIdentity,
+        linkCount: linkCount,
+        cloneIdentity: cloneIdentity,
+        isPackage: false,
+        isAccessible: true,
+        isSelfAccessible: true,
         isSynthetic: false,
         isAutoSummarized: false
     )

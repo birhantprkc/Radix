@@ -340,20 +340,110 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
 }
 
 nonisolated struct FileTreeStore: Sendable {
+    private struct NodeMembership: Sendable {
+        private var words: [UInt64]
+
+        init(nodeCapacity: Int) {
+            words = Array(repeating: 0, count: (nodeCapacity + 63) / 64)
+        }
+
+        mutating func insert(_ index: FileTreeNodeIndex) {
+            let offset = Int(index.rawValue)
+            words[offset >> 6] |= UInt64(1) << UInt64(offset & 63)
+        }
+
+        func contains(_ index: FileTreeNodeIndex) -> Bool {
+            let offset = Int(index.rawValue)
+            guard offset >= 0, offset >> 6 < words.count else { return false }
+            return words[offset >> 6] & (UInt64(1) << UInt64(offset & 63)) != 0
+        }
+    }
+
+    private struct LogicalScope: Sendable {
+        let rootIndex: FileTreeNodeIndex
+        let membership: NodeMembership
+        let orderedNodeIndices: [FileTreeNodeIndex]
+        let aggregateStats: ScanAggregateStats
+        let replacementRecords: [FileTreeNodeIndex: FileNodeRecord]
+        let reorderedChildren: [FileTreeNodeIndex: [FileTreeNodeIndex]]
+    }
+
+    private enum ChildIndexCollection: RandomAccessCollection, Sendable {
+        typealias Index = Int
+
+        case backing(ArraySlice<FileTreeNodeIndex>)
+        case replacement([FileTreeNodeIndex])
+
+        var startIndex: Int { 0 }
+
+        var endIndex: Int {
+            switch self {
+            case .backing(let indices): indices.count
+            case .replacement(let indices): indices.count
+            }
+        }
+
+        subscript(position: Int) -> FileTreeNodeIndex {
+            switch self {
+            case .backing(let indices):
+                indices[indices.index(indices.startIndex, offsetBy: position)]
+            case .replacement(let indices):
+                indices[position]
+            }
+        }
+    }
+
     let contentID: UUID
     let rootID: String
     private let nodeRecords: [FileNodeRecord]
     private let topologyArena: FileTreeTopologyArena
     private let precomputedAggregateStats: ScanAggregateStats?
+    private let logicalScope: LogicalScope?
+
+    private nonisolated var activeRootIndex: FileTreeNodeIndex {
+        logicalScope?.rootIndex ?? topologyArena.rootIndex
+    }
+
+    private nonisolated var activeOrderedNodeIndices: [FileTreeNodeIndex] {
+        logicalScope?.orderedNodeIndices ?? topologyArena.orderedNodeIndices
+    }
+
+    private nonisolated func contains(_ index: FileTreeNodeIndex) -> Bool {
+        logicalScope?.membership.contains(index)
+            ?? nodeRecords.indices.contains(Int(index.rawValue))
+    }
+
+    private nonisolated func activeChildren(
+        of index: FileTreeNodeIndex
+    ) -> ChildIndexCollection {
+        guard contains(index) else { return .replacement([]) }
+        if let children = logicalScope?.reorderedChildren[index] {
+            return .replacement(children)
+        }
+        return .backing(topologyArena.children(of: index))
+    }
+
+    private nonisolated func activeParentIndex(
+        of index: FileTreeNodeIndex
+    ) -> FileTreeNodeIndex? {
+        guard contains(index), index != activeRootIndex,
+              let parentIndex = topologyArena.parentIndex(of: index),
+              contains(parentIndex) else {
+            return nil
+        }
+        return parentIndex
+    }
 
     nonisolated var nodesByID: [String: FileNodeRecord] {
-        Dictionary(uniqueKeysWithValues: nodeRecords.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: activeOrderedNodeIndices.compactMap { index in
+            node(at: index).map { ($0.id, $0) }
+        })
     }
 
     nonisolated var childIDsByID: [String: [String]] {
         var result: [String: [String]] = [:]
-        for parentIndex in topologyArena.orderedNodeIndices {
-            let children = topologyArena.children(of: parentIndex)
+        for parentIndex in activeOrderedNodeIndices {
+            let children = activeChildren(of: parentIndex)
             guard !children.isEmpty,
                   let parent = self.node(at: parentIndex) else {
                 continue
@@ -366,8 +456,8 @@ nonisolated struct FileTreeStore: Sendable {
     nonisolated var parentIDByID: [String: String] {
         var result: [String: String] = [:]
         result.reserveCapacity(max(nodeCount - 1, 0))
-        for nodeIndex in topologyArena.orderedNodeIndices {
-            guard let parentIndex = topologyArena.parentIndex(of: nodeIndex),
+        for nodeIndex in activeOrderedNodeIndices {
+            guard let parentIndex = activeParentIndex(of: nodeIndex),
                   let record = node(at: nodeIndex),
                   let parent = node(at: parentIndex) else {
                 continue
@@ -467,17 +557,20 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated var root: FileNodeRecord {
-        guard let root = node(at: topologyArena.rootIndex) else {
+        guard let root = node(at: activeRootIndex) else {
             preconditionFailure("FileTreeStore rootID does not exist in nodesByID.")
         }
         return root
     }
 
     nonisolated var nodeCount: Int {
-        nodeRecords.count
+        logicalScope?.orderedNodeIndices.count ?? nodeRecords.count
     }
 
     nonisolated var aggregateStats: ScanAggregateStats {
+        if let logicalScope {
+            return logicalScope.aggregateStats
+        }
         if let precomputedAggregateStats {
             return precomputedAggregateStats
         }
@@ -488,11 +581,11 @@ nonisolated struct FileTreeStore: Sendable {
     private nonisolated func computedAggregateStats() -> ScanAggregateStats {
         var accumulator = AggregateStatsAccumulator()
 
-        for nodeIndex in topologyArena.orderedNodeIndices {
+        for nodeIndex in activeOrderedNodeIndices {
             guard let node = node(at: nodeIndex) else { continue }
             accumulator.include(
                 node,
-                hasMaterializedChildren: !topologyArena.children(of: nodeIndex).isEmpty
+                hasMaterializedChildren: !activeChildren(of: nodeIndex).isEmpty
             )
         }
 
@@ -569,6 +662,7 @@ nonisolated struct FileTreeStore: Sendable {
             orderedNodeIDs: topology.orderedNodeIDs
         )
         self.precomputedAggregateStats = topology.didDropReferences ? nil : aggregateStats
+        self.logicalScope = nil
     }
 
     nonisolated init(
@@ -612,6 +706,7 @@ nonisolated struct FileTreeStore: Sendable {
         )
         self.nodeRecords = orderedNodeIDs.compactMap { nodesByID[$0] }
         self.precomputedAggregateStats = aggregateStats
+        self.logicalScope = nil
         assert(orderedNodeIDs.count == nodesByID.count)
         assert(parentIDByID == self.parentIDByID)
     }
@@ -778,19 +873,22 @@ nonisolated struct FileTreeStore: Sendable {
         self.nodeRecords = nodes
         self.topologyArena = topologyArena
         self.precomputedAggregateStats = statsAccumulator.stats(root: nodes[rootOffset])
+        self.logicalScope = nil
     }
 
     private nonisolated init(
         rootID: String,
         nodeRecords: [FileNodeRecord],
         topologyArena: FileTreeTopologyArena,
-        aggregateStats: ScanAggregateStats
+        aggregateStats: ScanAggregateStats,
+        logicalScope: LogicalScope? = nil
     ) {
         self.contentID = UUID()
         self.rootID = rootID
         self.nodeRecords = nodeRecords
         self.topologyArena = topologyArena
         self.precomputedAggregateStats = aggregateStats
+        self.logicalScope = logicalScope
     }
 
     nonisolated static func sortedChildren(_ children: [FileNodeRecord]) -> [FileNodeRecord] {
@@ -886,6 +984,21 @@ nonisolated struct FileTreeStore: Sendable {
         cancellationCheck: () throws -> Void
     ) throws -> [FileTreeNodeIndex]
     where Children: Collection, Children.Element == FileTreeNodeIndex {
+        try restoringDisplayOrderAfterChanges(
+            childIndices,
+            isChanged: { changedByOffset[Int($0.rawValue)] },
+            nodeAt: nodeAt,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    private nonisolated static func restoringDisplayOrderAfterChanges<Children>(
+        _ childIndices: Children,
+        isChanged: (FileTreeNodeIndex) -> Bool,
+        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
+        cancellationCheck: () throws -> Void
+    ) throws -> [FileTreeNodeIndex]
+    where Children: Collection, Children.Element == FileTreeNodeIndex {
         func copiedChildren() throws -> [FileTreeNodeIndex] {
             var result: [FileTreeNodeIndex] = []
             result.reserveCapacity(childIndices.count)
@@ -904,7 +1017,7 @@ nonisolated struct FileTreeStore: Sendable {
             if position.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            if changedByOffset[Int(childIndex.rawValue)] {
+            if isChanged(childIndex) {
                 firstChangedPosition = firstChangedPosition ?? position
                 changedCount += 1
             }
@@ -951,7 +1064,7 @@ nonisolated struct FileTreeStore: Sendable {
                 try cancellationCheck()
             }
             let entry = (nodeIndex: childIndex, originalPosition: position)
-            if changedByOffset[Int(childIndex.rawValue)] {
+            if isChanged(childIndex) {
                 changedChildren.append(entry)
             } else {
                 unchangedChildren.append(entry)
@@ -1014,14 +1127,18 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func nodeIndex(id: String?) -> FileTreeNodeIndex? {
-        guard let id else { return nil }
-        return topologyArena.indexByNodeID[id]
+        guard let id,
+              let index = topologyArena.indexByNodeID[id],
+              contains(index) else {
+            return nil
+        }
+        return index
     }
 
     nonisolated func node(at index: FileTreeNodeIndex) -> FileNodeRecord? {
         let offset = Int(index.rawValue)
-        guard nodeRecords.indices.contains(offset) else { return nil }
-        return nodeRecords[offset]
+        guard nodeRecords.indices.contains(offset), contains(index) else { return nil }
+        return logicalScope?.replacementRecords[index] ?? nodeRecords[offset]
     }
 
     /// Replaces existing records while preserving node membership and parent links.
@@ -1309,16 +1426,17 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func parentIndex(of index: FileTreeNodeIndex) -> FileTreeNodeIndex? {
-        topologyArena.parentIndex(of: index)
+        activeParentIndex(of: index)
     }
 
     nonisolated func childIndices(of index: FileTreeNodeIndex) -> [FileTreeNodeIndex] {
-        Array(topologyArena.children(of: index))
+        guard contains(index) else { return [] }
+        return Array(activeChildren(of: index))
     }
 
     nonisolated func parentID(of id: String?) -> String? {
         guard let index = nodeIndex(id: id),
-              let parentIndex = topologyArena.parentIndex(of: index) else {
+              let parentIndex = activeParentIndex(of: index) else {
             return nil
         }
         return node(at: parentIndex)?.id
@@ -1327,12 +1445,12 @@ nonisolated struct FileTreeStore: Sendable {
     nonisolated func childIDs(of id: String?) -> [String] {
         let resolvedID = id ?? rootID
         guard let parentIndex = nodeIndex(id: resolvedID) else { return [] }
-        return topologyArena.children(of: parentIndex).compactMap { node(at: $0)?.id }
+        return activeChildren(of: parentIndex).compactMap { node(at: $0)?.id }
     }
 
     nonisolated func parent(of id: String?) -> FileNodeRecord? {
         guard let index = nodeIndex(id: id),
-              let parentIndex = topologyArena.parentIndex(of: index) else {
+              let parentIndex = activeParentIndex(of: index) else {
             return nil
         }
         return node(at: parentIndex)
@@ -1352,7 +1470,7 @@ nonisolated struct FileTreeStore: Sendable {
     ) throws -> [FileNodeRecord] {
         let resolvedID = id ?? rootID
         guard let parentIndex = nodeIndex(id: resolvedID) else { return [] }
-        let childIndices = topologyArena.children(of: parentIndex)
+        let childIndices = activeChildren(of: parentIndex)
 
         var children: [FileNodeRecord] = []
         children.reserveCapacity(childIndices.count)
@@ -1374,7 +1492,7 @@ nonisolated struct FileTreeStore: Sendable {
 
         let resolvedID = id ?? rootID
         guard let parentIndex = nodeIndex(id: resolvedID) else { return [] }
-        let childIndices = topologyArena.children(of: parentIndex)
+        let childIndices = activeChildren(of: parentIndex)
 
         var children: [FileNodeRecord] = []
         children.reserveCapacity(min(maxCount, childIndices.count))
@@ -1393,13 +1511,13 @@ nonisolated struct FileTreeStore: Sendable {
     nonisolated func containsChildren(id: String?) -> Bool {
         let resolvedID = id ?? rootID
         guard let index = nodeIndex(id: resolvedID) else { return false }
-        return !topologyArena.children(of: index).isEmpty
+        return !activeChildren(of: index).isEmpty
     }
 
     nonisolated func childCount(of id: String?) -> Int {
         let resolvedID = id ?? rootID
         guard let index = nodeIndex(id: resolvedID) else { return 0 }
-        return topologyArena.children(of: index).count
+        return activeChildren(of: index).count
     }
 
     nonisolated func subtreeNodeCount(rootedAt nodeID: String) -> Int {
@@ -1408,28 +1526,28 @@ nonisolated struct FileTreeStore: Sendable {
         var stack = [rootIndex]
         while let nodeIndex = stack.popLast() {
             count += 1
-            stack.append(contentsOf: topologyArena.children(of: nodeIndex))
+            stack.append(contentsOf: activeChildren(of: nodeIndex))
         }
         return count
     }
 
     nonisolated func indexedNodeIDs(excludingRoot: Bool = false) -> [String] {
-        topologyArena.orderedNodeIndices.compactMap { nodeIndex in
-            guard !excludingRoot || nodeIndex != topologyArena.rootIndex else { return nil }
+        activeOrderedNodeIndices.compactMap { nodeIndex in
+            guard !excludingRoot || nodeIndex != activeRootIndex else { return nil }
             return node(at: nodeIndex)?.id
         }
     }
 
     nonisolated func indexedNodeIndices() -> [FileTreeNodeIndex] {
-        topologyArena.orderedNodeIndices
+        activeOrderedNodeIndices
     }
 
     nonisolated func forEachIndexedNodeID(
         excludingRoot: Bool = false,
         _ body: (String) throws -> Void
     ) rethrows {
-        for nodeIndex in topologyArena.orderedNodeIndices {
-            if excludingRoot && nodeIndex == topologyArena.rootIndex {
+        for nodeIndex in activeOrderedNodeIndices {
+            if excludingRoot && nodeIndex == activeRootIndex {
                 continue
             }
             if let nodeID = node(at: nodeIndex)?.id {
@@ -1445,7 +1563,7 @@ nonisolated struct FileTreeStore: Sendable {
 
         var result: [FileNodeRecord] = [record]
         var cursor = index
-        while let parentIndex = topologyArena.parentIndex(of: cursor),
+        while let parentIndex = activeParentIndex(of: cursor),
               let parent = self.node(at: parentIndex) {
             result.append(parent)
             cursor = parentIndex
@@ -1463,7 +1581,7 @@ nonisolated struct FileTreeStore: Sendable {
             if cursor == ancestorIndex {
                 return true
             }
-            guard let parentIndex = topologyArena.parentIndex(of: cursor) else { return false }
+            guard let parentIndex = activeParentIndex(of: cursor) else { return false }
             cursor = parentIndex
         }
     }
@@ -1474,7 +1592,7 @@ nonisolated struct FileTreeStore: Sendable {
 
     nonisolated func preparedNodeSet(for nodeIDs: Set<String>) -> PreparedFileTreeNodeSet {
         PreparedFileTreeNodeSet(
-            indices: Set(nodeIDs.compactMap { topologyArena.indexByNodeID[$0] })
+            indices: Set(nodeIDs.compactMap { nodeIndex(id: $0) })
         )
     }
 
@@ -1491,7 +1609,7 @@ nonisolated struct FileTreeStore: Sendable {
         of nodeIndex: FileTreeNodeIndex
     ) -> Bool {
         var cursor = nodeIndex
-        while let parentIndex = topologyArena.parentIndex(of: cursor) {
+        while let parentIndex = activeParentIndex(of: cursor) {
             if ancestorIndices.contains(parentIndex) {
                 return true
             }
@@ -2147,6 +2265,153 @@ nonisolated struct FileTreeStore: Sendable {
         return accumulator.stats(root: root)
     }
 
+    /// Creates an immutable view rooted inside the same compact backing store.
+    /// Node and topology buffers remain shared; only membership, traversal order,
+    /// and sparse shared-allocation corrections belong to the logical scope.
+    nonisolated func logicalScope(rootedAt targetID: String) -> FileTreeStore? {
+        try? logicalScope(rootedAt: targetID, cancellationCheck: {})
+    }
+
+    nonisolated func logicalScope(
+        rootedAt targetID: String,
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore? {
+        try cancellationCheck()
+        guard let targetIndex = nodeIndex(id: targetID) else { return nil }
+
+        var membership = NodeMembership(nodeCapacity: nodeRecords.count)
+        var orderedNodeIndices: [FileTreeNodeIndex] = []
+        let targetRecord = nodeRecords[Int(targetIndex.rawValue)]
+        if !topologyArena.children(of: targetIndex).isEmpty {
+            orderedNodeIndices.reserveCapacity(min(
+                nodeRecords.count,
+                Self.saturatingAdd(targetRecord.descendantFileCount, 1)
+            ))
+        }
+        var statsAccumulator = AggregateStatsAccumulator()
+        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var hardLinkClaimIndices: [FileTreeNodeIndex] = []
+        var stack = [targetIndex]
+
+        while let nodeIndex = stack.popLast() {
+            if orderedNodeIndices.count.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let node = nodeRecords[Int(nodeIndex.rawValue)]
+            let children = topologyArena.children(of: nodeIndex)
+            membership.insert(nodeIndex)
+            orderedNodeIndices.append(nodeIndex)
+            statsAccumulator.include(node, hasMaterializedChildren: !children.isEmpty)
+            if let claim = HardLinkDeduplicator.claim(for: node) {
+                hardLinkAccumulator.record(claim)
+                hardLinkClaimIndices.append(nodeIndex)
+            }
+            for (offset, childIndex) in children.reversed().enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                stack.append(childIndex)
+            }
+        }
+
+        let allocationReplacements = try HardLinkDeduplicator.rebalancedAllocatedSizeReplacements(
+            hardLinkAccumulator: hardLinkAccumulator,
+            claimNodeIndices: hardLinkClaimIndices,
+            nodeAt: { nodeRecords[Int($0.rawValue)] },
+            cancellationCheck: cancellationCheck
+        )
+        var replacementRecords: [FileTreeNodeIndex: FileNodeRecord] = [:]
+        replacementRecords.reserveCapacity(allocationReplacements.count)
+        var changedRecordIndices = Set<FileTreeNodeIndex>()
+        changedRecordIndices.reserveCapacity(allocationReplacements.count)
+        var affectedDirectoryIndices = Set<FileTreeNodeIndex>()
+
+        for replacement in allocationReplacements {
+            try cancellationCheck()
+            let source = nodeRecords[Int(replacement.nodeIndex.rawValue)]
+            replacementRecords[replacement.nodeIndex] = source.replacingAllocatedSize(
+                replacement.allocatedSize
+            )
+            changedRecordIndices.insert(replacement.nodeIndex)
+
+            var ancestorIndex = topologyArena.parentIndex(of: replacement.nodeIndex)
+            while let currentIndex = ancestorIndex, membership.contains(currentIndex) {
+                try cancellationCheck()
+                affectedDirectoryIndices.insert(currentIndex)
+                guard currentIndex != targetIndex else { break }
+                ancestorIndex = topologyArena.parentIndex(of: currentIndex)
+            }
+        }
+
+        var reorderedChildren: [FileTreeNodeIndex: [FileTreeNodeIndex]] = [:]
+        reorderedChildren.reserveCapacity(affectedDirectoryIndices.count)
+        for directoryIndex in orderedNodeIndices.reversed()
+        where affectedDirectoryIndices.contains(directoryIndex) {
+            try cancellationCheck()
+            let sourceChildren = topologyArena.children(of: directoryIndex)
+            let children = try Self.restoringDisplayOrderAfterChanges(
+                sourceChildren,
+                isChanged: { changedRecordIndices.contains($0) },
+                nodeAt: { index in
+                    replacementRecords[index] ?? nodeRecords[Int(index.rawValue)]
+                },
+                cancellationCheck: cancellationCheck
+            )
+
+            var totals = MaterializedDirectoryTotals()
+            for (offset, childIndex) in children.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                totals.include(replacementRecords[childIndex] ?? nodeRecords[Int(childIndex.rawValue)])
+            }
+
+            let source = nodeRecords[Int(directoryIndex.rawValue)]
+            let repaired = Self.repairingDirectoryRecord(source, totals: totals)
+            if repaired != source {
+                replacementRecords[directoryIndex] = repaired
+                changedRecordIndices.insert(directoryIndex)
+            }
+            if !children.elementsEqual(sourceChildren) {
+                reorderedChildren[directoryIndex] = children
+            }
+        }
+
+        if !reorderedChildren.isEmpty {
+            orderedNodeIndices.removeAll(keepingCapacity: true)
+            stack = [targetIndex]
+            while let nodeIndex = stack.popLast() {
+                if orderedNodeIndices.count.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                orderedNodeIndices.append(nodeIndex)
+                if let children = reorderedChildren[nodeIndex] {
+                    stack.append(contentsOf: children.reversed())
+                } else {
+                    stack.append(contentsOf: topologyArena.children(of: nodeIndex).reversed())
+                }
+            }
+        }
+
+        let scopedRoot = replacementRecords[targetIndex]
+            ?? nodeRecords[Int(targetIndex.rawValue)]
+        let scope = LogicalScope(
+            rootIndex: targetIndex,
+            membership: membership,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: statsAccumulator.stats(root: scopedRoot),
+            replacementRecords: replacementRecords,
+            reorderedChildren: reorderedChildren
+        )
+        return FileTreeStore(
+            rootID: targetID,
+            nodeRecords: nodeRecords,
+            topologyArena: topologyArena,
+            aggregateStats: scope.aggregateStats,
+            logicalScope: scope
+        )
+    }
+
     nonisolated func subtree(rootedAt targetID: String) -> FileTreeStore? {
         try? subtree(rootedAt: targetID, cancellationCheck: {})
     }
@@ -2265,7 +2530,7 @@ nonisolated struct FileTreeStore: Sendable {
             let currentID = record.id
             scopedNodes[currentID] = record
 
-            let childIndices = topologyArena.children(of: currentIndex)
+            let childIndices = activeChildren(of: currentIndex)
             guard !childIndices.isEmpty else { continue }
 
             var scopedChildren: [String] = []
@@ -2308,7 +2573,7 @@ nonisolated struct FileTreeStore: Sendable {
             try cancellationCheck()
             guard let currentID = node(at: currentIndex)?.id else { continue }
             result.append(currentID)
-            stack.append(contentsOf: topologyArena.children(of: currentIndex))
+            stack.append(contentsOf: activeChildren(of: currentIndex))
         }
 
         return result
