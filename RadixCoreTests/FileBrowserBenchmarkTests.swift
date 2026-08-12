@@ -320,15 +320,31 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         model.setSearchScope(.entireScan)
 
         let startedAt = ContinuousClock.now
+        let deadline = startedAt.advanced(by: .seconds(60))
+        defer { model.cleanup() }
+
         model.setActiveQuery(query)
-        while model.isSearchingEntireScan {
+        while !model.isSearchingEntireScan, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        guard model.isSearchingEntireScan else {
+            throw FileBrowserBenchmarkTimeoutError(
+                message: "Timed out waiting for the end-to-end entire-scan search to start."
+            )
+        }
+
+        while model.isSearchingEntireScan, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(1))
+        }
+        guard !model.isSearchingEntireScan else {
+            throw FileBrowserBenchmarkTimeoutError(
+                message: "Timed out waiting for the end-to-end entire-scan search to finish."
+            )
         }
         let seconds = durationSeconds(startedAt.duration(to: .now))
 
         XCTAssertTrue(model.isDisplayingCurrentResults)
         XCTAssertEqual(model.displayedNodes.count, fixture.fileCount)
-        model.cleanup()
         return seconds
     }
 
@@ -665,4 +681,12 @@ private struct CancellationMeasurement {
     let seconds: Double
     let wasCancelled: Bool
     let completedBeforeCancellation: Bool
+}
+
+private struct FileBrowserBenchmarkTimeoutError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        message
+    }
 }
