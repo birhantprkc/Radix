@@ -502,6 +502,16 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.aggregateStats.totalLogicalSize, stats.totalLogicalSize)
         XCTAssertEqual(store.aggregateStats.fileCount, stats.fileCount)
         XCTAssertEqual(store.aggregateStats.directoryCount, stats.directoryCount)
+
+        let scopedStore = try XCTUnwrap(store.subtree(rootedAt: folder.id))
+
+        XCTAssertEqual(scopedStore.indexedNodeIDs(), [folder.id, nested.id])
+        XCTAssertEqual(scopedStore.childIDs(of: folder.id), [nested.id])
+        XCTAssertEqual(scopedStore.parentID(of: nested.id), folder.id)
+        XCTAssertNil(scopedStore.parentID(of: folder.id))
+        XCTAssertNil(scopedStore.node(id: sibling.id))
+        XCTAssertEqual(scopedStore.aggregateStats.fileCount, 1)
+        XCTAssertEqual(scopedStore.aggregateStats.directoryCount, 1)
     }
 
     func testWideTreeChildMapDoesNotReserveOneEntryPerChild() {
@@ -961,6 +971,32 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updatedStore.root.allocatedSize, 0)
         XCTAssertEqual(updatedStore.aggregateStats.directoryCount, depth + 1)
         XCTAssertEqual(updatedStore.aggregateStats.fileCount, 0)
+    }
+
+    func testSubtreeProjectionHonorsCancellationAcrossWideDirectories() {
+        let children = (0..<1_024).map { offset in
+            makeFileNode(
+                id: "/root/file-\(offset).bin",
+                name: "file-\(offset).bin",
+                size: 1
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+        var cancellationCheckCount = 0
+
+        XCTAssertThrowsError(try store.subtree(
+            rootedAt: root.id,
+            cancellationCheck: {
+                cancellationCheckCount += 1
+                if cancellationCheckCount >= 4 {
+                    throw CancellationError()
+                }
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertGreaterThanOrEqual(cancellationCheckCount, 4)
     }
 
     func testVolumeReconciliationUpdatesAndReordersExistingRemainderWithoutChangingTopology() throws {

@@ -674,6 +674,33 @@ nonisolated struct FileTreeStore: Sendable {
         )
     }
 
+    private nonisolated init(
+        verifiedRootIndex rootIndex: FileTreeNodeIndex,
+        nodes: [FileNodeRecord],
+        parentRawIndices: [UInt32],
+        childSpans: [FileTreeChildSpan],
+        childIndices: [FileTreeNodeIndex],
+        orderedNodeIndices: [FileTreeNodeIndex],
+        aggregateStats: ScanAggregateStats
+    ) {
+        let topologyArena = FileTreeTopologyArena(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices
+        )
+        let rootOffset = Int(rootIndex.rawValue)
+        precondition(nodes.indices.contains(rootOffset), "Verified FileTreeStore root is missing.")
+        self.init(
+            rootID: nodes[rootOffset].id,
+            nodeRecords: nodes,
+            topologyArena: topologyArena,
+            aggregateStats: aggregateStats
+        )
+    }
+
     /// Fast construction for scanner output with a precomputed traversal order.
     nonisolated init(
         verifiedRootIndex rootIndex: FileTreeNodeIndex,
@@ -2128,30 +2155,93 @@ nonisolated struct FileTreeStore: Sendable {
         rootedAt targetID: String,
         cancellationCheck: () throws -> Void
     ) throws -> FileTreeStore? {
-        guard let contents = try subtreeContents(
-            rootedAt: targetID,
-            cancellationCheck: cancellationCheck
-        ) else { return nil }
+        try cancellationCheck()
+        guard let targetIndex = nodeIndex(id: targetID) else { return nil }
 
-        var parentIDsByID: [String: String] = [:]
-        parentIDsByID.reserveCapacity(max(contents.nodesByID.count - 1, 0))
-        var visitedChildCount = 0
-        for (parentID, childIDs) in contents.childIDsByID {
-            for childID in childIDs {
-                if visitedChildCount.isMultiple(of: 256) {
+        var scopedNodes: [FileNodeRecord] = []
+        var parentRawIndices: [UInt32] = []
+        var orderedNodeIndices: [FileTreeNodeIndex] = []
+        var statsAccumulator = AggregateStatsAccumulator()
+        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var hardLinkClaimIndices: [FileTreeNodeIndex] = []
+        var stack = [(sourceIndex: targetIndex, scopedParentRawIndex: UInt32.max)]
+
+        while let entry = stack.popLast() {
+            if scopedNodes.count.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let sourceIndex = entry.sourceIndex
+            let sourceOffset = Int(sourceIndex.rawValue)
+            let scopedIndex = FileTreeNodeIndex(rawValue: UInt32(scopedNodes.count))
+            let node = nodeRecords[sourceOffset]
+            let sourceChildren = topologyArena.children(of: sourceIndex)
+            scopedNodes.append(node)
+            parentRawIndices.append(entry.scopedParentRawIndex)
+            orderedNodeIndices.append(scopedIndex)
+            statsAccumulator.include(node, hasMaterializedChildren: !sourceChildren.isEmpty)
+            if let claim = HardLinkDeduplicator.claim(for: node) {
+                hardLinkAccumulator.record(claim)
+                hardLinkClaimIndices.append(scopedIndex)
+            }
+            for (childOffset, childIndex) in sourceChildren.reversed().enumerated() {
+                if childOffset.isMultiple(of: 256) {
                     try cancellationCheck()
                 }
-                parentIDsByID[childID] = parentID
-                visitedChildCount += 1
+                stack.append((
+                    sourceIndex: childIndex,
+                    scopedParentRawIndex: scopedIndex.rawValue
+                ))
             }
         }
+
+        var childSpans = Array(repeating: FileTreeChildSpan(), count: scopedNodes.count)
+        for (scopedOffset, parentRawIndex) in parentRawIndices.enumerated() {
+            if scopedOffset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            if parentRawIndex != UInt32.max {
+                childSpans[Int(parentRawIndex)].count += 1
+            }
+        }
+
+        var childCount = 0
+        for scopedOffset in childSpans.indices {
+            if scopedOffset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            childSpans[scopedOffset].start = UInt32(childCount)
+            childCount += Int(childSpans[scopedOffset].count)
+        }
+
+        var nextChildRawOffset = childSpans.map(\.start)
+        var childIndices = Array(repeating: FileTreeNodeIndex(rawValue: 0), count: childCount)
+        for (scopedOffset, parentRawIndex) in parentRawIndices.enumerated()
+        where parentRawIndex != UInt32.max {
+            if scopedOffset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let parentOffset = Int(parentRawIndex)
+            let childRawOffset = nextChildRawOffset[parentOffset]
+            childIndices[Int(childRawOffset)] = FileTreeNodeIndex(rawValue: UInt32(scopedOffset))
+            nextChildRawOffset[parentOffset] += 1
+        }
+
+        let scopedRootIndex = FileTreeNodeIndex(rawValue: 0)
         let scopedStore = FileTreeStore(
-            rootID: targetID,
-            nodesByID: contents.nodesByID,
-            childIDsByID: contents.childIDsByID,
-            parentIDByID: parentIDsByID
+            verifiedRootIndex: scopedRootIndex,
+            nodes: scopedNodes,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: statsAccumulator.stats(root: scopedNodes[0])
         )
-        return try HardLinkDeduplicator.rebalancedStore(scopedStore, cancellationCheck: cancellationCheck)
+        return try HardLinkDeduplicator.rebalancedStore(
+            scopedStore,
+            hardLinkAccumulator: hardLinkAccumulator,
+            claimNodeIndices: hardLinkClaimIndices,
+            cancellationCheck: cancellationCheck
+        )
     }
 
     nonisolated func subtreeContents(rootedAt targetID: String) -> FileTreeSubtreeContents? {
