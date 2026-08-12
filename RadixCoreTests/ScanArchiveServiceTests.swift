@@ -3,6 +3,75 @@ import XCTest
 @testable import RadixCore
 
 final class ScanArchiveServiceTests: XCTestCase {
+    func testExportImportRoundTripsLogicalScopeWithNonDenseNodeIndices() async throws {
+        let service = ScanArchiveService()
+        let containingSnapshot = makeArchiveSnapshot()
+        let target = ScanTarget(url: URL(filePath: "/archive/folder", directoryHint: .isDirectory))
+        let snapshot = try XCTUnwrap(containingSnapshot.scoped(to: target))
+        let archiveURL = try makeTemporaryArchiveURL()
+
+        XCTAssertLessThan(snapshot.treeStore.nodeCount, containingSnapshot.treeStore.nodeCount)
+        XCTAssertEqual(snapshot.treeStore.rootID, target.id)
+        XCTAssertNil(snapshot.treeStore.node(id: containingSnapshot.treeStore.rootID))
+
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+        let importedSnapshot = try await service.importSnapshot(from: archiveURL).snapshot
+
+        XCTAssertEqual(importedSnapshot.target.id, target.id)
+        XCTAssertEqual(importedSnapshot.treeStore.root, snapshot.treeStore.root)
+        XCTAssertEqual(importedSnapshot.treeStore.nodeCount, snapshot.treeStore.nodeCount)
+        XCTAssertEqual(importedSnapshot.treeStore.indexedNodeIDs(), snapshot.treeStore.indexedNodeIDs())
+        XCTAssertEqual(importedSnapshot.treeStore.childIDsByID, snapshot.treeStore.childIDsByID)
+        XCTAssertEqual(importedSnapshot.aggregateStats.totalAllocatedSize, snapshot.aggregateStats.totalAllocatedSize)
+        XCTAssertEqual(importedSnapshot.scanWarnings.map(\.path), snapshot.scanWarnings.map(\.path))
+    }
+
+    func testExportImportRoundTripsTinyScopeWithoutDenseBackingOrdinalMap() async throws {
+        let service = ScanArchiveService()
+        let siblings = (0..<4_096).map { offset in
+            makeTestFileNode(
+                id: "/root/file-\(offset).bin",
+                name: "file-\(offset).bin",
+                size: 2
+            )
+        }
+        let targetRoot = makeTestSummarizedDirectoryNode(
+            id: "/root/Target",
+            name: "Target",
+            size: 1,
+            descendantFileCount: 10
+        )
+        let root = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: siblings + [targetRoot]
+        )
+        let containingSnapshot = makeTestSnapshot(
+            root: root,
+            store: FileTreeStore(root: root, childrenByID: [root.id: siblings + [targetRoot]])
+        )
+        let snapshot = try XCTUnwrap(containingSnapshot.scoped(to: ScanTarget(url: targetRoot.url)))
+        let archiveURL = try makeTemporaryArchiveURL()
+
+        XCTAssertEqual(snapshot.treeStore.nodeCount, 1)
+        XCTAssertGreaterThan(snapshot.treeStore.backingNodeCapacity, 4_096)
+
+        _ = try await service.export(
+            snapshot: snapshot,
+            to: archiveURL,
+            options: ScanArchiveExportOptions(appVersion: "Tests")
+        )
+        let importedSnapshot = try await service.importSnapshot(from: archiveURL).snapshot
+
+        XCTAssertEqual(importedSnapshot.treeStore.root, targetRoot)
+        XCTAssertEqual(importedSnapshot.treeStore.nodeCount, 1)
+        XCTAssertEqual(importedSnapshot.aggregateStats.fileCount, 10)
+    }
+
     func testExportImportRoundTripsSnapshotGraphAndTrustContext() async throws {
         let service = ScanArchiveService()
         let snapshot = makeArchiveSnapshot()

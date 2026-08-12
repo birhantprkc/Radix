@@ -586,7 +586,7 @@ final class ScanModelTests: XCTestCase {
         XCTAssertNil(snapshot.removingNodes(ids: [root.id, second.id]))
     }
 
-    func testSnapshotScopedToDescendantUsesSubtreeAndFiltersWarnings() throws {
+    func testSnapshotScopedToDescendantUsesLogicalScopeAndFiltersWarnings() throws {
         let docsFile = makeNode(id: "/root/Documents/report.pdf", isDirectory: false, isSynthetic: false, isAccessible: true)
         let cacheFile = makeNode(id: "/root/Library/cache.db", isDirectory: false, isSynthetic: false, isAccessible: true)
         let docs = FileNodeRecord.directory(
@@ -630,6 +630,9 @@ final class ScanModelTests: XCTestCase {
 
         XCTAssertEqual(scopedSnapshot.target, docsTarget)
         XCTAssertEqual(scopedSnapshot.root.id, docs.id)
+        XCTAssertNotEqual(scopedSnapshot.treeStore.contentID, snapshot.treeStore.contentID)
+        XCTAssertEqual(scopedSnapshot.treeStore.nodeCount, 2)
+        XCTAssertNil(scopedSnapshot.treeStore.parent(of: docs.id))
         XCTAssertEqual(scopedSnapshot.treeStore.children(of: docs.id).map(\.id), [docsFile.id])
         XCTAssertNil(scopedSnapshot.treeStore.node(id: library.id))
         XCTAssertEqual(scopedSnapshot.aggregateStats.totalAllocatedSize, docs.allocatedSize)

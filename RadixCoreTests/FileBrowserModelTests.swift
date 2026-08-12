@@ -166,6 +166,36 @@ final class FileBrowserModelTests: XCTestCase {
         }
     }
 
+    func testEntireScanSearchCannotObserveLogicalScopeSiblings() async throws {
+        let visible = makeTestFileNode(
+            id: "/root/Home/report-visible.pdf",
+            name: "report-visible.pdf",
+            size: 20
+        )
+        let home = makeTestDirectoryNode(id: "/root/Home", name: "Home", children: [visible])
+        let outside = makeTestFileNode(
+            id: "/root/report-outside.pdf",
+            name: "report-outside.pdf",
+            size: 30
+        )
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [home, outside])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [home, outside],
+            home.id: [visible],
+        ])
+        let scope = try XCTUnwrap(store.logicalScope(rootedAt: home.id))
+
+        let results = try await FileSearchService().search(
+            snapshotID: UUID(),
+            treeStore: scope,
+            query: FileBrowserQuery(text: "report"),
+            sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
+        )
+
+        XCTAssertEqual(results.map(\.id), [visible.id])
+        XCTAssertNil(scope.node(id: outside.id))
+    }
+
     func testStructuredQueryCombinesTextKindAndAllocatedSizeAcrossScopes() async throws {
         let smallTarget = makeTestFileNode(
             id: "/root/small-target.bin",

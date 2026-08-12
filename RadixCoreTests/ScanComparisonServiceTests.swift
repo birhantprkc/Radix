@@ -2,6 +2,28 @@ import XCTest
 @testable import RadixCore
 
 final class ScanComparisonServiceTests: XCTestCase {
+    func testLogicalScopeComparesIdenticallyToMaterializedSubtree() async throws {
+        let visible = makeTestFileNode(id: "/root/Home/file.bin", name: "file.bin", size: 25)
+        let home = makeTestDirectoryNode(id: "/root/Home", name: "Home", children: [visible])
+        let outside = makeTestFileNode(id: "/root/System.bin", name: "System.bin", size: 100)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [home, outside])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [home, outside],
+            home.id: [visible],
+        ])
+        let logicalScope = try XCTUnwrap(store.logicalScope(rootedAt: home.id))
+        let materializedScope = try XCTUnwrap(store.subtree(rootedAt: home.id))
+
+        let comparison = try await ScanComparisonService().compare(
+            before: makeTestSnapshot(root: logicalScope.root, store: logicalScope),
+            after: makeTestSnapshot(root: materializedScope.root, store: materializedScope)
+        )
+
+        XCTAssertTrue(comparison.rows.isEmpty)
+        XCTAssertEqual(comparison.summary.allocatedDelta, 0)
+        XCTAssertEqual(comparison.summary.fileCountDelta, 0)
+    }
+
     func testComparesSnapshotsByRelativePathAcrossDifferentRoots() async throws {
         let beforeFile = makeTestFileNode(id: "/before/shared.bin", name: "shared.bin", size: 10)
         let beforeRoot = makeTestDirectoryNode(id: "/before", name: "before", children: [beforeFile])

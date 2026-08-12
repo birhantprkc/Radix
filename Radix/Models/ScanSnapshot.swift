@@ -361,7 +361,7 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         cancellationCheck: () throws -> Void
     ) throws -> ScanSnapshot? {
         try cancellationCheck()
-        guard let scopedStore = try treeStore.subtree(
+        guard let scopedStore = try treeStore.logicalScope(
             rootedAt: target.id,
             cancellationCheck: cancellationCheck
         ) else { return nil }

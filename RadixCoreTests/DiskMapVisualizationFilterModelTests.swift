@@ -76,6 +76,50 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         XCTAssertFalse(model.isInputPending(for: request))
     }
 
+    func testDiscardPileFilterMaterializesOnlyTheLogicalScope() async throws {
+        let hidden = makeTestFileNode(id: "/root/Home/hidden.bin", name: "hidden.bin", size: 20)
+        let visible = makeTestFileNode(id: "/root/Home/visible.bin", name: "visible.bin", size: 30)
+        let home = makeTestDirectoryNode(id: "/root/Home", name: "Home", children: [hidden, visible])
+        let outside = makeTestFileNode(id: "/root/System.bin", name: "System.bin", size: 100)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [home, outside])
+        let containingSnapshot = makeTestSnapshot(
+            root: root,
+            store: FileTreeStore(root: root, childrenByID: [
+                root.id: [home, outside],
+                home.id: [hidden, visible],
+            ])
+        )
+        let target = ScanTarget(url: home.url)
+        let snapshot = try XCTUnwrap(containingSnapshot.scoped(to: target))
+        let model = DiskMapVisualizationFilterModel()
+        let baseInput = DiskMapFreeSpaceVisualization.input(
+            snapshot: snapshot,
+            focusNode: snapshot.root,
+            showFreeSpace: false,
+            availableCapacity: nil
+        )
+        let request = DiskMapVisualizationFilterRequest(
+            baseInput: baseInput,
+            snapshotID: snapshot.id,
+            focusNodeID: snapshot.root.id,
+            hiddenNodeIDs: [hidden.id]
+        )
+
+        XCTAssertNil(baseInput.treeStore.node(id: outside.id))
+        model.update(baseInput: baseInput, request: request)
+
+        let filteredInput = try await waitForFilteredInput(
+            model: model,
+            baseInput: baseInput,
+            request: request,
+            removedNodeID: hidden.id
+        )
+
+        XCTAssertEqual(filteredInput.rootNode.allocatedSize, visible.allocatedSize)
+        XCTAssertNotNil(filteredInput.treeStore.node(id: visible.id))
+        XCTAssertNil(filteredInput.treeStore.node(id: outside.id))
+    }
+
     func testDiscardPileFilterReleasesCachedInputBeforeReplacementCompletes() async throws {
         let firstHidden = makeTestFileNode(id: "/root/first-hidden.bin", name: "first-hidden.bin", size: 20)
         let secondHidden = makeTestFileNode(id: "/root/second-hidden.bin", name: "second-hidden.bin", size: 30)
