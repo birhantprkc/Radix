@@ -511,6 +511,49 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(probe.checkCount, 3)
     }
 
+    func testLargeSortPreservesOrderAcrossSortedRuns() throws {
+        let nodes = (0..<20_000).map { index in
+            makeTestFileNode(
+                id: "/root/file-\(index).dat",
+                name: "file-\(index).dat",
+                size: Int64(index)
+            )
+        }
+
+        let sortedNodes = try FileBrowserResults.sorted(
+            nodes,
+            sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)],
+            cancellationCheck: {}
+        )
+
+        XCTAssertEqual(sortedNodes.map(\.id), nodes.reversed().map(\.id))
+    }
+
+    func testCancellableSortChecksCancellationBetweenLargeRuns() {
+        let nodes = (0..<20_000).map { index in
+            makeTestFileNode(
+                id: "/root/file-\(index).dat",
+                name: "file-\(index).dat",
+                size: Int64(index)
+            )
+        }
+        let preparationCheckCount = (nodes.count + 255) / 256
+        // Entry, preparation, post-preparation, and one check before each sorted run.
+        let firstCheckAfterOneSortedRun = preparationCheckCount + 4
+        let probe = SortCancellationProbe(throwOnCheck: firstCheckAfterOneSortedRun)
+
+        XCTAssertThrowsError(
+            try FileBrowserResults.sorted(
+                nodes,
+                sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)],
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, firstCheckAfterOneSortedRun)
+    }
+
     func testCancellableSortOrderMatchesTableComparators() throws {
         let older = Date(timeIntervalSince1970: 10)
         let newer = Date(timeIntervalSince1970: 20)
