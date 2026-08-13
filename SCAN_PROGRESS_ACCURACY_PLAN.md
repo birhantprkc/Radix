@@ -149,6 +149,22 @@ After these fixes, repeat the full suite, Debug and unsigned Release builds,
 Release-artifact exclusion checks, semantic benchmarks, and a fresh review of
 the complete branch diff.
 
+### Final full-branch review remediation
+
+The fresh review after the four edge-condition fixes identified two bounded
+cleanup items before final validation:
+
+1. Bound the cancellation probe's wait for stream termination and pool shutdown
+   with one deadline. A cancellation regression must fail the opt-in probe
+   promptly instead of hanging the test process indefinitely.
+2. Make the pool's shutdown notification exactly-once even if cleanup is invoked
+   redundantly or success/cancellation cleanup races. Add a deterministic
+   lifecycle assertion for this contract.
+
+Afterward, regenerate the result evidence so the documented test count,
+cancellation fields, and length-prefixed warning fingerprints describe the
+reviewed branch rather than the preceding checkpoint.
+
 ### Review remediation before acceptance
 
 The first implementation pass is not merge-ready until the six code-review
