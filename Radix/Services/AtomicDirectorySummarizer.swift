@@ -236,7 +236,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                         treatPackagesAsDirectories: treatPackagesAsDirectories,
                         ownerNodeID: url.path,
                         bufferedEntries: childEntries,
-                        needsCursor: false
+                        needsCursor: false,
+                        reloadsMissingBufferedMetadata: true
                     )],
                     visitedItemCount: 0
                 )

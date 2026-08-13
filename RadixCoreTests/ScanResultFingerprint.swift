@@ -58,15 +58,32 @@ func scanResultFingerprint(_ store: FileTreeStore) -> String {
 }
 
 func scanWarningFingerprint(_ warnings: [ScanWarning]) -> String {
+    warningFingerprint(warnings.sorted(by: warningPrecedes))
+}
+
+func scanOrderedWarningFingerprint(_ warnings: [ScanWarning]) -> String {
+    warningFingerprint(warnings)
+}
+
+private func warningFingerprint(_ warnings: [ScanWarning]) -> String {
     var fingerprint = StableScanResultFingerprint()
-    let signatures = warnings
-        .map { "\($0.category.rawValue)|\($0.path)|\($0.message)" }
-        .sorted()
-    fingerprint.append(Int64(signatures.count))
-    for signature in signatures {
-        fingerprint.append(signature)
+    fingerprint.append(Int64(warnings.count))
+    for warning in warnings {
+        fingerprint.append(warning.category.rawValue)
+        fingerprint.append(warning.path)
+        fingerprint.append(warning.message)
     }
     return fingerprint.description
+}
+
+private func warningPrecedes(_ lhs: ScanWarning, _ rhs: ScanWarning) -> Bool {
+    if lhs.category.rawValue != rhs.category.rawValue {
+        return lhs.category.rawValue < rhs.category.rawValue
+    }
+    if lhs.path != rhs.path {
+        return lhs.path < rhs.path
+    }
+    return lhs.message < rhs.message
 }
 
 private struct StableScanResultFingerprint: CustomStringConvertible {

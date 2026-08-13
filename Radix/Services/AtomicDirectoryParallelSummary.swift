@@ -249,6 +249,7 @@ extension AtomicDirectorySummarizer {
                 item.bufferedEntries[item.nextEntryIndex...],
                 from: item,
                 exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
                 partial: &partial,
                 pendingItems: &pendingItems,
                 cancellationCheck: cancellationCheck,
@@ -285,6 +286,7 @@ extension AtomicDirectorySummarizer {
                     batch.entries[...],
                     from: item,
                     exclusionMatcher: exclusionMatcher,
+                    metadataLoader: metadataLoader,
                     partial: &partial,
                     pendingItems: &pendingItems,
                     cancellationCheck: cancellationCheck,
@@ -582,6 +584,7 @@ extension AtomicDirectorySummarizer {
                 item.bufferedEntries[item.nextEntryIndex...],
                 from: item,
                 exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
                 partial: &partial,
                 pendingItems: &pendingItems,
                 cancellationCheck: cancellationCheck,
@@ -631,6 +634,7 @@ extension AtomicDirectorySummarizer {
                     batch.entries[...],
                     from: item,
                     exclusionMatcher: exclusionMatcher,
+                    metadataLoader: metadataLoader,
                     partial: &partial,
                     pendingItems: &pendingItems,
                     cancellationCheck: {
@@ -677,6 +681,7 @@ extension AtomicDirectorySummarizer {
         _ entries: ArraySlice<DirectoryEntry>,
         from item: AtomicSummaryWorkItem,
         exclusionMatcher: ScanExclusionMatcher,
+        metadataLoader: ScanMetadataLoader,
         partial: inout AtomicDirectorySummaryPartial,
         pendingItems: inout [AtomicSummaryWorkItem],
         cancellationCheck: CancellationCheck,
@@ -704,7 +709,17 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
-            guard let childMetadata = childEntry.metadata else {
+            let childMetadata: NodeMetadata
+            if let prefetchedMetadata = childEntry.metadata {
+                childMetadata = prefetchedMetadata
+            } else if item.reloadsMissingBufferedMetadata {
+                do {
+                    childMetadata = try metadataLoader.metadata(for: childURL)
+                } catch {
+                    partial.recordWarning(for: childURL, error: error)
+                    continue
+                }
+            } else {
                 partial.recordWarning(
                     for: childURL,
                     error: childEntry.localizedEnumerationError ?? NSError(

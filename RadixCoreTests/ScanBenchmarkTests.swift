@@ -89,6 +89,37 @@ final class ScanBenchmarkTests: XCTestCase {
         ]), baseline)
     }
 
+    func testWarningFingerprintSeparatesDelimiterBearingFields() {
+        let pathContainsDelimiter = [
+            ScanWarning(path: "/blocked|detail", message: "Denied", category: .permissionDenied)
+        ]
+        let messageContainsDelimiter = [
+            ScanWarning(path: "/blocked", message: "detail|Denied", category: .permissionDenied)
+        ]
+
+        XCTAssertNotEqual(
+            scanWarningFingerprint(pathContainsDelimiter),
+            scanWarningFingerprint(messageContainsDelimiter)
+        )
+    }
+
+    func testWarningFingerprintsExposeOrderWithoutChangingSetIdentity() {
+        let warnings = [
+            ScanWarning(path: "/first", message: "Denied", category: .permissionDenied),
+            ScanWarning(path: "/second", message: "Unavailable", category: .fileSystem)
+        ]
+        let reversed = warnings.reversed()
+
+        XCTAssertEqual(
+            scanWarningFingerprint(warnings),
+            scanWarningFingerprint(Array(reversed))
+        )
+        XCTAssertNotEqual(
+            scanOrderedWarningFingerprint(warnings),
+            scanOrderedWarningFingerprint(Array(reversed))
+        )
+    }
+
     func testIncrementalRescanBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["RADIX_BENCH_INCREMENTAL"] == "1" else {
@@ -208,6 +239,7 @@ final class ScanBenchmarkTests: XCTestCase {
             nodes=\(snapshot.treeStore.nodeCount)
             warnings=\(snapshot.scanWarnings.count)
             warning_fingerprint=\(scanWarningFingerprint(snapshot.scanWarnings))
+            warning_order_fingerprint=\(scanOrderedWarningFingerprint(snapshot.scanWarnings))
             progress_events=\(progressEvents)
             discovered=\(snapshot.aggregateStats.totalAllocatedSize)
             fingerprint=\(Self.resultFingerprint(snapshot.treeStore))

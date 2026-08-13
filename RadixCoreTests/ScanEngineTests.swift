@@ -3,6 +3,46 @@ import XCTest
 @testable import RadixCore
 
 final class ScanEngineTests: XCTestCase {
+    func testPooledReusedEntriesReloadMissingPrefetchedMetadata() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let fileURL = rootURL.appending(path: "payload.dat")
+        try Data(repeating: 0xAB, count: 32).write(to: fileURL)
+
+        var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        _ = AsyncThrowingStream<ScanProgressEvent, Error> {
+            continuation = $0
+        }
+        let result = try AtomicDirectorySummarizer.processPooledWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                bufferedEntries: [DirectoryEntry(
+                    url: fileURL,
+                    metadata: nil,
+                    localizedEnumerationError: CocoaError(.fileReadUnknown)
+                )],
+                needsCursor: false,
+                reloadsMissingBufferedMetadata: true
+            ),
+            includeHiddenFiles: true,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: ScanMetadataLoader(),
+            cancellationCheck: {},
+            progressReporter: AtomicSummaryProgressReporter(
+                metrics: ScanMetrics(),
+                continuation: continuation
+            ),
+            forcesFoundationTraversal: false
+        )
+
+        XCTAssertEqual(result.partial.descendantFileCount, 1)
+        XCTAssertEqual(result.partial.logicalSize, 32)
+        XCTAssertEqual(result.partial.visitedItemCount, 1)
+        XCTAssertTrue(result.partial.warnings.isEmpty)
+    }
+
     func testAtomicSummarySizeAccumulationClampsInsteadOfOverflowing() {
         var partial = AtomicDirectorySummaryPartial(
             allocatedSize: Int64.max,
@@ -107,8 +147,14 @@ final class ScanEngineTests: XCTestCase {
             )],
             visitedItemCount: 0
         )
+        let lifecycle = AtomicSummaryWorkerLifecycleProbe()
         let pool = AtomicDirectorySummaryPool(
             workerLimit: 1,
+            workerObserver: AtomicSummaryWorkerObserver(
+                didStart: { _, _ in lifecycle.didStart() },
+                didFinish: { _, _ in lifecycle.didFinish() },
+                didShutdown: { lifecycle.didShutdown() }
+            ),
             progressEmissionInterval: 0
         )
         var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
@@ -154,6 +200,9 @@ final class ScanEngineTests: XCTestCase {
             firstRestartedVisit.atomicSummaryEstimatedRemainingItems,
             ScanMetrics.unobservedSummaryEstimatedItemCount
         )
+        XCTAssertEqual(lifecycle.activeWorkerCount, 0)
+        XCTAssertTrue(lifecycle.didObserveShutdown)
+        XCTAssertEqual(lifecycle.lastEvent, .shutdown)
     }
 
     func testLowDescriptorBudgetMatchesNormalScanAndStaysWithinPeak() async throws {
@@ -1665,6 +1714,35 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(completedMetrics.atomicSummaryVisitedItems, 0)
     }
 
+    func testPackageRootParticipatesInSummaryWorkAccounting() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let packageURL = rootURL.appending(path: "Progress.app", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+        for index in 0..<300 {
+            try Data([UInt8(index % 256)]).write(
+                to: packageURL.appending(path: String(format: "payload-%04d.dat", index))
+            )
+        }
+
+        let engine = ScanEngine(atomicSummaryProgressEmissionInterval: 0)
+        var progressMetrics: [ScanMetrics] = []
+        for try await event in engine.scan(target: ScanTarget(url: packageURL), options: ScanOptions()) {
+            if case .progress(let metrics) = event {
+                progressMetrics.append(metrics)
+            }
+        }
+
+        XCTAssertTrue(progressMetrics.contains { $0.pendingPackageSummaryCount == 1 })
+        XCTAssertTrue(progressMetrics.contains {
+            $0.activePackageSummaryCount == 1 && $0.atomicSummaryVisitedItems > 0
+        })
+        let completedMetrics = try XCTUnwrap(progressMetrics.last)
+        XCTAssertEqual(completedMetrics.pendingPackageSummaryCount, 0)
+        XCTAssertEqual(completedMetrics.completedPackageSummaryCount, 1)
+        XCTAssertEqual(completedMetrics.completedPackageSummaryVisitedItemCount, 300)
+    }
+
     func testReusedEntryAutoSummaryPublishesInFlightWork() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -2746,6 +2824,23 @@ final class ScanEngineTests: XCTestCase {
 
         let expectedCountFraction = 1.0 / 65.0
         XCTAssertEqual(metrics.progressFraction, expectedCountFraction * 0.95, accuracy: 0.0001)
+    }
+
+    func testSummaryOnlyWorkParticipatesInCountCapWithoutOrdinaryEnumeration() {
+        var metrics = ScanMetrics()
+        metrics.discoveredItems = 1
+        metrics.completedTraversalWeight = 0.9
+        metrics.pendingPackageSummaryCount = 1
+        metrics.atomicSummaryVisitedItems = 100
+        metrics.atomicSummaryEstimatedRemainingItems = 900
+        metrics.activeAtomicSummaryCount = 1
+        metrics.activePackageSummaryCount = 1
+        metrics.activePackageSummaryVisitedItems = 100
+        metrics.activePackageSummaryEstimatedRemainingItems = 900
+
+        metrics.recalculateProgress()
+
+        XCTAssertEqual(metrics.progressFraction, 0.1 * 0.95, accuracy: 0.0001)
     }
 
     func testSummaryVisitedWorkUsesSameUnitsAcrossOverlayCommitTransition() {
@@ -4060,6 +4155,50 @@ private final class BlockingAtomicSummaryWorkerProbe: @unchecked Sendable {
         isReleased = true
         condition.broadcast()
         condition.unlock()
+    }
+}
+
+private final class AtomicSummaryWorkerLifecycleProbe: @unchecked Sendable {
+    enum Event: Equatable {
+        case started
+        case finished
+        case shutdown
+    }
+
+    private let lock = NSLock()
+    private var activeCount = 0
+    private var events: [Event] = []
+
+    var activeWorkerCount: Int {
+        lock.withLock { activeCount }
+    }
+
+    var didObserveShutdown: Bool {
+        lock.withLock { events.contains(.shutdown) }
+    }
+
+    var lastEvent: Event? {
+        lock.withLock { events.last }
+    }
+
+    func didStart() {
+        lock.withLock {
+            activeCount += 1
+            events.append(.started)
+        }
+    }
+
+    func didFinish() {
+        lock.withLock {
+            activeCount = max(activeCount - 1, 0)
+            events.append(.finished)
+        }
+    }
+
+    func didShutdown() {
+        lock.withLock {
+            events.append(.shutdown)
+        }
     }
 }
 

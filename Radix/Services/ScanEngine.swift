@@ -1121,6 +1121,17 @@ actor ScanEngine {
         do {
         // If the root itself shouldn't be traversed, return a leaf node.
         guard shouldTraverseDirectory(metadata: rootMetadata, options: options) else {
+            let summarizesRootPackage = rootMetadata.isPackage
+                && rootMetadata.isDirectory
+                && !options.treatPackagesAsDirectories
+            if summarizesRootPackage {
+                metrics.pendingPackageSummaryCount += 1
+                metrics.recalculateProgress()
+                atomicSummaryPool.updateProgress(
+                    metrics,
+                    continuation: continuation
+                )
+            }
             let leafResult = try await makeLeafNode(
                 url: target.url,
                 metadata: rootMetadata,
@@ -1133,6 +1144,12 @@ actor ScanEngine {
                 continuation: continuation,
                 emissionState: &emissionState
             )
+            if summarizesRootPackage {
+                metrics.pendingPackageSummaryCount = max(
+                    metrics.pendingPackageSummaryCount - 1,
+                    0
+                )
+            }
             hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
             if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                 minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize

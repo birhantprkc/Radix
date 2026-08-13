@@ -167,6 +167,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             nodes=\(snapshot.treeStore.nodeCount)
             warnings=\(snapshot.scanWarnings.count)
             warning_fingerprint=\(scanWarningFingerprint(snapshot.scanWarnings))
+            warning_order_fingerprint=\(scanOrderedWarningFingerprint(snapshot.scanWarnings))
             allocated_bytes=\(snapshot.aggregateStats.totalAllocatedSize)
             fingerprint=\(scanResultFingerprint(snapshot.treeStore))
             """
@@ -193,7 +194,8 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         let workerActivity = ProgressProbeWorkerActivity()
         let engine = ScanEngine(atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver(
             didStart: { _, _ in workerActivity.didStart() },
-            didFinish: { _, _ in workerActivity.didFinish() }
+            didFinish: { _, _ in workerActivity.didFinish() },
+            didShutdown: { workerActivity.didShutdown() }
         ))
         let observation = ProgressProbeCancellationObservation()
         let consumer = Task { () -> (emittedFinished: Bool, unexpectedError: String?) in
@@ -233,15 +235,17 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         let cancellationStart = clock.now
         consumer.cancel()
         let outcome = await consumer.value
-        let quiescenceDeadline = clock.now.advanced(by: .seconds(5))
-        while !workerActivity.isQuiescent, clock.now < quiescenceDeadline {
+        let shutdownDeadline = clock.now.advanced(by: .seconds(5))
+        while !workerActivity.hasShutdown, clock.now < shutdownDeadline {
             try await Task.sleep(for: .milliseconds(1))
         }
+        let poolShutdown = workerActivity.hasShutdown
         let workersQuiescent = workerActivity.isQuiescent
         let shutdownLatency = Self.seconds(cancellationStart.duration(to: clock.now))
 
         XCTAssertTrue(progressObserved, "Cancellation probe never observed active scan work.")
         XCTAssertTrue(workerActiveAtCancellation, "Cancellation probe did not cancel active summary work.")
+        XCTAssertTrue(poolShutdown, "Summary pool did not complete shutdown after cancellation.")
         XCTAssertTrue(workersQuiescent, "Summary workers did not quiesce after cancellation.")
         XCTAssertFalse(outcome.emittedFinished)
         XCTAssertNil(outcome.unexpectedError)
@@ -251,6 +255,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
                 + "shutdown_latency_seconds=\(Self.format(shutdownLatency)) "
                 + "progress_observed=\(progressObserved) "
                 + "worker_active=\(workerActiveAtCancellation) "
+                + "pool_shutdown=\(poolShutdown) "
                 + "workers_quiescent=\(workersQuiescent) "
                 + "emitted_finished=\(outcome.emittedFinished)"
         )
@@ -448,6 +453,7 @@ private actor ProgressProbeCancellationObservation {
 private nonisolated final class ProgressProbeWorkerActivity: @unchecked Sendable {
     private let lock = NSLock()
     private var activeWorkerCount = 0
+    private var poolDidShutdown = false
 
     var hasActiveWorkers: Bool {
         lock.withLock { activeWorkerCount > 0 }
@@ -455,6 +461,10 @@ private nonisolated final class ProgressProbeWorkerActivity: @unchecked Sendable
 
     var isQuiescent: Bool {
         lock.withLock { activeWorkerCount == 0 }
+    }
+
+    var hasShutdown: Bool {
+        lock.withLock { poolDidShutdown }
     }
 
     func didStart() {
@@ -466,6 +476,12 @@ private nonisolated final class ProgressProbeWorkerActivity: @unchecked Sendable
     func didFinish() {
         lock.withLock {
             activeWorkerCount = max(activeWorkerCount - 1, 0)
+        }
+    }
+
+    func didShutdown() {
+        lock.withLock {
+            poolDidShutdown = true
         }
     }
 }

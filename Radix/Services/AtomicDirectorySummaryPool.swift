@@ -372,13 +372,16 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
 nonisolated struct AtomicSummaryWorkerObserver: Sendable {
     let didStart: @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void
     let didFinish: @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void
+    let didShutdown: @Sendable () -> Void
 
     init(
         didStart: @escaping @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void,
-        didFinish: @escaping @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void
+        didFinish: @escaping @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void,
+        didShutdown: @escaping @Sendable () -> Void = {}
     ) {
         self.didStart = didStart
         self.didFinish = didFinish
+        self.didShutdown = didShutdown
     }
 }
 
@@ -523,6 +526,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
+        workerObserver?.didShutdown()
     }
 
     /// Fails all registered jobs, wakes workers, and awaits their termination.
@@ -531,6 +535,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
+        workerObserver?.didShutdown()
     }
 
     /// Convenience structured lifetime for callers that do not need to mutate

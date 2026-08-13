@@ -111,13 +111,17 @@ nonisolated struct ScanMetrics: Sendable {
         // thousands of visited descendants. Extrapolate the cost of known unfinished
         // packages from completed and active summaries instead of treating every package
         // sibling as equal geometric work.
-        if enumeratedDirectoryCount > 0,
-           completedItems < discoveredItems
-            || pendingDirectoryCount > 0
+        let hasCountedWork = enumeratedDirectoryCount > 0
             || pendingPackageSummaryCount > 0
             || pendingAutoSummaryRepresentedItemCount > 0
-            || activeAtomicSummaryCount > 0 {
-            let enumerated = Double(enumeratedDirectoryCount)
+            || activeAtomicSummaryCount > 0
+        if hasCountedWork,
+           (completedItems < discoveredItems
+                || pendingDirectoryCount > 0
+                || pendingPackageSummaryCount > 0
+                || pendingAutoSummaryRepresentedItemCount > 0
+                || activeAtomicSummaryCount > 0) {
+            let enumerated = Double(max(enumeratedDirectoryCount, 0))
             let ordinaryDiscoveredItems = max(
                 discoveredItems - pendingAutoSummaryRepresentedItemCount,
                 0
@@ -130,8 +134,12 @@ nonisolated struct ScanMetrics: Sendable {
                 pendingDirectoryCount - pendingAutoSummaryRepresentedDirectoryCount,
                 0
             )
-            let childrenPerDirectory = Double(ordinaryDiscoveredItems) / enumerated
-            let subdirectoriesPerDirectory = Double(ordinaryDiscoveredDirectories) / enumerated
+            let childrenPerDirectory = enumerated > 0
+                ? Double(ordinaryDiscoveredItems) / enumerated
+                : 0
+            let subdirectoriesPerDirectory = enumerated > 0
+                ? Double(ordinaryDiscoveredDirectories) / enumerated
+                : 0
             let expansion = subdirectoriesPerDirectory < 1
                 ? min(1 / (1 - subdirectoriesPerDirectory), Self.maxFrontierExpansion)
                 : Self.maxFrontierExpansion

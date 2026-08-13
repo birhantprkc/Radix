@@ -96,6 +96,11 @@ nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
     var cursor: BulkDirectoryEnumerator.Cursor?
     var needsCursor: Bool
     var requiresRootRestartOnFallback: Bool
+    /// The scan's immediate-child listing may contain an entry whose prefetched
+    /// metadata failed transiently. The legacy reused-entry path retried those
+    /// entries once before recording a warning; pooled reused work preserves that
+    /// behavior without changing cursor-enumeration failure handling.
+    var reloadsMissingBufferedMetadata: Bool
 
     init(
         url: URL,
@@ -105,7 +110,8 @@ nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
         nextEntryIndex: Int = 0,
         cursor: BulkDirectoryEnumerator.Cursor? = nil,
         needsCursor: Bool = true,
-        requiresRootRestartOnFallback: Bool = false
+        requiresRootRestartOnFallback: Bool = false,
+        reloadsMissingBufferedMetadata: Bool = false
     ) {
         self.url = url
         self.treatPackagesAsDirectories = treatPackagesAsDirectories
@@ -115,6 +121,7 @@ nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
         self.cursor = cursor
         self.needsCursor = needsCursor
         self.requiresRootRestartOnFallback = requiresRootRestartOnFallback
+        self.reloadsMissingBufferedMetadata = reloadsMissingBufferedMetadata
     }
 }
 
