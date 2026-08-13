@@ -201,6 +201,30 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updatedStore.aggregateStats.fileCount, 2)
     }
 
+    func testLogicalScopeRemovalRepairsOrderAndTraversal() throws {
+        let retained = makeFileNode(id: "/root/folder/retained.bin", name: "retained.bin", size: 1)
+        let removed = makeFileNode(id: "/root/folder/removed.bin", name: "removed.bin", size: 99)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [removed, retained])
+        let sibling = makeFileNode(id: "/root/sibling.bin", name: "sibling.bin", size: 50)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [folder, sibling])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, sibling],
+            folder.id: [removed, retained],
+        ])
+        let scope = try XCTUnwrap(store.logicalScope(rootedAt: root.id))
+        let materializedScope = try scope.materialized(cancellationCheck: {})
+
+        let expected = try XCTUnwrap(materializedScope.removingSubtree(id: removed.id))
+        let updatedStore = try XCTUnwrap(scope.removingSubtree(id: removed.id))
+
+        assertEquivalent(updatedStore, expected)
+        XCTAssertEqual(updatedStore.childIDs(of: root.id), [sibling.id, folder.id])
+        XCTAssertEqual(
+            updatedStore.indexedNodeIDs(),
+            [root.id, sibling.id, folder.id, retained.id]
+        )
+    }
+
     func testRemovingSubtreesResortsMultipleChangedBranches() {
         let firstRetained = makeFileNode(
             id: "/root/first/retained.bin",
@@ -366,6 +390,54 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updatedStore.aggregateStats.inaccessibleItemCount, 0)
     }
 
+    func testLogicalScopeRemovalRepairsAggregateAccessibility() throws {
+        let accessible = makeFileNode(
+            id: "/root/accessible.bin",
+            name: "accessible.bin",
+            size: 1
+        )
+        let inaccessible = makeFileNode(
+            id: "/root/folder/inaccessible.bin",
+            name: "inaccessible.bin",
+            size: 1,
+            isAccessible: false
+        )
+        let folder = makeDirectoryNode(
+            id: "/root/folder",
+            name: "folder",
+            children: [inaccessible],
+            isAccessible: false,
+            isSelfAccessible: true
+        )
+        let root = makeDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [folder, accessible],
+            isAccessible: false,
+            isSelfAccessible: true
+        )
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, accessible],
+            folder.id: [inaccessible],
+        ])
+        let scope = try XCTUnwrap(store.logicalScope(rootedAt: root.id))
+        let materializedScope = try scope.materialized(cancellationCheck: {})
+
+        let expected = try XCTUnwrap(materializedScope.removingSubtree(id: inaccessible.id))
+        let updatedStore = try XCTUnwrap(scope.removingSubtree(id: inaccessible.id))
+
+        assertEquivalent(updatedStore, expected)
+        XCTAssertTrue(updatedStore.root.isAccessible)
+        XCTAssertTrue(try XCTUnwrap(updatedStore.node(id: folder.id)).isAccessible)
+        XCTAssertEqual(updatedStore.aggregateStats.accessibleItemCount, 3)
+        XCTAssertEqual(updatedStore.aggregateStats.inaccessibleItemCount, 0)
+        XCTAssertEqual(
+            updatedStore.aggregateStats.accessibleItemCount +
+                updatedStore.aggregateStats.inaccessibleItemCount,
+            updatedStore.nodeCount
+        )
+    }
+
     func testRemovingSubtreeHonorsCancellationDuringCompaction() {
         let children = (0..<1_024).map { index in
             makeFileNode(
@@ -441,6 +513,36 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(logicalScopeCheckCount, 10)
         XCTAssertEqual(store.nodeCount, children.count + 1)
         XCTAssertNotNil(store.node(id: children[512].id))
+    }
+
+    func testLogicalScopeWideRemovalHonorsCancellationDuringDirectoryRepair() throws {
+        let children = (0..<1_025).map { index in
+            makeFileNode(
+                id: "/root/item-\(index).bin",
+                name: "item-\(index).bin",
+                size: 1
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: children)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: children])
+        let scope = try XCTUnwrap(store.logicalScope(rootedAt: root.id))
+        // Checks before repair reach the first combined child-order/totals entry.
+        // This probe requires the next periodic check after 256 surviving children.
+        let firstPeriodicDirectoryTotalsCheck = 37
+        var cancellationCheckCount = 0
+
+        XCTAssertThrowsError(try scope.removingSubtree(
+            id: children[512].id,
+            cancellationCheck: {
+                cancellationCheckCount += 1
+                if cancellationCheckCount == firstPeriodicDirectoryTotalsCheck {
+                    throw CancellationError()
+                }
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(cancellationCheckCount, firstPeriodicDirectoryTotalsCheck)
     }
 
     func testIndexedNodeIDsPreserveTraversalOrderAndCanExcludeRoot() {

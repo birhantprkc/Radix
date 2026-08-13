@@ -532,6 +532,20 @@ nonisolated struct FileTreeStore: Sendable {
             }
         }
 
+        mutating func replaceAccessibility(
+            from previousNode: FileNodeRecord,
+            to updatedNode: FileNodeRecord
+        ) {
+            guard previousNode.isAccessible != updatedNode.isAccessible else { return }
+            if updatedNode.isAccessible {
+                accessibleItemCount += 1
+                inaccessibleItemCount -= 1
+            } else {
+                accessibleItemCount -= 1
+                inaccessibleItemCount += 1
+            }
+        }
+
         func stats(root: FileNodeRecord) -> ScanAggregateStats {
             ScanAggregateStats(
                 totalAllocatedSize: root.allocatedSize,
@@ -2562,6 +2576,67 @@ nonisolated struct FileTreeStore: Sendable {
         )
     }
 
+    // Keep this phase out of the large compaction routine; inlining it
+    // measurably regresses logical-scope removal throughput in Release builds.
+    @inline(never)
+    private nonisolated static func finalizeCompactedSubtree(
+        nodes: inout [FileNodeRecord],
+        affectedNodeIndices: [FileTreeNodeIndex],
+        childSpans: [FileTreeChildSpan],
+        childIndices: inout [FileTreeNodeIndex],
+        orderedNodeIndices: inout [FileTreeNodeIndex],
+        statsAccumulator: inout AggregateStatsAccumulator,
+        cancellationCheck: () throws -> Void
+    ) throws {
+        var didReorderChildren = false
+        if !affectedNodeIndices.isEmpty {
+            let affectedNodeIndexSet = Set(affectedNodeIndices)
+            for nodeIndex in affectedNodeIndices.reversed() {
+                try cancellationCheck()
+                let nodeOffset = Int(nodeIndex.rawValue)
+                guard nodes[nodeOffset].isDirectory else { continue }
+
+                let span = childSpans[nodeOffset]
+                let childStart = Int(span.start)
+                let childEnd = childStart + Int(span.count)
+                let reorderedChildren = try restoringDisplayOrderAfterChanges(
+                    childIndices[childStart..<childEnd],
+                    isChanged: { affectedNodeIndexSet.contains($0) },
+                    nodeAt: { nodes[Int($0.rawValue)] },
+                    cancellationCheck: cancellationCheck
+                )
+
+                var totals = MaterializedDirectoryTotals()
+                for (offset, childIndex) in reorderedChildren.enumerated() {
+                    if offset.isMultiple(of: 256) {
+                        try cancellationCheck()
+                    }
+                    let childOffset = childStart + offset
+                    if childIndices[childOffset] != childIndex {
+                        childIndices[childOffset] = childIndex
+                        didReorderChildren = true
+                    }
+                    totals.include(nodes[Int(childIndex.rawValue)])
+                }
+                let source = nodes[nodeOffset]
+                let repaired = repairingDirectoryRecord(source, totals: totals)
+                statsAccumulator.replaceAccessibility(from: source, to: repaired)
+                nodes[nodeOffset] = repaired
+            }
+        }
+
+        if didReorderChildren {
+            orderedNodeIndices = try FileTreeTopologyArena.preorderNodeIndices(
+                rootIndex: FileTreeNodeIndex(rawValue: 0),
+                childSpans: childSpans,
+                childIndices: childIndices,
+                capacity: nodes.count,
+                cancellationCheck: cancellationCheck
+            )
+        }
+        try cancellationCheck()
+    }
+
     private nonisolated func compactedSubtree(
         rootedAt targetIndex: FileTreeNodeIndex,
         excludingSubtreesAt excludedRootIndices: [FileTreeNodeIndex],
@@ -2666,32 +2741,16 @@ nonisolated struct FileTreeStore: Sendable {
             nextChildRawOffset[parentOffset] += 1
         }
 
-        if !affectedScopedIndices.isEmpty {
-            let affectedScopedIndexSet = Set(affectedScopedIndices)
-            for scopedIndex in affectedScopedIndices.reversed() {
-                try cancellationCheck()
-                let scopedOffset = Int(scopedIndex.rawValue)
-                guard scopedNodes[scopedOffset].isDirectory else { continue }
-
-                let span = childSpans[scopedOffset]
-                let childStart = Int(span.start)
-                let childEnd = childStart + Int(span.count)
-                let reorderedChildren = try Self.restoringDisplayOrderAfterChanges(
-                    childIndices[childStart..<childEnd],
-                    isChanged: { affectedScopedIndexSet.contains($0) },
-                    nodeAt: { scopedNodes[Int($0.rawValue)] },
-                    cancellationCheck: cancellationCheck
-                )
-                childIndices.replaceSubrange(childStart..<childEnd, with: reorderedChildren)
-                let children = reorderedChildren.map { scopedNodes[Int($0.rawValue)] }
-                scopedNodes[scopedOffset] = Self.repairingDirectoryRecord(
-                    scopedNodes[scopedOffset],
-                    children: children
-                )
-            }
-        }
-
         let scopedRootIndex = FileTreeNodeIndex(rawValue: 0)
+        try Self.finalizeCompactedSubtree(
+            nodes: &scopedNodes,
+            affectedNodeIndices: affectedScopedIndices,
+            childSpans: childSpans,
+            childIndices: &childIndices,
+            orderedNodeIndices: &orderedNodeIndices,
+            statsAccumulator: &statsAccumulator,
+            cancellationCheck: cancellationCheck
+        )
         let scopedStore = FileTreeStore(
             verifiedRootIndex: scopedRootIndex,
             nodes: scopedNodes,
