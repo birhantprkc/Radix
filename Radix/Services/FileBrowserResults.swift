@@ -12,13 +12,13 @@ enum FileBrowserResults {
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil
     ) -> [FileNodeRecord] {
-        (try? filteredAndSortedCurrentContents(
+        filteredAndSortedCurrentContents(
             nodes,
             query: query,
             sortOrder: sortOrder,
             fileTreeStore: fileTreeStore,
             cancellationCheck: {}
-        )) ?? []
+        )
     }
 
     nonisolated static func filteredAndSortedCurrentContents(
@@ -27,7 +27,7 @@ enum FileBrowserResults {
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil,
         cancellationCheck: @Sendable () throws -> Void
-    ) throws -> [FileNodeRecord] {
+    ) rethrows -> [FileNodeRecord] {
         guard query.isActive else {
             try cancellationCheck()
             return try sorted(
@@ -66,12 +66,12 @@ enum FileBrowserResults {
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil
     ) -> [FileNodeRecord] {
-        (try? sorted(
+        sorted(
             nodes,
             sortOrder: sortOrder,
             fileTreeStore: fileTreeStore,
             cancellationCheck: {}
-        )) ?? nodes
+        )
     }
 
     nonisolated static func sorted(
@@ -79,7 +79,7 @@ enum FileBrowserResults {
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore? = nil,
         cancellationCheck: @Sendable () throws -> Void
-    ) throws -> [FileNodeRecord] {
+    ) rethrows -> [FileNodeRecord] {
         try cancellationCheck()
         guard !sortOrder.isEmpty else { return nodes }
 
@@ -97,14 +97,25 @@ enum FileBrowserResults {
             cancellationCheck: cancellationCheck
         )
         try cancellationCheck()
-        return sortedNodes.map(\.node)
+        var result: [FileNodeRecord] = []
+        result.reserveCapacity(sortedNodes.count)
+        var start = 0
+        while start < sortedNodes.count {
+            let end = min(start + 256, sortedNodes.count)
+            while start < end {
+                result.append(sortedNodes[start].node)
+                start += 1
+            }
+            try cancellationCheck()
+        }
+        return result
     }
 
     private nonisolated static func cancellablySorted(
         _ nodes: inout [PreparedSortNode],
         sortOrder: [FileNodeTableComparator],
         cancellationCheck: @Sendable () throws -> Void
-    ) throws -> [PreparedSortNode] {
+    ) rethrows -> [PreparedSortNode] {
         let chunkSize = 16_384
         guard nodes.count > chunkSize else {
             return nodes.sorted { lhs, rhs in
@@ -153,7 +164,7 @@ enum FileBrowserResults {
         end: Int,
         sortOrder: [FileNodeTableComparator],
         cancellationCheck: @Sendable () throws -> Void
-    ) throws {
+    ) rethrows {
         var lhsIndex = start
         var rhsIndex = middle
 
@@ -180,7 +191,7 @@ enum FileBrowserResults {
         sortOrder: [FileNodeTableComparator],
         fileTreeStore: FileTreeStore?,
         cancellationCheck: @Sendable () throws -> Void
-    ) throws -> [PreparedSortNode] {
+    ) rethrows -> [PreparedSortNode] {
         let preparesItemKind = sortOrder.contains { $0.field == .itemKind }
         let preparesDescendantFileCount = sortOrder.contains { $0.field == .descendantFileCount }
         var preparedNodes: [PreparedSortNode] = []

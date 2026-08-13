@@ -154,12 +154,11 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         )
 
         let sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
-        let sortingMeasurement = try Self.measure {
-            try FileBrowserResults.sorted(
+        let sortingMeasurement = Self.measure {
+            FileBrowserResults.sorted(
                 largeResults,
                 sortOrder: sortOrder,
-                fileTreeStore: fixture.store,
-                cancellationCheck: {}
+                fileTreeStore: fixture.store
             )
         }
         let sortedResults = sortingMeasurement.value

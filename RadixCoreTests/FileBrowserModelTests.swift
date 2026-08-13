@@ -541,7 +541,64 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(probe.checkCount, 3)
     }
 
-    func testLargeSortPreservesOrderAcrossSortedRuns() throws {
+    func testCancellableSortThrowsDuringResultProjection() {
+        let nodes = (0..<600).map { index in
+            makeTestFileNode(
+                id: "/root/file-\(index).txt",
+                name: "file-\(index).txt",
+                size: Int64(index)
+            )
+        }
+        let preparationCheckCount = (nodes.count + 255) / 256
+        // Entry, preparation, post-preparation, pre-allocation, and the first
+        // completed projection chunk.
+        let secondProjectionCheck = preparationCheckCount + 4
+        let probe = SortCancellationProbe(throwOnCheck: secondProjectionCheck)
+
+        XCTAssertThrowsError(
+            try FileBrowserResults.sorted(
+                nodes,
+                sortOrder: [FileNodeTableComparator(field: .allocatedSize)],
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, secondProjectionCheck)
+    }
+
+    func testCancellableSortChecksBeforeEmptyProjectionAndAfterFinalChunk() {
+        let emptyProbe = SortCancellationProbe(throwOnCheck: 3)
+        XCTAssertThrowsError(
+            try FileBrowserResults.sorted(
+                [],
+                sortOrder: [FileNodeTableComparator(field: .name)],
+                cancellationCheck: emptyProbe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(emptyProbe.checkCount, 3)
+
+        let node = makeTestFileNode(
+            id: "/root/file.txt",
+            name: "file.txt",
+            size: 1
+        )
+        let finalChunkProbe = SortCancellationProbe(throwOnCheck: 5)
+        XCTAssertThrowsError(
+            try FileBrowserResults.sorted(
+                [node],
+                sortOrder: [FileNodeTableComparator(field: .name)],
+                cancellationCheck: finalChunkProbe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(finalChunkProbe.checkCount, 5)
+    }
+
+    func testLargeSortPreservesOrderAcrossSortedRuns() {
         let nodes = (0..<20_000).map { index in
             makeTestFileNode(
                 id: "/root/file-\(index).dat",
@@ -550,10 +607,9 @@ final class FileBrowserModelTests: XCTestCase {
             )
         }
 
-        let sortedNodes = try FileBrowserResults.sorted(
+        let sortedNodes = FileBrowserResults.sorted(
             nodes,
-            sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)],
-            cancellationCheck: {}
+            sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
 
         XCTAssertEqual(sortedNodes.map(\.id), nodes.reversed().map(\.id))
@@ -584,7 +640,7 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(probe.checkCount, firstCheckAfterOneSortedRun)
     }
 
-    func testCancellableSortOrderMatchesTableComparators() throws {
+    func testSortOrderMatchesTableComparators() {
         let older = Date(timeIntervalSince1970: 10)
         let newer = Date(timeIntervalSince1970: 20)
         let alpha = makeTestFileNode(id: "/root/alpha.txt", name: "alpha.txt", size: 10, lastModified: newer)
@@ -599,43 +655,38 @@ final class FileBrowserModelTests: XCTestCase {
         )
         let nodes = [folder, beta, alpha]
 
-        let nameResults = try FileBrowserResults.sorted(
+        let nameResults = FileBrowserResults.sorted(
             nodes,
-            sortOrder: [FileNodeTableComparator(field: .name)],
-            cancellationCheck: {}
+            sortOrder: [FileNodeTableComparator(field: .name)]
         )
         XCTAssertEqual(nameResults.map(\.id), [alpha.id, beta.id, folder.id])
 
-        let sizeResults = try FileBrowserResults.sorted(
+        let sizeResults = FileBrowserResults.sorted(
             nodes,
-            sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)],
-            cancellationCheck: {}
+            sortOrder: [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         )
         XCTAssertEqual(sizeResults.map(\.id), [beta.id, folder.id, alpha.id])
 
-        let kindResults = try FileBrowserResults.sorted(
+        let kindResults = FileBrowserResults.sorted(
             nodes,
-            sortOrder: [FileNodeTableComparator(field: .itemKind)],
-            cancellationCheck: {}
+            sortOrder: [FileNodeTableComparator(field: .itemKind)]
         )
         XCTAssertEqual(kindResults.map(\.id), [alpha.id, beta.id, folder.id])
 
-        let countResults = try FileBrowserResults.sorted(
+        let countResults = FileBrowserResults.sorted(
             nodes,
-            sortOrder: [FileNodeTableComparator(field: .descendantFileCount, order: .reverse)],
-            cancellationCheck: {}
+            sortOrder: [FileNodeTableComparator(field: .descendantFileCount, order: .reverse)]
         )
         XCTAssertEqual(countResults.map(\.id), [folder.id, alpha.id, beta.id])
 
-        let modifiedResults = try FileBrowserResults.sorted(
+        let modifiedResults = FileBrowserResults.sorted(
             nodes,
-            sortOrder: [FileNodeTableComparator(field: .lastModified)],
-            cancellationCheck: {}
+            sortOrder: [FileNodeTableComparator(field: .lastModified)]
         )
         XCTAssertEqual(modifiedResults.map(\.id), [beta.id, folder.id, alpha.id])
     }
 
-    func testSortOrderUsesSecondaryDescriptorBeforeDeterministicFallback() throws {
+    func testSortOrderUsesSecondaryDescriptorBeforeDeterministicFallback() {
         let older = Date(timeIntervalSince1970: 10)
         let newer = Date(timeIntervalSince1970: 20)
         let alpha = makeTestFileNode(
@@ -651,20 +702,18 @@ final class FileBrowserModelTests: XCTestCase {
             lastModified: newer
         )
 
-        let secondaryResult = try FileBrowserResults.sorted(
+        let secondaryResult = FileBrowserResults.sorted(
             [alpha, zeta],
             sortOrder: [
                 FileNodeTableComparator(field: .allocatedSize, order: .reverse),
                 FileNodeTableComparator(field: .lastModified, order: .reverse),
-            ],
-            cancellationCheck: {}
+            ]
         )
-        let fallbackResult = try FileBrowserResults.sorted(
+        let fallbackResult = FileBrowserResults.sorted(
             [zeta, alpha],
             sortOrder: [
                 FileNodeTableComparator(field: .allocatedSize, order: .reverse),
-            ],
-            cancellationCheck: {}
+            ]
         )
 
         XCTAssertEqual(secondaryResult.map(\.id), [zeta.id, alpha.id])
