@@ -95,6 +95,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
     private var allocatedSize: Int64 = 0
     private var logicalSize: Int64 = 0
     private var descendantFileCount = 0
+    private var visitedItemCount = 0
     private var isAccessible = true
     private var warnings: [ScanWarning] = []
     private var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
@@ -104,6 +105,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
         allocatedSize = seed.allocatedSize
         logicalSize = seed.logicalSize
         descendantFileCount = seed.descendantFileCount
+        visitedItemCount = seed.visitedItemCount
         isAccessible = seed.isAccessible
         warnings = seed.warnings
         hardLinkAccumulator = seed.hardLinkAccumulator
@@ -130,19 +132,24 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
             descendantFileCount,
             partial.descendantFileCount
         )
+        visitedItemCount = ScanIntegerMath.addingClamped(
+            visitedItemCount,
+            partial.visitedItemCount
+        )
         isAccessible = isAccessible && partial.isAccessible
         warnings.append(contentsOf: partial.warnings)
         hardLinkAccumulator.merge(partial.hardLinkAccumulator)
         lock.unlock()
     }
 
-    func makeSummary() -> AtomicDirectorySummary {
+    func makeSummary(visitedItemCount overrideVisitedItemCount: Int? = nil) -> AtomicDirectorySummary {
         lock.lock()
         defer { lock.unlock() }
         return AtomicDirectorySummary(
             allocatedSize: allocatedSize,
             logicalSize: logicalSize,
             descendantFileCount: descendantFileCount,
+            visitedItemCount: max(overrideVisitedItemCount ?? visitedItemCount, 0),
             isAccessible: isAccessible,
             warnings: warnings,
             hardLinkAccumulator: hardLinkAccumulator
@@ -309,6 +316,7 @@ extension AtomicDirectorySummarizer {
                 visitedItemCount: visitedItemCount
             )
             var warningOnly = AtomicDirectorySummaryPartial()
+            warningOnly.visitedItemCount = visitedItemCount
             warningOnly.recordWarning(for: item.url, error: error)
             return AtomicSummaryWorkResult(partial: warningOnly, pendingItems: [])
         }
@@ -362,6 +370,7 @@ extension AtomicDirectorySummarizer {
             try cancellationCheck()
             guard let childURL = nextObject as? URL else { continue }
             visitedItemCount += 1
+            partial.visitedItemCount += 1
             if visitedItemCount == 1 || visitedItemCount.isMultiple(of: 64) {
                 progressReporter.emit(
                     currentURL: childURL,
@@ -678,6 +687,7 @@ extension AtomicDirectorySummarizer {
             try cancellationCheck()
             let childURL = childEntry.url
             workerVisitedItemCount += 1
+            partial.visitedItemCount += 1
             if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
                 progressReporter.emit(
                     currentURL: childURL,
@@ -784,6 +794,7 @@ extension AtomicDirectorySummarizer {
             try cancellationCheck()
             guard let childURL = nextObject as? URL else { continue }
             workerVisitedItemCount += 1
+            partial.visitedItemCount += 1
             if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
                 progressReporter.emit(
                     currentURL: childURL,

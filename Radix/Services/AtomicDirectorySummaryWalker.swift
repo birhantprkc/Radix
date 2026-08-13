@@ -104,6 +104,10 @@ extension AtomicDirectorySummarizer {
 
         for (index, childEntry) in childEntries.enumerated() {
             try cancellationCheck()
+            state.visitedItemCount = ScanIntegerMath.addingClamped(
+                state.visitedItemCount,
+                1
+            )
             if index == 0 || index.isMultiple(of: 64) {
                 emitProgressHeartbeat(
                     currentURL: childEntry.url,
@@ -199,6 +203,10 @@ extension AtomicDirectorySummarizer {
             state.descendantFileCount,
             summary.descendantFileCount
         )
+        state.visitedItemCount = ScanIntegerMath.addingClamped(
+            state.visitedItemCount,
+            summary.visitedItemCount
+        )
         state.isAccessible = state.isAccessible && summary.isAccessible
         state.warnings.append(contentsOf: summary.warnings)
         state.hardLinkAccumulator.merge(summary.hardLinkAccumulator)
@@ -239,6 +247,7 @@ extension AtomicDirectorySummarizer {
             allocatedSize: state.allocatedSize,
             logicalSize: state.logicalSize,
             descendantFileCount: state.descendantFileCount,
+            visitedItemCount: state.visitedItemCount,
             isAccessible: state.isAccessible,
             warnings: state.warnings,
             hardLinkAccumulator: state.hardLinkAccumulator
@@ -257,10 +266,9 @@ extension AtomicDirectorySummarizer {
 
         emissionState.lastProgressEmission = now
         if let summaryPool {
-            summaryPool.updateProgress(
-                &metrics,
+            summaryPool.reportCurrentPath(
+                currentURL.path,
                 continuation: continuation,
-                currentPath: currentURL.path
             )
         } else {
             continuation.yield(.progress(metrics))

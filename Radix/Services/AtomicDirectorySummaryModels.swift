@@ -40,6 +40,9 @@ nonisolated struct AtomicDirectorySummary: Sendable {
     let allocatedSize: Int64
     let logicalSize: Int64
     let descendantFileCount: Int
+    /// Entries inspected while producing the summary, including directories and
+    /// entries later excluded from the represented result.
+    let visitedItemCount: Int
     let isAccessible: Bool
     let warnings: [ScanWarning]
     let hardLinkAccumulator: HardLinkIdentityOwnerAccumulator
@@ -49,6 +52,7 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
     var allocatedSize: Int64 = 0
     var logicalSize: Int64 = 0
     var descendantFileCount = 0
+    var visitedItemCount = 0
     var isAccessible = true
     var warnings: [ScanWarning] = []
     var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
@@ -119,6 +123,18 @@ nonisolated struct AtomicDirectoryProbeResumeState: @unchecked Sendable {
     var workItems: [AtomicSummaryWorkItem]
     let visitedItemCount: Int
 
+    init(
+        partial: AtomicDirectorySummaryPartial,
+        workItems: [AtomicSummaryWorkItem],
+        visitedItemCount: Int
+    ) {
+        var partial = partial
+        partial.visitedItemCount = max(partial.visitedItemCount, visitedItemCount)
+        self.partial = partial
+        self.workItems = workItems
+        self.visitedItemCount = max(visitedItemCount, 0)
+    }
+
     func invalidateCursors() {
         for workItem in workItems {
             workItem.cursor?.invalidate()
@@ -171,6 +187,7 @@ nonisolated final class AtomicDirectorySummaryState {
     var allocatedSize: Int64 = 0
     var logicalSize: Int64 = 0
     var descendantFileCount = 0
+    var visitedItemCount = 0
     var isAccessible = true
     var warnings: [ScanWarning] = []
     var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()

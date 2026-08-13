@@ -44,6 +44,118 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(summary.descendantFileCount, Int.max)
     }
 
+    func testSummaryPathReportingPreservesCanonicalBaseMetrics() async throws {
+        let pool = AtomicDirectorySummaryPool(
+            workerLimit: 1,
+            progressEmissionInterval: 0
+        )
+        var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let stream = AsyncThrowingStream<ScanProgressEvent, Error> {
+            continuation = $0
+        }
+        var canonical = ScanMetrics()
+        canonical.completedPackageSummaryCount = 1
+        canonical.completedPackageSummaryVisitedItemCount = 400
+        canonical.completedSummaryAdditionalVisitedItemCount = 400
+        canonical.completedTraversalWeight = 0.4
+
+        pool.updateProgress(canonical, continuation: continuation)
+        pool.reportCurrentPath("/newer/worker/path", continuation: continuation)
+        continuation.finish()
+
+        var publications: [ScanMetrics] = []
+        for try await event in stream {
+            if case .progress(let metrics) = event {
+                publications.append(metrics)
+            }
+        }
+
+        XCTAssertEqual(publications.count, 2)
+        XCTAssertTrue(publications.allSatisfy { $0.completedPackageSummaryCount == 1 })
+        XCTAssertTrue(publications.allSatisfy {
+            $0.completedSummaryAdditionalVisitedItemCount == 400
+        })
+        XCTAssertEqual(publications.last?.currentPath, "/newer/worker/path")
+    }
+
+    func testSummaryFallbackAdvancesProgressGenerationBeforeRestartedLease() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        for index in 0..<128 {
+            try Data([UInt8(index)]).write(
+                to: rootURL.appending(path: "payload-\(index).dat")
+            )
+        }
+
+        let metadataLoader = ScanMetadataLoader()
+        let cursor = try BulkDirectoryEnumerator.makeCursor(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            forcedUnavailableAfterBatchCount: 0
+        )
+        let resumeState = AtomicDirectoryProbeResumeState(
+            partial: AtomicDirectorySummaryPartial(),
+            workItems: [AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                cursor: cursor,
+                needsCursor: false,
+                requiresRootRestartOnFallback: true
+            )],
+            visitedItemCount: 0
+        )
+        let pool = AtomicDirectorySummaryPool(
+            workerLimit: 1,
+            progressEmissionInterval: 0
+        )
+        var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let stream = AsyncThrowingStream<ScanProgressEvent, Error> {
+            continuation = $0
+        }
+        var base = ScanMetrics()
+        base.discoveredItems = 1
+        base.enumeratedDirectoryCount = 1
+        base.pendingPackageSummaryCount = 1
+        pool.updateProgress(base, continuation: continuation)
+
+        let summary = try await pool.summarize(AtomicSummaryPoolRequest(
+            url: rootURL,
+            includeHiddenFiles: true,
+            treatPackagesAsDirectories: true,
+            progressWeight: 1,
+            progressKind: .package,
+            representedItemCount: 0,
+            ownerNodeID: rootURL.path,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            metrics: base,
+            continuation: continuation,
+            resumeState: resumeState
+        ))
+        await pool.finish()
+        continuation.finish()
+
+        var publications: [ScanMetrics] = []
+        for try await event in stream {
+            if case .progress(let metrics) = event {
+                publications.append(metrics)
+            }
+        }
+
+        XCTAssertEqual(summary?.descendantFileCount, 128)
+        let firstRestartedVisit = try XCTUnwrap(publications.first {
+            $0.atomicSummaryVisitedItems == 1 && $0.activePackageSummaryCount == 1
+        })
+        XCTAssertEqual(
+            firstRestartedVisit.atomicSummaryEstimatedRemainingItems,
+            ScanMetrics.unobservedSummaryEstimatedItemCount
+        )
+    }
+
     func testLowDescriptorBudgetMatchesNormalScanAndStaysWithinPeak() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -1472,8 +1584,9 @@ final class ScanEngineTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: rootURL) }
 
         let packageURL = rootURL.appending(path: "Sample.app", directoryHint: .isDirectory)
-        let excludedFileURL = packageURL.appending(path: "debug.log")
-        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+        let nestedURL = packageURL.appending(path: "Cache", directoryHint: .isDirectory)
+        let excludedFileURL = nestedURL.appending(path: "debug.log")
+        try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
         try Data(repeating: 0x2, count: 2_048).write(to: excludedFileURL)
 
         var options = ScanOptions()
@@ -1481,6 +1594,7 @@ final class ScanEngineTests: XCTestCase {
 
         let engine = ScanEngine()
         var summaryProgress: [ScanMetrics] = []
+        var lastProgress: ScanMetrics?
         var finalSnapshot: ScanSnapshot?
 
         for try await event in engine.scan(target: ScanTarget(url: rootURL), options: options) {
@@ -1488,6 +1602,7 @@ final class ScanEngineTests: XCTestCase {
             case .executionMode:
                 break
             case .progress(let metrics):
+                lastProgress = metrics
                 if metrics.atomicSummaryVisitedItems > 0 {
                     summaryProgress.append(metrics)
                 }
@@ -1505,6 +1620,11 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertFalse(containsChildren(packageNode, in: snapshot))
         XCTAssertTrue(summaryProgress.contains { $0.currentPath.contains("/Sample.app") })
         XCTAssertTrue(summaryProgress.contains { $0.atomicSummaryVisitedItems >= 1 })
+        XCTAssertGreaterThanOrEqual(
+            try XCTUnwrap(lastProgress).completedSummaryAdditionalVisitedItemCount,
+            2,
+            "Committed summary work must retain visited directory and excluded-entry units."
+        )
     }
 
     func testPackageSummaryProgressTracksVisitedAndEstimatedRemainingWork() async throws {
@@ -1532,10 +1652,64 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(summaryMetrics.map(\.atomicSummaryVisitedItems).max(), 300)
         XCTAssertTrue(summaryMetrics.contains { $0.atomicSummaryEstimatedRemainingItems > 0 })
         XCTAssertTrue(summaryMetrics.contains { $0.activeAtomicSummaryCount == 1 })
+        XCTAssertTrue(progressMetrics.contains { $0.pendingPackageSummaryCount == 1 })
         for pair in zip(progressMetrics, progressMetrics.dropFirst()) {
             XCTAssertGreaterThanOrEqual(pair.1.progressFraction, pair.0.progressFraction)
         }
-        XCTAssertEqual(try XCTUnwrap(progressMetrics.last).progressFraction, 1, accuracy: 0.0001)
+        let completedMetrics = try XCTUnwrap(progressMetrics.last)
+        XCTAssertEqual(completedMetrics.progressFraction, 1, accuracy: 0.0001)
+        XCTAssertEqual(completedMetrics.pendingPackageSummaryCount, 0)
+        XCTAssertEqual(completedMetrics.completedPackageSummaryCount, 1)
+        XCTAssertEqual(completedMetrics.completedPackageSummaryVisitedItemCount, 300)
+        XCTAssertEqual(completedMetrics.completedSummaryAdditionalVisitedItemCount, 300)
+        XCTAssertEqual(completedMetrics.atomicSummaryVisitedItems, 0)
+    }
+
+    func testReusedEntryAutoSummaryPublishesInFlightWork() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let cacheURL = rootURL.appending(path: "projects/cache", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: cacheURL, withIntermediateDirectories: true)
+        for index in 0..<300 {
+            try Data([UInt8(index % 256)]).write(
+                to: cacheURL.appending(path: String(format: "payload-%04d.dat", index))
+            )
+        }
+
+        var options = ScanOptions()
+        options.autoSummarizeMinDepthForSummarization = 2
+        options.autoSummarizeMinFileCount = 10
+        options.autoSummarizeMaxAverageFileSize = 256
+        let engine = ScanEngine(atomicSummaryProgressEmissionInterval: 0)
+        var progressMetrics: [ScanMetrics] = []
+        var snapshot: ScanSnapshot?
+
+        for try await event in engine.scan(target: ScanTarget(url: rootURL), options: options) {
+            switch event {
+            case .progress(let metrics):
+                progressMetrics.append(metrics)
+            case .finished(let result):
+                snapshot = result
+            case .executionMode, .warning:
+                break
+            }
+        }
+
+        let active = progressMetrics.filter {
+            $0.activeAutoSummaryRepresentedItemCount == 300
+                && $0.atomicSummaryVisitedItems > 0
+        }
+        XCTAssertGreaterThanOrEqual(active.count, 2)
+        XCTAssertEqual(active.map(\.atomicSummaryVisitedItems).max(), 300)
+        XCTAssertTrue(active.contains { $0.atomicSummaryEstimatedRemainingItems > 0 })
+        XCTAssertTrue(progressMetrics.contains {
+            $0.pendingAutoSummaryRepresentedItemCount == 300
+        })
+        XCTAssertEqual(
+            try XCTUnwrap(snapshot).treeStore.node(id: cacheURL.path)?.descendantFileCount,
+            300
+        )
     }
 
     func testExcludedFilesDoNotContributeThroughAutoSummaries() async throws {
@@ -2537,41 +2711,74 @@ final class ScanEngineTests: XCTestCase {
         metrics.discoveredItems = 1
         metrics.completedTraversalWeight = 0.2
         metrics.atomicSummaryCompletedTraversalWeight = 0.3
-        metrics.atomicSummaryCompletedItems = 0.5
 
         metrics.recalculateProgress()
 
         XCTAssertEqual(metrics.progressFraction, 0.5 * 0.95, accuracy: 0.0001)
     }
 
-    func testCommittedSummaryWeightIsExemptFromCountCap() {
+    func testKnownPendingSummariesUseObservedDescendantWorkInCountCap() {
         var metrics = ScanMetrics()
-        // A package-heavy root (like /Applications): the packages' contents never
-        // enter the item counts, so the frontier extrapolation sees almost no item
-        // completions. Weight committed by summarized leaves must bypass the cap or
-        // progress pins near zero while nearly all of the real work finishes.
-        metrics.filesVisited = 200_000
-        metrics.discoveredItems = 46
-        metrics.completedItems = 20
+        metrics.filesVisited = 10_000
+        metrics.discoveredItems = 4
+        metrics.completedItems = 2
         metrics.enumeratedDirectoryCount = 1
-        metrics.pendingDirectoryCount = 4
-        metrics.discoveredDirectoryCount = 45
-        metrics.completedTraversalWeight = 0.45
-        metrics.completedSummaryTraversalWeight = 0.44
-        metrics.atomicSummaryCompletedTraversalWeight = 0.1
+        metrics.completedTraversalWeight = 0.9
+        metrics.pendingPackageSummaryCount = 2
+        metrics.completedPackageSummaryCount = 1
+        metrics.completedPackageSummaryVisitedItemCount = 10_000
+        metrics.completedSummaryAdditionalVisitedItemCount = 10_000
 
         metrics.recalculateProgress()
 
-        // Weight fraction 0.55 wins because the count cap is lifted by the 0.54 of
-        // summary-carried weight; without the exemption the cap would pin this at ~2%.
-        XCTAssertEqual(metrics.progressFraction, 0.55 * 0.95, accuracy: 0.0001)
+        let expectedCountFraction = 10_003.0 / 30_003.0
+        XCTAssertEqual(metrics.progressFraction, expectedCountFraction * 0.95, accuracy: 0.0001)
+    }
+
+    func testUnobservedPendingSummaryRetainsConservativeRemainingWork() {
+        var metrics = ScanMetrics()
+        metrics.discoveredItems = 1
+        metrics.enumeratedDirectoryCount = 1
+        metrics.completedTraversalWeight = 0.9
+        metrics.pendingPackageSummaryCount = 1
+
+        metrics.recalculateProgress()
+
+        let expectedCountFraction = 1.0 / 65.0
+        XCTAssertEqual(metrics.progressFraction, expectedCountFraction * 0.95, accuracy: 0.0001)
+    }
+
+    func testSummaryVisitedWorkUsesSameUnitsAcrossOverlayCommitTransition() {
+        var active = ScanMetrics()
+        active.discoveredItems = 4
+        active.completedItems = 1
+        active.enumeratedDirectoryCount = 1
+        active.completedTraversalWeight = 0.5
+        active.atomicSummaryCompletedTraversalWeight = 0.4
+        active.atomicSummaryVisitedItems = 1_000
+        active.activeAtomicSummaryCount = 1
+        active.activePackageSummaryCount = 1
+        active.activePackageSummaryVisitedItems = 1_000
+        active.pendingPackageSummaryCount = 1
+        active.recalculateProgress()
+
+        var committed = ScanMetrics()
+        committed.discoveredItems = 4
+        committed.completedItems = 2
+        committed.enumeratedDirectoryCount = 1
+        committed.completedTraversalWeight = 0.9
+        committed.completedSummaryAdditionalVisitedItemCount = 1_000
+        committed.completedPackageSummaryCount = 1
+        committed.completedPackageSummaryVisitedItemCount = 1_000
+        committed.recalculateProgress()
+
+        XCTAssertEqual(active.progressFraction, 0.9 * 0.95, accuracy: 0.0001)
+        XCTAssertEqual(committed.progressFraction, active.progressFraction, accuracy: 0.0001)
     }
 
     func testCountCapStillBindsPlainTraversalWeight() {
         var metrics = ScanMetrics()
-        // Same skewed tree as below, plus a sliver of committed summary weight: the
-        // cap must still bind the plain traversal weight, shifted only by the
-        // summary-carried share.
+        // Same skewed tree as below: the cap must still bind plain traversal weight.
         metrics.filesVisited = 2_000
         metrics.discoveredItems = 2_001
         metrics.completedItems = 2_000
@@ -2579,24 +2786,70 @@ final class ScanEngineTests: XCTestCase {
         metrics.pendingDirectoryCount = 1
         metrics.discoveredDirectoryCount = 2
         metrics.completedTraversalWeight = 2_000.0 / 2_008.0
-        metrics.completedSummaryTraversalWeight = 0.05
 
         metrics.recalculateProgress()
 
         XCTAssertLessThan(metrics.progressFraction, 0.40)
     }
 
-    func testInFlightAtomicSummaryItemsParticipateInCountCap() {
+    func testInFlightAtomicSummaryWorkParticipatesInCountCap() {
         var metrics = ScanMetrics()
         metrics.discoveredItems = 10
         metrics.completedItems = 2
         metrics.enumeratedDirectoryCount = 1
         metrics.completedTraversalWeight = 0.9
-        metrics.atomicSummaryCompletedItems = 0.5
+        metrics.atomicSummaryVisitedItems = 1_000
+        metrics.atomicSummaryEstimatedRemainingItems = 9_000
+        metrics.activeAtomicSummaryCount = 1
+        metrics.activePackageSummaryCount = 1
+        metrics.activePackageSummaryVisitedItems = 1_000
+        metrics.activePackageSummaryEstimatedRemainingItems = 9_000
+        metrics.pendingPackageSummaryCount = 1
 
         metrics.recalculateProgress()
 
-        XCTAssertEqual(metrics.progressFraction, 0.35 * 0.95, accuracy: 0.0001)
+        let expectedCountFraction = 1_003.0 / 10_009.0
+        XCTAssertEqual(metrics.progressFraction, expectedCountFraction * 0.95, accuracy: 0.0001)
+    }
+
+    func testActiveAutoSummaryTransfersRepresentedChildrenOutOfOrdinaryWork() {
+        var metrics = ScanMetrics()
+        metrics.discoveredItems = 1_001
+        metrics.enumeratedDirectoryCount = 1
+        metrics.completedTraversalWeight = 0.99
+        metrics.pendingAutoSummaryRepresentedItemCount = 1_000
+        metrics.atomicSummaryVisitedItems = 900
+        metrics.atomicSummaryEstimatedRemainingItems = 100
+        metrics.activeAtomicSummaryCount = 1
+        metrics.activeAutoSummaryRepresentedItemCount = 1_000
+
+        metrics.recalculateProgress()
+
+        let expectedCountFraction = 901.0 / 1_001.0
+        XCTAssertEqual(metrics.progressFraction, expectedCountFraction * 0.95, accuracy: 0.0001)
+    }
+
+    func testMixedSummaryPopulationsAddDisjointRemainingWork() {
+        var metrics = ScanMetrics()
+        metrics.discoveredItems = 103
+        metrics.enumeratedDirectoryCount = 1
+        metrics.completedTraversalWeight = 0.9
+        metrics.pendingPackageSummaryCount = 2
+        metrics.pendingAutoSummaryRepresentedItemCount = 100
+        metrics.atomicSummaryVisitedItems = 150
+        metrics.atomicSummaryEstimatedRemainingItems = 950
+        metrics.activeAtomicSummaryCount = 2
+        metrics.activePackageSummaryCount = 1
+        metrics.activePackageSummaryVisitedItems = 100
+        metrics.activePackageSummaryEstimatedRemainingItems = 900
+        metrics.activeAutoSummaryRepresentedItemCount = 100
+
+        metrics.recalculateProgress()
+
+        // Active work has 950 units remaining. The second, not-yet-registered
+        // package independently contributes the active package's 1,000-unit estimate.
+        let expectedCountFraction = 151.0 / 2_101.0
+        XCTAssertEqual(metrics.progressFraction, expectedCountFraction * 0.95, accuracy: 0.0001)
     }
 
     func testFinalizationProgressIsEmittedDuringAssembly() async throws {
