@@ -293,7 +293,7 @@ struct TreemapChartView: View {
             )) {
                 await updateLoadingDiskMapProgress(
                     isPending: layoutPresentation.isAwaitingLayout,
-                    layoutID: layoutID
+                    requestID: layoutRequestID
                 )
             }
             .task(id: layoutTaskID) {
@@ -303,7 +303,7 @@ struct TreemapChartView: View {
                     rootID: rootNode.id,
                     depthLimit: depthLimit,
                     size: baseChartFrame.size,
-                    layoutID: layoutID
+                    layoutID: layoutRequestID
                 )
             }
         }
@@ -372,9 +372,13 @@ struct TreemapChartView: View {
     private var layoutPresentationState: ChartLayoutPresentationState {
         ChartLayoutPresentationState(
             readiness: chartModel.layoutReadiness,
-            layoutID: layoutID,
+            layoutID: layoutRequestID,
             isInputPending: isInputPending
         )
+    }
+
+    private var layoutRequestID: String {
+        "\(layoutID)|retry:\(layoutRetryGeneration)"
     }
 
     private var accessibilityValue: String {
@@ -645,7 +649,7 @@ struct TreemapChartView: View {
 
     private func updateLoadingDiskMapProgress(
         isPending: Bool,
-        layoutID: String
+        requestID: String
     ) async {
         guard isPending else {
             showsLoadingDiskMapProgress = false
@@ -659,7 +663,7 @@ struct TreemapChartView: View {
             return
         }
         guard isInputPending
-            || chartModel.layoutReadiness.isRenderingPending(layoutID: layoutID) else { return }
+            || chartModel.layoutReadiness.isRenderingPending(layoutID: requestID) else { return }
         showsLoadingDiskMapProgress = true
     }
 }

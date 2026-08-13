@@ -12,9 +12,21 @@ final class ChartLayoutPresentationStateTests: XCTestCase {
         XCTAssertFalse(state.showsFailure)
     }
 
-    func testPendingReplacementBlocksCurrentRenderedLayout() {
+    func testPendingSameRequestKeepsCurrentRenderUsable() {
         var readiness = ChartLayoutReadiness()
         readiness.succeed(layoutID: "current")
+        readiness.start()
+
+        let state = presentationState(readiness: readiness)
+
+        XCTAssertFalse(state.isAwaitingLayout)
+        XCTAssertTrue(state.canUseRenderedLayout)
+        XCTAssertFalse(state.shouldObscureRenderedLayout)
+    }
+
+    func testPendingDifferentRequestBlocksPreviousRender() {
+        var readiness = ChartLayoutReadiness()
+        readiness.succeed(layoutID: "stale")
         readiness.start()
 
         let state = presentationState(readiness: readiness)
