@@ -54,6 +54,28 @@ continuity. The coordinator also clamps each same-operation UI publication to
 the already displayed fraction. New paths and counters still publish, while a
 regressing producer sample cannot move the visible percentage backward.
 
+### Four post-implementation findings closed
+
+1. **Missing reused metadata:** pooled reuse retries a missing prefetched entry
+   once through the metadata loader, preserving the preceding result and warning
+   semantics instead of silently dropping it.
+2. **Package scan roots:** a package selected as the scan root now participates
+   in pending and active summary accounting even though no ordinary directory is
+   enumerated above it.
+3. **Shutdown evidence:** cancellation measurement waits for an explicit
+   post-worker pool-shutdown notification. The notification is exactly-once even
+   if cleanup is invoked redundantly.
+4. **Warning identity:** warning category, path, and message are independently
+   length-prefixed. Both order-independent and ordered hashes are emitted, so a
+   delimiter collision or warning-order change cannot hide a mismatch.
+
+The final full-branch review then found that an in-process cancellation timeout
+could still leave its producer task alive and keep XCTest running. The opt-in
+probe now runs the real scan in a child XCTest process; its parent enforces a
+15-second deadline and terminates only that child on failure. This keeps a
+cancellation regression observable without allowing the measurement command to
+hang indefinitely.
+
 ### Descendant-aware work cap
 
 `ScanMetrics.recalculateProgress` retains recursively partitioned subtree weight
@@ -85,7 +107,8 @@ increase.
 - preserves authoritative publication order when timestamps are equal;
 - prints result counts, sizes, node count, a sorted category/path/message warning
   fingerprint, and the same tree-semantic fingerprint used by the benchmark; and
-- measures active-worker cancellation through worker quiescence.
+- measures active-worker cancellation through explicit pool shutdown in a
+  process-isolated worker with a hard parent deadline.
 
 ## Accuracy Measurements
 
@@ -102,30 +125,30 @@ Method:
 
 | UI-facing metric | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Time-weighted MAE | 0.321 | 0.233 | **-27.4%** |
-| Time-weighted RMSE | 0.380 | 0.275 | **-27.8%** |
-| Signed bias | +0.315 | +0.227 | **-28.0%** |
-| Maximum lead | 0.639 | 0.486 | **-24.0%** |
-| Maximum lag | -0.066 | -0.066 | effectively flat |
-| Reported 25% at elapsed fraction | 0.076 | 0.076 | effectively flat |
-| Reported 50% at elapsed fraction | 0.147 | 0.148 | effectively flat |
-| Reported 75% at elapsed fraction | 0.147 | 0.367 | closer |
-| Reported 90% at elapsed fraction | 0.365 | 0.684 | closer |
-| Reported 95% at elapsed fraction | 0.602 | 0.979 | closer |
-| Longest unchanged integer share | 0.392 | 0.204 | **-47.9%** |
+| Time-weighted MAE | 0.321 | 0.247 | **-23.1%** |
+| Time-weighted RMSE | 0.380 | 0.290 | **-23.7%** |
+| Signed bias | +0.315 | +0.241 | **-23.5%** |
+| Maximum lead | 0.639 | 0.489 | **-23.5%** |
+| Maximum lag | -0.066 | -0.064 | effectively flat |
+| Reported 25% at elapsed fraction | 0.076 | 0.074 | effectively flat |
+| Reported 50% at elapsed fraction | 0.147 | 0.146 | effectively flat |
+| Reported 75% at elapsed fraction | 0.147 | 0.363 | closer |
+| Reported 90% at elapsed fraction | 0.365 | 0.677 | closer |
+| Reported 95% at elapsed fraction | 0.602 | 0.976 | closer |
+| Longest unchanged integer share | 0.392 | 0.194 | **-50.5%** |
 | Monotonic violations | 0 | 0 | unchanged |
 
 `/System/Library` is the ordinary wide/deep-tree counterexample.
 
 | UI-facing metric | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Time-weighted MAE | 0.114 | 0.102 | **-10.5%** |
-| Time-weighted RMSE | 0.143 | 0.131 | **-8.0%** |
-| Signed bias | -0.045 | -0.046 | effectively flat |
-| Maximum lead | 0.181 | 0.121 | **-33.0%** |
-| Maximum lag | -0.325 | -0.309 | 0.016 less late |
-| Longest unchanged integer share | 0.269 | 0.339 | +26.1% |
-| Finalization elapsed share | 0.131 | 0.122 | workload-sensitive |
+| Time-weighted MAE | 0.114 | 0.107 | **-6.3%** |
+| Time-weighted RMSE | 0.143 | 0.137 | **-4.3%** |
+| Signed bias | -0.045 | -0.047 | effectively flat |
+| Maximum lead | 0.181 | 0.124 | **-31.4%** |
+| Maximum lag | -0.325 | -0.325 | effectively flat |
+| Longest unchanged integer share | 0.269 | 0.392 | +45.7% |
+| Finalization elapsed share | 0.131 | 0.132 | workload-sensitive |
 | Monotonic violations | 0 | 0 | unchanged |
 
 The primary acceptance metric improved materially on `/Applications` and also
@@ -165,23 +188,38 @@ measured scan-speed or event-cadence regression, not a claimed speedup.
 The `/System/Library` accuracy runs also retained identical results before and
 after: 260,961 files, 68,915 folders, 223,619 nodes, 8 warnings,
 10,061,148,160 allocated bytes, tree fingerprint `8a47056c50953e74`, and
-category/path/message warning fingerprint `5942b118278a79eb`.
+order-independent warning fingerprint `8b88576458992a89`, and ordered warning
+fingerprint `56ee5e2bd32d63cb`. A temporary detached pristine-`main` probe produced
+the same two hashes for the same eight warnings, proving field and order
+equivalence rather than count equivalence alone.
+
+After the review fixes, five additional current-branch `/Applications` samples
+had a 1.410 s median and 55 median progress events; three `/System/Library`
+samples had a 3.003 s median and 4,000 events. The live `/Applications`
+filesystem changed by 20,480 allocated bytes after the original interleaved
+pairing, so these later samples are a confirmation run, not a replacement for
+the paired throughput comparison. They remain within the original 5% gate and
+retain stable within-run counts, warning hashes, and tree fingerprints.
 
 ## Cancellation
 
 The test-only cancellation probe waits for both progress and active summary work,
 cancels the Release scan after the configured 150 ms minimum delay, and measures
-until stream consumption has returned and all observed workers are quiescent.
+until stream consumption has returned, the pool has explicitly shut down, and
+all observed workers are quiescent. The parent test gives that worker process a
+15-second hard deadline.
 
 | Metric | Before median | After median |
 | --- | ---: | ---: |
-| Worker shutdown latency | 0.856 ms | 0.657 ms |
+| Worker shutdown latency | 0.856 ms | 2.452 ms |
 | Samples observing active work before cancellation | 3 / 3 | 3 / 3 |
+| Samples observing explicit pool shutdown | n/a | 3 / 3 |
+| Samples terminating the scan stream | 3 / 3 | 3 / 3 |
 | Samples quiescing all observed workers | 3 / 3 | 3 / 3 |
 | Samples emitting `.finished` after cancellation | 0 / 3 | 0 / 3 |
 
-The final median is 0.199 ms faster and well inside the plan's 50 ms rejection
-threshold; cancellation remains promptly responsive. Existing deterministic
+The final median is 1.596 ms slower but remains far inside the plan's 50 ms
+rejection threshold; cancellation remains promptly responsive. Existing deterministic
 traversal, wide-directory, package-summary, descriptor-pool, and stale-event
 cancellation tests also pass.
 
@@ -189,7 +227,7 @@ cancellation tests also pass.
 
 - Focused estimator, overlay-to-commit, publication-order, cancellation, and
   fingerprint tests: passed.
-- Full SwiftPM suite: 767 tests executed, 20 opt-in/filesystem skips, 0 failures.
+- Full SwiftPM suite: 773 tests executed, 21 opt-in/filesystem skips, 0 failures.
 - Complete Debug macOS app build: passed.
 - Complete unsigned Release macOS app build: passed.
 - `git diff --check`: passed.
@@ -208,7 +246,9 @@ Built-artifact boundary:
 
 - recursive binary search of `Radix.app` found no
   `RADIX_PROGRESS_PROBE`, `RADIX_PROGRESS_ACCURACY_RESULT`,
-  `RADIX_PROGRESS_CANCELLATION_RESULT`, or `ProgressAccuracyProbeTests`;
+  `RADIX_PROGRESS_CANCELLATION_RESULT`,
+  `RADIX_PROGRESS_PROBE_CANCEL_WORKER`, `stream_terminated`, or
+  `ProgressAccuracyProbeTests`;
 - `strings` over the Release executable found none of those tokens and no
   `XCTest` token;
 - `otool -L` shows no XCTest/Testing dependency.
