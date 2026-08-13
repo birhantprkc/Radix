@@ -31,10 +31,7 @@ nonisolated struct DarwinFileSystemEventHistoryProvider: FileSystemEventHistoryP
 
     func currentCheckpoint(for targetURL: URL) throws -> ScanIncrementalCheckpoint {
         let volume = try Self.volumeContext(for: targetURL)
-        let eventID = FSEventsGetLastEventIdForDeviceBeforeTime(
-            volume.deviceID,
-            Date().timeIntervalSince1970
-        )
+        let eventID = FSEventsGetCurrentEventId()
         guard eventID > 0 else {
             throw FileSystemEventHistoryError.eventIDUnavailable(targetURL.path)
         }
@@ -344,7 +341,6 @@ private nonisolated final class FSEventStreamLifetime: @unchecked Sendable {
         lock.unlock()
 
         FSEventStreamStop(stream)
-        FSEventStreamSetDispatchQueue(stream, nil)
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         _ = queue

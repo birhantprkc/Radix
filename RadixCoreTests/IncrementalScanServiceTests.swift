@@ -14,6 +14,42 @@ final class IncrementalScanServiceTests: XCTestCase {
         XCTAssertFalse(checkpoint.volumeUUID.isEmpty)
     }
 
+    func testDarwinHistoryProviderIncludesFileCreatedAfterCheckpoint() async throws {
+        let rootURL = try makeIncrementalFSEventDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let provider = DarwinFileSystemEventHistoryProvider()
+        let since = try provider.currentCheckpoint(for: rootURL)
+        let createdURL = rootURL.appending(path: "created.dat")
+
+        try Data([0x1]).write(to: createdURL)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var latestCheckpoint = since
+
+        while ContinuousClock.now < deadline {
+            latestCheckpoint = try provider.currentCheckpoint(for: rootURL)
+            if latestCheckpoint.eventID > since.eventID {
+                let history = try await provider.history(
+                    for: rootURL,
+                    since: since,
+                    through: latestCheckpoint
+                )
+                if history.events.contains(where: { event in
+                    event.path == createdURL.path
+                        && event.flags.contains(.itemCreated)
+                        && event.flags.contains(.itemIsFile)
+                }) {
+                    return
+                }
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+
+        XCTFail(
+            "FSEvents did not report \(createdURL.path) between event IDs "
+                + "\(since.eventID) and \(latestCheckpoint.eventID)"
+        )
+    }
+
     func testShallowRelistClassificationBudgetAccountsForConcurrentRelists() {
         var options = ScanOptions()
         options.directoryTraversalWorkerLimit = 4
@@ -664,6 +700,16 @@ private final class IncrementalHistoryStub: FileSystemEventHistoryProviding, @un
 private func makeIncrementalTemporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appending(path: "radix-incremental-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+}
+
+private func makeIncrementalFSEventDirectory() throws -> URL {
+    let packageRootURL = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let url = packageRootURL
+        .appending(path: ".build/radix-fsevents-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }
