@@ -1,4 +1,5 @@
 import Combine
+import Darwin
 import XCTest
 @testable import RadixCore
 
@@ -180,6 +181,62 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             throw XCTSkip(
                 "Set RADIX_PROGRESS_PROBE_CANCEL=1 to run the progress cancellation probe."
             )
+        }
+
+        let process = Process()
+        let output = Pipe()
+        var workerEnvironment = environment
+        workerEnvironment["RADIX_PROGRESS_PROBE_CANCEL_WORKER"] = "1"
+        process.executableURL = URL(filePath: "/usr/bin/xcrun")
+        process.arguments = [
+            "xctest",
+            "-XCTest",
+            "RadixCoreTests.ProgressAccuracyProbeTests/testCancellationLatencyWorker",
+            Bundle(for: Self.self).bundleURL.path
+        ]
+        process.environment = workerEnvironment
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(15))
+        while process.isRunning, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        if process.isRunning {
+            process.terminate()
+            let terminationDeadline = clock.now.advanced(by: .seconds(1))
+            while process.isRunning, clock.now < terminationDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            if process.isRunning {
+                _ = Darwin.kill(process.processIdentifier, SIGKILL)
+            }
+            process.waitUntilExit()
+        }
+
+        let capturedOutput = String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        )
+        print(capturedOutput, terminator: capturedOutput.hasSuffix("\n") ? "" : "\n")
+        XCTAssertLessThan(
+            clock.now,
+            deadline,
+            "Cancellation probe worker exceeded its 15-second process deadline."
+        )
+        XCTAssertEqual(
+            process.terminationStatus,
+            0,
+            "Cancellation probe worker failed or was terminated."
+        )
+    }
+
+    func testCancellationLatencyWorker() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["RADIX_PROGRESS_PROBE_CANCEL_WORKER"] == "1" else {
+            throw XCTSkip("Cancellation worker is launched by testCancellationLatency.")
         }
 
         let path = environment["RADIX_PROGRESS_PROBE_PATH"] ?? "/Applications"
