@@ -464,6 +464,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
     private var hasStarted = false
     private var acceptsJobs = true
     private var shutdownError: Error?
+    private var hasNotifiedShutdown = false
 
     init(
         workerLimit: Int,
@@ -526,7 +527,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
-        workerObserver?.didShutdown()
+        notifyShutdownOnce()
     }
 
     /// Fails all registered jobs, wakes workers, and awaits their termination.
@@ -535,7 +536,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
-        workerObserver?.didShutdown()
+        notifyShutdownOnce()
     }
 
     /// Convenience structured lifetime for callers that do not need to mutate
@@ -859,6 +860,16 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         condition.unlock()
         resumeWorkerWakeups(wakeups)
         return tasks
+    }
+
+    private func notifyShutdownOnce() {
+        condition.lock()
+        let shouldNotify = !hasNotifiedShutdown
+        hasNotifiedShutdown = true
+        condition.unlock()
+        if shouldNotify {
+            workerObserver?.didShutdown()
+        }
     }
 
     private func cancelAll(with error: Error) -> [Task<Void, Never>] {

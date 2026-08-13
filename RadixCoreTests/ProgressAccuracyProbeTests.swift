@@ -198,8 +198,9 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             didShutdown: { workerActivity.didShutdown() }
         ))
         let observation = ProgressProbeCancellationObservation()
-        let consumer = Task { () -> (emittedFinished: Bool, unexpectedError: String?) in
+        let consumer = Task {
             var emittedFinishedSnapshot = false
+            var unexpectedError: String?
             do {
                 for try await event in engine.scan(
                     target: ScanTarget(url: targetURL),
@@ -215,11 +216,13 @@ final class ProgressAccuracyProbeTests: XCTestCase {
                     }
                 }
             } catch is CancellationError {
-                return (emittedFinishedSnapshot, nil)
             } catch {
-                return (emittedFinishedSnapshot, String(describing: error))
+                unexpectedError = String(describing: error)
             }
-            return (emittedFinishedSnapshot, nil)
+            await observation.recordTermination(ProgressProbeCancellationOutcome(
+                emittedFinished: emittedFinishedSnapshot,
+                unexpectedError: unexpectedError
+            ))
         }
 
         try await Task.sleep(for: .milliseconds(cancellationDelayMilliseconds))
@@ -234,21 +237,24 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         let workerActiveAtCancellation = workerActivity.hasActiveWorkers
         let cancellationStart = clock.now
         consumer.cancel()
-        let outcome = await consumer.value
         let shutdownDeadline = clock.now.advanced(by: .seconds(5))
-        while !workerActivity.hasShutdown, clock.now < shutdownDeadline {
+        while ((await observation.terminationOutcome()) == nil
+                || !workerActivity.hasShutdown),
+              clock.now < shutdownDeadline {
             try await Task.sleep(for: .milliseconds(1))
         }
+        let outcome = await observation.terminationOutcome()
         let poolShutdown = workerActivity.hasShutdown
         let workersQuiescent = workerActivity.isQuiescent
         let shutdownLatency = Self.seconds(cancellationStart.duration(to: clock.now))
 
         XCTAssertTrue(progressObserved, "Cancellation probe never observed active scan work.")
         XCTAssertTrue(workerActiveAtCancellation, "Cancellation probe did not cancel active summary work.")
+        XCTAssertNotNil(outcome, "Scan stream did not terminate within five seconds of cancellation.")
         XCTAssertTrue(poolShutdown, "Summary pool did not complete shutdown after cancellation.")
         XCTAssertTrue(workersQuiescent, "Summary workers did not quiesce after cancellation.")
-        XCTAssertFalse(outcome.emittedFinished)
-        XCTAssertNil(outcome.unexpectedError)
+        XCTAssertFalse(outcome?.emittedFinished ?? true)
+        XCTAssertNil(outcome?.unexpectedError)
         print(
             "RADIX_PROGRESS_CANCELLATION_RESULT path=\(targetURL.path) "
                 + "cancel_after_ms=\(cancellationDelayMilliseconds) "
@@ -257,7 +263,8 @@ final class ProgressAccuracyProbeTests: XCTestCase {
                 + "worker_active=\(workerActiveAtCancellation) "
                 + "pool_shutdown=\(poolShutdown) "
                 + "workers_quiescent=\(workersQuiescent) "
-                + "emitted_finished=\(outcome.emittedFinished)"
+                + "stream_terminated=\(outcome != nil) "
+                + "emitted_finished=\(outcome?.emittedFinished ?? true)"
         )
     }
 
@@ -433,6 +440,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
 
 private actor ProgressProbeCancellationObservation {
     private var observedActiveProgress = false
+    private var outcome: ProgressProbeCancellationOutcome?
 
     func record(_ metrics: ScanMetrics) {
         guard metrics.filesVisited > 0
@@ -448,6 +456,19 @@ private actor ProgressProbeCancellationObservation {
     func didObserveActiveProgress() -> Bool {
         observedActiveProgress
     }
+
+    func recordTermination(_ outcome: ProgressProbeCancellationOutcome) {
+        self.outcome = outcome
+    }
+
+    func terminationOutcome() -> ProgressProbeCancellationOutcome? {
+        outcome
+    }
+}
+
+private struct ProgressProbeCancellationOutcome: Sendable {
+    let emittedFinished: Bool
+    let unexpectedError: String?
 }
 
 private nonisolated final class ProgressProbeWorkerActivity: @unchecked Sendable {

@@ -183,6 +183,7 @@ final class ScanEngineTests: XCTestCase {
             resumeState: resumeState
         ))
         await pool.finish()
+        await pool.finish()
         continuation.finish()
 
         var publications: [ScanMetrics] = []
@@ -202,6 +203,7 @@ final class ScanEngineTests: XCTestCase {
         )
         XCTAssertEqual(lifecycle.activeWorkerCount, 0)
         XCTAssertTrue(lifecycle.didObserveShutdown)
+        XCTAssertEqual(lifecycle.shutdownCount, 1)
         XCTAssertEqual(lifecycle.lastEvent, .shutdown)
     }
 
@@ -4175,6 +4177,10 @@ private final class AtomicSummaryWorkerLifecycleProbe: @unchecked Sendable {
 
     var didObserveShutdown: Bool {
         lock.withLock { events.contains(.shutdown) }
+    }
+
+    var shutdownCount: Int {
+        lock.withLock { events.count(where: { $0 == .shutdown }) }
     }
 
     var lastEvent: Event? {
