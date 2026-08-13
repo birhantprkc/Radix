@@ -184,7 +184,23 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         }
 
         let process = Process()
-        let output = Pipe()
+        let outputURL = FileManager.default.temporaryDirectory.appending(
+            path: "radix-progress-cancellation-\(UUID().uuidString).log",
+            directoryHint: .notDirectory
+        )
+        guard FileManager.default.createFile(
+            atPath: outputURL.path,
+            contents: nil,
+            attributes: [.posixPermissions: 0o600]
+        ) else {
+            XCTFail("Unable to create cancellation probe output file.")
+            return
+        }
+        let outputHandle = try FileHandle(forWritingTo: outputURL)
+        defer {
+            try? outputHandle.close()
+            try? FileManager.default.removeItem(at: outputURL)
+        }
         var workerEnvironment = environment
         workerEnvironment["RADIX_PROGRESS_PROBE_CANCEL_WORKER"] = "1"
         process.executableURL = URL(filePath: "/usr/bin/xcrun")
@@ -195,8 +211,8 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             Bundle(for: Self.self).bundleURL.path
         ]
         process.environment = workerEnvironment
-        process.standardOutput = output
-        process.standardError = output
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
         try process.run()
 
         let clock = ContinuousClock()
@@ -213,11 +229,12 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             if process.isRunning {
                 _ = Darwin.kill(process.processIdentifier, SIGKILL)
             }
-            process.waitUntilExit()
         }
+        process.waitUntilExit()
+        try outputHandle.close()
 
         let capturedOutput = String(
-            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            decoding: try Data(contentsOf: outputURL),
             as: UTF8.self
         )
         print(capturedOutput, terminator: capturedOutput.hasSuffix("\n") ? "" : "\n")
