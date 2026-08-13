@@ -333,6 +333,7 @@ actor ScanEngine {
         let warnings: [ScanWarning]
         let hardLinkAccumulator: HardLinkIdentityOwnerAccumulator
         let minimumAllocatedSize: Int64?
+        let summaryVisitedItemCount: Int
     }
 
     private struct OrdinaryLeafPreparationRequest: Sendable {
@@ -1120,6 +1121,17 @@ actor ScanEngine {
         do {
         // If the root itself shouldn't be traversed, return a leaf node.
         guard shouldTraverseDirectory(metadata: rootMetadata, options: options) else {
+            let summarizesRootPackage = rootMetadata.isPackage
+                && rootMetadata.isDirectory
+                && !options.treatPackagesAsDirectories
+            if summarizesRootPackage {
+                metrics.pendingPackageSummaryCount += 1
+                metrics.recalculateProgress()
+                atomicSummaryPool.updateProgress(
+                    metrics,
+                    continuation: continuation
+                )
+            }
             let leafResult = try await makeLeafNode(
                 url: target.url,
                 metadata: rootMetadata,
@@ -1132,11 +1144,22 @@ actor ScanEngine {
                 continuation: continuation,
                 emissionState: &emissionState
             )
+            if summarizesRootPackage {
+                metrics.pendingPackageSummaryCount = max(
+                    metrics.pendingPackageSummaryCount - 1,
+                    0
+                )
+            }
             hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
             if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                 minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
             }
-            applyLeafMetrics(leafResult.node, weight: 1, metrics: &metrics)
+            applyLeafMetrics(
+                leafResult.node,
+                weight: 1,
+                summaryVisitedItemCount: leafResult.summaryVisitedItemCount,
+                metrics: &metrics
+            )
             if !leafResult.warnings.isEmpty {
                 warnings.append(contentsOf: leafResult.warnings)
                 for warning in leafResult.warnings {
@@ -1145,7 +1168,7 @@ actor ScanEngine {
             }
             metrics.recalculateProgress()
             atomicSummaryPool.updateProgress(
-                &metrics,
+                metrics,
                 continuation: continuation,
                 force: true
             )
@@ -1403,6 +1426,12 @@ actor ScanEngine {
                         if meta.isPackage,
                            meta.isDirectory,
                            !options.treatPackagesAsDirectories {
+                            metrics.pendingPackageSummaryCount += 1
+                            metrics.recalculateProgress()
+                            atomicSummaryPool.updateProgress(
+                                metrics,
+                                continuation: continuation
+                            )
                             pendingPackageScans.append((item: item, itemKey: itemKey, metadata: meta))
                             continue
                         }
@@ -1422,7 +1451,12 @@ actor ScanEngine {
                         if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                             minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
                         }
-                        applyLeafMetrics(leafResult.node, weight: item.weight, metrics: &metrics)
+                        applyLeafMetrics(
+                            leafResult.node,
+                            weight: item.weight,
+                            summaryVisitedItemCount: leafResult.summaryVisitedItemCount,
+                            metrics: &metrics
+                        )
                         if !leafResult.warnings.isEmpty {
                             warnings.append(contentsOf: leafResult.warnings)
                             for warning in leafResult.warnings {
@@ -1556,13 +1590,6 @@ actor ScanEngine {
                     let totalWeightUnits = success.totalWeightUnits
                     metrics.discoveredDirectoryCount += childDirectoryCount
                     metrics.pendingDirectoryCount += childDirectoryCount
-                    // Refresh the summary pool's base metrics unconditionally: the pool
-                    // emits progress on its own cadence and must not keep publishing the
-                    // frontier state from before this enumeration. (`maybeEmitProgress`
-                    // can skip the refresh entirely when its item-count gate misses.)
-                    metrics.recalculateProgress()
-                    atomicSummaryPool.updateProgress(&metrics, continuation: continuation)
-
                     // Check if this directory should be summarized as atomic (many small files)
                     let candidate = AtomicDirectoryScanCandidate(
                         item: item,
@@ -1574,12 +1601,25 @@ actor ScanEngine {
                         isNodeDependencyLayout: success.isNodeDependencyLayout
                     )
                     if success.isAtomicSummaryCandidate {
+                        metrics.pendingAutoSummaryRepresentedItemCount = ScanIntegerMath.addingClamped(
+                            metrics.pendingAutoSummaryRepresentedItemCount,
+                            childEntries.count
+                        )
+                        metrics.pendingAutoSummaryRepresentedDirectoryCount = ScanIntegerMath.addingClamped(
+                            metrics.pendingAutoSummaryRepresentedDirectoryCount,
+                            childDirectoryCount
+                        )
                         // The probe/summary awaits a pooled job; run it as a group task
                         // so the scheduling loop keeps draining results while it works.
                         pendingAtomicScans.append(candidate)
                     } else {
                         directoryToExpand = candidate
                     }
+                    // Refresh the summary pool's canonical base unconditionally. It emits
+                    // worker progress independently and must not retain the frontier state
+                    // from before this enumeration.
+                    metrics.recalculateProgress()
+                    atomicSummaryPool.updateProgress(metrics, continuation: continuation)
 
                 case .directory(.failure(let failure)):
                     activeDirectoryTasks -= 1
@@ -1602,7 +1642,7 @@ actor ScanEngine {
                     metrics.enumeratedDirectoryCount += 1
                     releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
                     metrics.recalculateProgress()
-                    atomicSummaryPool.updateProgress(&metrics, continuation: continuation)
+                    atomicSummaryPool.updateProgress(metrics, continuation: continuation)
 
                     let inaccessibleNode = FileNodeRecord(
                         id: item.url.path,
@@ -1632,11 +1672,20 @@ actor ScanEngine {
                     activePackageTasks -= 1
                     let item = packageResult.item
                     let leafResult = packageResult.leaf
+                    metrics.pendingPackageSummaryCount = max(
+                        metrics.pendingPackageSummaryCount - 1,
+                        0
+                    )
                     hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
                     if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                         minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
                     }
-                    applyLeafMetrics(leafResult.node, weight: item.weight, metrics: &metrics)
+                    applyLeafMetrics(
+                        leafResult.node,
+                        weight: item.weight,
+                        summaryVisitedItemCount: leafResult.summaryVisitedItemCount,
+                        metrics: &metrics
+                    )
                     if !leafResult.warnings.isEmpty {
                         warnings.append(contentsOf: leafResult.warnings)
                         for warning in leafResult.warnings {
@@ -1646,7 +1695,7 @@ actor ScanEngine {
                     // Committed summary weight must reach the pool's base metrics even
                     // when `maybeEmitProgress`'s item-count gate would skip the update.
                     metrics.recalculateProgress()
-                    atomicSummaryPool.updateProgress(&metrics, continuation: continuation)
+                    atomicSummaryPool.updateProgress(metrics, continuation: continuation)
                     completedByKey[packageResult.itemKey] = CompletedDirScan(
                         node: leafResult.node,
                         metadata: packageResult.metadata,
@@ -1658,6 +1707,16 @@ actor ScanEngine {
                     activePackageTasks -= 1
                     let candidate = atomicResult.candidate
                     guard let summary = atomicResult.decision.summary else {
+                        metrics.pendingAutoSummaryRepresentedItemCount = max(
+                            metrics.pendingAutoSummaryRepresentedItemCount
+                                - candidate.contents.entries.count,
+                            0
+                        )
+                        metrics.pendingAutoSummaryRepresentedDirectoryCount = max(
+                            metrics.pendingAutoSummaryRepresentedDirectoryCount
+                                - candidate.childDirectoryCount,
+                            0
+                        )
                         for (path, listing) in atomicResult.decision.reusableDirectoryListings {
                             guard reusableProbeListings[path] == nil else { continue }
                             let listingCost = max(1, listing.entries.count)
@@ -1672,6 +1731,8 @@ actor ScanEngine {
                         directoryToExpand = candidate
                         probeFullyExhaustedForExpansion = atomicResult.decision
                             .descendantProbeFullyExhausted
+                        metrics.recalculateProgress()
+                        atomicSummaryPool.updateProgress(metrics, continuation: continuation)
                         break
                     }
                     let item = candidate.item
@@ -1699,6 +1760,16 @@ actor ScanEngine {
                     minimumAllocatedSizeByNodeID[atomicNode.id] = meta.allocatedSize
                     // The summarized children will never be enqueued: count them as
                     // completed and release their frontier claims.
+                    metrics.pendingAutoSummaryRepresentedItemCount = max(
+                        metrics.pendingAutoSummaryRepresentedItemCount
+                            - candidate.contents.entries.count,
+                        0
+                    )
+                    metrics.pendingAutoSummaryRepresentedDirectoryCount = max(
+                        metrics.pendingAutoSummaryRepresentedDirectoryCount
+                            - candidate.childDirectoryCount,
+                        0
+                    )
                     metrics.completedItems += candidate.contents.entries.count
                     metrics.discoveredDirectoryCount = max(
                         metrics.discoveredDirectoryCount - candidate.childDirectoryCount,
@@ -1708,7 +1779,13 @@ actor ScanEngine {
                         metrics.pendingDirectoryCount - candidate.childDirectoryCount,
                         0
                     )
-                    applyLeafMetrics(atomicNode, weight: item.weight, metrics: &metrics)
+                    applyLeafMetrics(
+                        atomicNode,
+                        weight: item.weight,
+                        summaryVisitedItemCount: summary.visitedItemCount,
+                        summaryRepresentedItemCount: candidate.contents.entries.count,
+                        metrics: &metrics
+                    )
                     if !summary.warnings.isEmpty {
                         warnings.append(contentsOf: summary.warnings)
                         for warning in summary.warnings {
@@ -1718,7 +1795,7 @@ actor ScanEngine {
                     // Committed summary weight must reach the pool's base metrics even
                     // when `maybeEmitProgress`'s item-count gate would skip the update.
                     metrics.recalculateProgress()
-                    atomicSummaryPool.updateProgress(&metrics, continuation: continuation)
+                    atomicSummaryPool.updateProgress(metrics, continuation: continuation)
 
                     completedByKey[candidate.itemKey] = CompletedDirScan(
                         node: atomicNode,
@@ -1865,7 +1942,7 @@ actor ScanEngine {
         metrics.finalizationFraction = 0
         metrics.recalculateProgress()
         atomicSummaryPool.updateProgress(
-            &metrics,
+            metrics,
             continuation: continuation,
             force: true
         )
@@ -2005,7 +2082,7 @@ actor ScanEngine {
                 metrics.finalizationFraction = Double(finalizedItems) / Double(finalizationTotal)
                 metrics.recalculateProgress()
                 atomicSummaryPool.updateProgress(
-                    &metrics,
+                    metrics,
                     continuation: continuation,
                     force: true
                 )
@@ -2171,7 +2248,13 @@ actor ScanEngine {
         )
     }
 
-    private nonisolated func applyLeafMetrics(_ node: FileNodeRecord, weight: Double, metrics: inout ScanMetrics) {
+    private nonisolated func applyLeafMetrics(
+        _ node: FileNodeRecord,
+        weight: Double,
+        summaryVisitedItemCount: Int = 0,
+        summaryRepresentedItemCount: Int = 0,
+        metrics: inout ScanMetrics
+    ) {
         if node.isDirectory {
             if !node.isAutoSummarized {
                 metrics.directoriesVisited += 1
@@ -2184,7 +2267,22 @@ actor ScanEngine {
         metrics.completedItems += 1
         metrics.completedTraversalWeight += weight
         if node.isDirectory, node.isAutoSummarized || node.isPackage {
-            metrics.completedSummaryTraversalWeight += weight
+            let visitedItemCount = max(summaryVisitedItemCount, 0)
+            let representedItemCount = min(
+                max(summaryRepresentedItemCount, 0),
+                visitedItemCount
+            )
+            metrics.completedSummaryAdditionalVisitedItemCount = ScanIntegerMath.addingClamped(
+                metrics.completedSummaryAdditionalVisitedItemCount,
+                visitedItemCount - representedItemCount
+            )
+            if node.isPackage {
+                metrics.completedPackageSummaryCount += 1
+                metrics.completedPackageSummaryVisitedItemCount = ScanIntegerMath.addingClamped(
+                    metrics.completedPackageSummaryVisitedItemCount,
+                    visitedItemCount
+                )
+            }
         }
     }
 
@@ -2793,7 +2891,8 @@ actor ScanEngine {
                 node: node,
                 warnings: [],
                 hardLinkAccumulator: hardLinkAccumulator,
-                minimumAllocatedSize: nil
+                minimumAllocatedSize: nil,
+                summaryVisitedItemCount: 0
             )
         }
 
@@ -2803,6 +2902,8 @@ actor ScanEngine {
             treatPackagesAsDirectories: true,
             workerLimit: ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options),
             progressWeight: progressWeight,
+            progressKind: .package,
+            representedItemCount: 0,
             ownerNodeID: url.path,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
@@ -2827,7 +2928,8 @@ actor ScanEngine {
                 node: node,
                 warnings: [],
                 hardLinkAccumulator: hardLinkAccumulator,
-                minimumAllocatedSize: nil
+                minimumAllocatedSize: nil,
+                summaryVisitedItemCount: 0
             )
         }
 
@@ -2852,7 +2954,8 @@ actor ScanEngine {
             ),
             warnings: summary.warnings,
             hardLinkAccumulator: summary.hardLinkAccumulator,
-            minimumAllocatedSize: metadata.allocatedSize
+            minimumAllocatedSize: metadata.allocatedSize,
+            summaryVisitedItemCount: summary.visitedItemCount
         )
     }
 
@@ -2906,7 +3009,7 @@ actor ScanEngine {
         emissionState.lastProgressEmission = now
         metrics.recalculateProgress()
         if let summaryPool {
-            summaryPool.updateProgress(&metrics, continuation: continuation)
+            summaryPool.updateProgress(metrics, continuation: continuation)
         } else {
             continuation.yield(.progress(metrics))
         }

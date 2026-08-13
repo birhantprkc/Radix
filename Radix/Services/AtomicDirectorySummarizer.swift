@@ -225,20 +225,54 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         }
         let canReuseImmediateEntries = immediateCandidate && directDirectoryCount <= max(8, childEntries.count / 10)
         if canReuseImmediateEntries {
-            let summary = try await summarizeReusingImmediateChildren(
-                at: url,
-                childEntries: childEntries,
-                rootMetadata: metadata,
-                includeHiddenFiles: includeHiddenFiles,
-                treatPackagesAsDirectories: treatPackagesAsDirectories,
-                workerLimit: workerLimit,
-                ownerNodeID: url.path,
-                exclusionMatcher: exclusionMatcher,
-                cancellationCheck: cancellationCheck,
-                metrics: &metrics,
-                continuation: continuation,
-                emissionState: &emissionState
-            )
+            let summary: AtomicDirectorySummary?
+            if summaryPool != nil {
+                var partial = AtomicDirectorySummaryPartial()
+                partial.updateAccessibility(metadata.isReadable)
+                let resumeState = AtomicDirectoryProbeResumeState(
+                    partial: partial,
+                    workItems: [AtomicSummaryWorkItem(
+                        url: url,
+                        treatPackagesAsDirectories: treatPackagesAsDirectories,
+                        ownerNodeID: url.path,
+                        bufferedEntries: childEntries,
+                        needsCursor: false,
+                        reloadsMissingBufferedMetadata: true
+                    )],
+                    visitedItemCount: 0
+                )
+                summary = try await summarize(
+                    at: url,
+                    includeHiddenFiles: includeHiddenFiles,
+                    treatPackagesAsDirectories: treatPackagesAsDirectories,
+                    workerLimit: workerLimit,
+                    progressWeight: progressWeight,
+                    progressKind: .autoSummary,
+                    representedItemCount: childEntries.count,
+                    ownerNodeID: url.path,
+                    exclusionMatcher: exclusionMatcher,
+                    cancellationCheck: cancellationCheck,
+                    metrics: &metrics,
+                    continuation: continuation,
+                    emissionState: &emissionState,
+                    resumeState: resumeState
+                )
+            } else {
+                summary = try await summarizeReusingImmediateChildren(
+                    at: url,
+                    childEntries: childEntries,
+                    rootMetadata: metadata,
+                    includeHiddenFiles: includeHiddenFiles,
+                    treatPackagesAsDirectories: treatPackagesAsDirectories,
+                    workerLimit: workerLimit,
+                    ownerNodeID: url.path,
+                    exclusionMatcher: exclusionMatcher,
+                    cancellationCheck: cancellationCheck,
+                    metrics: &metrics,
+                    continuation: continuation,
+                    emissionState: &emissionState
+                )
+            }
             #if DEBUG
             reportCreatedSummary(summary)
             #endif
@@ -255,6 +289,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             treatPackagesAsDirectories: treatPackagesAsDirectories,
             workerLimit: workerLimit,
             progressWeight: progressWeight,
+            progressKind: .autoSummary,
+            representedItemCount: childEntries.count,
             ownerNodeID: url.path,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
@@ -298,6 +334,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         treatPackagesAsDirectories: Bool,
         workerLimit: Int,
         progressWeight: Double = 0,
+        progressKind: AtomicSummaryProgressKind = .autoSummary,
+        representedItemCount: Int = 0,
         ownerNodeID: String,
         exclusionMatcher: ScanExclusionMatcher,
         cancellationCheck: @escaping CancellationCheck,
@@ -317,6 +355,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     includeHiddenFiles: includeHiddenFiles,
                     treatPackagesAsDirectories: treatPackagesAsDirectories,
                     progressWeight: progressWeight,
+                    progressKind: progressKind,
+                    representedItemCount: representedItemCount,
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,

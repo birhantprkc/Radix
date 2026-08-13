@@ -654,7 +654,12 @@ final class ScanCoordinator: ObservableObject {
         progressPublishTask = nil
         pendingProgressMetrics = nil
         lastProgressPublishTime = progressClock.now
-        scanMetrics = metrics
+        var publishedMetrics = metrics
+        publishedMetrics.progressFraction = max(
+            publishedMetrics.progressFraction,
+            scanMetrics.progressFraction
+        )
+        scanMetrics = publishedMetrics
     }
 
     private func finishScan(with snapshot: ScanSnapshot, scanID: UUID) {

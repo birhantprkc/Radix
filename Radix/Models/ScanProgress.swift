@@ -21,19 +21,29 @@ nonisolated struct ScanMetrics: Sendable {
     /// weight among its children when the directory is enumerated, so the sum of completed
     /// weights converges to 1 exactly as the traversal finishes.
     var completedTraversalWeight = 0.0
-    /// Portion of `completedTraversalWeight` carried by committed package and
-    /// auto-summarized directory leaves. Their contents never enter the item
-    /// counts, so this share is exempt from the item-count cap below.
-    var completedSummaryTraversalWeight = 0.0
     /// Fractional traversal weight completed inside package/atomic summaries that
     /// are still in flight. This is folded into progress without marking their
     /// tree nodes complete before the summary result is committed.
     var atomicSummaryCompletedTraversalWeight = 0.0
-    /// Fractional equivalents of in-flight package nodes for the item-count cap.
-    var atomicSummaryCompletedItems = 0.0
     var atomicSummaryVisitedItems = 0
     var atomicSummaryEstimatedRemainingItems = 0
     var activeAtomicSummaryCount = 0
+    var activePackageSummaryCount = 0
+    var activePackageSummaryVisitedItems = 0
+    var activePackageSummaryEstimatedRemainingItems = 0
+    var activeAutoSummaryRepresentedItemCount = 0
+    /// Package nodes that are known to require descendant work but have not
+    /// committed yet. Observed summary descendants let the count cap
+    /// extrapolate across package-heavy sibling sets without a prewalk.
+    var pendingPackageSummaryCount = 0
+    /// Direct children already discovered by ordinary traversal but temporarily
+    /// transferred to an auto-summary decision or summary job.
+    var pendingAutoSummaryRepresentedItemCount = 0
+    var pendingAutoSummaryRepresentedDirectoryCount = 0
+    /// Summary visits not already represented by `completedItems`.
+    var completedSummaryAdditionalVisitedItemCount = 0
+    var completedPackageSummaryCount = 0
+    var completedPackageSummaryVisitedItemCount = 0
     /// Progress through the bottom-up assembly phase (0...1). Only meaningful while
     /// `isFinalizing` is true.
     var finalizationFraction = 0.0
@@ -54,6 +64,9 @@ nonisolated struct ScanMetrics: Sendable {
     /// Upper bound on the geometric expansion applied per frontier directory when
     /// extrapolating how many descendants it will yield.
     private nonisolated static let maxFrontierExpansion = 6.0
+    /// Matches the atomic-summary coordinator's minimum estimate for a newly
+    /// registered work item before its first entries are observed.
+    nonisolated static let unobservedSummaryEstimatedItemCount = 64
 
     nonisolated var progressPercentage: Int {
         Int((progressFraction * 100).rounded(.down))
@@ -84,9 +97,9 @@ nonisolated struct ScanMetrics: Sendable {
         )
 
         // The weight model overshoots in skewed trees (a directory's weight is split when
-        // it is enumerated, before its true size is known). Cap it with an item-count
-        // extrapolation: completed items versus discovered items plus the expected yield
-        // of the unenumerated frontier, based on the branching observed so far.
+        // it is enumerated, before its true size is known). Cap it with a work-count
+        // extrapolation: visited files and enumerated directories versus known remaining
+        // items, the expected yield of the unenumerated frontier, and summary descendants.
         //
         // Apply the cap whenever discovered items remain unprocessed, not only when the
         // frontier still holds unenumerated directories. A large flat directory drains the
@@ -94,27 +107,97 @@ nonisolated struct ScanMetrics: Sendable {
         // files uncompleted; without this the weight estimate alone can leap near the
         // traversal ceiling before those files are scanned.
         //
-        // Weight completed by package/atomic summaries sits outside the cap: a summarized
-        // subtree counts as a single item, so a package-heavy scan (e.g. /Applications)
-        // would otherwise pin near zero while nearly all of its real work finishes.
-        if enumeratedDirectoryCount > 0, completedItems < discoveredItems || pendingDirectoryCount > 0 {
-            let enumerated = Double(enumeratedDirectoryCount)
-            let childrenPerDirectory = Double(discoveredItems) / enumerated
-            let subdirectoriesPerDirectory = Double(discoveredDirectoryCount) / enumerated
+        // A committed package counts as one represented node but can contain hundreds of
+        // thousands of visited descendants. Extrapolate the cost of known unfinished
+        // packages from completed and active summaries instead of treating every package
+        // sibling as equal geometric work.
+        let hasCountedWork = enumeratedDirectoryCount > 0
+            || pendingPackageSummaryCount > 0
+            || pendingAutoSummaryRepresentedItemCount > 0
+            || activeAtomicSummaryCount > 0
+        if hasCountedWork,
+           (completedItems < discoveredItems
+                || pendingDirectoryCount > 0
+                || pendingPackageSummaryCount > 0
+                || pendingAutoSummaryRepresentedItemCount > 0
+                || activeAtomicSummaryCount > 0) {
+            let enumerated = Double(max(enumeratedDirectoryCount, 0))
+            let ordinaryDiscoveredItems = max(
+                discoveredItems - pendingAutoSummaryRepresentedItemCount,
+                0
+            )
+            let ordinaryDiscoveredDirectories = max(
+                discoveredDirectoryCount - pendingAutoSummaryRepresentedDirectoryCount,
+                0
+            )
+            let ordinaryPendingDirectories = max(
+                pendingDirectoryCount - pendingAutoSummaryRepresentedDirectoryCount,
+                0
+            )
+            let childrenPerDirectory = enumerated > 0
+                ? Double(ordinaryDiscoveredItems) / enumerated
+                : 0
+            let subdirectoriesPerDirectory = enumerated > 0
+                ? Double(ordinaryDiscoveredDirectories) / enumerated
+                : 0
             let expansion = subdirectoriesPerDirectory < 1
                 ? min(1 / (1 - subdirectoriesPerDirectory), Self.maxFrontierExpansion)
                 : Self.maxFrontierExpansion
-            let expectedFrontierYield = Double(pendingDirectoryCount) * childrenPerDirectory * expansion
-            let countFraction = min(
-                (Double(completedItems) + atomicSummaryCompletedItems + enumerated) /
-                    (Double(discoveredItems) + expectedFrontierYield),
-                1
+            let expectedFrontierYield = Double(ordinaryPendingDirectories)
+                * childrenPerDirectory
+                * expansion
+            let completedWork = Double(max(completedItems, 0))
+                + enumerated
+                + Double(max(completedSummaryAdditionalVisitedItemCount, 0))
+                + Double(max(atomicSummaryVisitedItems, 0))
+            let ordinaryRemainingItems = max(
+                Double(discoveredItems)
+                    - Double(completedItems)
+                    - enumerated
+                    - Double(pendingPackageSummaryCount)
+                    - Double(pendingAutoSummaryRepresentedItemCount),
+                0
             )
-            let summaryWeight = min(
-                max(completedSummaryTraversalWeight + atomicSummaryCompletedTraversalWeight, 0),
-                1
+            let completedPackageAverage = completedPackageSummaryCount > 0
+                ? Double(completedPackageSummaryVisitedItemCount)
+                    / Double(completedPackageSummaryCount)
+                : 0
+            let activePackageAverage = activePackageSummaryCount > 0
+                ? (Double(activePackageSummaryVisitedItems)
+                    + Double(activePackageSummaryEstimatedRemainingItems))
+                    / Double(activePackageSummaryCount)
+                : 0
+            let estimatedPackageSize = max(
+                completedPackageAverage,
+                activePackageAverage,
+                pendingPackageSummaryCount > activePackageSummaryCount
+                    ? Double(Self.unobservedSummaryEstimatedItemCount)
+                    : 0
             )
-            traversalFraction = min(traversalFraction, min(countFraction + summaryWeight, 1))
+            let unregisteredPackageCount = max(
+                pendingPackageSummaryCount - activePackageSummaryCount,
+                0
+            )
+            let unregisteredPackageRemaining = Double(unregisteredPackageCount)
+                * estimatedPackageSize
+            let unregisteredAutoSummaryRemaining = Double(max(
+                pendingAutoSummaryRepresentedItemCount
+                    - activeAutoSummaryRepresentedItemCount,
+                0
+            ))
+            let summaryRemaining = Double(max(atomicSummaryEstimatedRemainingItems, 0))
+                + unregisteredPackageRemaining
+                + unregisteredAutoSummaryRemaining
+            let estimatedTotalWork = completedWork
+                + ordinaryRemainingItems
+                + expectedFrontierYield
+                + summaryRemaining
+            if estimatedTotalWork > 0 {
+                traversalFraction = min(
+                    traversalFraction,
+                    min(completedWork / estimatedTotalWork, 1)
+                )
+            }
         }
 
         if estimatedTotalBytes > 0 {

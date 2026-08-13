@@ -245,6 +245,34 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testPublishedProgressDoesNotRegressWithinScan() async throws {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(
+            scanService: service,
+            progressThrottleDuration: .zero
+        )
+        var leading = makeCoordinatorMetrics(path: "leading", filesVisited: 6)
+        leading.progressFraction = 0.6
+        var trailing = makeCoordinatorMetrics(path: "trailing", filesVisited: 4)
+        trailing.progressFraction = 0.4
+
+        coordinator.startScan(
+            makeCoordinatorTarget("/scan/monotonic-progress"),
+            options: ScanOptions()
+        )
+        service.yield(.progress(leading), scanIndex: 0)
+        service.yield(.progress(trailing), scanIndex: 0)
+
+        try await waitUntil("latest progress counters") {
+            coordinator.scanMetrics.currentPath == "trailing"
+        }
+
+        XCTAssertEqual(coordinator.scanMetrics.filesVisited, 4)
+        XCTAssertEqual(coordinator.scanMetrics.progressFraction, 0.6, accuracy: 0.0001)
+        coordinator.stopScan()
+    }
+
+    @MainActor
     func testFinishedScanFlushesPendingThrottledProgress() async throws {
         let service = ControlledScanService()
         let coordinator = ScanCoordinator(scanService: service, progressThrottleDuration: .milliseconds(250))

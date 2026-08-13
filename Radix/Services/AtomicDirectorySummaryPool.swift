@@ -7,6 +7,11 @@ import Foundation
 
 nonisolated private struct AtomicSummaryGenerationInvalidated: Error {}
 
+nonisolated enum AtomicSummaryProgressKind: Sendable {
+    case package
+    case autoSummary
+}
+
 nonisolated private final class AtomicSummaryGenerationToken: @unchecked Sendable {
     private let lock = NSLock()
     private var isInvalidated = false
@@ -32,6 +37,9 @@ nonisolated struct AtomicSummaryPoolRequest: @unchecked Sendable {
     let includeHiddenFiles: Bool
     let treatPackagesAsDirectories: Bool
     let progressWeight: Double
+    let progressKind: AtomicSummaryProgressKind
+    /// Direct children already included in ordinary traversal's discovered count.
+    let representedItemCount: Int
     let ownerNodeID: String
     let exclusionMatcher: ScanExclusionMatcher
     let metadataLoader: ScanMetadataLoader
@@ -44,6 +52,8 @@ nonisolated struct AtomicSummaryPoolRequest: @unchecked Sendable {
 nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sendable {
     private struct JobProgress {
         let weight: Double
+        let kind: AtomicSummaryProgressKind
+        let representedItemCount: Int
         var generation: Int
         var visitedItems: Int
         var completedVisitedItems = 0
@@ -73,7 +83,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
     }
 
     func updateBase(
-        _ metrics: inout ScanMetrics,
+        _ metrics: ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         currentPath: String? = nil,
         force: Bool = false
@@ -89,7 +99,6 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         hasBaseMetrics = true
         self.continuation = continuation
         let snapshot = makeSnapshotLocked(currentPath: currentPath)
-        metrics = snapshot
         let event = progressEventIfDueLocked(snapshot: snapshot, force: force)
         lock.unlock()
         if let event {
@@ -97,10 +106,22 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         }
     }
 
+    func reportCurrentPath(
+        _ currentPath: String,
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+    ) {
+        lock.lock()
+        self.continuation = continuation
+        emitIfDueLocked(currentPath: currentPath, force: false)
+        lock.unlock()
+    }
+
     func register(
         jobID: Int,
         generation: Int,
         progressWeight: Double,
+        progressKind: AtomicSummaryProgressKind,
+        representedItemCount: Int,
         initialVisitedItems: Int,
         initialWorkItems: Int,
         requestMetrics: ScanMetrics,
@@ -116,6 +137,8 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         self.continuation = continuation
         jobs[jobID] = JobProgress(
             weight: max(progressWeight, 0),
+            kind: progressKind,
+            representedItemCount: max(representedItemCount, 0),
             generation: generation,
             visitedItems: max(initialVisitedItems, 0),
             pendingWorkItems: max(initialWorkItems, 0)
@@ -205,11 +228,11 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         lock.unlock()
     }
 
-    func finish(jobID: Int, currentPath: String) {
+    func finish(jobID: Int, currentPath: String) -> Int? {
         lock.lock()
         guard var job = jobs[jobID] else {
             lock.unlock()
-            return
+            return nil
         }
         job.pendingWorkItems = 0
         job.visitedByActiveLease.removeAll()
@@ -218,6 +241,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         emitIfDueLocked(currentPath: currentPath, force: true)
         jobs.removeValue(forKey: jobID)
         lock.unlock()
+        return job.visitedItems
     }
 
     func cancel(jobID: Int, currentPath: String?) {
@@ -258,25 +282,47 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         }
 
         var completedWeight = 0.0
-        var completedItems = 0.0
         var visitedItems = 0
         var estimatedRemainingItems = 0
+        var activePackageCount = 0
+        var activePackageVisitedItems = 0
+        var activePackageEstimatedRemainingItems = 0
+        var activeAutoSummaryRepresentedItems = 0
         for jobID in Array(jobs.keys) {
             guard var job = jobs[jobID] else { continue }
             let estimate = Self.estimate(for: job)
             job.fraction = max(job.fraction, estimate.fraction)
             jobs[jobID] = job
             completedWeight += job.weight * job.fraction
-            completedItems += job.fraction
             visitedItems += job.visitedItems
             estimatedRemainingItems += estimate.remainingItems
+            switch job.kind {
+            case .package:
+                activePackageCount += 1
+                activePackageVisitedItems = Self.saturatingAdd(
+                    activePackageVisitedItems,
+                    job.visitedItems
+                )
+                activePackageEstimatedRemainingItems = Self.saturatingAdd(
+                    activePackageEstimatedRemainingItems,
+                    estimate.remainingItems
+                )
+            case .autoSummary:
+                activeAutoSummaryRepresentedItems = Self.saturatingAdd(
+                    activeAutoSummaryRepresentedItems,
+                    job.representedItemCount
+                )
+            }
         }
 
         snapshot.atomicSummaryCompletedTraversalWeight = min(max(completedWeight, 0), 1)
-        snapshot.atomicSummaryCompletedItems = max(completedItems, 0)
         snapshot.atomicSummaryVisitedItems = max(visitedItems, 0)
         snapshot.atomicSummaryEstimatedRemainingItems = max(estimatedRemainingItems, 0)
         snapshot.activeAtomicSummaryCount = jobs.count
+        snapshot.activePackageSummaryCount = activePackageCount
+        snapshot.activePackageSummaryVisitedItems = activePackageVisitedItems
+        snapshot.activePackageSummaryEstimatedRemainingItems = activePackageEstimatedRemainingItems
+        snapshot.activeAutoSummaryRepresentedItemCount = activeAutoSummaryRepresentedItems
         snapshot.recalculateProgress()
         snapshot.progressFraction = max(snapshot.progressFraction, progressFloor)
         progressFloor = snapshot.progressFraction
@@ -286,14 +332,14 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
     private static func estimate(for job: JobProgress) -> (fraction: Double, remainingItems: Int) {
         guard job.fraction < 1 else { return (1, 0) }
         let observedAverage = max(
-            64,
+            ScanMetrics.unobservedSummaryEstimatedItemCount,
             job.completedVisitedItems / max(job.completedWorkItems, 1)
         )
         var activeRemaining = 0
         for visited in job.visitedByActiveLease.values {
             activeRemaining = saturatingAdd(
                 activeRemaining,
-                max(64, visited, observedAverage)
+                max(ScanMetrics.unobservedSummaryEstimatedItemCount, visited, observedAverage)
             )
         }
         let pendingProduct = job.pendingWorkItems.multipliedReportingOverflow(by: observedAverage)
@@ -313,23 +359,29 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
 
     private static func clearAtomicSummaryOverlay(in metrics: inout ScanMetrics) {
         metrics.atomicSummaryCompletedTraversalWeight = 0
-        metrics.atomicSummaryCompletedItems = 0
         metrics.atomicSummaryVisitedItems = 0
         metrics.atomicSummaryEstimatedRemainingItems = 0
         metrics.activeAtomicSummaryCount = 0
+        metrics.activePackageSummaryCount = 0
+        metrics.activePackageSummaryVisitedItems = 0
+        metrics.activePackageSummaryEstimatedRemainingItems = 0
+        metrics.activeAutoSummaryRepresentedItemCount = 0
     }
 }
 
 nonisolated struct AtomicSummaryWorkerObserver: Sendable {
     let didStart: @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void
     let didFinish: @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void
+    let didShutdown: @Sendable () -> Void
 
     init(
         didStart: @escaping @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void,
-        didFinish: @escaping @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void
+        didFinish: @escaping @Sendable (_ ownerNodeID: String, _ itemURL: URL) -> Void,
+        didShutdown: @escaping @Sendable () -> Void = {}
     ) {
         self.didStart = didStart
         self.didFinish = didFinish
+        self.didShutdown = didShutdown
     }
 }
 
@@ -379,17 +431,19 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
     private enum CompletionAction {
         case success(
             CheckedContinuation<AtomicDirectorySummary?, Error>,
-            AtomicDirectorySummary?
+            AtomicSummaryAccumulator
         )
         case failure(
             CheckedContinuation<AtomicDirectorySummary?, Error>,
             Error
         )
 
-        func resume() {
+        func resume(visitedItemCount: Int? = nil) {
             switch self {
-            case .success(let continuation, let summary):
-                continuation.resume(returning: summary)
+            case .success(let continuation, let accumulator):
+                continuation.resume(returning: accumulator.makeSummary(
+                    visitedItemCount: visitedItemCount
+                ))
             case .failure(let continuation, let error):
                 continuation.resume(throwing: error)
             }
@@ -410,6 +464,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
     private var hasStarted = false
     private var acceptsJobs = true
     private var shutdownError: Error?
+    private var hasNotifiedShutdown = false
 
     init(
         workerLimit: Int,
@@ -426,16 +481,26 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
     }
 
     func updateProgress(
-        _ metrics: inout ScanMetrics,
+        _ metrics: ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         currentPath: String? = nil,
         force: Bool = false
     ) {
         progressCoordinator.updateBase(
-            &metrics,
+            metrics,
             continuation: continuation,
             currentPath: currentPath,
             force: force
+        )
+    }
+
+    func reportCurrentPath(
+        _ currentPath: String,
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+    ) {
+        progressCoordinator.reportCurrentPath(
+            currentPath,
+            continuation: continuation
         )
     }
 
@@ -462,6 +527,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
+        notifyShutdownOnce()
     }
 
     /// Fails all registered jobs, wakes workers, and awaits their termination.
@@ -470,6 +536,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
+        notifyShutdownOnce()
     }
 
     /// Convenience structured lifetime for callers that do not need to mutate
@@ -547,6 +614,8 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
                 jobID: id,
                 generation: job.generation,
                 progressWeight: request.progressWeight,
+                progressKind: request.progressKind,
+                representedItemCount: request.representedItemCount,
                 initialVisitedItems: request.resumeState?.visitedItemCount ?? 0,
                 initialWorkItems: initialItems.count,
                 requestMetrics: request.metrics,
@@ -562,10 +631,10 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         if let rejection {
             continuation.resume(throwing: rejection)
         } else {
-            if completion != nil {
-                progressCoordinator.finish(jobID: id, currentPath: request.url.path)
-            }
-            completion?.resume()
+            let visitedItemCount = completion == nil
+                ? nil
+                : progressCoordinator.finish(jobID: id, currentPath: request.url.path)
+            completion?.resume(visitedItemCount: visitedItemCount)
         }
     }
 
@@ -672,10 +741,10 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
             currentPath: lease.item.url.path
         )
         resumeWorkerWakeups(wakeups)
-        if action != nil {
-            progressCoordinator.finish(jobID: lease.jobID, currentPath: lease.item.url.path)
-        }
-        action?.resume()
+        let visitedItemCount = action == nil
+            ? nil
+            : progressCoordinator.finish(jobID: lease.jobID, currentPath: lease.item.url.path)
+        action?.resume(visitedItemCount: visitedItemCount)
     }
 
     private func restartUsingFoundation(_ lease: Lease) {
@@ -700,6 +769,15 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
 
         guard let restartRequest, let restartGeneration else { return }
         let accumulator = makeInitialAccumulator(for: restartRequest, usesResumeState: false)
+        // Advance progress bookkeeping before the restarted item can be leased.
+        // Otherwise `workStarted` can race against the previous generation and
+        // reject the new lease's first visits.
+        progressCoordinator.restart(
+            jobID: lease.jobID,
+            generation: restartGeneration,
+            pendingWorkItems: 1,
+            currentPath: restartRequest.url.path
+        )
         var wakeups: [(CheckedContinuation<Lease?, Never>, Lease?)] = []
         condition.lock()
         if let job = jobs[lease.jobID], job.generation == restartGeneration {
@@ -716,12 +794,6 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         }
         wakeups = wakeWorkersLocked()
         condition.unlock()
-        progressCoordinator.restart(
-            jobID: lease.jobID,
-            generation: restartGeneration,
-            pendingWorkItems: 1,
-            currentPath: restartRequest.url.path
-        )
         resumeWorkerWakeups(wakeups)
     }
 
@@ -790,6 +862,16 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         return tasks
     }
 
+    private func notifyShutdownOnce() {
+        condition.lock()
+        let shouldNotify = !hasNotifiedShutdown
+        hasNotifiedShutdown = true
+        condition.unlock()
+        if shouldNotify {
+            workerObserver?.didShutdown()
+        }
+    }
+
     private func cancelAll(with error: Error) -> [Task<Void, Never>] {
         var actions: [CompletionAction] = []
         var wakeups: [(CheckedContinuation<Lease?, Never>, Lease?)] = []
@@ -834,8 +916,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         }
         jobs.removeValue(forKey: job.id)
         runnableJobIDs.removeAll { $0 == job.id }
-        let summary = job.accumulator.makeSummary()
-        return .success(job.continuation, summary)
+        return .success(job.continuation, job.accumulator)
     }
 
     private func nextLeaseLocked() -> Lease? {
