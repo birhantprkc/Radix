@@ -125,6 +125,30 @@ fragile absolute test assertion.
 
 ## Implementation Strategy and Decision Gates
 
+### Post-implementation review remediation
+
+A second review of the accepted four-commit range identified four additional
+edge conditions. Address them before treating the branch as merge-ready:
+
+1. Preserve the reused-immediate-entry path's metadata fallback semantics when
+   routing work through the summary pool. An entry whose prefetched metadata is
+   unavailable must still receive the same one-time metadata reload and warning
+   behavior as before the pool integration.
+2. Put a package selected as the scan root into the same pending/active summary
+   accounting as a package discovered under an enumerated parent, so summary-only
+   scans do not bypass the work cap or jump directly to completion.
+3. Make the cancellation probe observe completed pool shutdown, not a transient
+   zero-active-lease interval between descendant or fallback leases.
+4. Fingerprint warning fields independently and record both ordered and
+   order-independent warning signatures, avoiding delimiter collisions while
+   keeping warning-order changes observable.
+
+Add focused regressions for missing prefetched metadata, package-root progress,
+fallback/descendant worker gaps, and delimiter/order-sensitive warning sets.
+After these fixes, repeat the full suite, Debug and unsigned Release builds,
+Release-artifact exclusion checks, semantic benchmarks, and a fresh review of
+the complete branch diff.
+
 ### Review remediation before acceptance
 
 The first implementation pass is not merge-ready until the six code-review
