@@ -285,6 +285,100 @@ final class TreemapGeometryTests: XCTestCase {
         XCTAssertNotEqual(folderSegment.colorToken.localID, nestedSegment.colorToken.localID)
     }
 
+    func testFocusedLayoutPreservesGlobalBranchAndSiblingColorIdentity() throws {
+        let first = makeTestFileNode(id: "/root/folder/first", name: "first", size: 200)
+        let second = makeTestFileNode(id: "/root/folder/second", name: "second", size: 100)
+        let folder = makeTestDirectoryNode(
+            id: "/root/folder",
+            name: "folder",
+            children: [first, second]
+        )
+        let sibling = makeTestFileNode(id: "/root/sibling", name: "sibling", size: 100)
+        let root = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [folder, sibling]
+        )
+        let store = FileTreeStore(
+            root: root,
+            childrenByID: [
+                root.id: [folder, sibling],
+                folder.id: [first, second],
+            ]
+        )
+        let size = CGSize(width: 1_200, height: 600)
+        let rootSegments = TreemapLayout.segments(
+            in: store,
+            rootID: root.id,
+            depthLimit: 2,
+            size: size,
+            minimumTileArea: 1
+        )
+        let focusedSegments = TreemapLayout.segments(
+            in: store,
+            rootID: folder.id,
+            depthLimit: 1,
+            size: size,
+            minimumTileArea: 1
+        )
+        let rootToken = try XCTUnwrap(
+            rootSegments.first { $0.nodeID == first.id }?.colorToken
+        )
+        let focusedToken = try XCTUnwrap(
+            focusedSegments.first { $0.nodeID == first.id }?.colorToken
+        )
+
+        XCTAssertEqual(focusedToken.branchID, rootToken.branchID)
+        XCTAssertEqual(focusedToken.branchIndex, rootToken.branchIndex)
+        XCTAssertEqual(focusedToken.branchCount, rootToken.branchCount)
+        XCTAssertEqual(focusedToken.localID, rootToken.localID)
+        XCTAssertEqual(focusedToken.siblingIndex, rootToken.siblingIndex)
+        XCTAssertEqual(focusedToken.siblingCount, rootToken.siblingCount)
+        XCTAssertEqual(focusedToken.role, rootToken.role)
+    }
+
+    func testGroupedRootPreservesGlobalColorIndexForVisibleBranches() throws {
+        let groupedA = makeTestFileNode(
+            id: "/root/grouped-a",
+            name: "grouped-a",
+            size: 1
+        )
+        let groupedB = makeTestFileNode(
+            id: "/root/grouped-b",
+            name: "grouped-b",
+            size: 1
+        )
+        let visible = makeTestFileNode(
+            id: "/root/visible",
+            name: "visible",
+            size: 999
+        )
+        let root = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [groupedA, groupedB, visible]
+        )
+        let store = FileTreeStore(
+            root: root,
+            childrenByID: [root.id: [groupedA, groupedB, visible]]
+        )
+
+        let segments = TreemapLayout.segments(
+            in: store,
+            rootID: root.id,
+            depthLimit: 1,
+            size: CGSize(width: 100, height: 100),
+            minimumTileArea: 20
+        )
+        let visibleToken = try XCTUnwrap(
+            segments.first { $0.nodeID == visible.id }?.colorToken
+        )
+
+        XCTAssertEqual(visibleToken.branchID, visible.id)
+        XCTAssertEqual(visibleToken.branchIndex, 0)
+        XCTAssertEqual(visibleToken.branchCount, 3)
+    }
+
     func testLayoutStopsWhenCancellationCheckThrows() {
         let children = (0..<100).map {
             makeTestFileNode(id: "/root/\($0)", name: "\($0)", size: Int64(100 - $0))

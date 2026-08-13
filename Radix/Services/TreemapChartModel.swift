@@ -40,6 +40,7 @@ final class TreemapChartModel: ObservableObject {
 
     private let layoutService: any TreemapLayouting
     private let layoutRequests = ChartLayoutRequestCoordinator<[TreemapSegment]>()
+    private var spatialSelectionCache = TreemapSpatialSelectionCache()
 
     init(layoutService: any TreemapLayouting = TreemapLayoutService()) {
         self.layoutService = layoutService
@@ -81,34 +82,14 @@ final class TreemapChartModel: ObservableObject {
         moving direction: ChartSpatialSelectionDirection,
         in size: CGSize
     ) -> String? {
-        let displayedSegments = renderedSegments.map { segment in
-            (segment, TreemapRenderer.navigationRect(for: segment, in: size))
-        }
-
-        let selectableSegments = displayedSegments.filter { segment, _ in
-            guard let nodeID = segment.nodeID else { return false }
-            return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
-        }
-        let hasRenderedSelection = selectableSegments.contains {
-            $0.0.nodeID == selectedNodeID
-        }
-        let candidateSegments: [(TreemapSegment, CGRect)]
-        if hasRenderedSelection {
-            candidateSegments = selectableSegments
-        } else if let minimumDepth = selectableSegments.map(\.0.depth).min() {
-            candidateSegments = selectableSegments.filter { $0.0.depth == minimumDepth }
-        } else {
-            candidateSegments = []
-        }
-
-        let candidates = candidateSegments.compactMap { segment, navigationFrame
-            -> ChartRectangleSelectionCandidate? in
-            guard let nodeID = segment.nodeID else { return nil }
-            return ChartRectangleSelectionCandidate(
-                nodeID: nodeID,
-                frame: navigationFrame
-            )
-        }
+        prepareSpatialSelectionCache(for: size)
+        let hasRenderedSelection = selectedNodeID.map {
+            !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0)
+                && renderState.segment(nodeID: $0) != nil
+        } ?? false
+        let candidates = hasRenderedSelection
+            ? spatialSelectionCache.candidates
+            : spatialSelectionCache.entryCandidates
         return ChartRectangleSpatialSelection.nextNodeID(
             from: selectedNodeID,
             moving: direction,
@@ -173,6 +154,45 @@ final class TreemapChartModel: ObservableObject {
             segments: segments,
             version: renderState.version + 1
         )
+        spatialSelectionCache = TreemapSpatialSelectionCache()
+    }
+
+    private func prepareSpatialSelectionCache(for size: CGSize) {
+        guard spatialSelectionCache.size != size else { return }
+
+        var candidates: [ChartRectangleSelectionCandidate] = []
+        candidates.reserveCapacity(renderState.segments.count)
+        var entryCandidates: [ChartRectangleSelectionCandidate] = []
+        var minimumDepth: Int?
+
+        for segment in renderState.segments {
+            guard let nodeID = segment.nodeID,
+                  !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) else {
+                continue
+            }
+            let candidate = ChartRectangleSelectionCandidate(
+                nodeID: nodeID,
+                frame: TreemapRenderer.navigationRect(for: segment, in: size)
+            )
+            candidates.append(candidate)
+            if let currentMinimumDepth = minimumDepth {
+                if segment.depth < currentMinimumDepth {
+                    minimumDepth = segment.depth
+                    entryCandidates.removeAll(keepingCapacity: true)
+                    entryCandidates.append(candidate)
+                } else if segment.depth == currentMinimumDepth {
+                    entryCandidates.append(candidate)
+                }
+            } else {
+                minimumDepth = segment.depth
+                entryCandidates.append(candidate)
+            }
+        }
+        spatialSelectionCache = TreemapSpatialSelectionCache(
+            size: size,
+            candidates: candidates,
+            entryCandidates: entryCandidates
+        )
     }
 
     private func clearHover() {
@@ -181,6 +201,12 @@ final class TreemapChartModel: ObservableObject {
         nextState.hoveredSegmentID = nil
         renderState = nextState
     }
+}
+
+private struct TreemapSpatialSelectionCache {
+    var size: CGSize?
+    var candidates: [ChartRectangleSelectionCandidate] = []
+    var entryCandidates: [ChartRectangleSelectionCandidate] = []
 }
 
 private struct TreemapChartRenderState {

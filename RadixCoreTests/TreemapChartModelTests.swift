@@ -153,7 +153,7 @@ final class TreemapChartModelTests: XCTestCase {
         )
     }
 
-    func testSpatialSelectionMeasuresDistanceInDisplayedAspectRatio() async {
+    func testSpatialSelectionMeasuresDistanceInCurrentDisplayedAspectRatio() async {
         let current = makeTreemapSegment(
             id: "current",
             rect: CGRect(x: 0.499, y: 0.499, width: 0.002, height: 0.002)
@@ -187,6 +187,13 @@ final class TreemapChartModelTests: XCTestCase {
                 in: CGSize(width: 1_000, height: 250)
             ),
             displayedFavorite.id
+        )
+        XCTAssertNil(
+            model.spatialSelectionNodeID(
+                from: current.id,
+                moving: .right,
+                in: CGSize(width: 250, height: 1_000)
+            )
         )
     }
 
@@ -295,6 +302,46 @@ final class TreemapChartModelTests: XCTestCase {
         XCTAssertTrue(didCompleteOldRequest)
         XCTAssertFalse(didApplyOldLayout)
         XCTAssertEqual(model.renderedSegments.map(\.id), [newSegment.id])
+    }
+
+    func testStartingNewLayoutCancelsPreviousLayoutWork() async {
+        let service = ControllableTreemapLayoutService(resumesOnCancellation: true)
+        let model = TreemapChartModel(layoutService: service)
+        let store = makeTreemapStore()
+
+        let oldTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                size: CGSize(width: 600, height: 300),
+                layoutID: "old"
+            )
+        }
+        await service.waitForIssuedRequestCount(1)
+
+        let newTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                size: CGSize(width: 800, height: 400),
+                layoutID: "new"
+            )
+        }
+        await service.waitForCancelledRequest(id: 0)
+        await service.waitForIssuedRequestCount(2)
+
+        let didApplyOldLayout = await oldTask.value
+        XCTAssertFalse(didApplyOldLayout)
+
+        let newSegment = makeTreemapSegment(id: "new-segment")
+        let didCompleteNewRequest = await service.completeRequest(id: 1, with: [newSegment])
+        XCTAssertTrue(didCompleteNewRequest)
+        let didApplyNewLayout = await newTask.value
+        XCTAssertTrue(didApplyNewLayout)
+        XCTAssertEqual(model.renderedSegments.map(\.id), [newSegment.id])
+        XCTAssertEqual(model.renderedLayoutVersion, 1)
     }
 
     func testLayoutFailurePreservesLastRenderAndPublishesError() async {

@@ -62,14 +62,32 @@ nonisolated enum TreemapLayout {
         let rootChildren = try treeStore.children(of: root.id, cancellationCheck: cancellationCheck)
         let visibleChildren = rootChildren.isEmpty ? [root] : rootChildren
         let rootBounds = CGRect(origin: .zero, size: size)
+        let rootEntries = try groupedChildren(
+            visibleChildren,
+            parentID: root.id,
+            bounds: rootBounds,
+            minimumTileArea: max(minimumTileArea, 1),
+            cancellationCheck: cancellationCheck
+        )
+        var retainedBranchIDs = Set<String>()
+        if root.id == treeStore.rootID {
+            retainedBranchIDs.reserveCapacity(rootEntries.count)
+            for entry in rootEntries {
+                try cancellationCheck()
+                if let nodeID = entry.nodeID {
+                    retainedBranchIDs.insert(nodeID)
+                }
+            }
+        }
         let colorBranchContext = try ColorBranchContext(
-            rootChildIDs: rootColorBranchIDs(
+            rootChildren: rootColorBranchChildren(
                 in: treeStore,
                 layoutRootID: root.id,
                 layoutRootChildren: rootChildren,
                 cancellationCheck: cancellationCheck
             ),
-            rootEntries: visibleChildren,
+            retainedBranchIDs: retainedBranchIDs,
+            layoutRootID: root.id,
             treeStore: treeStore,
             cancellationCheck: cancellationCheck
         )
@@ -77,7 +95,7 @@ nonisolated enum TreemapLayout {
         var result: [TreemapSegment] = []
         try appendSegments(
             in: treeStore,
-            children: visibleChildren,
+            entries: rootEntries,
             parentID: root.id,
             bounds: rootBounds,
             rootSize: size,
@@ -94,7 +112,7 @@ nonisolated enum TreemapLayout {
 
     private nonisolated static func appendSegments(
         in treeStore: some DiskMapTreeReading,
-        children: [FileNodeRecord],
+        entries: [Entry],
         parentID: String,
         bounds: CGRect,
         rootSize: CGSize,
@@ -108,14 +126,6 @@ nonisolated enum TreemapLayout {
     ) throws {
         guard depth < depthLimit, bounds.width > 0, bounds.height > 0 else { return }
         try cancellationCheck()
-
-        let entries = try groupedChildren(
-            children,
-            parentID: parentID,
-            bounds: bounds,
-            minimumTileArea: minimumTileArea,
-            cancellationCheck: cancellationCheck
-        )
         let tiles = try squarifiedTiles(
             for: entries,
             in: bounds,
@@ -174,9 +184,16 @@ nonisolated enum TreemapLayout {
             if let node = entry.node,
                let childBounds,
                !childNodes.isEmpty {
+                let childEntries = try groupedChildren(
+                    childNodes,
+                    parentID: node.id,
+                    bounds: childBounds,
+                    minimumTileArea: minimumTileArea,
+                    cancellationCheck: cancellationCheck
+                )
                 try appendSegments(
                     in: treeStore,
-                    children: childNodes,
+                    entries: childEntries,
                     parentID: node.id,
                     bounds: childBounds,
                     rootSize: rootSize,
@@ -210,7 +227,8 @@ nonisolated enum TreemapLayout {
         }
         let availableArea = max(bounds.width * bounds.height, 1)
         var visible: [Entry] = []
-        var grouped: [FileNodeRecord] = []
+        var groupedCount = 0
+        var onlyGroupedChild: FileNodeRecord?
         var groupedSize: Int64 = 0
 
         for child in children {
@@ -218,26 +236,31 @@ nonisolated enum TreemapLayout {
             let layoutSize = max(child.allocatedSize, 1)
             let projectedArea = availableArea * CGFloat(Double(layoutSize) / max(totalWeight, 1))
             if projectedArea < minimumTileArea {
-                grouped.append(child)
+                groupedCount += 1
+                if groupedCount == 1 {
+                    onlyGroupedChild = child
+                } else {
+                    onlyGroupedChild = nil
+                }
                 groupedSize = addingClamped(groupedSize, max(child.allocatedSize, 0))
             } else {
                 visible.append(Entry(node: child))
             }
         }
 
-        if grouped.count > 1 {
+        if groupedCount > 1 {
             visible.append(Entry(
                 id: "treemap-aggregate-\(parentID)",
                 nodeID: nil,
                 label: "Smaller Items",
                 totalSize: groupedSize,
                 isAggregate: true,
-                groupedItemCount: grouped.count,
+                groupedItemCount: groupedCount,
                 colorID: "treemap-aggregate-\(parentID)",
                 node: nil
             ))
-        } else if let onlyGrouped = grouped.first {
-            visible.append(Entry(node: onlyGrouped))
+        } else if let onlyGroupedChild {
+            visible.append(Entry(node: onlyGroupedChild))
         }
 
         return visible.sorted {
@@ -420,25 +443,19 @@ nonisolated enum TreemapLayout {
         return branch
     }
 
-    private nonisolated static func rootColorBranchIDs(
+    private nonisolated static func rootColorBranchChildren(
         in treeStore: some DiskMapTreeReading,
         layoutRootID: String,
         layoutRootChildren: [FileNodeRecord],
         cancellationCheck: CancellationCheck
-    ) throws -> [String] {
-        let rootChildren: [FileNodeRecord]
+    ) throws -> [FileNodeRecord] {
         if layoutRootID == treeStore.rootID {
-            rootChildren = layoutRootChildren
-        } else {
-            rootChildren = try treeStore.children(
-                of: treeStore.rootID,
-                cancellationCheck: cancellationCheck
-            )
+            return layoutRootChildren
         }
-
-        return rootChildren
-            .map(\.id)
-            .filter { !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0) }
+        return try treeStore.children(
+            of: treeStore.rootID,
+            cancellationCheck: cancellationCheck
+        )
     }
 
     private nonisolated static func topLevelBranchID(
@@ -477,38 +494,53 @@ nonisolated enum TreemapLayout {
 
     private nonisolated struct ColorBranchContext {
         private let indexByID: [String: Int]
-        private let branchIDByNodeID: [String: String]
+        private let focusedBranchID: String?
         private let count: Int
 
         nonisolated init(
-            rootChildIDs: [String],
-            rootEntries: [FileNodeRecord],
+            rootChildren: [FileNodeRecord],
+            retainedBranchIDs: Set<String>,
+            layoutRootID: String,
             treeStore: some DiskMapTreeReading,
             cancellationCheck: CancellationCheck
         ) throws {
+            let focusedBranchID: String?
+            if layoutRootID == treeStore.rootID {
+                focusedBranchID = nil
+            } else {
+                try cancellationCheck()
+                focusedBranchID = TreemapLayout.topLevelBranchID(
+                    for: layoutRootID,
+                    in: treeStore
+                ) ?? layoutRootID
+            }
+
+            var retainedBranchIDs = retainedBranchIDs
+            if let focusedBranchID {
+                retainedBranchIDs.insert(focusedBranchID)
+            }
             var indexByID: [String: Int] = [:]
-            for id in rootChildIDs where indexByID[id] == nil {
-                indexByID[id] = indexByID.count
+            indexByID.reserveCapacity(retainedBranchIDs.count)
+            var branchCount = 0
+            for child in rootChildren {
+                try cancellationCheck()
+                guard !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(child.id) else {
+                    continue
+                }
+                if retainedBranchIDs.contains(child.id) {
+                    indexByID[child.id] = branchCount
+                }
+                branchCount += 1
             }
             self.indexByID = indexByID
-            self.count = max(indexByID.count, 1)
-
-            var branchIDByNodeID: [String: String] = [:]
-            branchIDByNodeID.reserveCapacity(rootEntries.count)
-            for entry in rootEntries {
-                try cancellationCheck()
-                branchIDByNodeID[entry.id] = TreemapLayout.topLevelBranchID(
-                    for: entry.id,
-                    in: treeStore
-                ) ?? entry.id
-            }
-            self.branchIDByNodeID = branchIDByNodeID
+            self.count = max(branchCount, 1)
+            self.focusedBranchID = focusedBranchID
         }
 
         nonisolated func branch(forNodeID nodeID: String?) -> ColorBranch? {
-            guard let nodeID,
-                  let branchID = branchIDByNodeID[nodeID],
-                  let index = indexByID[branchID] else {
+            guard let nodeID else { return nil }
+            let branchID = focusedBranchID ?? nodeID
+            guard let index = indexByID[branchID] else {
                 return nil
             }
             return ColorBranch(id: branchID, index: index, count: count)
