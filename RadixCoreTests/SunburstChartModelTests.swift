@@ -116,6 +116,29 @@ final class SunburstChartModelTests: XCTestCase {
         )
     }
 
+    func testKeyboardSelectionUsesIDToOrderEqualAngles() async {
+        let laterID = makeSegment(
+            id: "b",
+            startAngle: 0,
+            endAngle: 1
+        )
+        let earlierID = makeSegment(
+            id: "a",
+            startAngle: 0,
+            endAngle: 1
+        )
+        let model = await loadedModel(with: [laterID, earlierID])
+
+        XCTAssertEqual(
+            model.keyboardSelection(from: nil, moving: .right)?.nodeID,
+            earlierID.id
+        )
+        XCTAssertEqual(
+            model.keyboardSelection(from: earlierID.id, moving: .right)?.nodeID,
+            laterID.id
+        )
+    }
+
     func testStartingLayoutPublishesPendingState() async {
         let service = ControllableSunburstLayoutService()
         let model = SunburstChartModel(layoutService: service)
@@ -438,10 +461,13 @@ final class SunburstChartModelTests: XCTestCase {
     }
 
     func testSelectionOverlaySegmentsIncludeAncestorsAndSelectedLast() async {
-        let ancestor = makeSegment(id: "ancestor", depth: 0)
+        let firstAncestor = makeSegment(id: "first-ancestor", depth: 0)
+        let secondAncestor = makeSegment(id: "second-ancestor", depth: 1)
         let selected = makeSegment(id: "selected", depth: 1)
         let sibling = makeSegment(id: "sibling", depth: 1)
-        let service = ImmediateSunburstLayoutService(segments: [ancestor, selected, sibling])
+        let service = ImmediateSunburstLayoutService(
+            segments: [secondAncestor, sibling, firstAncestor, selected]
+        )
         let model = SunburstChartModel(layoutService: service)
         let store = makeStore()
 
@@ -455,11 +481,79 @@ final class SunburstChartModelTests: XCTestCase {
         XCTAssertTrue(didApplyLayout)
         let overlaySegments = model.selectionOverlaySegments(
             selectedNodeID: selected.nodeID,
-            selectedAncestorIDs: Set([ancestor.nodeID!, selected.nodeID!, "missing"])
+            selectedAncestorIDs: Set([
+                firstAncestor.nodeID!,
+                selected.nodeID!,
+                secondAncestor.nodeID!,
+                "missing",
+            ])
         )
 
-        XCTAssertEqual(overlaySegments.map(\.segment.id), [ancestor.id, selected.id])
-        XCTAssertEqual(overlaySegments.map(\.role), [.ancestor, .selected])
+        XCTAssertEqual(
+            overlaySegments.map(\.segment.id),
+            [secondAncestor.id, firstAncestor.id, selected.id]
+        )
+        XCTAssertEqual(
+            overlaySegments.map(\.role),
+            [.ancestor, .ancestor, .selected]
+        )
+    }
+
+    func testSelectionOverlayCacheIsInvalidatedByNewLayout() async {
+        let service = ControllableSunburstLayoutService()
+        let model = SunburstChartModel(layoutService: service)
+        let store = makeStore()
+        let firstSelected = makeSegment(id: "selected", depth: 0)
+
+        let firstTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 1,
+                layoutID: "first"
+            )
+        }
+        await service.waitForIssuedRequestCount(1)
+        let didCompleteFirstRequest = await service.completeRequest(
+            id: 0,
+            with: [firstSelected]
+        )
+        XCTAssertTrue(didCompleteFirstRequest)
+        let didApplyFirstLayout = await firstTask.value
+        XCTAssertTrue(didApplyFirstLayout)
+        XCTAssertEqual(
+            model.selectionOverlaySegments(
+                selectedNodeID: firstSelected.nodeID,
+                selectedAncestorIDs: []
+            ).last?.segment.depth,
+            0
+        )
+
+        let secondSelected = makeSegment(id: "selected", depth: 1)
+        let secondTask = Task {
+            await model.loadLayout(
+                treeStore: store,
+                rootID: store.rootID,
+                depthLimit: 2,
+                layoutID: "second"
+            )
+        }
+        await service.waitForIssuedRequestCount(2)
+        let didCompleteSecondRequest = await service.completeRequest(
+            id: 1,
+            with: [secondSelected]
+        )
+        XCTAssertTrue(didCompleteSecondRequest)
+        let didApplySecondLayout = await secondTask.value
+        XCTAssertTrue(didApplySecondLayout)
+
+        XCTAssertEqual(
+            model.selectionOverlaySegments(
+                selectedNodeID: secondSelected.nodeID,
+                selectedAncestorIDs: []
+            ).last?.segment.depth,
+            1
+        )
     }
 
     private func loadedModel(

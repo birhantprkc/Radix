@@ -205,7 +205,8 @@ nonisolated enum SunburstLayout {
         }
 
         var visible: [GroupEntry] = []
-        var groupedNodes: [FileNodeRecord] = []
+        var groupedCount = 0
+        var onlyGroupedChild: FileNodeRecord?
         var groupedSize: Int64 = 0
 
         for child in children {
@@ -213,7 +214,12 @@ nonisolated enum SunburstLayout {
             let size = max(child.allocatedSize, 1)
             let angle = totalAngle * (Double(size) / max(denominator, 1))
             if angle < minimumAngle {
-                groupedNodes.append(child)
+                groupedCount += 1
+                if groupedCount == 1 {
+                    onlyGroupedChild = child
+                } else {
+                    onlyGroupedChild = nil
+                }
                 groupedSize = addingClamped(groupedSize, size)
             } else {
                 visible.append(
@@ -230,7 +236,7 @@ nonisolated enum SunburstLayout {
             }
         }
 
-        if groupedNodes.count > 1 {
+        if groupedCount > 1 {
             visible.append(
                 GroupEntry(
                     id: "aggregate-\(children.first?.id ?? UUID().uuidString)",
@@ -242,16 +248,16 @@ nonisolated enum SunburstLayout {
                     node: nil
                 )
             )
-        } else if let onlyGrouped = groupedNodes.first {
+        } else if let onlyGroupedChild {
             visible.append(
                 GroupEntry(
-                    id: onlyGrouped.id,
-                    nodeID: onlyGrouped.id,
-                    label: onlyGrouped.name,
-                    totalSize: max(onlyGrouped.allocatedSize, 1),
+                    id: onlyGroupedChild.id,
+                    nodeID: onlyGroupedChild.id,
+                    label: onlyGroupedChild.name,
+                    totalSize: max(onlyGroupedChild.allocatedSize, 1),
                     isAggregate: false,
-                    colorID: onlyGrouped.id,
-                    node: onlyGrouped
+                    colorID: onlyGroupedChild.id,
+                    node: onlyGroupedChild
                 )
             )
         }
@@ -425,20 +431,86 @@ nonisolated enum SunburstCenterHitTester {
     }
 }
 
+nonisolated final class SunburstSegmentIndex: Sendable {
+    private struct NodeEntry: Sendable {
+        let segment: SunburstSegment
+        let layoutIndex: Int
+    }
+
+    let depths: [Int]
+    let segmentCount: Int
+
+    private let segmentsByDepth: [Int: [SunburstSegment]]
+    private let segmentByID: [SunburstSegment.ID: SunburstSegment]
+    private let nodeEntryByID: [String: NodeEntry]
+
+    nonisolated init(segments: [SunburstSegment]) {
+        var segmentsByDepth: [Int: [SunburstSegment]] = [:]
+        var segmentByID: [SunburstSegment.ID: SunburstSegment] = [:]
+        segmentByID.reserveCapacity(segments.count)
+        var nodeEntryByID: [String: NodeEntry] = [:]
+        nodeEntryByID.reserveCapacity(segments.count)
+        for (index, segment) in segments.enumerated() {
+            segmentsByDepth[segment.depth, default: []].append(segment)
+            segmentByID[segment.id] = segment
+            if let nodeID = segment.nodeID {
+                nodeEntryByID[nodeID] = NodeEntry(
+                    segment: segment,
+                    layoutIndex: index
+                )
+            }
+        }
+
+        depths = segmentsByDepth.keys.sorted()
+        segmentCount = segments.count
+        self.segmentsByDepth = segmentsByDepth
+        self.segmentByID = segmentByID
+        self.nodeEntryByID = nodeEntryByID
+    }
+
+    nonisolated func segments(atDepth depth: Int) -> [SunburstSegment] {
+        segmentsByDepth[depth] ?? []
+    }
+
+    nonisolated func segment(id: SunburstSegment.ID) -> SunburstSegment? {
+        segmentByID[id]
+    }
+
+    nonisolated func segment(nodeID: String) -> SunburstSegment? {
+        nodeEntryByID[nodeID]?.segment
+    }
+
+    nonisolated func indexedSegment(
+        nodeID: String
+    ) -> (layoutIndex: Int, segment: SunburstSegment)? {
+        guard let entry = nodeEntryByID[nodeID] else { return nil }
+        return (entry.layoutIndex, entry.segment)
+    }
+}
+
 nonisolated struct SunburstHitTestIndex: Sendable {
     private let rings: [Ring]
 
     nonisolated init(segments: [SunburstSegment]) {
-        var ringSegmentsByDepth: [Int: [SunburstSegment]] = [:]
+        var segmentsByDepth: [Int: [SunburstSegment]] = [:]
         for segment in segments {
-            ringSegmentsByDepth[segment.depth, default: []].append(segment)
+            segmentsByDepth[segment.depth, default: []].append(segment)
         }
 
-        rings = ringSegmentsByDepth
+        rings = segmentsByDepth
             .map { depth, segments in
                 Ring(depth: depth, segments: segments)
             }
             .sorted { $0.depth < $1.depth }
+    }
+
+    nonisolated init(segmentIndex: SunburstSegmentIndex) {
+        rings = segmentIndex.depths.map { depth in
+            Ring(
+                depth: depth,
+                segments: segmentIndex.segments(atDepth: depth)
+            )
+        }
     }
 
     nonisolated func segment(at point: CGPoint, in size: CGSize) -> SunburstSegment? {
@@ -505,8 +577,7 @@ nonisolated struct SunburstHitTestIndex: Sendable {
                 }
             }
 
-            let candidateIndex = max(lowerBound - 1, 0)
-            let candidate = segments[candidateIndex]
+            let candidate = segments[max(lowerBound - 1, 0)]
             guard radians >= candidate.startAngle.radians,
                   radians <= candidate.endAngle.radians else {
                 return nil
