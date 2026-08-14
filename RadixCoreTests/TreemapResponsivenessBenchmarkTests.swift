@@ -73,7 +73,9 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             $0.segmentCount == expectedLargeSegmentCount
                 && $0.fingerprint == expectedLargeFingerprint
         })
-        let largeLayoutMedian = BenchmarkSupport.median(largeLayoutSamples.map(\.seconds))
+        let largeLayoutMedian = try XCTUnwrap(
+            BenchmarkSupport.median(largeLayoutSamples.map(\.seconds))
+        )
         Self.report(
             phase: "layout_large_scan",
             seconds: largeLayoutMedian,
@@ -116,7 +118,9 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         })
         Self.report(
             phase: "layout_flat_high_fanout",
-            seconds: BenchmarkSupport.median(flatLayoutSamples.map(\.seconds)),
+            seconds: try XCTUnwrap(
+                BenchmarkSupport.median(flatLayoutSamples.map(\.seconds))
+            ),
             count: flatFileCount,
             peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "segments=\(expectedFlatSegmentCount) "

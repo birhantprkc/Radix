@@ -82,7 +82,8 @@ enum ChartResponsivenessBenchmarkSupport {
             + (Double(components.attoseconds) / 1_000_000_000_000_000_000)
     }
 
-    static func median(_ values: [Double]) -> Double {
+    static func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
         let sortedValues = values.sorted()
         let midpoint = sortedValues.count / 2
         if sortedValues.count.isMultiple(of: 2) {

@@ -61,7 +61,9 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
             $0.segmentCount == expectedLargeCount
                 && $0.fingerprint == expectedLargeFingerprint
         })
-        let largeLayoutMedian = BenchmarkSupport.median(largeLayoutSamples.map(\.seconds))
+        let largeLayoutMedian = try XCTUnwrap(
+            BenchmarkSupport.median(largeLayoutSamples.map(\.seconds))
+        )
         Self.report(
             phase: "layout_large_scan",
             seconds: largeLayoutMedian,
@@ -585,8 +587,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
             repeating: nil,
             count: nodeCount
         )
-        var rootChildren: [FileTreeNodeIndex] = []
-        rootChildren.reserveCapacity(branchCount)
+        childIndicesByIndex[Int(rootIndex.rawValue)].reserveCapacity(branchCount)
 
         for branchOffset in 0..<branchCount {
             var parentIndex = rootIndex
@@ -608,13 +609,9 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
                 ))
                 parentIndices[Int(index.rawValue)] = parentIndex
                 childIndicesByIndex[Int(parentIndex.rawValue)].append(index)
-                if depth == 0 {
-                    rootChildren.append(index)
-                }
                 parentIndex = index
             }
         }
-        childIndicesByIndex[Int(rootIndex.rawValue)] = rootChildren
 
         let store = FileTreeStore(
             verifiedRootIndex: rootIndex,
