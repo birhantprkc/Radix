@@ -38,7 +38,10 @@ final class SunburstChartModel: ObservableObject {
 
     private let layoutService: any SunburstLayouting
     private let layoutRequests = ChartLayoutRequestCoordinator<[SunburstSegment]>()
-    private var selectionOverlayCache = SunburstSelectionOverlayCache(capacity: 8)
+    private var selectionIndex = SunburstSelectionIndex(
+        segmentIndex: SunburstSegmentIndex(segments: [])
+    )
+    private var selectionOverlayCache: SunburstSelectionOverlayCacheEntry?
 
     init(layoutService: any SunburstLayouting = SunburstLayoutService()) {
         self.layoutService = layoutService
@@ -75,37 +78,10 @@ final class SunburstChartModel: ObservableObject {
         from selectedNodeID: String?,
         moving direction: ChartSpatialSelectionDirection
     ) -> SunburstSegment? {
-        let selectableSegments = renderedSegments.filter { segment in
-            guard let nodeID = segment.nodeID else { return false }
-            return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
-        }
-        guard let selectedNodeID,
-              let current = selectableSegments.first(where: {
-                  $0.nodeID == selectedNodeID
-              }) else {
-            return firstTopLevelSegment(in: selectableSegments)
-        }
-
-        switch direction {
-        case .left, .right:
-            return adjacentSegment(
-                to: current,
-                moving: direction,
-                among: selectableSegments
-            )
-        case .up:
-            return segment(
-                atSameAngleAs: current,
-                depthOffset: -1,
-                among: selectableSegments
-            )
-        case .down:
-            return segment(
-                atSameAngleAs: current,
-                depthOffset: 1,
-                among: selectableSegments
-            )
-        }
+        selectionIndex.keyboardSelection(
+            from: selectedNodeID,
+            moving: direction
+        )
     }
 
     func keyboardSelectionPoint(
@@ -122,86 +98,28 @@ final class SunburstChartModel: ObservableObject {
         )
     }
 
-    private func firstTopLevelSegment(
-        in segments: [SunburstSegment]
-    ) -> SunburstSegment? {
-        guard let minimumDepth = segments.map(\.depth).min() else { return nil }
-        return ordered(segments.filter { $0.depth == minimumDepth }).first
-    }
-
-    private func adjacentSegment(
-        to current: SunburstSegment,
-        moving direction: ChartSpatialSelectionDirection,
-        among segments: [SunburstSegment]
-    ) -> SunburstSegment? {
-        let ring = ordered(segments.filter { $0.depth == current.depth })
-        guard ring.count > 1,
-              let currentIndex = ring.firstIndex(where: {
-                  $0.nodeID == current.nodeID
-              }) else {
-            return nil
-        }
-
-        switch direction {
-        case .left:
-            return ring[(currentIndex - 1 + ring.count) % ring.count]
-        case .right:
-            return ring[(currentIndex + 1) % ring.count]
-        case .up, .down:
-            return nil
-        }
-    }
-
-    private func segment(
-        atSameAngleAs current: SunburstSegment,
-        depthOffset: Int,
-        among segments: [SunburstSegment]
-    ) -> SunburstSegment? {
-        let targetDepth = current.depth + depthOffset
-        guard targetDepth >= 0 else { return nil }
-        let midpoint = angularMidpoint(of: current)
-        return ordered(segments
-            .filter {
-                $0.depth == targetDepth
-                    && contains(angle: midpoint, in: $0)
-            })
-            .first
-    }
-
-    private func ordered(_ segments: [SunburstSegment]) -> [SunburstSegment] {
-        segments.sorted {
-            if $0.startAngle.radians != $1.startAngle.radians {
-                return $0.startAngle.radians < $1.startAngle.radians
-            }
-            return $0.id < $1.id
-        }
-    }
-
-    private func angularMidpoint(of segment: SunburstSegment) -> Double {
-        (segment.startAngle.radians + segment.endAngle.radians) / 2
-    }
-
-    private func contains(angle: Double, in segment: SunburstSegment) -> Bool {
-        let tolerance = 0.000_000_001
-        return angle >= segment.startAngle.radians - tolerance
-            && angle <= segment.endAngle.radians + tolerance
-    }
-
     func selectionOverlaySegments(
         selectedNodeID: String?,
         selectedAncestorIDs: Set<String>
     ) -> [SunburstSelectionOverlaySegment] {
         let key = SunburstSelectionOverlayCacheKey(
-            renderVersion: renderedLayoutVersion,
             selectedNodeID: selectedNodeID,
             selectedAncestorIDs: selectedAncestorIDs
         )
-        return selectionOverlayCache.segments(for: key) {
-            renderState.selectionOverlaySegments(
-                selectedNodeID: selectedNodeID,
-                selectedAncestorIDs: selectedAncestorIDs
-            )
+        if let selectionOverlayCache,
+           selectionOverlayCache.key == key {
+            return selectionOverlayCache.segments
         }
+
+        let segments = selectionIndex.selectionOverlaySegments(
+            selectedNodeID: selectedNodeID,
+            selectedAncestorIDs: selectedAncestorIDs
+        )
+        selectionOverlayCache = SunburstSelectionOverlayCacheEntry(
+            key: key,
+            segments: segments
+        )
+        return segments
     }
 
     @discardableResult
@@ -253,11 +171,18 @@ final class SunburstChartModel: ObservableObject {
     }
 
     private func apply(_ segments: [SunburstSegment]) {
-        selectionOverlayCache.removeAll()
-        renderState = SunburstChartRenderState(
-            segments: segments,
-            version: renderState.version + 1
+        let segmentIndex = SunburstSegmentIndex(segments: segments)
+        let nextSelectionIndex = SunburstSelectionIndex(
+            segmentIndex: segmentIndex
         )
+        let nextRenderState = SunburstChartRenderState(
+            segments: segments,
+            version: renderState.version + 1,
+            segmentIndex: segmentIndex
+        )
+        renderState = nextRenderState
+        selectionIndex = nextSelectionIndex
+        selectionOverlayCache = nil
     }
 
     private func clearHover() {
@@ -268,53 +193,14 @@ final class SunburstChartModel: ObservableObject {
     }
 }
 
-private struct SunburstSelectionOverlayCacheKey: Hashable {
-    let renderVersion: Int
+private struct SunburstSelectionOverlayCacheKey: Equatable {
     let selectedNodeID: String?
     let selectedAncestorIDs: Set<String>
 }
 
-private struct SunburstSelectionOverlayCache {
-    private let capacity: Int
-    private var segmentsByKey: [SunburstSelectionOverlayCacheKey: [SunburstSelectionOverlaySegment]] = [:]
-    private var keysByRecency: [SunburstSelectionOverlayCacheKey] = []
-
-    init(capacity: Int) {
-        self.capacity = max(capacity, 1)
-    }
-
-    mutating func segments(
-        for key: SunburstSelectionOverlayCacheKey,
-        build: () -> [SunburstSelectionOverlaySegment]
-    ) -> [SunburstSelectionOverlaySegment] {
-        if let segments = segmentsByKey[key] {
-            markRecentlyUsed(key)
-            return segments
-        }
-
-        let segments = build()
-        segmentsByKey[key] = segments
-        markRecentlyUsed(key)
-        trimToCapacity()
-        return segments
-    }
-
-    mutating func removeAll() {
-        segmentsByKey.removeAll()
-        keysByRecency.removeAll()
-    }
-
-    private mutating func markRecentlyUsed(_ key: SunburstSelectionOverlayCacheKey) {
-        keysByRecency.removeAll { $0 == key }
-        keysByRecency.append(key)
-    }
-
-    private mutating func trimToCapacity() {
-        while segmentsByKey.count > capacity, let oldestKey = keysByRecency.first {
-            keysByRecency.removeFirst()
-            segmentsByKey[oldestKey] = nil
-        }
-    }
+private struct SunburstSelectionOverlayCacheEntry {
+    let key: SunburstSelectionOverlayCacheKey
+    let segments: [SunburstSelectionOverlaySegment]
 }
 
 enum SunburstSelectionRole: Equatable, Sendable {
@@ -332,39 +218,110 @@ struct SunburstSelectionOverlaySegment: Identifiable, Equatable, Sendable {
 }
 
 private struct SunburstChartRenderState {
-    var segments: [SunburstSegment]
+    let segments: [SunburstSegment]
     var hoveredSegmentID: SunburstSegment.ID?
-    var version: Int
+    let version: Int
 
-    private var segmentLookup: [SunburstSegment.ID: SunburstSegment]
-    private var segmentByNodeID: [String: SunburstSegment]
-    private var hitTestIndex: SunburstHitTestIndex
+    private let segmentIndex: SunburstSegmentIndex
+    private let hitTestIndex: SunburstHitTestIndex
 
     init(
         segments: [SunburstSegment] = [],
         hoveredSegmentID: SunburstSegment.ID? = nil,
-        version: Int = 0
+        version: Int = 0,
+        segmentIndex: SunburstSegmentIndex? = nil
     ) {
         self.segments = segments
         self.hoveredSegmentID = hoveredSegmentID
         self.version = version
-        segmentLookup = segments.reduce(into: [:]) { lookup, segment in
-            lookup[segment.id] = segment
-        }
-        segmentByNodeID = segments.reduce(into: [:]) { lookup, segment in
-            guard let nodeID = segment.nodeID else { return }
-            lookup[nodeID] = segment
-        }
-        hitTestIndex = SunburstHitTestIndex(segments: segments)
+        let segmentIndex = segmentIndex ?? SunburstSegmentIndex(segments: segments)
+        self.segmentIndex = segmentIndex
+        hitTestIndex = SunburstHitTestIndex(segmentIndex: segmentIndex)
     }
 
     var hoveredSegment: SunburstSegment? {
         guard let hoveredSegmentID else { return nil }
-        return segmentLookup[hoveredSegmentID]
+        return segmentIndex.segment(id: hoveredSegmentID)
     }
 
     func segment(at point: CGPoint, in size: CGSize) -> SunburstSegment? {
         hitTestIndex.segment(at: point, in: size)
+    }
+}
+
+private struct SunburstSelectionIndex {
+    private struct Location {
+        let depth: Int
+        let index: Int
+    }
+
+    private let segmentIndex: SunburstSegmentIndex
+    private let ringsByDepth: [Int: [SunburstSegment]]
+    private let locationByNodeID: [String: Location]
+    private let entrySegment: SunburstSegment?
+
+    init(segmentIndex: SunburstSegmentIndex) {
+        let depths = segmentIndex.depths
+        var ringsByDepth: [Int: [SunburstSegment]] = [:]
+        ringsByDepth.reserveCapacity(depths.count)
+        var locationByNodeID: [String: Location] = [:]
+        locationByNodeID.reserveCapacity(segmentIndex.segmentCount)
+        var entrySegment: SunburstSegment?
+        for depth in depths {
+            let ring = segmentIndex.segments(atDepth: depth)
+                .filter { segment in
+                    guard let nodeID = segment.nodeID else { return false }
+                    return !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID)
+                }
+                .sorted(by: Self.precedes)
+            ringsByDepth[depth] = ring
+            for (index, segment) in ring.enumerated() {
+                guard let nodeID = segment.nodeID,
+                      locationByNodeID[nodeID] == nil else {
+                    continue
+                }
+                locationByNodeID[nodeID] = Location(
+                    depth: depth,
+                    index: index
+                )
+            }
+            if entrySegment == nil {
+                entrySegment = ring.first
+            }
+        }
+
+        self.segmentIndex = segmentIndex
+        self.ringsByDepth = ringsByDepth
+        self.locationByNodeID = locationByNodeID
+        self.entrySegment = entrySegment
+    }
+
+    func keyboardSelection(
+        from selectedNodeID: String?,
+        moving direction: ChartSpatialSelectionDirection
+    ) -> SunburstSegment? {
+        guard let selectedNodeID,
+              let location = locationByNodeID[selectedNodeID],
+              let ring = ringsByDepth[location.depth],
+              ring.indices.contains(location.index) else {
+            return entrySegment
+        }
+        let current = ring[location.index]
+
+        switch direction {
+        case .left:
+            guard ring.count > 1 else { return nil }
+            let index = (location.index - 1 + ring.count) % ring.count
+            return ring[index]
+        case .right:
+            guard ring.count > 1 else { return nil }
+            let index = (location.index + 1) % ring.count
+            return ring[index]
+        case .up:
+            return segment(atSameAngleAs: current, depthOffset: -1)
+        case .down:
+            return segment(atSameAngleAs: current, depthOffset: 1)
+        }
     }
 
     func selectionOverlaySegments(
@@ -373,23 +330,26 @@ private struct SunburstChartRenderState {
     ) -> [SunburstSelectionOverlaySegment] {
         guard let selectedNodeID else { return [] }
 
-        var overlaySegments: [SunburstSelectionOverlaySegment] = []
-        overlaySegments.reserveCapacity(selectedAncestorIDs.count)
-
-        for segment in segments {
-            guard let nodeID = segment.nodeID,
-                  nodeID != selectedNodeID,
-                  selectedAncestorIDs.contains(nodeID) else {
+        var ancestors: [(layoutIndex: Int, segment: SunburstSegment)] = []
+        ancestors.reserveCapacity(selectedAncestorIDs.count)
+        for nodeID in selectedAncestorIDs where nodeID != selectedNodeID {
+            guard let indexedSegment = segmentIndex.indexedSegment(nodeID: nodeID) else {
                 continue
             }
+            ancestors.append(indexedSegment)
+        }
+        ancestors.sort { $0.layoutIndex < $1.layoutIndex }
 
+        var overlaySegments: [SunburstSelectionOverlaySegment] = []
+        overlaySegments.reserveCapacity(ancestors.count + 1)
+        for ancestor in ancestors {
             overlaySegments.append(SunburstSelectionOverlaySegment(
-                segment: segment,
+                segment: ancestor.segment,
                 role: .ancestor
             ))
         }
 
-        if let selectedSegment = segmentByNodeID[selectedNodeID] {
+        if let selectedSegment = segmentIndex.segment(nodeID: selectedNodeID) {
             overlaySegments.append(SunburstSelectionOverlaySegment(
                 segment: selectedSegment,
                 role: .selected
@@ -397,5 +357,32 @@ private struct SunburstChartRenderState {
         }
 
         return overlaySegments
+    }
+
+    private func segment(
+        atSameAngleAs current: SunburstSegment,
+        depthOffset: Int
+    ) -> SunburstSegment? {
+        let targetDepth = current.depth + depthOffset
+        guard targetDepth >= 0,
+              let targetRing = ringsByDepth[targetDepth] else {
+            return nil
+        }
+        let midpoint = (current.startAngle.radians + current.endAngle.radians) / 2
+        return targetRing.first { segment in
+            let tolerance = 0.000_000_001
+            return midpoint >= segment.startAngle.radians - tolerance
+                && midpoint <= segment.endAngle.radians + tolerance
+        }
+    }
+
+    private static func precedes(
+        _ lhs: SunburstSegment,
+        _ rhs: SunburstSegment
+    ) -> Bool {
+        if lhs.startAngle.radians != rhs.startAngle.radians {
+            return lhs.startAngle.radians < rhs.startAngle.radians
+        }
+        return lhs.id < rhs.id
     }
 }

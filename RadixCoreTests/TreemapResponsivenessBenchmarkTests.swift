@@ -1,8 +1,9 @@
 import CoreGraphics
-import Darwin
 import Foundation
 import XCTest
 @testable import RadixCore
+
+private typealias BenchmarkSupport = ChartResponsivenessBenchmarkSupport
 
 @MainActor
 final class TreemapResponsivenessBenchmarkTests: XCTestCase {
@@ -24,8 +25,8 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
 
         let largeLayoutSize = CGSize(width: 1_600, height: 1_000)
         let alternateLayoutSize = CGSize(width: 1_024, height: 1_320)
-        let initialPeakRSS = Self.peakResidentBytes()
-        let fixtureMeasurement = Self.measure {
+        let initialPeakRSS = BenchmarkSupport.peakResidentBytes()
+        let fixtureMeasurement = BenchmarkSupport.measure {
             Self.makeFixture(
                 directoryCount: directoryCount,
                 filesPerDirectory: filesPerDirectory,
@@ -33,7 +34,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             )
         }
         let fixture = fixtureMeasurement.value
-        let fixturePeakRSS = Self.peakResidentBytes()
+        let fixturePeakRSS = BenchmarkSupport.peakResidentBytes()
 
         XCTAssertEqual(
             fixture.store.nodeCount,
@@ -44,14 +45,14 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             seconds: fixtureMeasurement.seconds,
             count: fixture.store.nodeCount,
             peakRSS: fixturePeakRSS,
-            extra: "rss_delta=\(Self.byteDelta(from: initialPeakRSS, to: fixturePeakRSS))"
+            extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: fixturePeakRSS))"
         )
 
         let diskMapStore = DiskMapTreeStore(fixture.store)
         var largeLayoutSamples: [LayoutSample] = []
         largeLayoutSamples.reserveCapacity(sampleCount)
         for _ in 0..<sampleCount {
-            let measurement = try Self.measure {
+            let measurement = try BenchmarkSupport.measure {
                 try TreemapLayout.segments(
                     in: diskMapStore,
                     rootID: fixture.store.rootID,
@@ -72,17 +73,19 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             $0.segmentCount == expectedLargeSegmentCount
                 && $0.fingerprint == expectedLargeFingerprint
         })
-        let largeLayoutMedian = Self.median(largeLayoutSamples.map(\.seconds))
+        let largeLayoutMedian = try XCTUnwrap(
+            BenchmarkSupport.median(largeLayoutSamples.map(\.seconds))
+        )
         Self.report(
             phase: "layout_large_scan",
             seconds: largeLayoutMedian,
             count: expectedLargeSegmentCount,
-            peakRSS: Self.peakResidentBytes(),
-            extra: "samples=\(largeLayoutSamples.map { Self.format($0.seconds) }.joined(separator: ",")) "
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "samples=\(largeLayoutSamples.map { BenchmarkSupport.format($0.seconds) }.joined(separator: ",")) "
                 + "fingerprint=\(expectedLargeFingerprint)"
         )
 
-        let denseLayoutMeasurement = try Self.measure {
+        let denseLayoutMeasurement = try BenchmarkSupport.measure {
             try TreemapLayout.segments(
                 in: diskMapStore,
                 rootID: fixture.denseDirectoryID,
@@ -98,7 +101,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "layout_dense_folder",
             seconds: denseLayoutMeasurement.seconds,
             count: denseSegments.count,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "fingerprint=\(denseFingerprint)"
         )
 
@@ -115,18 +118,20 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         })
         Self.report(
             phase: "layout_flat_high_fanout",
-            seconds: Self.median(flatLayoutSamples.map(\.seconds)),
+            seconds: try XCTUnwrap(
+                BenchmarkSupport.median(flatLayoutSamples.map(\.seconds))
+            ),
             count: flatFileCount,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "segments=\(expectedFlatSegmentCount) "
-                + "samples=\(flatLayoutSamples.map { Self.format($0.seconds) }.joined(separator: ",")) "
+                + "samples=\(flatLayoutSamples.map { BenchmarkSupport.format($0.seconds) }.joined(separator: ",")) "
                 + "fingerprint=\(expectedFlatFingerprint)"
         )
 
         let publicationModel = TreemapChartModel(
             layoutService: PrecomputedTreemapLayoutService(segments: denseSegments)
         )
-        let publicationMeasurement = await Self.measureAsync {
+        let publicationMeasurement = await BenchmarkSupport.measureAsync {
             await publicationModel.loadLayout(
                 treeStore: diskMapStore,
                 rootID: fixture.denseDirectoryID,
@@ -141,10 +146,10 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "render_state_publication",
             seconds: publicationMeasurement.seconds,
             count: denseSegments.count,
-            peakRSS: Self.peakResidentBytes()
+            peakRSS: BenchmarkSupport.peakResidentBytes()
         )
 
-        let hitTestMeasurement = Self.measure {
+        let hitTestMeasurement = BenchmarkSupport.measure {
             Self.runHitTests(
                 model: publicationModel,
                 size: largeLayoutSize,
@@ -156,12 +161,12 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "hit_testing",
             seconds: hitTestMeasurement.seconds,
             count: hitTestIterationCount,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "hits=\(hitTestMeasurement.value.hitCount) "
                 + "fingerprint=\(hitTestMeasurement.value.fingerprint)"
         )
 
-        let wideKeyboardMeasurement = Self.measure {
+        let wideKeyboardMeasurement = BenchmarkSupport.measure {
             Self.runKeyboardSelection(
                 model: publicationModel,
                 size: largeLayoutSize,
@@ -173,12 +178,12 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "keyboard_selection_wide",
             seconds: wideKeyboardMeasurement.seconds,
             count: keyboardIterationCount,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "selections=\(wideKeyboardMeasurement.value.selectionCount) "
                 + "fingerprint=\(wideKeyboardMeasurement.value.fingerprint)"
         )
 
-        let tallKeyboardMeasurement = Self.measure {
+        let tallKeyboardMeasurement = BenchmarkSupport.measure {
             Self.runKeyboardSelection(
                 model: publicationModel,
                 size: alternateLayoutSize,
@@ -190,7 +195,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "keyboard_selection_tall",
             seconds: tallKeyboardMeasurement.seconds,
             count: keyboardIterationCount,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "selections=\(tallKeyboardMeasurement.value.selectionCount) "
                 + "fingerprint=\(tallKeyboardMeasurement.value.fingerprint)"
         )
@@ -210,7 +215,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "cancel_layout",
             seconds: cancellationMeasurement.seconds,
             count: fixture.store.nodeCount,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "cancelled=\(cancellationMeasurement.wasCancelled) "
                 + "completed_before_cancel=\(cancellationMeasurement.completedBeforeCancellation)"
         )
@@ -227,8 +232,8 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "rapid_resize",
             seconds: resizeMeasurement.latestRequestSeconds,
             count: resizeMeasurement.requestCount,
-            peakRSS: Self.peakResidentBytes(),
-            extra: "total_seconds=\(Self.format(resizeMeasurement.totalSeconds)) "
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "total_seconds=\(BenchmarkSupport.format(resizeMeasurement.totalSeconds)) "
                 + "applied=\(resizeMeasurement.appliedCount) "
                 + "cancelled=\(resizeMeasurement.cancelledCount) "
                 + "fingerprint=\(resizeMeasurement.fingerprint)"
@@ -252,8 +257,8 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "rapid_navigation",
             seconds: navigationMeasurement.latestRequestSeconds,
             count: navigationMeasurement.requestCount,
-            peakRSS: Self.peakResidentBytes(),
-            extra: "total_seconds=\(Self.format(navigationMeasurement.totalSeconds)) "
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "total_seconds=\(BenchmarkSupport.format(navigationMeasurement.totalSeconds)) "
                 + "applied=\(navigationMeasurement.appliedCount) "
                 + "cancelled=\(navigationMeasurement.cancelledCount) "
                 + "fingerprint=\(navigationMeasurement.fingerprint)"
@@ -263,8 +268,8 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             phase: "suite_peak_rss",
             seconds: 0,
             count: fixture.store.nodeCount,
-            peakRSS: Self.peakResidentBytes(),
-            extra: "rss_delta=\(Self.byteDelta(from: initialPeakRSS, to: Self.peakResidentBytes()))"
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: BenchmarkSupport.peakResidentBytes()))"
         )
     }
 
@@ -374,10 +379,10 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             appliedCount: results.filter { $0 }.count,
             completedCount: probeSnapshot.completedCount,
             cancelledCount: probeSnapshot.cancelledCount,
-            latestRequestSeconds: Self.durationSeconds(
+            latestRequestSeconds: BenchmarkSupport.durationSeconds(
                 latestRequestStartedAt.duration(to: latestCompletedAt)
             ),
-            totalSeconds: Self.durationSeconds(sequenceStartedAt.duration(to: latestCompletedAt)),
+            totalSeconds: BenchmarkSupport.durationSeconds(sequenceStartedAt.duration(to: latestCompletedAt)),
             renderedLayoutID: model.layoutReadiness.renderedLayoutID,
             segmentCount: model.renderedSegments.count,
             fingerprint: Self.segmentFingerprint(model.renderedSegments)
@@ -424,13 +429,13 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         do {
             let completedAt = try await task.value
             return CancellationMeasurement(
-                seconds: durationSeconds(cancellationRequestedAt.duration(to: .now)),
+                seconds: BenchmarkSupport.durationSeconds(cancellationRequestedAt.duration(to: .now)),
                 wasCancelled: false,
                 completedBeforeCancellation: completedAt <= cancellationRequestedAt
             )
         } catch is CancellationError {
             return CancellationMeasurement(
-                seconds: durationSeconds(cancellationRequestedAt.duration(to: .now)),
+                seconds: BenchmarkSupport.durationSeconds(cancellationRequestedAt.duration(to: .now)),
                 wasCancelled: true,
                 completedBeforeCancellation: false
             )
@@ -443,7 +448,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         iterationCount: Int
     ) -> InteractionMeasurement {
         var state = UInt64(0x9e3779b97f4a7c15)
-        var fingerprint = Self.fnvOffsetBasis
+        var fingerprint = BenchmarkSupport.fnvOffsetBasis
         var hitCount = 0
         for _ in 0..<iterationCount {
             state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
@@ -456,9 +461,9 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             )
             if let segment = model.segment(at: point, in: size) {
                 hitCount += 1
-                Self.hash(segment.id, into: &fingerprint)
+                BenchmarkSupport.hash(segment.id, into: &fingerprint)
             } else {
-                Self.hash(UInt64.max, into: &fingerprint)
+                BenchmarkSupport.hash(UInt64.max, into: &fingerprint)
             }
         }
         return InteractionMeasurement(
@@ -475,7 +480,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         let directions: [ChartSpatialSelectionDirection] = [.right, .down, .left, .up]
         var selectedNodeID: String?
         var selectionCount = 0
-        var fingerprint = Self.fnvOffsetBasis
+        var fingerprint = BenchmarkSupport.fnvOffsetBasis
 
         for offset in 0..<iterationCount {
             let nextNodeID = model.spatialSelectionNodeID(
@@ -486,9 +491,9 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
             selectedNodeID = nextNodeID
             if let nextNodeID {
                 selectionCount += 1
-                Self.hash(nextNodeID, into: &fingerprint)
+                BenchmarkSupport.hash(nextNodeID, into: &fingerprint)
             } else {
-                Self.hash(UInt64.max, into: &fingerprint)
+                BenchmarkSupport.hash(UInt64.max, into: &fingerprint)
             }
         }
         return InteractionMeasurement(
@@ -507,7 +512,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
         let rootID = "/treemap-benchmark"
         let denseDirectoryID = rootID + "/dense"
-        var nodes = [Self.node(
+        var nodes = [BenchmarkSupport.node(
             id: rootID,
             name: "treemap-benchmark",
             isDirectory: true,
@@ -527,7 +532,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
                 directoryOffset
             )
             let directoryIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-            nodes.append(Self.node(
+            nodes.append(BenchmarkSupport.node(
                 id: directoryID,
                 name: String(format: "directory-%04d", directoryOffset),
                 isDirectory: true,
@@ -546,7 +551,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
                     fileOffset
                 )
                 let fileIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-                nodes.append(Self.node(
+                nodes.append(BenchmarkSupport.node(
                     id: fileID,
                     name: String(format: "item-%05d.dat", fileOffset),
                     isDirectory: false,
@@ -560,7 +565,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         }
 
         let denseDirectoryIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-        nodes.append(Self.node(
+        nodes.append(BenchmarkSupport.node(
             id: denseDirectoryID,
             name: "dense",
             isDirectory: true,
@@ -573,7 +578,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         for fileOffset in 0..<denseFileCount {
             let fileID = String(format: "%@/tile-%05d.dat", denseDirectoryID, fileOffset)
             let fileIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-            nodes.append(Self.node(
+            nodes.append(BenchmarkSupport.node(
                 id: fileID,
                 name: String(format: "tile-%05d.dat", fileOffset),
                 isDirectory: false,
@@ -614,7 +619,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
     ) throws -> [LayoutSample] {
         let rootID = "/treemap-flat-benchmark"
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
-        var nodes = [Self.node(
+        var nodes = [BenchmarkSupport.node(
             id: rootID,
             name: "treemap-flat-benchmark",
             isDirectory: true,
@@ -632,7 +637,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         for fileOffset in 0..<fileCount {
             let fileID = String(format: "%@/item-%05d.dat", rootID, fileOffset)
             let fileIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-            nodes.append(Self.node(
+            nodes.append(BenchmarkSupport.node(
                 id: fileID,
                 name: String(format: "item-%05d.dat", fileOffset),
                 isDirectory: false,
@@ -669,7 +674,7 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         var samples: [LayoutSample] = []
         samples.reserveCapacity(sampleCount)
         for _ in 0..<sampleCount {
-            let measurement = try Self.measure {
+            let measurement = try BenchmarkSupport.measure {
                 try TreemapLayout.segments(
                     in: diskMapStore,
                     rootID: rootID,
@@ -694,124 +699,43 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         return samples
     }
 
-    private static func node(
-        id: String,
-        name: String,
-        isDirectory: Bool,
-        allocatedSize: Int64,
-        descendantFileCount: Int
-    ) -> FileNodeRecord {
-        FileNodeRecord(
-            id: id,
-            url: URL(filePath: id, directoryHint: isDirectory ? .isDirectory : .notDirectory),
-            name: name,
-            isDirectory: isDirectory,
-            isSymbolicLink: false,
-            allocatedSize: allocatedSize,
-            logicalSize: allocatedSize,
-            descendantFileCount: descendantFileCount,
-            lastModified: nil,
-            isPackage: false,
-            isAccessible: true,
-            isSelfAccessible: true,
-            isSynthetic: false,
-            isAutoSummarized: false
-        )
-    }
-
     private static func segmentFingerprint(_ segments: [TreemapSegment]) -> String {
-        var hash = Self.fnvOffsetBasis
+        var hash = BenchmarkSupport.fnvOffsetBasis
         for segment in segments {
-            Self.hash(segment.id, into: &hash)
-            Self.hash(segment.nodeID ?? "<aggregate>", into: &hash)
-            Self.hash(segment.containerNodeID, into: &hash)
-            Self.hash(segment.label, into: &hash)
-            Self.hash(UInt64(bitPattern: Int64(segment.depth)), into: &hash)
-            Self.hash(UInt64(bitPattern: segment.totalSize), into: &hash)
-            Self.hash(UInt64(segment.isAggregate ? 1 : 0), into: &hash)
-            Self.hash(
+            BenchmarkSupport.hash(segment.id, into: &hash)
+            BenchmarkSupport.hash(segment.nodeID ?? "<aggregate>", into: &hash)
+            BenchmarkSupport.hash(segment.containerNodeID, into: &hash)
+            BenchmarkSupport.hash(segment.label, into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.depth)), into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: segment.totalSize), into: &hash)
+            BenchmarkSupport.hash(UInt64(segment.isAggregate ? 1 : 0), into: &hash)
+            BenchmarkSupport.hash(
                 UInt64(bitPattern: Int64(segment.groupedItemCount ?? -1)),
                 into: &hash
             )
-            Self.hash(UInt64(segment.isDirectory ? 1 : 0), into: &hash)
-            Self.hash(UInt64(segment.showsContainerHeader ? 1 : 0), into: &hash)
-            Self.hash(Double(segment.rect.minX).bitPattern, into: &hash)
-            Self.hash(Double(segment.rect.minY).bitPattern, into: &hash)
-            Self.hash(Double(segment.rect.width).bitPattern, into: &hash)
-            Self.hash(Double(segment.rect.height).bitPattern, into: &hash)
-            Self.hash(segment.colorToken.branchID, into: &hash)
-            Self.hash(segment.colorToken.localID, into: &hash)
-            Self.hash(UInt64(bitPattern: Int64(segment.colorToken.branchIndex)), into: &hash)
-            Self.hash(UInt64(bitPattern: Int64(segment.colorToken.branchCount)), into: &hash)
-            Self.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingIndex)), into: &hash)
-            Self.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingCount)), into: &hash)
-            Self.hash(UInt64(bitPattern: Int64(segment.colorToken.depth)), into: &hash)
+            BenchmarkSupport.hash(UInt64(segment.isDirectory ? 1 : 0), into: &hash)
+            BenchmarkSupport.hash(UInt64(segment.showsContainerHeader ? 1 : 0), into: &hash)
+            BenchmarkSupport.hash(Double(segment.rect.minX).bitPattern, into: &hash)
+            BenchmarkSupport.hash(Double(segment.rect.minY).bitPattern, into: &hash)
+            BenchmarkSupport.hash(Double(segment.rect.width).bitPattern, into: &hash)
+            BenchmarkSupport.hash(Double(segment.rect.height).bitPattern, into: &hash)
+            BenchmarkSupport.hash(segment.colorToken.branchID, into: &hash)
+            BenchmarkSupport.hash(segment.colorToken.localID, into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.branchIndex)), into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.branchCount)), into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingIndex)), into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingCount)), into: &hash)
+            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.depth)), into: &hash)
             switch segment.colorToken.role {
             case .normal:
-                Self.hash(0, into: &hash)
+                BenchmarkSupport.hash(0, into: &hash)
             case .aggregate:
-                Self.hash(1, into: &hash)
+                BenchmarkSupport.hash(1, into: &hash)
             case .freeSpace:
-                Self.hash(2, into: &hash)
+                BenchmarkSupport.hash(2, into: &hash)
             }
         }
         return String(hash, radix: 16)
-    }
-
-    private static let fnvOffsetBasis: UInt64 = 14_695_981_039_346_656_037
-    private static let fnvPrime: UInt64 = 1_099_511_628_211
-
-    private static func hash(_ string: String, into hash: inout UInt64) {
-        for byte in string.utf8 {
-            hash ^= UInt64(byte)
-            hash &*= Self.fnvPrime
-        }
-        Self.hash(0xff, into: &hash)
-    }
-
-    private static func hash(_ value: UInt64, into hash: inout UInt64) {
-        var value = value
-        for _ in 0..<MemoryLayout<UInt64>.size {
-            hash ^= value & 0xff
-            hash &*= Self.fnvPrime
-            value >>= 8
-        }
-    }
-
-    private static func measure<Value>(_ operation: () throws -> Value) rethrows
-        -> Measurement<Value> {
-        let startedAt = ContinuousClock.now
-        let value = try operation()
-        return Measurement(
-            value: value,
-            seconds: durationSeconds(startedAt.duration(to: .now))
-        )
-    }
-
-    private static func measureAsync<Value>(
-        _ operation: () async throws -> Value
-    ) async rethrows -> Measurement<Value> {
-        let startedAt = ContinuousClock.now
-        let value = try await operation()
-        return Measurement(
-            value: value,
-            seconds: durationSeconds(startedAt.duration(to: .now))
-        )
-    }
-
-    private static func durationSeconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds)
-            + (Double(components.attoseconds) / 1_000_000_000_000_000_000)
-    }
-
-    private static func median(_ values: [Double]) -> Double {
-        let sortedValues = values.sorted()
-        let midpoint = sortedValues.count / 2
-        if sortedValues.count.isMultiple(of: 2) {
-            return (sortedValues[midpoint - 1] + sortedValues[midpoint]) / 2
-        }
-        return sortedValues[midpoint]
     }
 
     private static func report(
@@ -821,25 +745,14 @@ final class TreemapResponsivenessBenchmarkTests: XCTestCase {
         peakRSS: UInt64,
         extra: String = ""
     ) {
-        print(
-            "RADIX_TREEMAP_BENCH_RESULT phase=\(phase) "
-                + "seconds=\(format(seconds)) count=\(count) "
-                + "peak_rss=\(peakRSS) \(extra)"
+        BenchmarkSupport.report(
+            prefix: "RADIX_TREEMAP_BENCH_RESULT",
+            phase: phase,
+            seconds: seconds,
+            count: count,
+            peakRSS: peakRSS,
+            extra: extra
         )
-    }
-
-    private static func format(_ value: Double) -> String {
-        String(format: "%.6f", value)
-    }
-
-    private static func peakResidentBytes() -> UInt64 {
-        var usage = rusage()
-        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
-        return UInt64(max(usage.ru_maxrss, 0))
-    }
-
-    private static func byteDelta(from start: UInt64, to end: UInt64) -> UInt64 {
-        end >= start ? end - start : 0
     }
 }
 
@@ -929,11 +842,6 @@ private struct TreemapBenchmarkLayoutProbeSnapshot {
     let startedCount: Int
     let completedCount: Int
     let cancelledCount: Int
-}
-
-private struct Measurement<Value> {
-    let value: Value
-    let seconds: Double
 }
 
 private struct LayoutSample {

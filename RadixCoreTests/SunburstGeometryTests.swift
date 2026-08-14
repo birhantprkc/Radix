@@ -101,6 +101,29 @@ final class SunburstGeometryTests: XCTestCase {
         XCTAssertEqual(aggregate.colorToken.role, .aggregate)
     }
 
+    func testSingleSmallItemRemainsAnIndividualSegment() throws {
+        let large = makeFileNode(id: "/root/large", name: "large", size: 99)
+        let small = makeFileNode(id: "/root/small", name: "small", size: 1)
+        let root = makeDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [large, small]
+        )
+        let store = makeStore(root: root, children: [large, small])
+
+        let segments = SunburstLayout.segments(
+            in: store,
+            rootID: root.id,
+            depthLimit: 1,
+            minimumAngle: .pi / 2
+        )
+
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertFalse(segments.contains(where: \.isAggregate))
+        XCTAssertEqual(segments.last?.nodeID, small.id)
+        XCTAssertEqual(segments.last?.totalSize, small.allocatedSize)
+    }
+
     func testHitTesterReturnsExpectedSegment() throws {
         let root = makeDirectoryNode(
             id: "/root",
