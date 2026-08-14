@@ -1879,6 +1879,80 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(followUpFinished)
     }
 
+    func testCancellingConcurrentPackageProgressDoesNotDeadlock() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        for packageIndex in 0..<8 {
+            let resourcesURL = rootURL
+                .appending(path: "Package-\(packageIndex).app", directoryHint: .isDirectory)
+                .appending(path: "Contents/Resources", directoryHint: .isDirectory)
+            for branchIndex in 0..<4 {
+                let branchURL = resourcesURL.appending(
+                    path: "Branch-\(branchIndex)",
+                    directoryHint: .isDirectory
+                )
+                try FileManager.default.createDirectory(
+                    at: branchURL,
+                    withIntermediateDirectories: true
+                )
+                for fileIndex in 0..<128 {
+                    try Data([UInt8(fileIndex % 256)]).write(
+                        to: branchURL.appending(path: "payload-\(fileIndex).tmp")
+                    )
+                }
+            }
+        }
+
+        for _ in 0..<8 {
+            let lifecycle = AtomicSummaryWorkerLifecycleProbe()
+            let engine = ScanEngine(
+                atomicSummaryWorkerObserver: AtomicSummaryWorkerObserver(
+                    didStart: { _, _ in lifecycle.didStart() },
+                    didFinish: { _, _ in lifecycle.didFinish() },
+                    didShutdown: { lifecycle.didShutdown() }
+                ),
+                atomicSummaryProgressEmissionInterval: 0
+            )
+            let scanTask = Task {
+                var didFinish = false
+                do {
+                    for try await event in engine.scan(
+                        target: ScanTarget(url: rootURL),
+                        options: ScanOptions()
+                    ) {
+                        if case .finished = event {
+                            didFinish = true
+                        }
+                    }
+                } catch is CancellationError {
+                    return false
+                }
+                return didFinish
+            }
+
+            let workerDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while lifecycle.activeWorkerCount < 2, ContinuousClock.now < workerDeadline {
+                await Task.yield()
+            }
+            XCTAssertGreaterThanOrEqual(lifecycle.activeWorkerCount, 2)
+
+            scanTask.cancel()
+            let didFinish = try await withTimeout(.seconds(2)) {
+                try await scanTask.value
+            }
+            let shutdownDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while (!lifecycle.didObserveShutdown || lifecycle.activeWorkerCount > 0),
+                  ContinuousClock.now < shutdownDeadline {
+                await Task.yield()
+            }
+
+            XCTAssertFalse(didFinish)
+            XCTAssertEqual(lifecycle.activeWorkerCount, 0)
+            XCTAssertTrue(lifecycle.didObserveShutdown)
+        }
+    }
+
     func testCancellingScanStopsWideDirectoryEnumerationWork() async throws {
         let rootURL = try makeTemporaryDirectory()
         let followUpURL = try makeTemporaryDirectory()
