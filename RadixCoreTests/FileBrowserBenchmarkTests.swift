@@ -1,5 +1,4 @@
 import Combine
-import Darwin
 import Foundation
 import XCTest
 @testable import RadixCore
@@ -23,15 +22,15 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             .flatMap(Int.init)
             .map { max(1, $0) } ?? 3
 
-        let initialPeakRSS = Self.peakResidentBytes()
-        let fixtureMeasurement = Self.measure {
+        let initialPeakRSS = BenchmarkSupport.peakResidentBytes()
+        let fixtureMeasurement = BenchmarkSupport.measure {
             Self.makeFixture(
                 directoryCount: directoryCount,
                 filesPerDirectory: filesPerDirectory
             )
         }
         let fixture = fixtureMeasurement.value
-        let fixturePeakRSS = Self.peakResidentBytes()
+        let fixturePeakRSS = BenchmarkSupport.peakResidentBytes()
 
         XCTAssertEqual(
             fixture.store.nodeCount,
@@ -42,7 +41,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             seconds: fixtureMeasurement.seconds,
             count: fixture.store.nodeCount,
             peakRSS: fixturePeakRSS,
-            extra: "rss_delta=\(Self.byteDelta(from: initialPeakRSS, to: fixturePeakRSS))"
+            extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: fixturePeakRSS))"
         )
 
         let snapshotID = UUID()
@@ -68,15 +67,15 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         )
         let warmNoMatchMedian = Self.median(warmNoMatchSamples.map(\.seconds))
         let estimatedIndexSeconds = max(coldMeasurement.seconds - warmNoMatchMedian, 0)
-        let indexedPeakRSS = Self.peakResidentBytes()
+        let indexedPeakRSS = BenchmarkSupport.peakResidentBytes()
         Self.report(
             phase: "cold_index",
             seconds: estimatedIndexSeconds,
             count: fixture.store.nodeCount - 1,
             peakRSS: indexedPeakRSS,
-            extra: "cold_total=\(Self.format(coldMeasurement.seconds)) " +
-                "warm_scan_median=\(Self.format(warmNoMatchMedian)) " +
-                "rss_delta=\(Self.byteDelta(from: fixturePeakRSS, to: indexedPeakRSS))"
+            extra: "cold_total=\(BenchmarkSupport.format(coldMeasurement.seconds)) " +
+                "warm_scan_median=\(BenchmarkSupport.format(warmNoMatchMedian)) " +
+                "rss_delta=\(BenchmarkSupport.byteDelta(from: fixturePeakRSS, to: indexedPeakRSS))"
         )
 
         let textSamples = try await Self.measureSearchSamples(
@@ -123,7 +122,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             phase: "path_first",
             seconds: firstPathMeasurement.seconds,
             count: filesPerDirectory,
-            peakRSS: Self.peakResidentBytes()
+            peakRSS: BenchmarkSupport.peakResidentBytes()
         )
         Self.reportSamples(
             phase: "path_warm",
@@ -154,7 +153,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         )
 
         let sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
-        let sortingMeasurement = Self.measure {
+        let sortingMeasurement = BenchmarkSupport.measure {
             FileBrowserResults.sorted(
                 largeResults,
                 sortOrder: sortOrder,
@@ -162,7 +161,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             )
         }
         let sortedResults = sortingMeasurement.value
-        let sortingPeakRSS = Self.peakResidentBytes()
+        let sortingPeakRSS = BenchmarkSupport.peakResidentBytes()
         XCTAssertEqual(sortedResults.count, fixture.fileCount)
         Self.assertSorted(
             sortedResults,
@@ -183,7 +182,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             phase: "main_actor_publication",
             seconds: publicationMeasurement,
             count: sortedResults.count,
-            peakRSS: Self.peakResidentBytes()
+            peakRSS: BenchmarkSupport.peakResidentBytes()
         )
 
         let coldCancellation = try await Self.measureColdSearchCancellation(
@@ -198,7 +197,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             phase: "cancel_cold_search",
             seconds: coldCancellation.seconds,
             count: fixture.store.nodeCount - 1,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "cancelled=\(coldCancellation.wasCancelled) " +
                 "completed_before_cancel=\(coldCancellation.completedBeforeCancellation)"
         )
@@ -217,7 +216,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             phase: "cancel_sort",
             seconds: sortCancellation.seconds,
             count: largeResults.count,
-            peakRSS: Self.peakResidentBytes(),
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
             extra: "cancelled=\(sortCancellation.wasCancelled) " +
                 "completed_before_cancel=\(sortCancellation.completedBeforeCancellation)"
         )
@@ -231,15 +230,15 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             phase: "end_to_end",
             seconds: endToEndSeconds,
             count: fixture.fileCount,
-            peakRSS: Self.peakResidentBytes()
+            peakRSS: BenchmarkSupport.peakResidentBytes()
         )
 
         Self.report(
             phase: "suite_peak_rss",
             seconds: 0,
             count: fixture.store.nodeCount,
-            peakRSS: Self.peakResidentBytes(),
-            extra: "rss_delta=\(Self.byteDelta(from: initialPeakRSS, to: Self.peakResidentBytes()))"
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: BenchmarkSupport.peakResidentBytes()))"
         )
     }
 
@@ -280,7 +279,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
 
         let startedAt = ContinuousClock.now
         publisher.publish(nodes)
-        let seconds = durationSeconds(startedAt.duration(to: .now))
+        let seconds = BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
 
         XCTAssertEqual(publicationCount, 1)
         XCTAssertEqual(publisher.nodeCount, nodes.count)
@@ -340,7 +339,7 @@ final class FileBrowserBenchmarkTests: XCTestCase {
                 message: "Timed out waiting for the end-to-end entire-scan search to finish."
             )
         }
-        let seconds = durationSeconds(startedAt.duration(to: .now))
+        let seconds = BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
 
         XCTAssertTrue(model.isDisplayingCurrentResults)
         XCTAssertEqual(model.displayedNodes.count, fixture.fileCount)
@@ -369,13 +368,13 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         do {
             let completedAt = try await task.value
             return CancellationMeasurement(
-                seconds: durationSeconds(cancellationRequestedAt.duration(to: .now)),
+                seconds: BenchmarkSupport.durationSeconds(cancellationRequestedAt.duration(to: .now)),
                 wasCancelled: false,
                 completedBeforeCancellation: completedAt <= cancellationRequestedAt
             )
         } catch is CancellationError {
             return CancellationMeasurement(
-                seconds: durationSeconds(cancellationRequestedAt.duration(to: .now)),
+                seconds: BenchmarkSupport.durationSeconds(cancellationRequestedAt.duration(to: .now)),
                 wasCancelled: true,
                 completedBeforeCancellation: false
             )
@@ -407,13 +406,13 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         do {
             let completedAt = try await task.value
             return CancellationMeasurement(
-                seconds: durationSeconds(cancellationRequestedAt.duration(to: .now)),
+                seconds: BenchmarkSupport.durationSeconds(cancellationRequestedAt.duration(to: .now)),
                 wasCancelled: false,
                 completedBeforeCancellation: completedAt <= cancellationRequestedAt
             )
         } catch is CancellationError {
             return CancellationMeasurement(
-                seconds: durationSeconds(cancellationRequestedAt.duration(to: .now)),
+                seconds: BenchmarkSupport.durationSeconds(cancellationRequestedAt.duration(to: .now)),
                 wasCancelled: true,
                 completedBeforeCancellation: false
             )
@@ -565,39 +564,19 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         return String(hash, radix: 16)
     }
 
-    private static func measure<Value>(_ operation: () throws -> Value) rethrows -> Measurement<Value> {
-        let startedAt = ContinuousClock.now
-        let value = try operation()
-        return Measurement(
-            value: value,
-            seconds: durationSeconds(startedAt.duration(to: .now))
-        )
-    }
-
     private static func measureAsync<Value>(
         _ operation: () async throws -> Value
-    ) async rethrows -> Measurement<Value> {
+    ) async rethrows -> BenchmarkMeasurement<Value> {
         let startedAt = ContinuousClock.now
         let value = try await operation()
-        return Measurement(
+        return BenchmarkMeasurement(
             value: value,
-            seconds: durationSeconds(startedAt.duration(to: .now))
+            seconds: BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
         )
-    }
-
-    private static func durationSeconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds) +
-            (Double(components.attoseconds) / 1_000_000_000_000_000_000)
     }
 
     private static func median(_ values: [Double]) -> Double {
-        let sortedValues = values.sorted()
-        let midpoint = sortedValues.count / 2
-        if sortedValues.count.isMultiple(of: 2) {
-            return (sortedValues[midpoint - 1] + sortedValues[midpoint]) / 2
-        }
-        return sortedValues[midpoint]
+        BenchmarkSupport.median(values)!
     }
 
     private static func reportSamples(
@@ -610,8 +589,8 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             phase: phase,
             seconds: median(seconds),
             count: count,
-            peakRSS: peakResidentBytes(),
-            extra: "samples=\(seconds.map(format).joined(separator: ","))"
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "samples=\(seconds.map { BenchmarkSupport.format($0) }.joined(separator: ","))"
         )
     }
 
@@ -622,25 +601,14 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         peakRSS: UInt64,
         extra: String = ""
     ) {
-        print(
-            "RADIX_FILE_BROWSER_BENCH_RESULT phase=\(phase) " +
-                "seconds=\(format(seconds)) count=\(count) " +
-                "peak_rss=\(peakRSS) \(extra)"
+        BenchmarkSupport.report(
+            prefix: "RADIX_FILE_BROWSER_BENCH_RESULT",
+            phase: phase,
+            seconds: seconds,
+            count: count,
+            peakRSS: peakRSS,
+            extra: extra
         )
-    }
-
-    private static func format(_ value: Double) -> String {
-        String(format: "%.6f", value)
-    }
-
-    private static func peakResidentBytes() -> UInt64 {
-        var usage = rusage()
-        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
-        return UInt64(max(usage.ru_maxrss, 0))
-    }
-
-    private static func byteDelta(from start: UInt64, to end: UInt64) -> UInt64 {
-        end >= start ? end - start : 0
     }
 }
 
@@ -664,11 +632,6 @@ private final class FileBrowserPublicationProbe: ObservableObject {
 private struct Fixture: Sendable {
     let store: FileTreeStore
     let fileCount: Int
-}
-
-private struct Measurement<Value> {
-    let value: Value
-    let seconds: Double
 }
 
 private struct SearchSample {

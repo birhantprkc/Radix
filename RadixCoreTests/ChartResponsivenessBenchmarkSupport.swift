@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 @testable import RadixCore
 
@@ -53,76 +52,15 @@ enum ChartResponsivenessBenchmarkSupport {
         }
     }
 
-    static func measure<Value>(
-        _ operation: () throws -> Value
-    ) rethrows -> ChartBenchmarkMeasurement<Value> {
-        let startedAt = ContinuousClock.now
-        let value = try operation()
-        return ChartBenchmarkMeasurement(
-            value: value,
-            seconds: durationSeconds(startedAt.duration(to: .now))
-        )
-    }
-
     @MainActor
     static func measureAsync<Value>(
         _ operation: () async throws -> Value
-    ) async rethrows -> ChartBenchmarkMeasurement<Value> {
+    ) async rethrows -> BenchmarkMeasurement<Value> {
         let startedAt = ContinuousClock.now
         let value = try await operation()
-        return ChartBenchmarkMeasurement(
+        return BenchmarkMeasurement(
             value: value,
-            seconds: durationSeconds(startedAt.duration(to: .now))
+            seconds: BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
         )
     }
-
-    static func durationSeconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds)
-            + (Double(components.attoseconds) / 1_000_000_000_000_000_000)
-    }
-
-    static func median(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else { return nil }
-        let sortedValues = values.sorted()
-        let midpoint = sortedValues.count / 2
-        if sortedValues.count.isMultiple(of: 2) {
-            return (sortedValues[midpoint - 1] + sortedValues[midpoint]) / 2
-        }
-        return sortedValues[midpoint]
-    }
-
-    static func report(
-        prefix: String,
-        phase: String,
-        seconds: Double,
-        count: Int,
-        peakRSS: UInt64,
-        extra: String = ""
-    ) {
-        print(
-            "\(prefix) phase=\(phase) "
-                + "seconds=\(format(seconds)) count=\(count) "
-                + "peak_rss=\(peakRSS) \(extra)"
-        )
-    }
-
-    static func format(_ value: Double) -> String {
-        String(format: "%.6f", value)
-    }
-
-    static func peakResidentBytes() -> UInt64 {
-        var usage = rusage()
-        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
-        return UInt64(max(usage.ru_maxrss, 0))
-    }
-
-    static func byteDelta(from start: UInt64, to end: UInt64) -> UInt64 {
-        end >= start ? end - start : 0
-    }
-}
-
-struct ChartBenchmarkMeasurement<Value> {
-    let value: Value
-    let seconds: Double
 }
