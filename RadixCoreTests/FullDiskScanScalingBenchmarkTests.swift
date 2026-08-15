@@ -79,7 +79,7 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
         let targetURL = URL(
             filePath: environment["RADIX_BENCH_FULL_SCAN_PATH"] ?? "/Applications",
             directoryHint: .isDirectory
-        ).standardizedFileURL
+        ).resolvingSymlinksInPath().standardizedFileURL
         guard FileManager.default.fileExists(atPath: targetURL.path) else {
             throw XCTSkip("Benchmark path does not exist: \(targetURL.path)")
         }
