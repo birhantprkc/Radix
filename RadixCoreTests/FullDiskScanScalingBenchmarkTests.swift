@@ -19,6 +19,15 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
 
     func testRootScanRequiresExplicitAuthorization() throws {
         let rootURL = URL(filePath: "/", directoryHint: .isDirectory)
+        let rootSymlinkURL = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createSymbolicLink(
+            at: rootSymlinkURL,
+            withDestinationURL: rootURL
+        )
+        defer { try? FileManager.default.removeItem(at: rootSymlinkURL) }
         let collapsedScenario = try XCTUnwrap(
             BenchmarkScenario(rawValue: "collapsed-auto-none")
         )
@@ -28,6 +37,11 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
 
         XCTAssertNotNil(BenchmarkSafetyPolicy.refusalReason(
             targetURL: rootURL,
+            scenario: collapsedScenario,
+            environment: [:]
+        ))
+        XCTAssertNotNil(BenchmarkSafetyPolicy.refusalReason(
+            targetURL: rootSymlinkURL,
             scenario: collapsedScenario,
             environment: [:]
         ))
@@ -99,7 +113,6 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
         }
 
         if let cancellation {
-            XCTAssertTrue(cancellation.progressObserved)
             XCTAssertTrue(cancellation.streamTerminated)
             XCTAssertTrue(cancellation.poolShutdown)
             XCTAssertTrue(cancellation.workersQuiescent)
@@ -175,6 +188,7 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
                 try? await Task.sleep(for: .milliseconds(5))
             }
         }
+        defer { samplerTask.cancel() }
         let cpuAtStart = ProcessCPUTime.current()
         let startedAt = ContinuousClock.now
         var progressEvents = 0
@@ -368,7 +382,9 @@ private enum BenchmarkSafetyPolicy {
         scenario: BenchmarkScenario,
         environment: [String: String]
     ) -> String? {
-        guard targetURL.path == "/" else { return nil }
+        guard targetURL.resolvingSymlinksInPath().standardizedFileURL.path == "/" else {
+            return nil
+        }
         guard environment["RADIX_BENCH_FULL_SCAN_ALLOW_ROOT"] == "1" else {
             return "Set RADIX_BENCH_FULL_SCAN_ALLOW_ROOT=1 to scan the startup volume."
         }

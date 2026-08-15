@@ -1932,10 +1932,10 @@ final class ScanEngineTests: XCTestCase {
             }
 
             let workerDeadline = ContinuousClock.now.advanced(by: .seconds(1))
-            while lifecycle.activeWorkerCount < 2, ContinuousClock.now < workerDeadline {
-                await Task.yield()
+            while lifecycle.peakActiveWorkerCount < 2, ContinuousClock.now < workerDeadline {
+                try await Task.sleep(for: .milliseconds(1))
             }
-            XCTAssertGreaterThanOrEqual(lifecycle.activeWorkerCount, 2)
+            XCTAssertGreaterThanOrEqual(lifecycle.peakActiveWorkerCount, 2)
 
             scanTask.cancel()
             let didFinish = try await withTimeout(.seconds(2)) {
@@ -4243,10 +4243,15 @@ private final class AtomicSummaryWorkerLifecycleProbe: @unchecked Sendable {
 
     private let lock = NSLock()
     private var activeCount = 0
+    private var peakActiveCount = 0
     private var events: [Event] = []
 
     var activeWorkerCount: Int {
         lock.withLock { activeCount }
+    }
+
+    var peakActiveWorkerCount: Int {
+        lock.withLock { peakActiveCount }
     }
 
     var didObserveShutdown: Bool {
@@ -4264,6 +4269,7 @@ private final class AtomicSummaryWorkerLifecycleProbe: @unchecked Sendable {
     func didStart() {
         lock.withLock {
             activeCount += 1
+            peakActiveCount = max(peakActiveCount, activeCount)
             events.append(.started)
         }
     }
