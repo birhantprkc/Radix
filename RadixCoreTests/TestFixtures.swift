@@ -4,18 +4,22 @@ import XCTest
 
 @MainActor
 func waitUntil(
-    _ description: String,
+    _ description: String = "asynchronous test condition",
     timeout: TimeInterval = 1,
-    condition: () -> Bool
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    condition: @escaping @MainActor () async -> Bool
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() >= deadline {
-            XCTFail("Timed out waiting for \(description).")
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(timeout))
+    while !(await condition()) {
+        try Task.checkCancellation()
+        if clock.now >= deadline {
+            XCTFail("Timed out waiting for \(description).", file: file, line: line)
             return
         }
 
-        try await Task.sleep(for: .milliseconds(10))
+        await Task.yield()
     }
 }
 
@@ -176,5 +180,45 @@ func makeTestSnapshot(
         isComplete: true,
         scanOptions: scanOptions,
         incrementalCheckpoint: incrementalCheckpoint
+    )
+}
+
+func makeComparisonSnapshot(
+    rootPath: String,
+    fileSize: Int64,
+    startedAt: Date = Date(timeIntervalSince1970: 1),
+    finishedAt: Date? = Date(timeIntervalSince1970: 2),
+    sourceURL: URL? = nil,
+    scanOptions: ScanOptions? = nil,
+    targetKind: ScanTargetKind = .folder
+) -> ScanSnapshot {
+    let file = makeTestFileNode(id: "\(rootPath)/shared.bin", name: "shared.bin", size: fileSize)
+    let root = makeTestDirectoryNode(
+        id: rootPath,
+        name: URL(filePath: rootPath).lastPathComponent,
+        children: [file]
+    )
+    let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
+    let source: ScanSnapshotSource
+    if let sourceURL {
+        source = .imported(ImportedSnapshotContext(
+            sourceURL: sourceURL,
+            pathMode: .absolute,
+            liveActionCapability: .pathValidation
+        ))
+    } else {
+        source = .live
+    }
+
+    return ScanSnapshot(
+        target: ScanTarget(id: root.id, url: root.url, displayName: root.name, kind: targetKind),
+        treeStore: store,
+        startedAt: startedAt,
+        finishedAt: finishedAt,
+        scanWarnings: [],
+        aggregateStats: store.aggregateStats,
+        isComplete: true,
+        scanOptions: scanOptions,
+        source: source
     )
 }

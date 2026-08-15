@@ -318,13 +318,7 @@ private func waitForSidebarCacheCondition(
     timeout: TimeInterval = 1,
     condition: @escaping @MainActor () -> Bool
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() > deadline {
-            XCTFail("Timed out waiting for \(description).")
-            return
-        }
-
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil(description, timeout: timeout) {
+        condition()
     }
 }

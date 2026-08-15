@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ArchiveWorkflowCoordinatorTests: XCTestCase {
-    func testSupersededSuccessCannotApplyOrFinishNewWorkflow() async {
+    func testSupersededSuccessCannotApplyOrFinishNewWorkflow() async throws {
         let probe = ControlledArchiveWorkProbe()
         let coordinator = ArchiveWorkflowCoordinator()
         var successes: [Int] = []
@@ -33,12 +33,12 @@ final class ArchiveWorkflowCoordinatorTests: XCTestCase {
 
         let didCompleteNewRequest = await probe.complete(id: 1, with: 20)
         XCTAssertTrue(didCompleteNewRequest)
-        await waitUntil { !coordinator.isRunning }
+        try await waitUntil("new archive workflow success") { !coordinator.isRunning }
         XCTAssertEqual(successes, [20])
         XCTAssertEqual(finishes, ["new"])
     }
 
-    func testSupersededFailureCannotPublishFailureOrFinishNewWorkflow() async {
+    func testSupersededFailureCannotPublishFailureOrFinishNewWorkflow() async throws {
         let probe = ControlledArchiveWorkProbe()
         let coordinator = ArchiveWorkflowCoordinator()
         var failures: [String] = []
@@ -68,12 +68,12 @@ final class ArchiveWorkflowCoordinatorTests: XCTestCase {
 
         let didCompleteNewRequest = await probe.complete(id: 1, with: 1)
         XCTAssertTrue(didCompleteNewRequest)
-        await waitUntil { !coordinator.isRunning }
+        try await waitUntil("new archive workflow success after stale failure") { !coordinator.isRunning }
         XCTAssertEqual(failures, [])
         XCTAssertEqual(finishes, ["new"])
     }
 
-    func testSupersededOnFinishDoesNotClearCurrentOperationState() async {
+    func testSupersededOnFinishDoesNotClearCurrentOperationState() async throws {
         let probe = ControlledArchiveWorkProbe()
         let coordinator = ArchiveWorkflowCoordinator()
         var staleFinishCount = 0
@@ -107,14 +107,7 @@ final class ArchiveWorkflowCoordinatorTests: XCTestCase {
 
         let didCompleteNewRequest = await probe.complete(id: 1, with: 1)
         XCTAssertTrue(didCompleteNewRequest)
-        await waitUntil { !coordinator.isRunning }
-    }
-
-    private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async {
-        for _ in 0..<100 where !condition() {
-            await Task.yield()
-        }
-        XCTAssertTrue(condition())
+        try await waitUntil("current archive workflow completion") { !coordinator.isRunning }
     }
 }
 

@@ -542,22 +542,19 @@ final class DiskMapVisualizationFilterModelTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws -> DiskMapVisualizationInput {
-        for _ in 0..<100 {
-            let input = model.input(
+        var filteredInput = model.input(baseInput: baseInput, request: request)
+        try await waitUntil(
+            "filtered visualization input",
+            file: file,
+            line: line
+        ) {
+            filteredInput = model.input(
                 baseInput: baseInput,
                 request: request
             )
-            if input.treeStore.node(id: removedNodeID) == nil {
-                return input
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
+            return filteredInput.treeStore.node(id: removedNodeID) == nil
         }
-
-        XCTFail("Timed out waiting for filtered visualization input.", file: file, line: line)
-        return model.input(
-            baseInput: baseInput,
-            request: request
-        )
+        return filteredInput
     }
 }
 

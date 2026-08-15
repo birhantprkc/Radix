@@ -276,15 +276,6 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         )
     }
 
-    private func waitUntil(
-        _ condition: @escaping @MainActor () async -> Bool
-    ) async throws {
-        for _ in 0..<1_000 {
-            if await condition() { return }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-        XCTFail("Timed out waiting for comparison browser state")
-    }
 }
 
 private actor ComparisonProcessorGate {

@@ -1379,6 +1379,7 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertEqual(model.navigation.focusedNodeID, populatedFolder.id)
         XCTAssertEqual(model.navigation.tableNodes.map(\.id), [sibling.id])
         XCTAssertTrue(service.requests.isEmpty)
+        // This one representative delay covers the removed one-second post-trash scheduler.
         try await Task.sleep(for: .milliseconds(1_150))
         XCTAssertTrue(service.requests.isEmpty)
         XCTAssertEqual(model.navigation.focusedNodeID, populatedFolder.id)
@@ -1411,16 +1412,12 @@ final class ScanCoordinatorTests: XCTestCase {
         try await waitUntil("first trashed child removed") {
             model.scanState.snapshot?.treeStore.node(id: first.id) == nil
         }
-        try await Task.sleep(for: .milliseconds(200))
 
         model.pendingTrashNode = second
         model.confirmMovePendingNodeToTrash()
         try await waitUntil("second trashed child removed") {
             model.scanState.snapshot?.treeStore.node(id: second.id) == nil
         }
-        XCTAssertTrue(service.requests.isEmpty)
-
-        try await Task.sleep(for: .milliseconds(1_150))
         XCTAssertTrue(service.requests.isEmpty)
         XCTAssertEqual(model.scanState.selectedTarget, target)
         XCTAssertEqual(model.scanState.phase, .displaying)
@@ -1456,9 +1453,6 @@ final class ScanCoordinatorTests: XCTestCase {
                 model.scanState.snapshot?.treeStore.node(id: second.id) == nil
         }
         XCTAssertTrue(service.requests.isEmpty)
-
-        try await Task.sleep(for: .milliseconds(1_150))
-        XCTAssertTrue(service.requests.isEmpty)
         XCTAssertEqual(model.scanState.selectedTarget, target)
         XCTAssertEqual(model.scanState.phase, .displaying)
         model.cleanup()
@@ -1490,7 +1484,6 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertNil(model.scanState.snapshot)
         XCTAssertNil(model.scanState.selectedTarget)
         XCTAssertNil(model.navigation.focusedNodeID)
-        try await Task.sleep(for: .milliseconds(1_150))
         XCTAssertTrue(service.requests.isEmpty)
         model.cleanup()
     }
@@ -1548,7 +1541,6 @@ final class ScanCoordinatorTests: XCTestCase {
         try await waitUntil("trashed child removed from second snapshot") {
             model.scanState.snapshot?.treeStore.node(id: secondChild.id) == nil
         }
-        try await Task.sleep(for: .milliseconds(1_150))
         XCTAssertEqual(service.requests.count, 2)
 
         model.selectSidebarTarget(id: firstTarget.id)

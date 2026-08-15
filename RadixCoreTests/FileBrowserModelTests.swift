@@ -1410,13 +1410,9 @@ private func waitForSearchToFinish(
     file: StaticString = #filePath,
     line: UInt = #line
 ) async throws {
-    for _ in 0..<100 {
-        if !model.isSearchingEntireScan {
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil("file browser search", file: file, line: line) {
+        !model.isSearchingEntireScan
     }
-    XCTFail("Timed out waiting for file browser search.", file: file, line: line)
 }
 
 private func waitForStartCount(
@@ -1426,13 +1422,9 @@ private func waitForStartCount(
     file: StaticString = #filePath,
     line: UInt = #line
 ) async throws {
-    for _ in 0..<100 {
-        if await service.startCount(for: query) >= count {
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil("file browser search to start", file: file, line: line) {
+        await service.startCount(for: query) >= count
     }
-    XCTFail("Timed out waiting for file browser search to start.", file: file, line: line)
 }
 
 private func waitForPruneCount(
@@ -1441,13 +1433,9 @@ private func waitForPruneCount(
     file: StaticString = #filePath,
     line: UInt = #line
 ) async throws {
-    for _ in 0..<100 {
-        if await service.retainedSnapshotIDs().count >= count {
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil("file browser search index pruning", file: file, line: line) {
+        await service.retainedSnapshotIDs().count >= count
     }
-    XCTFail("Timed out waiting for file browser search index pruning.", file: file, line: line)
 }
 
 private func waitForPruneCancellation(
@@ -1455,13 +1443,9 @@ private func waitForPruneCancellation(
     file: StaticString = #filePath,
     line: UInt = #line
 ) async throws {
-    for _ in 0..<100 {
-        if await service.didCancelPrune() {
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil("file browser search index prune cancellation", file: file, line: line) {
+        await service.didCancelPrune()
     }
-    XCTFail("Timed out waiting for file browser search index prune cancellation.", file: file, line: line)
 }
 
 @MainActor
@@ -1470,13 +1454,9 @@ private func waitForCurrentContentsRefreshToFinish(
     file: StaticString = #filePath,
     line: UInt = #line
 ) async throws {
-    for _ in 0..<100 {
-        if !model.isRefreshingCurrentContents {
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil("current contents refresh", file: file, line: line) {
+        !model.isRefreshingCurrentContents
     }
-    XCTFail("Timed out waiting for current contents refresh.", file: file, line: line)
 }
 
 private actor DelayedFileSearchService: FileSearching {

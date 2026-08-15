@@ -415,10 +415,9 @@ final class ScanEngineTests: XCTestCase {
         }
 
         XCTAssertFalse(didFinish)
-        for _ in 0..<100 where descriptorPool.debugCounters.currentOpenDescriptorCount != 0 {
-            await Task.yield()
+        try await waitUntil("cancelled descriptor leases to close") {
+            descriptorPool.debugCounters.currentOpenDescriptorCount == 0
         }
-        XCTAssertEqual(descriptorPool.debugCounters.currentOpenDescriptorCount, 0)
     }
 
     func testBulkDirectoryEnumerationRejectsIncompleteMetadataAttributeSets() {

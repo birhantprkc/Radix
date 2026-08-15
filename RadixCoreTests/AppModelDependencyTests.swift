@@ -3007,159 +3007,6 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertFalse(model.canCompareCurrentScanWithSnapshot)
     }
 
-    func testComparisonSetupWarnsAndAllowsDifferentScanSettings() {
-        var beforeOptions = ScanOptions()
-        beforeOptions.includeHiddenFiles = true
-        var afterOptions = beforeOptions
-        afterOptions.treatPackagesAsDirectories = true
-
-        let setup = ScanComparisonSetup(
-            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example/Documents",
-                fileSize: 10,
-                scanOptions: beforeOptions
-            )),
-            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example/Documents",
-                fileSize: 20,
-                scanOptions: afterOptions
-            ))
-        )
-
-        XCTAssertTrue(setup.canCompare)
-        XCTAssertNil(setup.validationMessage)
-        XCTAssertEqual(
-            setup.coverageWarningMessage,
-            "Coverage warning: Scan settings differ, so added or removed items may reflect coverage changes rather than disk changes."
-        )
-    }
-
-    func testComparisonSetupWarnsAndAllowsMissingScanSettings() {
-        let setup = ScanComparisonSetup(
-            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example/Documents",
-                fileSize: 10,
-                scanOptions: nil
-            )),
-            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example/Documents",
-                fileSize: 20,
-                scanOptions: ScanOptions()
-            ))
-        )
-
-        XCTAssertTrue(setup.canCompare)
-        XCTAssertNil(setup.validationMessage)
-        XCTAssertEqual(
-            setup.coverageWarningMessage,
-            "Coverage warning: Scan settings are unavailable for one or both scans, so some changes may be caused by different scan coverage."
-        )
-    }
-
-    func testComparisonSetupWarnsAndAllowsLegacyCloudSemantics() throws {
-        let legacyOptions = try JSONDecoder().decode(
-            ScanOptions.self,
-            from: Data("""
-            {
-              "autoSummarizeDirectories": true,
-              "cloudStorageRootPath": "/Users/example/Library/CloudStorage",
-              "exclusionPatterns": [],
-              "iCloudDriveRootPath": "/Users/example/Library/Mobile Documents",
-              "includeCloudStorage": false,
-              "includeHiddenFiles": false,
-              "treatPackagesAsDirectories": false
-            }
-            """.utf8)
-        )
-        let setup = ScanComparisonSetup(
-            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example",
-                fileSize: 10,
-                scanOptions: legacyOptions
-            )),
-            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example",
-                fileSize: 20,
-                scanOptions: ScanOptions()
-            ))
-        )
-
-        XCTAssertTrue(setup.canCompare)
-        XCTAssertNil(setup.validationMessage)
-        XCTAssertEqual(
-            setup.coverageWarningMessage,
-            "Coverage warning: Scan settings differ, so added or removed items may reflect coverage changes rather than disk changes."
-        )
-    }
-
-    func testComparisonSetupStillBlocksSelectingTheSameScanTwice() {
-        let candidate = ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-            rootPath: "/Users/example/Documents",
-            fileSize: 10,
-            scanOptions: ScanOptions()
-        ))
-        let setup = ScanComparisonSetup(before: candidate, after: candidate)
-
-        XCTAssertFalse(setup.canCompare)
-        XCTAssertEqual(setup.validationMessage, "Choose two different scans.")
-        XCTAssertNil(setup.coverageWarningMessage)
-    }
-
-    func testComparisonSetupBlocksDifferentRootsWithMatchingScanOptions() {
-        var options = ScanOptions()
-        options.exclusionPatterns = ["*.tmp"]
-
-        let setup = ScanComparisonSetup(
-            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example",
-                fileSize: 10,
-                scanOptions: options
-            )),
-            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example/Documents",
-                fileSize: 20,
-                scanOptions: options
-            ))
-        )
-
-        XCTAssertFalse(setup.canCompare)
-        XCTAssertEqual(setup.validationMessage, "Choose scans of the same location.")
-    }
-
-    func testComparisonSetupBlocksDifferentTargetKinds() {
-        let options = ScanOptions()
-        let setup = ScanComparisonSetup(
-            before: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example",
-                fileSize: 10,
-                scanOptions: options,
-                targetKind: .folder
-            )),
-            after: ScanComparisonCandidate(snapshot: makeComparisonSnapshot(
-                rootPath: "/Users/example",
-                fileSize: 20,
-                scanOptions: options,
-                targetKind: .volume
-            ))
-        )
-
-        XCTAssertFalse(setup.canCompare)
-        XCTAssertEqual(setup.validationMessage, "Choose scans of the same location.")
-    }
-
-    func testComparisonSetupDoesNotOfferCurrentScanInBothSlots() {
-        let currentSnapshot = makeComparisonSnapshot(
-            rootPath: "/Users/example",
-            fileSize: 20,
-            scanOptions: ScanOptions()
-        )
-        let setup = ScanComparisonSetup(
-            after: ScanComparisonCandidate(snapshot: currentSnapshot)
-        )
-
-        XCTAssertFalse(setup.canAssignCurrentScan(to: .before))
-        XCTAssertTrue(setup.canAssignCurrentScan(to: .after))
-    }
 }
 
 @MainActor
@@ -3168,13 +3015,8 @@ private func waitForAppModelCondition(
     timeout: TimeInterval = 1,
     condition: @escaping @MainActor () -> Bool
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !condition() {
-        if Date() > deadline {
-            XCTFail("Timed out waiting for \(description)")
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil(description, timeout: timeout) {
+        condition()
     }
 }
 
@@ -3184,13 +3026,8 @@ private func waitForAsyncCondition(
     timeout: TimeInterval = 1,
     condition: @escaping @MainActor () async -> Bool
 ) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !(await condition()) {
-        if Date() > deadline {
-            XCTFail("Timed out waiting for \(description)")
-            return
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    try await waitUntil(description, timeout: timeout) {
+        await condition()
     }
 }
 
@@ -3438,42 +3275,6 @@ private func installSelection(
     }
 
     return file
-}
-
-private func makeComparisonSnapshot(
-    rootPath: String,
-    fileSize: Int64,
-    startedAt: Date = Date(timeIntervalSince1970: 1),
-    finishedAt: Date? = Date(timeIntervalSince1970: 2),
-    sourceURL: URL? = nil,
-    scanOptions: ScanOptions? = nil,
-    targetKind: ScanTargetKind = .folder
-) -> ScanSnapshot {
-    let file = makeTestFileNode(id: "\(rootPath)/shared.bin", name: "shared.bin", size: fileSize)
-    let root = makeTestDirectoryNode(id: rootPath, name: URL(filePath: rootPath).lastPathComponent, children: [file])
-    let store = FileTreeStore(root: root, childrenByID: [root.id: [file]])
-    let source: ScanSnapshotSource
-    if let sourceURL {
-        source = .imported(ImportedSnapshotContext(
-            sourceURL: sourceURL,
-            pathMode: .absolute,
-            liveActionCapability: .pathValidation
-        ))
-    } else {
-        source = .live
-    }
-
-    return ScanSnapshot(
-        target: ScanTarget(id: root.id, url: root.url, displayName: root.name, kind: targetKind),
-        treeStore: store,
-        startedAt: startedAt,
-        finishedAt: finishedAt,
-        scanWarnings: [],
-        aggregateStats: store.aggregateStats,
-        isComplete: true,
-        scanOptions: scanOptions,
-        source: source
-    )
 }
 
 private func makeArchiveImportResult(
