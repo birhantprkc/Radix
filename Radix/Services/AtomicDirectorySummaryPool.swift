@@ -3,6 +3,7 @@
 //  Radix
 //
 
+import Dispatch
 import Foundation
 
 nonisolated private struct AtomicSummaryGenerationInvalidated: Error {}
@@ -65,6 +66,16 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
     }
 
     private let lock = NSLock()
+    /// Worker progress must not call into `AsyncThrowingStream` while holding
+    /// `lock`. Stream cancellation can synchronously enter the pool's task
+    /// cancellation handler while Swift holds its task-status lock, creating a
+    /// lock cycle with workers that are publishing progress. A serial queue
+    /// preserves publication order without extending the coordinator lock
+    /// across `yield`.
+    private let emissionQueue = DispatchQueue(
+        label: "com.colinkim.Radix.AtomicSummaryProgress",
+        qos: .userInitiated
+    )
     private let emissionInterval: TimeInterval
     private let now: @Sendable () -> Date
     private var baseMetrics = ScanMetrics()
@@ -100,9 +111,10 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         self.continuation = continuation
         let snapshot = makeSnapshotLocked(currentPath: currentPath)
         let event = progressEventIfDueLocked(snapshot: snapshot, force: force)
+        let enqueuedEmission = enqueueLocked(event, continuation: continuation)
         lock.unlock()
-        if let event {
-            continuation.yield(.progress(event))
+        if enqueuedEmission {
+            flushEmissions()
         }
     }
 
@@ -112,8 +124,11 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
     ) {
         lock.lock()
         self.continuation = continuation
-        emitIfDueLocked(currentPath: currentPath, force: false)
+        let enqueuedEmission = emitIfDueLocked(currentPath: currentPath, force: false)
         lock.unlock()
+        if enqueuedEmission {
+            flushEmissions()
+        }
     }
 
     func register(
@@ -178,7 +193,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         )
         job.latestVisitedPath = currentPath
         jobs[jobID] = job
-        emitIfDueLocked(currentPath: currentPath, force: false)
+        _ = emitIfDueLocked(currentPath: currentPath, force: false)
         lock.unlock()
     }
 
@@ -202,7 +217,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
             max(discoveredWorkItems, 0)
         )
         jobs[jobID] = job
-        emitIfDueLocked(currentPath: job.latestVisitedPath ?? currentPath, force: false)
+        _ = emitIfDueLocked(currentPath: job.latestVisitedPath ?? currentPath, force: false)
         lock.unlock()
     }
 
@@ -224,7 +239,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         job.visitedByActiveLease.removeAll()
         job.latestVisitedPath = nil
         jobs[jobID] = job
-        emitIfDueLocked(currentPath: currentPath, force: false)
+        _ = emitIfDueLocked(currentPath: currentPath, force: false)
         lock.unlock()
     }
 
@@ -238,7 +253,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         job.visitedByActiveLease.removeAll()
         job.fraction = 1
         jobs[jobID] = job
-        emitIfDueLocked(currentPath: currentPath, force: true)
+        _ = emitIfDueLocked(currentPath: currentPath, force: true)
         jobs.removeValue(forKey: jobID)
         lock.unlock()
         return job.visitedItems
@@ -247,20 +262,33 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
     func cancel(jobID: Int, currentPath: String?) {
         lock.lock()
         jobs.removeValue(forKey: jobID)
-        emitIfDueLocked(currentPath: currentPath, force: false)
+        _ = emitIfDueLocked(currentPath: currentPath, force: false)
         lock.unlock()
     }
 
-    private func emitIfDueLocked(currentPath: String?, force: Bool) {
+    func flushEmissions() {
+        emissionQueue.sync {}
+    }
+
+    @discardableResult
+    private func emitIfDueLocked(currentPath: String?, force: Bool) -> Bool {
         let snapshot = makeSnapshotLocked(currentPath: currentPath)
         guard let event = progressEventIfDueLocked(snapshot: snapshot, force: force),
               let continuation else {
-            return
+            return false
         }
-        // AsyncThrowingStream continuations are thread-safe. Yielding while the
-        // coordinator lock is held preserves event ordering and cannot call back
-        // into the scanner synchronously.
-        continuation.yield(.progress(event))
+        return enqueueLocked(event, continuation: continuation)
+    }
+
+    private func enqueueLocked(
+        _ event: ScanMetrics?,
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+    ) -> Bool {
+        guard let event else { return false }
+        emissionQueue.async {
+            _ = continuation.yield(.progress(event))
+        }
+        return true
     }
 
     private func progressEventIfDueLocked(
@@ -527,6 +555,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
+        progressCoordinator.flushEmissions()
         notifyShutdownOnce()
     }
 
@@ -536,6 +565,7 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
         for task in tasks {
             await task.value
         }
+        progressCoordinator.flushEmissions()
         notifyShutdownOnce()
     }
 
