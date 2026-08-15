@@ -211,7 +211,7 @@ final class ScanBenchmarkTests: XCTestCase {
 
         let elapsed = startedAt.duration(to: .now)
         let snapshot = try XCTUnwrap(finalSnapshot)
-        let elapsedSeconds = Double(elapsed.components.seconds) + (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        let elapsedSeconds = BenchmarkSupport.durationSeconds(elapsed)
         #if DEBUG
         let profile = autoSummaryProfile?.snapshot()
         let autoSummaryProfileOutput = """
@@ -405,16 +405,16 @@ final class ScanBenchmarkTests: XCTestCase {
             size: CGSize(width: 1_200, height: 800)
         )
         let finishedAt = ContinuousClock.now
-        let filterElapsedSeconds = Self.durationSeconds(
+        let filterElapsedSeconds = BenchmarkSupport.durationSeconds(
             startedAt.duration(to: filterFinishedAt)
         )
-        let sunburstElapsedSeconds = Self.durationSeconds(
+        let sunburstElapsedSeconds = BenchmarkSupport.durationSeconds(
             filterFinishedAt.duration(to: sunburstFinishedAt)
         )
-        let treemapElapsedSeconds = Self.durationSeconds(
+        let treemapElapsedSeconds = BenchmarkSupport.durationSeconds(
             sunburstFinishedAt.duration(to: finishedAt)
         )
-        let endToEndElapsedSeconds = Self.durationSeconds(startedAt.duration(to: finishedAt))
+        let endToEndElapsedSeconds = BenchmarkSupport.durationSeconds(startedAt.duration(to: finishedAt))
 
         let removedNodeCount = removesDirectory ? filesPerDirectory + 1 : 1
         let removedFileCount = removesDirectory ? filesPerDirectory : 1
@@ -511,10 +511,10 @@ final class ScanBenchmarkTests: XCTestCase {
             XCTAssertNil(replacementInput.treeStore.node(id: replacementRemovalID))
 
             if iteration > 0 {
-                filterDurations.append(Self.durationSeconds(
+                filterDurations.append(BenchmarkSupport.durationSeconds(
                     replacementStartedAt.duration(to: replacementFilterFinishedAt)
                 ))
-                endToEndDurations.append(Self.durationSeconds(
+                endToEndDurations.append(BenchmarkSupport.durationSeconds(
                     replacementStartedAt.duration(to: replacementFinishedAt)
                 ))
             }
@@ -1385,12 +1385,7 @@ final class ScanBenchmarkTests: XCTestCase {
     }
 
     private static func elapsedSeconds(since start: ContinuousClock.Instant) -> Double {
-        durationSeconds(start.duration(to: .now))
-    }
-
-    private static func durationSeconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds) +
-            Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
+        BenchmarkSupport.durationSeconds(start.duration(to: .now))
     }
 
     private static func resultFingerprint(_ store: FileTreeStore) -> String {
@@ -1887,8 +1882,7 @@ final class ScanBenchmarkTests: XCTestCase {
 
         XCTAssertEqual(summary?.descendantFileCount, expectedFileCount)
         let elapsed = startedAt.duration(to: .now)
-        return Double(elapsed.components.seconds) +
-            Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
+        return BenchmarkSupport.durationSeconds(elapsed)
     }
 
     private func makeWideBenchmarkDirectory(fileCount: Int) throws -> URL {
@@ -2030,8 +2024,7 @@ final class ScanBenchmarkTests: XCTestCase {
         }
 
         let elapsed = startedAt.duration(to: .now)
-        let elapsedSeconds = Double(elapsed.components.seconds) +
-            (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        let elapsedSeconds = BenchmarkSupport.durationSeconds(elapsed)
         let snapshot = try XCTUnwrap(finalSnapshot)
         XCTAssertEqual(snapshot.aggregateStats.fileCount, fileCount)
         XCTAssertEqual(snapshot.root.descendantFileCount, fileCount)
@@ -2118,8 +2111,7 @@ final class ScanBenchmarkTests: XCTestCase {
         }
 
         let elapsed = startedAt.duration(to: .now)
-        let elapsedSeconds = Double(elapsed.components.seconds) +
-            (Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000)
+        let elapsedSeconds = BenchmarkSupport.durationSeconds(elapsed)
         let snapshot = try XCTUnwrap(finalSnapshot)
         let packageNodes = snapshot.treeStore.children(of: snapshot.root.id).filter(\.isPackage)
         XCTAssertEqual(snapshot.aggregateStats.fileCount, fileCount)

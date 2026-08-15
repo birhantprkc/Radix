@@ -1,5 +1,4 @@
 import CryptoKit
-import Darwin
 import XCTest
 @testable import RadixCore
 
@@ -198,7 +197,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             imported.value.manifest.snapshot.nodeCount
         )
         let phaseSummary = importPhases.measurements().map { phase, duration in
-            "\(phase.rawValue)=\(Self.secondsString(Self.seconds(duration)))"
+            "\(phase.rawValue)=\(Self.secondsString(BenchmarkSupport.durationSeconds(duration)))"
         }.joined(separator: " ")
         print(
             """
@@ -273,7 +272,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             """
         )
         let phaseSummary = comparisonPhases.measurements().map { phase, duration in
-            "\(phase.rawValue)=\(Self.secondsString(Self.seconds(duration)))"
+            "\(phase.rawValue)=\(Self.secondsString(BenchmarkSupport.durationSeconds(duration)))"
         }.joined(separator: " ")
         print("RADIX_COMPARISON_PROFILE_RESULT \(phaseSummary)")
     }
@@ -334,52 +333,11 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         }
     }
 
-    private final class MemorySampler: @unchecked Sendable {
-        private let lock = NSLock()
-        private var peakRSS: UInt64
-
-        init(initialRSS: UInt64) {
-            self.peakRSS = initialRSS
-        }
-
-        func sample() {
-            let currentRSS = Self.currentResidentMemoryBytes()
-            lock.lock()
-            if currentRSS > peakRSS {
-                peakRSS = currentRSS
-            }
-            lock.unlock()
-        }
-
-        func peak() -> UInt64 {
-            lock.lock()
-            defer { lock.unlock() }
-            return peakRSS
-        }
-
-        static func currentResidentMemoryBytes() -> UInt64 {
-            var info = mach_task_basic_info()
-            var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
-            let result = withUnsafeMutablePointer(to: &info) { infoPointer in
-                infoPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundInfo in
-                    task_info(
-                        mach_task_self_,
-                        task_flavor_t(MACH_TASK_BASIC_INFO),
-                        reboundInfo,
-                        &count
-                    )
-                }
-            }
-            guard result == KERN_SUCCESS else { return 0 }
-            return UInt64(info.resident_size)
-        }
-    }
-
     private static func measureMemoryAndTime<Value>(
         _ operation: @escaping () async throws -> Value
     ) async rethrows -> Measurement<Value> {
-        let startRSS = MemorySampler.currentResidentMemoryBytes()
-        let sampler = MemorySampler(initialRSS: startRSS)
+        let startRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
+        let sampler = BenchmarkMemorySampler(initialRSS: startRSS)
         let samplerTask = Task {
             while !Task.isCancelled {
                 sampler.sample()
@@ -392,10 +350,10 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         samplerTask.cancel()
         _ = await samplerTask.result
         sampler.sample()
-        let endRSS = MemorySampler.currentResidentMemoryBytes()
+        let endRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
         return Measurement(
             value: value,
-            elapsedSeconds: Self.seconds(elapsed),
+            elapsedSeconds: BenchmarkSupport.durationSeconds(elapsed),
             startRSS: startRSS,
             endRSS: endRSS,
             peakRSS: max(sampler.peak(), endRSS)
@@ -405,8 +363,8 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
     private static func measureMemoryAndTime<Value>(
         _ operation: @escaping () async -> Value
     ) async -> Measurement<Value> {
-        let startRSS = MemorySampler.currentResidentMemoryBytes()
-        let sampler = MemorySampler(initialRSS: startRSS)
+        let startRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
+        let sampler = BenchmarkMemorySampler(initialRSS: startRSS)
         let samplerTask = Task {
             while !Task.isCancelled {
                 sampler.sample()
@@ -419,10 +377,10 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         samplerTask.cancel()
         _ = await samplerTask.result
         sampler.sample()
-        let endRSS = MemorySampler.currentResidentMemoryBytes()
+        let endRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
         return Measurement(
             value: value,
-            elapsedSeconds: Self.seconds(elapsed),
+            elapsedSeconds: BenchmarkSupport.durationSeconds(elapsed),
             startRSS: startRSS,
             endRSS: endRSS,
             peakRSS: max(sampler.peak(), endRSS)
@@ -984,12 +942,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         value.flatMap(Int.init).map { max(1, $0) } ?? defaultValue
     }
 
-    private static func seconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds) +
-            (Double(duration.components.attoseconds) / 1_000_000_000_000_000_000)
-    }
-
     private static func secondsString(_ seconds: Double) -> String {
-        String(format: "%.6f", seconds)
+        BenchmarkSupport.format(seconds)
     }
 }

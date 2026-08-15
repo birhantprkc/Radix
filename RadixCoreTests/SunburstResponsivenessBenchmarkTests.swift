@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import RadixCore
 
-private typealias BenchmarkSupport = ChartResponsivenessBenchmarkSupport
+private typealias ChartBenchmarkSupport = ChartResponsivenessBenchmarkSupport
 
 @MainActor
 final class SunburstResponsivenessBenchmarkTests: XCTestCase {
@@ -120,7 +120,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         let publicationModel = SunburstChartModel(
             layoutService: PrecomputedSunburstLayoutService(segments: interactionSegments)
         )
-        let publicationMeasurement = await BenchmarkSupport.measureAsync {
+        let publicationMeasurement = await ChartBenchmarkSupport.measureAsync {
             await publicationModel.loadLayout(
                 treeStore: interactionDiskMapStore,
                 rootID: interactionFixture.store.rootID,
@@ -405,7 +405,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         iterationCount: Int
     ) -> InteractionMeasurement {
         var state = UInt64(0x9e3779b97f4a7c15)
-        var fingerprint = BenchmarkSupport.fnvOffsetBasis
+        var fingerprint = ChartBenchmarkSupport.fnvOffsetBasis
         var hitCount = 0
 
         for _ in 0..<iterationCount {
@@ -419,9 +419,9 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
             )
             if let segment = model.segment(at: point, in: size) {
                 hitCount += 1
-                BenchmarkSupport.hash(segment.id, into: &fingerprint)
+                ChartBenchmarkSupport.hash(segment.id, into: &fingerprint)
             } else {
-                BenchmarkSupport.hash(UInt64.max, into: &fingerprint)
+                ChartBenchmarkSupport.hash(UInt64.max, into: &fingerprint)
             }
         }
         return InteractionMeasurement(
@@ -435,7 +435,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         inputs: [OverlayInput],
         iterationCount: Int
     ) -> InteractionMeasurement {
-        var fingerprint = BenchmarkSupport.fnvOffsetBasis
+        var fingerprint = ChartBenchmarkSupport.fnvOffsetBasis
         var segmentCount = 0
 
         for offset in 0..<iterationCount {
@@ -446,12 +446,12 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
             )
             segmentCount += overlays.count
             for overlay in overlays {
-                BenchmarkSupport.hash(overlay.id, into: &fingerprint)
+                ChartBenchmarkSupport.hash(overlay.id, into: &fingerprint)
                 switch overlay.role {
                 case .ancestor:
-                    BenchmarkSupport.hash(0, into: &fingerprint)
+                    ChartBenchmarkSupport.hash(0, into: &fingerprint)
                 case .selected:
-                    BenchmarkSupport.hash(1, into: &fingerprint)
+                    ChartBenchmarkSupport.hash(1, into: &fingerprint)
                 }
             }
         }
@@ -468,7 +468,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         let directions: [ChartSpatialSelectionDirection] = [.right, .down, .left, .up]
         var selectedNodeID: String?
         var selectionCount = 0
-        var fingerprint = BenchmarkSupport.fnvOffsetBasis
+        var fingerprint = ChartBenchmarkSupport.fnvOffsetBasis
 
         for offset in 0..<iterationCount {
             let segment = model.keyboardSelection(
@@ -478,9 +478,9 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
             selectedNodeID = segment?.nodeID
             if let selectedNodeID {
                 selectionCount += 1
-                BenchmarkSupport.hash(selectedNodeID, into: &fingerprint)
+                ChartBenchmarkSupport.hash(selectedNodeID, into: &fingerprint)
             } else {
-                BenchmarkSupport.hash(UInt64.max, into: &fingerprint)
+                ChartBenchmarkSupport.hash(UInt64.max, into: &fingerprint)
             }
         }
         return InteractionMeasurement(
@@ -497,14 +497,14 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         let rootID = "/sunburst-benchmark"
         let denseDirectoryID = rootID + "/dense"
         var nodes = [
-            BenchmarkSupport.node(
+            ChartBenchmarkSupport.node(
                 id: rootID,
                 name: "sunburst-benchmark",
                 isDirectory: true,
                 allocatedSize: Int64(fileCount),
                 descendantFileCount: fileCount
             ),
-            BenchmarkSupport.node(
+            ChartBenchmarkSupport.node(
                 id: denseDirectoryID,
                 name: "dense",
                 isDirectory: true,
@@ -528,7 +528,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         for fileOffset in 0..<fileCount {
             let fileID = String(format: "%@/item-%07d.dat", denseDirectoryID, fileOffset)
             let fileIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-            nodes.append(BenchmarkSupport.node(
+            nodes.append(ChartBenchmarkSupport.node(
                 id: fileID,
                 name: String(format: "item-%07d.dat", fileOffset),
                 isDirectory: false,
@@ -571,7 +571,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
         let rootID = "/sunburst-interaction"
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
         let nodeCount = 1 + (branchCount * renderedDepth)
-        var nodes = [BenchmarkSupport.node(
+        var nodes = [ChartBenchmarkSupport.node(
             id: rootID,
             name: "sunburst-interaction",
             isDirectory: true,
@@ -598,7 +598,7 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
                     depth: depth
                 )
                 let index = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
-                nodes.append(BenchmarkSupport.node(
+                nodes.append(ChartBenchmarkSupport.node(
                     id: id,
                     name: depth == 0
                         ? String(format: "branch-%03d", branchOffset)
@@ -670,32 +670,32 @@ final class SunburstResponsivenessBenchmarkTests: XCTestCase {
     }
 
     private static func segmentFingerprint(_ segments: [SunburstSegment]) -> String {
-        var hash = BenchmarkSupport.fnvOffsetBasis
+        var hash = ChartBenchmarkSupport.fnvOffsetBasis
         for segment in segments {
-            BenchmarkSupport.hash(segment.id, into: &hash)
-            BenchmarkSupport.hash(segment.nodeID ?? "<aggregate>", into: &hash)
-            BenchmarkSupport.hash(segment.label, into: &hash)
-            BenchmarkSupport.hash(segment.startAngle.radians.bitPattern, into: &hash)
-            BenchmarkSupport.hash(segment.endAngle.radians.bitPattern, into: &hash)
-            BenchmarkSupport.hash(Double(segment.innerRadius).bitPattern, into: &hash)
-            BenchmarkSupport.hash(Double(segment.outerRadius).bitPattern, into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.depth)), into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: segment.totalSize), into: &hash)
-            BenchmarkSupport.hash(UInt64(segment.isAggregate ? 1 : 0), into: &hash)
-            BenchmarkSupport.hash(segment.colorToken.branchID, into: &hash)
-            BenchmarkSupport.hash(segment.colorToken.localID, into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.branchIndex)), into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.branchCount)), into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingIndex)), into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingCount)), into: &hash)
-            BenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.depth)), into: &hash)
+            ChartBenchmarkSupport.hash(segment.id, into: &hash)
+            ChartBenchmarkSupport.hash(segment.nodeID ?? "<aggregate>", into: &hash)
+            ChartBenchmarkSupport.hash(segment.label, into: &hash)
+            ChartBenchmarkSupport.hash(segment.startAngle.radians.bitPattern, into: &hash)
+            ChartBenchmarkSupport.hash(segment.endAngle.radians.bitPattern, into: &hash)
+            ChartBenchmarkSupport.hash(Double(segment.innerRadius).bitPattern, into: &hash)
+            ChartBenchmarkSupport.hash(Double(segment.outerRadius).bitPattern, into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.depth)), into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: segment.totalSize), into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(segment.isAggregate ? 1 : 0), into: &hash)
+            ChartBenchmarkSupport.hash(segment.colorToken.branchID, into: &hash)
+            ChartBenchmarkSupport.hash(segment.colorToken.localID, into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.branchIndex)), into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.branchCount)), into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingIndex)), into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.siblingCount)), into: &hash)
+            ChartBenchmarkSupport.hash(UInt64(bitPattern: Int64(segment.colorToken.depth)), into: &hash)
             switch segment.colorToken.role {
             case .normal:
-                BenchmarkSupport.hash(0, into: &hash)
+                ChartBenchmarkSupport.hash(0, into: &hash)
             case .aggregate:
-                BenchmarkSupport.hash(1, into: &hash)
+                ChartBenchmarkSupport.hash(1, into: &hash)
             case .freeSpace:
-                BenchmarkSupport.hash(2, into: &hash)
+                ChartBenchmarkSupport.hash(2, into: &hash)
             }
         }
         return String(hash, radix: 16)

@@ -180,8 +180,8 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
         targetURL: URL,
         options: ScanOptions
     ) async throws -> CompletionMeasurement {
-        let startRSS = MemorySampler.currentResidentMemoryBytes()
-        let sampler = MemorySampler(initialRSS: startRSS)
+        let startRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
+        let sampler = BenchmarkMemorySampler(initialRSS: startRSS)
         let samplerTask = Task {
             while !Task.isCancelled {
                 sampler.sample()
@@ -214,12 +214,12 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
             }
         }
 
-        let wallSeconds = durationSeconds(startedAt.duration(to: .now))
+        let wallSeconds = BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
         let cpuAtEnd = ProcessCPUTime.current()
         samplerTask.cancel()
         _ = await samplerTask.result
         sampler.sample()
-        let currentRSS = MemorySampler.currentResidentMemoryBytes()
+        let currentRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
         let snapshot = try XCTUnwrap(finalSnapshot)
         let representation = representationStats(snapshot.treeStore)
         let ordinaryDiscoveredItems = max(finalMetrics.discoveredItems, 0)
@@ -318,7 +318,7 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(1))
         }
         let outcome = await observation.outcome()
-        let latencySeconds = durationSeconds(cancellationStartedAt.duration(to: clock.now))
+        let latencySeconds = BenchmarkSupport.durationSeconds(cancellationStartedAt.duration(to: clock.now))
 
         return CancellationMeasurement(
             delayMilliseconds: delayMilliseconds,
@@ -370,10 +370,6 @@ final class FullDiskScanScalingBenchmarkTests: XCTestCase {
         )
     }
 
-    private static func durationSeconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds)
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
-    }
 }
 
 private enum BenchmarkSafetyPolicy {
@@ -573,47 +569,6 @@ private struct ProcessCPUTime {
 
     private static func seconds(_ value: timeval) -> Double {
         Double(value.tv_sec) + Double(value.tv_usec) / 1_000_000
-    }
-}
-
-private final class MemorySampler: @unchecked Sendable {
-    private let lock = NSLock()
-    private var peakRSS: UInt64
-
-    init(initialRSS: UInt64) {
-        peakRSS = initialRSS
-    }
-
-    func sample() {
-        let currentRSS = Self.currentResidentMemoryBytes()
-        lock.lock()
-        peakRSS = max(peakRSS, currentRSS)
-        lock.unlock()
-    }
-
-    func peak() -> UInt64 {
-        lock.lock()
-        defer { lock.unlock() }
-        return peakRSS
-    }
-
-    static func currentResidentMemoryBytes() -> UInt64 {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(
-            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
-        )
-        let result = withUnsafeMutablePointer(to: &info) { infoPointer in
-            infoPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundInfo in
-                task_info(
-                    mach_task_self_,
-                    task_flavor_t(MACH_TASK_BASIC_INFO),
-                    reboundInfo,
-                    &count
-                )
-            }
-        }
-        guard result == KERN_SUCCESS else { return 0 }
-        return UInt64(info.resident_size)
     }
 }
 

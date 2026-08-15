@@ -80,7 +80,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             .dropFirst()
             .sink { metrics in
                 samples.append(Sample(
-                    elapsed: Self.seconds(start.duration(to: clock.now)),
+                    elapsed: BenchmarkSupport.durationSeconds(start.duration(to: clock.now)),
                     metrics: metrics
                 ))
             }
@@ -101,7 +101,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
 
-        let total = Self.seconds(start.duration(to: clock.now))
+        let total = BenchmarkSupport.durationSeconds(start.duration(to: clock.now))
         progressObservation.cancel()
         let snapshot = try XCTUnwrap(
             coordinator.snapshot,
@@ -145,22 +145,22 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         print(
             """
             RADIX_PROGRESS_ACCURACY_RESULT path=\(targetURL.path)
-            total_seconds=\(Self.format(total))
+            total_seconds=\(BenchmarkSupport.format(total))
             displayed_samples=\(samples.count)
-            time_weighted_mae=\(Self.format(summary.timeWeightedMAE))
-            time_weighted_rmse=\(Self.format(summary.timeWeightedRMSE))
-            signed_bias=\(Self.format(summary.signedBias))
-            max_lead=\(Self.format(summary.maximumLead))
-            max_lag=\(Self.format(summary.maximumLag))
-            milestone_25=\(Self.format(summary.milestone(0.25)))
-            milestone_50=\(Self.format(summary.milestone(0.50)))
-            milestone_75=\(Self.format(summary.milestone(0.75)))
-            milestone_90=\(Self.format(summary.milestone(0.90)))
-            milestone_95=\(Self.format(summary.milestone(0.95)))
-            longest_integer_stall_share=\(Self.format(summary.longestIntegerStallShare))
-            longest_update_gap_share=\(Self.format(summary.longestUpdateGapShare))
-            completion_jump=\(Self.format(summary.completionJump))
-            finalization_elapsed_share=\(Self.format(summary.finalizationElapsedShare))
+            time_weighted_mae=\(BenchmarkSupport.format(summary.timeWeightedMAE))
+            time_weighted_rmse=\(BenchmarkSupport.format(summary.timeWeightedRMSE))
+            signed_bias=\(BenchmarkSupport.format(summary.signedBias))
+            max_lead=\(BenchmarkSupport.format(summary.maximumLead))
+            max_lag=\(BenchmarkSupport.format(summary.maximumLag))
+            milestone_25=\(BenchmarkSupport.format(summary.milestone(0.25)))
+            milestone_50=\(BenchmarkSupport.format(summary.milestone(0.50)))
+            milestone_75=\(BenchmarkSupport.format(summary.milestone(0.75)))
+            milestone_90=\(BenchmarkSupport.format(summary.milestone(0.90)))
+            milestone_95=\(BenchmarkSupport.format(summary.milestone(0.95)))
+            longest_integer_stall_share=\(BenchmarkSupport.format(summary.longestIntegerStallShare))
+            longest_update_gap_share=\(BenchmarkSupport.format(summary.longestUpdateGapShare))
+            completion_jump=\(BenchmarkSupport.format(summary.completionJump))
+            finalization_elapsed_share=\(BenchmarkSupport.format(summary.finalizationElapsedShare))
             monotonic_violations=\(summary.monotonicViolations)
             bounds_violations=\(summary.boundsViolations)
             files=\(snapshot.aggregateStats.fileCount)
@@ -320,7 +320,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         let outcome = await observation.terminationOutcome()
         let poolShutdown = workerActivity.hasShutdown
         let workersQuiescent = workerActivity.isQuiescent
-        let shutdownLatency = Self.seconds(cancellationStart.duration(to: clock.now))
+        let shutdownLatency = BenchmarkSupport.durationSeconds(cancellationStart.duration(to: clock.now))
 
         XCTAssertTrue(progressObserved, "Cancellation probe never observed active scan work.")
         XCTAssertTrue(workerActiveAtCancellation, "Cancellation probe did not cancel active summary work.")
@@ -332,7 +332,7 @@ final class ProgressAccuracyProbeTests: XCTestCase {
         print(
             "RADIX_PROGRESS_CANCELLATION_RESULT path=\(targetURL.path) "
                 + "cancel_after_ms=\(cancellationDelayMilliseconds) "
-                + "shutdown_latency_seconds=\(Self.format(shutdownLatency)) "
+                + "shutdown_latency_seconds=\(BenchmarkSupport.format(shutdownLatency)) "
                 + "progress_observed=\(progressObserved) "
                 + "worker_active=\(workerActiveAtCancellation) "
                 + "pool_shutdown=\(poolShutdown) "
@@ -499,15 +499,6 @@ final class ProgressAccuracyProbeTests: XCTestCase {
             let endError = end - heldFraction
             return (endError * endError * endError - startError * startError * startError) / 3
         }
-    }
-
-    private static func seconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds)
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
-    }
-
-    private static func format(_ value: Double) -> String {
-        String(format: "%.6f", value)
     }
 
 }
