@@ -8988,6 +8988,47 @@
         }
       }
     },
+    "May share APFS storage" : {
+      "comment" : "Secondary status for a file that may still share some APFS data blocks with another file.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS-Speicher möglicherweise geteilt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "May share APFS storage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puede compartir almacenamiento APFS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peut partager du stockage APFS"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Potrebbe condividere spazio APFS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可能共享 APFS 存储空间"
+          }
+        }
+      }
+    },
     "Metadata" : {
       "localizations" : {
         "de" : {
@@ -15045,6 +15086,47 @@
         }
       }
     },
+    "Shared APFS storage" : {
+      "comment" : "Secondary status for a full APFS clone whose data storage is shared with another file.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geteilter APFS-Speicher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Shared APFS storage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almacenamiento APFS compartido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stockage APFS partagé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spazio APFS condiviso"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享的 APFS 存储空间"
+          }
+        }
+      }
+    },
     "Show" : {
       "localizations" : {
         "de" : {
@@ -15666,6 +15748,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "大小值"
+          }
+        }
+      }
+    },
+    "Sizes show attributed allocated storage, not guaranteed space reclaimed." : {
+      "comment" : "Discard Pile note clarifying that displayed allocated sizes are not a promise of how much space deleting the items will reclaim.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Größen zeigen zugeordneten belegten Speicher, nicht den garantiert freigegebenen Speicherplatz."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sizes show attributed allocated storage, not guaranteed space reclaimed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los tamaños muestran el almacenamiento asignado atribuido, no el espacio que se recuperará con certeza."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les tailles indiquent le stockage alloué attribué, pas l’espace dont la récupération est garantie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le dimensioni mostrano lo spazio allocato attribuito, non lo spazio che verrà sicuramente recuperato."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大小显示归属的已分配存储空间，而不是删除后保证释放的空间。"
           }
         }
       }

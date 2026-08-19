@@ -22,6 +22,7 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
     let fileIdentity: FileIdentity?
     let linkCount: UInt64
     let cloneIdentity: CloneIdentity?
+    let mayShareDataBlocks: Bool
     let isPackage: Bool
     let isAccessible: Bool
     let isSelfAccessible: Bool
@@ -43,6 +44,7 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
         fileIdentity: FileIdentity? = nil,
         linkCount: UInt64 = 1,
         cloneIdentity: CloneIdentity? = nil,
+        mayShareDataBlocks: Bool = false,
         isPackage: Bool,
         isAccessible: Bool,
         isSelfAccessible: Bool,
@@ -66,6 +68,7 @@ nonisolated struct FileNodeRecord: Equatable, Identifiable, Sendable {
         self.fileIdentity = fileIdentity
         self.linkCount = linkCount
         self.cloneIdentity = cloneIdentity
+        self.mayShareDataBlocks = mayShareDataBlocks
         self.isPackage = isPackage
         self.isAccessible = isAccessible
         self.isSelfAccessible = isSelfAccessible
@@ -173,6 +176,7 @@ extension FileNodeRecord {
             fileIdentity: fileIdentity,
             linkCount: linkCount,
             cloneIdentity: cloneIdentity,
+            mayShareDataBlocks: mayShareDataBlocks,
             isPackage: isPackage,
             isAccessible: isAccessible,
             isSelfAccessible: isSelfAccessible,
@@ -203,6 +207,12 @@ extension FileNodeRecord {
         }
         if !isAccessible {
             return String(localized: "Limited access", comment: "Secondary status for a file or folder that could not be fully read.")
+        }
+        if cloneIdentity != nil {
+            return String(localized: "Shared APFS storage", comment: "Secondary status for a full APFS clone whose data storage is shared with another file.")
+        }
+        if mayShareDataBlocks {
+            return String(localized: "May share APFS storage", comment: "Secondary status for a file that may still share some APFS data blocks with another file.")
         }
         return nil
     }

@@ -179,6 +179,7 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
             XCTAssertEqual(nativeMetadata.fileIdentity, pathMetadata.fileIdentity, name)
             XCTAssertEqual(nativeMetadata.linkCount, pathMetadata.linkCount, name)
             XCTAssertEqual(nativeMetadata.cloneIdentity, pathMetadata.cloneIdentity, name)
+            XCTAssertEqual(nativeMetadata.mayShareDataBlocks, pathMetadata.mayShareDataBlocks, name)
         }
     }
 

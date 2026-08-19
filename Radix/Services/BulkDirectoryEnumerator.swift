@@ -469,6 +469,10 @@ nonisolated enum BulkDirectoryEnumerator {
     }
 
     private static var requestedExtendedCommonAttributes: attrgroup_t {
+        requiredCloneMappingAttributes | attrgroup_t(ATTR_CMNEXT_EXT_FLAGS)
+    }
+
+    private static var requiredCloneMappingAttributes: attrgroup_t {
         attrgroup_t(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
     }
 
@@ -497,6 +501,7 @@ nonisolated enum BulkDirectoryEnumerator {
         let inode: UInt64
         let linkCount: UInt64
         let cloneID: UInt64?
+        let mayShareDataBlocks: Bool
     }
 
     private struct ParsedEntry {
@@ -649,6 +654,7 @@ nonisolated enum BulkDirectoryEnumerator {
         }
 
         guard let cloneID: UInt64 = cursor.read(),
+              let extendedFlags: UInt64 = cursor.read(),
               let cloneReferenceCount: UInt32 = cursor.read() else {
             return nil
         }
@@ -688,7 +694,7 @@ nonisolated enum BulkDirectoryEnumerator {
         let parsedCloneID: UInt64?
         if !isDirectory,
            !isSymbolicLink,
-           returned.forkattr & requestedExtendedCommonAttributes == requestedExtendedCommonAttributes,
+           returned.forkattr & requiredCloneMappingAttributes == requiredCloneMappingAttributes,
            cloneID > 0,
            cloneReferenceCount > 1 {
             parsedCloneID = cloneID
@@ -705,7 +711,10 @@ nonisolated enum BulkDirectoryEnumerator {
             device: UInt64(truncatingIfNeeded: deviceID),
             inode: fileID,
             linkCount: isDirectory ? 1 : max(UInt64(fileLinkCount), 1),
-            cloneID: parsedCloneID
+            cloneID: parsedCloneID,
+            mayShareDataBlocks: !isDirectory && !isSymbolicLink &&
+                returned.forkattr & attrgroup_t(ATTR_CMNEXT_EXT_FLAGS) != 0 &&
+                extendedFlags & UInt64(EF_MAY_SHARE_BLOCKS) != 0
         )
         return ParsedEntry(
             decodedName: name,
@@ -764,7 +773,8 @@ nonisolated enum BulkDirectoryEnumerator {
             linkCount: metadata.linkCount,
             cloneIdentity: metadata.cloneID.map {
                 CloneIdentity(device: metadata.device, cloneID: $0)
-            }
+            },
+            mayShareDataBlocks: metadata.mayShareDataBlocks
         )
         return DirectoryEntry(
             url: url,

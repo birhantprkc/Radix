@@ -123,6 +123,7 @@ final class ScanArchiveServiceTests: XCTestCase {
         )
         XCTAssertEqual(resourceNode.fileIdentity, FileIdentity(resourceIdentifier: Data([1, 2, 3, 4])))
         XCTAssertEqual(resourceNode.cloneIdentity, CloneIdentity(device: 10, cloneID: 30))
+        XCTAssertTrue(resourceNode.mayShareDataBlocks)
         XCTAssertEqual(resourceNode.dataAllocatedSize, 64)
         XCTAssertEqual(resourceNode.lastModified, Date(timeIntervalSince1970: 200))
 
@@ -1976,6 +1977,7 @@ final class ScanArchiveServiceTests: XCTestCase {
             fileIdentity: FileIdentity(resourceIdentifier: Data([1, 2, 3, 4])),
             linkCount: 1,
             cloneIdentity: CloneIdentity(device: 10, cloneID: 30),
+            mayShareDataBlocks: true,
             isPackage: false,
             isAccessible: true,
             isSelfAccessible: true,

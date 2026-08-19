@@ -2852,6 +2852,7 @@ actor ScanEngine {
             fileIdentity: metadata.fileIdentity,
             linkCount: metadata.linkCount,
             cloneIdentity: metadata.cloneIdentity,
+            mayShareDataBlocks: metadata.mayShareDataBlocks,
             isPackage: metadata.isPackage,
             isAccessible: metadata.isReadable,
             isSelfAccessible: metadata.isReadable,

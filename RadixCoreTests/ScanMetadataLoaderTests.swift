@@ -132,8 +132,8 @@ final class ScanMetadataLoaderTests: XCTestCase {
             }
         )
 
-        XCTAssertNil(cache.cloneIdentity(for: URL(filePath: "/Users/example/first.bin")))
-        XCTAssertNil(cache.cloneIdentity(for: URL(filePath: "/Volumes/External/second.bin")))
+        XCTAssertNil(cache.cloneMetadata(for: URL(filePath: "/Users/example/first.bin")).identity)
+        XCTAssertNil(cache.cloneMetadata(for: URL(filePath: "/Volumes/External/second.bin")).identity)
 
         XCTAssertEqual(counters.probeCount, 2)
     }
