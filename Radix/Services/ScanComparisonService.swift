@@ -1496,6 +1496,24 @@ nonisolated struct ScanComparisonService: Sendable {
         return node.isAutoSummarized || node.isPackage || !node.isAccessible
     }
 
+    private struct SharedAllocationReferences: Sendable {
+        var hardLinkIdentities = Set<FileIdentity>()
+        var cloneIdentities = Set<CloneIdentity>()
+        var cloneMemberFileIdentities = Set<FileIdentity>()
+        var cloneMemberPaths = Set<String>()
+
+        var isEmpty: Bool {
+            hardLinkIdentities.isEmpty && cloneIdentities.isEmpty
+        }
+
+        mutating func formUnion(_ other: Self) {
+            hardLinkIdentities.formUnion(other.hardLinkIdentities)
+            cloneIdentities.formUnion(other.cloneIdentities)
+            cloneMemberFileIdentities.formUnion(other.cloneMemberFileIdentities)
+            cloneMemberPaths.formUnion(other.cloneMemberPaths)
+        }
+    }
+
     private static func normalizedAllocatedSizes(
         before: ScanSnapshot,
         after: ScanSnapshot
@@ -1503,19 +1521,14 @@ nonisolated struct ScanComparisonService: Sendable {
         before: [String: Int64],
         after: [String: Int64]
     ) {
-        async let beforeIdentitiesTask = hardLinkIdentities(in: before.treeStore)
-        async let afterIdentitiesTask = hardLinkIdentities(in: after.treeStore)
-        let (beforeIdentities, afterIdentities) = await (
-            beforeIdentitiesTask,
-            afterIdentitiesTask
-        )
-        let identities = beforeIdentities.union(afterIdentities)
-        guard !identities.isEmpty else {
-            return ([:], [:])
-        }
+        async let beforeReferencesTask = sharedAllocationReferences(in: before)
+        async let afterReferencesTask = sharedAllocationReferences(in: after)
+        var references = await beforeReferencesTask
+        references.formUnion(await afterReferencesTask)
+        guard !references.isEmpty else { return ([:], [:]) }
 
-        async let beforeNodesTask = hardLinkNodes(in: before, identities: identities)
-        async let afterNodesTask = hardLinkNodes(in: after, identities: identities)
+        async let beforeNodesTask = sharedAllocationNodes(in: before, references: references)
+        async let afterNodesTask = sharedAllocationNodes(in: after, references: references)
         let (beforeNodes, afterNodes) = await (beforeNodesTask, afterNodesTask)
         return await normalizedAllocatedSizes(
             beforeNodes: beforeNodes,
@@ -1523,25 +1536,35 @@ nonisolated struct ScanComparisonService: Sendable {
         )
     }
 
-    private static func hardLinkIdentities(in treeStore: FileTreeStore) -> Set<FileIdentity> {
-        var identities = Set<FileIdentity>()
-        for nodeIndex in treeStore.indexedNodeIndices() {
-            guard let node = treeStore.node(at: nodeIndex),
+    private static func sharedAllocationReferences(
+        in snapshot: ScanSnapshot
+    ) -> SharedAllocationReferences {
+        var references = SharedAllocationReferences()
+        for nodeIndex in snapshot.treeStore.indexedNodeIndices() {
+            guard let node = snapshot.treeStore.node(at: nodeIndex),
                   !node.isDirectory,
                   !node.isSymbolicLink,
-                  !node.isSynthetic,
-                  node.linkCount > 1,
-                  let identity = node.fileIdentity else {
+                  !node.isSynthetic else {
                 continue
             }
-            identities.insert(identity)
+            if node.linkCount > 1, let identity = node.fileIdentity {
+                references.hardLinkIdentities.insert(identity)
+            }
+            if let cloneIdentity = node.cloneIdentity,
+               let path = relativePath(for: node.id, rootID: snapshot.treeStore.rootID) {
+                references.cloneIdentities.insert(cloneIdentity)
+                references.cloneMemberPaths.insert(path)
+                if let fileIdentity = node.fileIdentity {
+                    references.cloneMemberFileIdentities.insert(fileIdentity)
+                }
+            }
         }
-        return identities
+        return references
     }
 
-    private static func hardLinkNodes(
+    private static func sharedAllocationNodes(
         in snapshot: ScanSnapshot,
-        identities: Set<FileIdentity>
+        references: SharedAllocationReferences
     ) -> [String: FileNodeRecord] {
         var nodes: [String: FileNodeRecord] = [:]
         for nodeIndex in snapshot.treeStore.indexedNodeIndices() {
@@ -1549,12 +1572,25 @@ nonisolated struct ScanComparisonService: Sendable {
                   !node.isDirectory,
                   !node.isSymbolicLink,
                   !node.isSynthetic,
-                  let identity = node.fileIdentity,
-                  identities.contains(identity),
                   let relativePath = relativePath(
                     for: node.id,
                     rootID: snapshot.treeStore.rootID
                   ) else {
+                continue
+            }
+            let hasHardLinkIdentity = node.fileIdentity.map {
+                references.hardLinkIdentities.contains($0)
+            } ?? false
+            let hasCloneIdentity = node.cloneIdentity.map {
+                references.cloneIdentities.contains($0)
+            } ?? false
+            let hasCloneMemberIdentity = node.fileIdentity.map {
+                references.cloneMemberFileIdentities.contains($0)
+            } ?? false
+            guard hasHardLinkIdentity
+                    || hasCloneIdentity
+                    || hasCloneMemberIdentity
+                    || references.cloneMemberPaths.contains(relativePath) else {
                 continue
             }
             nodes[relativePath] = node
@@ -1580,24 +1616,19 @@ nonisolated struct ScanComparisonService: Sendable {
         before: [String: Int64],
         after: [String: Int64]
     ) {
-        async let beforeIdentitiesTask = hardLinkIdentities(in: beforeNodes)
-        async let afterIdentitiesTask = hardLinkIdentities(in: afterNodes)
-        let (beforeIdentities, afterIdentities) = await (
-            beforeIdentitiesTask,
-            afterIdentitiesTask
-        )
-        let identities = beforeIdentities.union(afterIdentities)
-        guard !identities.isEmpty else {
-            return ([:], [:])
-        }
+        async let beforeReferencesTask = sharedAllocationReferences(in: beforeNodes)
+        async let afterReferencesTask = sharedAllocationReferences(in: afterNodes)
+        var references = await beforeReferencesTask
+        references.formUnion(await afterReferencesTask)
+        guard !references.isEmpty else { return ([:], [:]) }
 
         async let beforeGroupsTask = hardLinkPathsByIdentity(
             in: beforeNodes,
-            identities: identities
+            identities: references.hardLinkIdentities
         )
         async let afterGroupsTask = hardLinkPathsByIdentity(
             in: afterNodes,
-            identities: identities
+            identities: references.hardLinkIdentities
         )
         let (beforeGroups, afterGroups) = await (beforeGroupsTask, afterGroupsTask)
         // Most scans contain few hard links compared with their total node count.
@@ -1605,13 +1636,17 @@ nonisolated struct ScanComparisonService: Sendable {
         // path and allocated-size value from both snapshots.
         var beforeSizes: [String: Int64] = [:]
         var afterSizes: [String: Int64] = [:]
+        var beforeHardLinkOwners: [FileIdentity: String] = [:]
+        var afterHardLinkOwners: [FileIdentity: String] = [:]
 
-        for identity in identities {
+        for identity in references.hardLinkIdentities {
             let beforePaths = beforeGroups[identity] ?? []
             let afterPaths = afterGroups[identity] ?? []
             let sharedPaths = Set(beforePaths).intersection(afterPaths)
 
             if !sharedPaths.isEmpty, let ownerPath = sharedPaths.min() {
+                beforeHardLinkOwners[identity] = ownerPath
+                afterHardLinkOwners[identity] = ownerPath
                 normalizeHardLinkGroup(
                     paths: beforePaths,
                     ownerPath: ownerPath,
@@ -1626,6 +1661,7 @@ nonisolated struct ScanComparisonService: Sendable {
                 )
             } else {
                 if let ownerPath = beforePaths.min() {
+                    beforeHardLinkOwners[identity] = ownerPath
                     normalizeHardLinkGroup(
                         paths: beforePaths,
                         ownerPath: ownerPath,
@@ -1634,6 +1670,7 @@ nonisolated struct ScanComparisonService: Sendable {
                     )
                 }
                 if let ownerPath = afterPaths.min() {
+                    afterHardLinkOwners[identity] = ownerPath
                     normalizeHardLinkGroup(
                         paths: afterPaths,
                         ownerPath: ownerPath,
@@ -1644,21 +1681,74 @@ nonisolated struct ScanComparisonService: Sendable {
             }
         }
 
+        let beforeCloneGroups = clonePathsByIdentity(
+            in: beforeNodes,
+            hardLinkOwners: beforeHardLinkOwners
+        )
+        let afterCloneGroups = clonePathsByIdentity(
+            in: afterNodes,
+            hardLinkOwners: afterHardLinkOwners
+        )
+        let beforeRepresentativePaths = representativePathsByFileIdentity(
+            in: beforeNodes,
+            hardLinkOwners: beforeHardLinkOwners
+        )
+        let afterRepresentativePaths = representativePathsByFileIdentity(
+            in: afterNodes,
+            hardLinkOwners: afterHardLinkOwners
+        )
+        for identity in references.cloneIdentities {
+            var beforePaths = beforeCloneGroups[identity] ?? []
+            var afterPaths = afterCloneGroups[identity] ?? []
+            addSingletonCloneCounterpart(
+                to: &beforePaths,
+                from: afterPaths,
+                currentNodes: beforeNodes,
+                otherNodes: afterNodes,
+                representativePaths: beforeRepresentativePaths
+            )
+            addSingletonCloneCounterpart(
+                to: &afterPaths,
+                from: beforePaths,
+                currentNodes: afterNodes,
+                otherNodes: beforeNodes,
+                representativePaths: afterRepresentativePaths
+            )
+            normalizeCloneGroups(
+                beforePaths: beforePaths,
+                afterPaths: afterPaths,
+                beforeNodes: beforeNodes,
+                afterNodes: afterNodes,
+                beforeSizes: &beforeSizes,
+                afterSizes: &afterSizes
+            )
+        }
+
         return (beforeSizes, afterSizes)
     }
 
-    private static func hardLinkIdentities(
+    private static func sharedAllocationReferences(
         in nodes: [String: FileNodeRecord]
-    ) -> Set<FileIdentity> {
-        Set(nodes.values.lazy.compactMap { node in
+    ) -> SharedAllocationReferences {
+        var references = SharedAllocationReferences()
+        for (path, node) in nodes {
             guard !node.isDirectory,
                   !node.isSymbolicLink,
-                  !node.isSynthetic,
-                  node.linkCount > 1 else {
-                return nil
+                  !node.isSynthetic else {
+                continue
             }
-            return node.fileIdentity
-        })
+            if node.linkCount > 1, let identity = node.fileIdentity {
+                references.hardLinkIdentities.insert(identity)
+            }
+            if let cloneIdentity = node.cloneIdentity {
+                references.cloneIdentities.insert(cloneIdentity)
+                references.cloneMemberPaths.insert(path)
+                if let fileIdentity = node.fileIdentity {
+                    references.cloneMemberFileIdentities.insert(fileIdentity)
+                }
+            }
+        }
+        return references
     }
 
     private static func hardLinkPathsByIdentity(
@@ -1679,6 +1769,164 @@ nonisolated struct ScanComparisonService: Sendable {
             .mapValues { groupedEntries in groupedEntries.map(\.relativePath) }
     }
 
+    private static func clonePathsByIdentity(
+        in nodes: [String: FileNodeRecord],
+        hardLinkOwners: [FileIdentity: String]
+    ) -> [CloneIdentity: [String]] {
+        var pathsByIdentity: [CloneIdentity: Set<String>] = [:]
+        for (path, node) in nodes {
+            guard !node.isDirectory,
+                  !node.isSymbolicLink,
+                  !node.isSynthetic,
+                  let cloneIdentity = node.cloneIdentity else {
+                continue
+            }
+            let representativePath = node.fileIdentity.flatMap { hardLinkOwners[$0] } ?? path
+            pathsByIdentity[cloneIdentity, default: []].insert(representativePath)
+        }
+        return pathsByIdentity.mapValues(Array.init)
+    }
+
+    private static func representativePathsByFileIdentity(
+        in nodes: [String: FileNodeRecord],
+        hardLinkOwners: [FileIdentity: String]
+    ) -> [FileIdentity: String] {
+        var pathsByIdentity: [FileIdentity: String] = [:]
+        for (path, node) in nodes {
+            guard !node.isDirectory,
+                  !node.isSymbolicLink,
+                  !node.isSynthetic,
+                  let fileIdentity = node.fileIdentity else {
+                continue
+            }
+            let representativePath = hardLinkOwners[fileIdentity] ?? path
+            pathsByIdentity[fileIdentity] = min(
+                pathsByIdentity[fileIdentity] ?? representativePath,
+                representativePath
+            )
+        }
+        return pathsByIdentity
+    }
+
+    /// Clone metadata disappears when only one full-clone member remains. Keep
+    /// that one stable file as the comparison owner, but do not carry a group
+    /// forward when multiple former members remain and may have diverged.
+    private static func addSingletonCloneCounterpart(
+        to paths: inout [String],
+        from otherPaths: [String],
+        currentNodes: [String: FileNodeRecord],
+        otherNodes: [String: FileNodeRecord],
+        representativePaths: [FileIdentity: String]
+    ) {
+        guard paths.isEmpty else { return }
+        var candidates = Set<String>()
+        for otherPath in otherPaths {
+            guard let otherNode = otherNodes[otherPath] else { continue }
+            if let fileIdentity = otherNode.fileIdentity {
+                if let path = representativePaths[fileIdentity] {
+                    candidates.insert(path)
+                }
+            } else if let node = currentNodes[otherPath],
+                      !node.isDirectory,
+                      !node.isSymbolicLink,
+                      !node.isSynthetic {
+                candidates.insert(otherPath)
+            }
+        }
+        guard candidates.count == 1, let candidate = candidates.first else { return }
+        paths = [candidate]
+    }
+
+    private static func normalizeCloneGroups(
+        beforePaths: [String],
+        afterPaths: [String],
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord],
+        beforeSizes: inout [String: Int64],
+        afterSizes: inout [String: Int64]
+    ) {
+        if let ownerPaths = stableCloneOwnerPaths(
+            beforePaths: beforePaths,
+            afterPaths: afterPaths,
+            beforeNodes: beforeNodes,
+            afterNodes: afterNodes
+        ) {
+            normalizeCloneGroup(
+                paths: beforePaths,
+                ownerPath: ownerPaths.before,
+                nodes: beforeNodes,
+                sizes: &beforeSizes
+            )
+            normalizeCloneGroup(
+                paths: afterPaths,
+                ownerPath: ownerPaths.after,
+                nodes: afterNodes,
+                sizes: &afterSizes
+            )
+        } else {
+            if let ownerPath = beforePaths.min() {
+                normalizeCloneGroup(
+                    paths: beforePaths,
+                    ownerPath: ownerPath,
+                    nodes: beforeNodes,
+                    sizes: &beforeSizes
+                )
+            }
+            if let ownerPath = afterPaths.min() {
+                normalizeCloneGroup(
+                    paths: afterPaths,
+                    ownerPath: ownerPath,
+                    nodes: afterNodes,
+                    sizes: &afterSizes
+                )
+            }
+        }
+    }
+
+    private static func stableCloneOwnerPaths(
+        beforePaths: [String],
+        afterPaths: [String],
+        beforeNodes: [String: FileNodeRecord],
+        afterNodes: [String: FileNodeRecord]
+    ) -> (before: String, after: String)? {
+        if let sharedPath = Set(beforePaths).intersection(afterPaths).min() {
+            return (sharedPath, sharedPath)
+        }
+        var afterPathByIdentity: [FileIdentity: String] = [:]
+        for path in afterPaths {
+            guard let identity = afterNodes[path]?.fileIdentity else { continue }
+            afterPathByIdentity[identity] = min(afterPathByIdentity[identity] ?? path, path)
+        }
+        return beforePaths.compactMap { beforePath -> (before: String, after: String)? in
+            guard let identity = beforeNodes[beforePath]?.fileIdentity,
+                  let afterPath = afterPathByIdentity[identity] else {
+                return nil
+            }
+            return (beforePath, afterPath)
+        }
+        .min { ($0.before, $0.after) < ($1.before, $1.after) }
+    }
+
+    private static func normalizeCloneGroup(
+        paths: [String],
+        ownerPath: String,
+        nodes: [String: FileNodeRecord],
+        sizes: inout [String: Int64]
+    ) {
+        for path in paths {
+            guard let node = nodes[path] else { continue }
+            let normalizedSize = path == ownerPath
+                ? node.unduplicatedAllocatedSize
+                : max(node.unduplicatedAllocatedSize - node.dataAllocatedSize, 0)
+            setNormalizedAllocatedSize(
+                normalizedSize,
+                at: path,
+                nodes: nodes,
+                sizes: &sizes
+            )
+        }
+    }
+
     private static func normalizeHardLinkGroup(
         paths: [String],
         ownerPath: String,
@@ -1688,18 +1936,36 @@ nonisolated struct ScanComparisonService: Sendable {
         let groupAllocatedSize = paths.compactMap { nodes[$0]?.unduplicatedAllocatedSize }.max() ?? 0
 
         for path in paths {
-            guard let node = nodes[path] else { continue }
             let normalizedSize = path == ownerPath ? groupAllocatedSize : 0
-            let adjustment = normalizedSize - node.allocatedSize
-            guard adjustment != 0 else { continue }
+            setNormalizedAllocatedSize(
+                normalizedSize,
+                at: path,
+                nodes: nodes,
+                sizes: &sizes
+            )
+        }
+    }
 
-            sizes[path] = normalizedSize
-            var cursor = path
-            while let slashIndex = cursor.lastIndex(of: "/") {
-                cursor = String(cursor[..<slashIndex])
-                guard let ancestorNode = nodes[cursor] else { continue }
-                sizes[cursor] = (sizes[cursor] ?? ancestorNode.allocatedSize) + adjustment
-            }
+    private static func setNormalizedAllocatedSize(
+        _ normalizedSize: Int64,
+        at path: String,
+        nodes: [String: FileNodeRecord],
+        sizes: inout [String: Int64]
+    ) {
+        guard let node = nodes[path] else { return }
+        let currentSize = sizes[path] ?? node.allocatedSize
+        let adjustment = normalizedSize - currentSize
+        guard adjustment != 0 else { return }
+
+        sizes[path] = normalizedSize
+        var cursor = path
+        while let slashIndex = cursor.lastIndex(of: "/") {
+            cursor = String(cursor[..<slashIndex])
+            guard let ancestorNode = nodes[cursor] else { continue }
+            sizes[cursor] = ScanComparisonIntegerMath.addingClamped(
+                sizes[cursor] ?? ancestorNode.allocatedSize,
+                adjustment
+            )
         }
     }
 }
