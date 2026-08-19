@@ -291,7 +291,7 @@ nonisolated struct SharedAllocationDeduplicator {
             claimNodeIndices: claimNodeIndices,
             nodeAt: { nodeIndex in
                 guard let node = store.node(at: nodeIndex) else {
-                    preconditionFailure("Hard-link claim index is out of range.")
+                    preconditionFailure("Shared-allocation claim index is out of range.")
                 }
                 return node
             },

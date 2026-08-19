@@ -109,7 +109,7 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
         }
     }
 
-    /// Merges package-local state without reconstructing discarded hard-link claims.
+    /// Merges package-local state without reconstructing discarded duplicate claims.
     nonisolated mutating func merge(_ other: Self) {
         for (ownerNodeID, allocatedSize) in other.hardLinkDuplicateAllocatedSizeByOwner {
             hardLinkDuplicateAllocatedSizeByOwner[ownerNodeID, default: 0] += allocatedSize

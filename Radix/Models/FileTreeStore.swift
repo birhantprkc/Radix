@@ -2147,8 +2147,8 @@ nonisolated struct FileTreeStore: Sendable {
     /// Replaces multiple disjoint subtrees as one topology transaction.
     ///
     /// All replacements are validated before the store is changed. Their shared
-    /// ancestor chain is then rebuilt once, followed by one scan-wide hard-link
-    /// rebalance so links crossing replacement boundaries remain correct.
+    /// ancestor chain is then rebuilt once, followed by one scan-wide shared-
+    /// allocation rebalance so claims crossing replacement boundaries remain correct.
     nonisolated func replacingSubtrees(
         _ replacements: [String: FileTreeStore]
     ) -> FileTreeStore? {
