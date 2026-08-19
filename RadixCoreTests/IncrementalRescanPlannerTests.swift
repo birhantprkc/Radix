@@ -181,6 +181,7 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             (.eventIDsWrapped, .eventIDsWrapped),
             (.rootChanged, .watchedRootChanged),
             (.volumeMounted, .nestedVolumeChanged),
+            (.itemCloned, .cloneTopologyChanged),
         ]
 
         for (flags, expectedReason) in cases {

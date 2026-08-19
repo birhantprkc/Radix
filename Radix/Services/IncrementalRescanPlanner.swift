@@ -178,6 +178,7 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         if !flags.intersection([.volumeMounted, .volumeUnmounted]).isEmpty {
             return .nestedVolumeChanged
         }
+        if flags.contains(.itemCloned) { return .cloneTopologyChanged }
         return nil
     }
 

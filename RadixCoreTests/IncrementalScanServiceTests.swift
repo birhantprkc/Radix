@@ -1,8 +1,22 @@
+import CoreServices
 import Foundation
 import XCTest
 @testable import RadixCore
 
 final class IncrementalScanServiceTests: XCTestCase {
+    func testFSEventFlagMappingPreservesCloneEvents() {
+        let rawFlags = FSEventStreamEventFlags(
+            kFSEventStreamEventFlagItemCreated |
+                kFSEventStreamEventFlagItemIsFile |
+                kFSEventStreamEventFlagItemCloned
+        )
+
+        XCTAssertEqual(
+            FileSystemEventFlags(fseventRawValue: rawFlags),
+            [.itemCreated, .itemIsFile, .itemCloned]
+        )
+    }
+
     func testDarwinHistoryProviderCapturesCheckpointForLocalDirectory() throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

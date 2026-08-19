@@ -212,7 +212,7 @@ nonisolated enum BulkDirectoryEnumerator {
                     &attributes,
                     bufferAddress,
                     buffer.count,
-                    UInt64(FSOPT_PACK_INVAL_ATTRS | FSOPT_ATTR_CMN_EXTENDED)
+                    BulkDirectoryEnumerator.attributeOptions
                 )
                 return (count: count, errorCode: count < 0 ? errno : 0)
             }) else {
@@ -294,6 +294,9 @@ nonisolated enum BulkDirectoryEnumerator {
 
     private static let bufferCapacity = 64 * 1_024
     private static let unsupportedErrors: Set<Int32> = [EINVAL, ENOTSUP, ENOSYS]
+    static let attributeOptions = UInt64(
+        FSOPT_PACK_INVAL_ATTRS | FSOPT_ATTR_CMN_EXTENDED | FSOPT_RETURN_REALDEV
+    )
 
     static func directoryEntries(
         at directoryURL: URL,

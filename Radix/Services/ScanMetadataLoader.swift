@@ -228,6 +228,10 @@ nonisolated struct ScanMetadataLoader: Sendable {
     typealias FileAllocatedSizeProvider = @Sendable (URL) -> Int64?
     typealias FileStatusProvider = @Sendable (URL) -> FileStatus?
 
+    static let cloneProbeOptions = UInt32(
+        FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW | FSOPT_RETURN_REALDEV
+    )
+
     static let scanResourceKeys: Set<URLResourceKey> = [
         .isDirectoryKey,
         .isPackageKey,
@@ -588,7 +592,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
                     &attributes,
                     rawBuffer.baseAddress,
                     rawBuffer.count,
-                    UInt32(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)
+                    cloneProbeOptions
                 )
             }
         }
