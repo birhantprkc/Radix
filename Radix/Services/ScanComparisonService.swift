@@ -1913,11 +1913,19 @@ nonisolated struct ScanComparisonService: Sendable {
         nodes: [String: FileNodeRecord],
         sizes: inout [String: Int64]
     ) {
-        for path in paths {
-            guard let node = nodes[path] else { continue }
-            let normalizedSize = path == ownerPath
-                ? node.unduplicatedAllocatedSize
-                : max(node.unduplicatedAllocatedSize - node.dataAllocatedSize, 0)
+        let normalizedSizes = paths.compactMap { path -> (path: String, size: Int64)? in
+            guard let node = nodes[path] else { return nil }
+            return (
+                path,
+                path == ownerPath
+                    ? node.unduplicatedAllocatedSize
+                    : max(node.unduplicatedAllocatedSize - node.dataAllocatedSize, 0)
+            )
+        }
+        guard normalizationIsBalanced(normalizedSizes, nodes: nodes, sizes: sizes) else {
+            return
+        }
+        for (path, normalizedSize) in normalizedSizes {
             setNormalizedAllocatedSize(
                 normalizedSize,
                 at: path,
@@ -1934,9 +1942,15 @@ nonisolated struct ScanComparisonService: Sendable {
         sizes: inout [String: Int64]
     ) {
         let groupAllocatedSize = paths.compactMap { nodes[$0]?.unduplicatedAllocatedSize }.max() ?? 0
+        let normalizedSizes = paths.compactMap { path -> (path: String, size: Int64)? in
+            guard nodes[path] != nil else { return nil }
+            return (path, path == ownerPath ? groupAllocatedSize : 0)
+        }
+        guard normalizationIsBalanced(normalizedSizes, nodes: nodes, sizes: sizes) else {
+            return
+        }
 
-        for path in paths {
-            let normalizedSize = path == ownerPath ? groupAllocatedSize : 0
+        for (path, normalizedSize) in normalizedSizes {
             setNormalizedAllocatedSize(
                 normalizedSize,
                 at: path,
@@ -1944,6 +1958,25 @@ nonisolated struct ScanComparisonService: Sendable {
                 sizes: &sizes
             )
         }
+    }
+
+    /// Ownership can be moved only when every byte removed from one visible
+    /// claim is added to another. A nonzero result means the group has an
+    /// opaque or out-of-scope owner that comparison metadata cannot identify.
+    private static func normalizationIsBalanced(
+        _ normalizedSizes: [(path: String, size: Int64)],
+        nodes: [String: FileNodeRecord],
+        sizes: [String: Int64]
+    ) -> Bool {
+        var netAdjustment: Int64 = 0
+        for (path, normalizedSize) in normalizedSizes {
+            guard let node = nodes[path] else { return false }
+            let adjustment = normalizedSize - (sizes[path] ?? node.allocatedSize)
+            let (nextAdjustment, overflow) = netAdjustment.addingReportingOverflow(adjustment)
+            guard !overflow else { return false }
+            netAdjustment = nextAdjustment
+        }
+        return netAdjustment == 0
     }
 
     private static func setNormalizedAllocatedSize(

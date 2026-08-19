@@ -409,6 +409,90 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.summary.allocatedDelta, 0)
     }
 
+    func testRemovingCloneOwnerReportsOnlyItsUniqueResourceForkAllocation() async throws {
+        let cloneIdentity = CloneIdentity(device: 1, cloneID: 42)
+        let remainingIdentity = FileIdentity(device: 1, inode: 200)
+        let beforeOwner = makeTestFileNode(
+            id: "/root/a.bin",
+            name: "a.bin",
+            size: 110,
+            unduplicatedAllocatedSize: 110,
+            dataAllocatedSize: 100,
+            fileIdentity: FileIdentity(device: 1, inode: 100),
+            cloneIdentity: cloneIdentity
+        )
+        let beforeRemaining = makeTestFileNode(
+            id: "/root/z.bin",
+            name: "z.bin",
+            size: 0,
+            unduplicatedAllocatedSize: 100,
+            dataAllocatedSize: 100,
+            fileIdentity: remainingIdentity,
+            cloneIdentity: cloneIdentity
+        )
+        let afterRemaining = makeTestFileNode(
+            id: "/root/z.bin",
+            name: "z.bin",
+            size: 100,
+            unduplicatedAllocatedSize: 100,
+            dataAllocatedSize: 100,
+            fileIdentity: remainingIdentity
+        )
+
+        let comparison = try await ScanComparisonService().compare(
+            before: cloneSnapshot([beforeOwner, beforeRemaining]),
+            after: cloneSnapshot([afterRemaining])
+        )
+
+        XCTAssertEqual(comparison.rows.map(\.relativePath), ["a.bin"])
+        XCTAssertEqual(comparison.rows[0].beforeAllocatedSize, 10)
+        XCTAssertEqual(comparison.rows[0].allocatedDelta, -10)
+        XCTAssertEqual(comparison.summary.allocatedDelta, -10)
+        XCTAssertEqual(comparison.summary.grossReclaimedAllocatedSize, 10)
+    }
+
+    func testIncompleteCloneGroupDoesNotInventAllocationDuringNormalization() async throws {
+        let sourceIdentity = FileIdentity(device: 1, inode: 100)
+        let cloneIdentity = CloneIdentity(device: 1, cloneID: 42)
+        let beforeOpaqueOwner = makeTestSummarizedDirectoryNode(
+            id: "/root/a-cache",
+            name: "a-cache",
+            size: 0
+        )
+        let beforeSource = makeTestFileNode(
+            id: "/root/z.bin",
+            name: "z.bin",
+            size: 100,
+            unduplicatedAllocatedSize: 100,
+            fileIdentity: sourceIdentity
+        )
+        let afterOpaqueOwner = makeTestSummarizedDirectoryNode(
+            id: "/root/a-cache",
+            name: "a-cache",
+            size: 100
+        )
+        let afterSource = makeTestFileNode(
+            id: "/root/z.bin",
+            name: "z.bin",
+            size: 0,
+            unduplicatedAllocatedSize: 100,
+            fileIdentity: sourceIdentity,
+            cloneIdentity: cloneIdentity
+        )
+
+        let comparison = try await ScanComparisonService().compare(
+            before: cloneSnapshot([beforeOpaqueOwner, beforeSource]),
+            after: cloneSnapshot([afterOpaqueOwner, afterSource])
+        )
+        let allocatedDeltaByPath = Dictionary(
+            uniqueKeysWithValues: comparison.rows.map { ($0.relativePath, $0.allocatedDelta) }
+        )
+
+        XCTAssertEqual(allocatedDeltaByPath, ["a-cache": 100, "z.bin": -100])
+        XCTAssertEqual(comparison.summary.allocatedDelta, 0)
+        XCTAssertEqual(comparison.summary.attributedAllocatedDelta, 0)
+    }
+
     func testDivergedCloneMembersAreNotKeptAsFullClones() async throws {
         let cloneIdentity = CloneIdentity(device: 1, cloneID: 42)
         let firstIdentity = FileIdentity(device: 1, inode: 100)
