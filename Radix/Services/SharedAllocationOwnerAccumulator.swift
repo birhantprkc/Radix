@@ -1,5 +1,5 @@
 //
-//  HardLinkIdentityOwnerAccumulator.swift
+//  SharedAllocationOwnerAccumulator.swift
 //  Radix
 //
 //  Created by Codex on 7/10/26.
@@ -14,19 +14,19 @@ import Foundation
 /// Keeping those stages separate preserves allocation that belongs only to a
 /// clone's resource fork and prevents hard-linked paths from entering clone
 /// accounting more than once.
-nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
+nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
     private enum CloneFileKey: Hashable, Sendable {
         case identity(FileIdentity)
         case path(String)
     }
 
-    private var hardLinkWinnerByIdentity: [FileIdentity: HardLinkClaim] = [:]
-    private var standaloneCloneWinnerByFile: [CloneFileKey: HardLinkClaim] = [:]
+    private var hardLinkWinnerByIdentity: [FileIdentity: SharedAllocationClaim] = [:]
+    private var standaloneCloneWinnerByFile: [CloneFileKey: SharedAllocationClaim] = [:]
     private var hardLinkDuplicateAllocatedSizeByOwner: [String: Int64] = [:]
 
     nonisolated init() {}
 
-    nonisolated init<S: Sequence>(_ claims: S) where S.Element == HardLinkClaim {
+    nonisolated init<S: Sequence>(_ claims: S) where S.Element == SharedAllocationClaim {
         record(contentsOf: claims)
     }
 
@@ -38,7 +38,7 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         cancellationCheck: () throws -> Void
     ) rethrows -> [String: Int64] {
         var corrections = hardLinkDuplicateAllocatedSizeByOwner
-        var cloneWinnerByIdentity: [CloneIdentity: HardLinkClaim] = [:]
+        var cloneWinnerByIdentity: [CloneIdentity: SharedAllocationClaim] = [:]
 
         for (offset, claim) in hardLinkWinnerByIdentity.values.enumerated() {
             if offset.isMultiple(of: 256) {
@@ -82,11 +82,11 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         hardLinkWinnerByIdentity.isEmpty && standaloneCloneWinnerByFile.isEmpty
     }
 
-    nonisolated func winner(for identity: FileIdentity) -> HardLinkClaim? {
+    nonisolated func winner(for identity: FileIdentity) -> SharedAllocationClaim? {
         hardLinkWinnerByIdentity[identity]
     }
 
-    nonisolated mutating func record(_ claim: HardLinkClaim) {
+    nonisolated mutating func record(_ claim: SharedAllocationClaim) {
         guard claim.allocatedSize > 0 else { return }
 
         if let hardLinkIdentity = claim.hardLinkIdentity {
@@ -103,7 +103,7 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         }
     }
 
-    nonisolated mutating func record<S: Sequence>(contentsOf claims: S) where S.Element == HardLinkClaim {
+    nonisolated mutating func record<S: Sequence>(contentsOf claims: S) where S.Element == SharedAllocationClaim {
         for claim in claims {
             record(claim)
         }
@@ -122,7 +122,7 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         }
     }
 
-    private nonisolated mutating func recordHardLink(_ claim: HardLinkClaim, identity: FileIdentity) {
+    private nonisolated mutating func recordHardLink(_ claim: SharedAllocationClaim, identity: FileIdentity) {
         guard let currentWinner = hardLinkWinnerByIdentity[identity] else {
             hardLinkWinnerByIdentity[identity] = claim
             return
@@ -137,8 +137,8 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
     }
 
     private nonisolated static func recordCloneCorrection(
-        for claim: HardLinkClaim,
-        winnerByIdentity: inout [CloneIdentity: HardLinkClaim],
+        for claim: SharedAllocationClaim,
+        winnerByIdentity: inout [CloneIdentity: SharedAllocationClaim],
         corrections: inout [String: Int64]
     ) {
         guard let cloneIdentity = claim.cloneIdentity,
@@ -158,14 +158,14 @@ nonisolated struct HardLinkIdentityOwnerAccumulator: Sendable {
         }
     }
 
-    private nonisolated static func precedes(_ lhs: HardLinkClaim, _ rhs: HardLinkClaim) -> Bool {
+    private nonisolated static func precedes(_ lhs: SharedAllocationClaim, _ rhs: SharedAllocationClaim) -> Bool {
         if lhs.path == rhs.path {
             return lhs.ownerNodeID < rhs.ownerNodeID
         }
         return lhs.path < rhs.path
     }
 
-    private nonisolated mutating func addHardLinkDuplicate(_ claim: HardLinkClaim) {
+    private nonisolated mutating func addHardLinkDuplicate(_ claim: SharedAllocationClaim) {
         hardLinkDuplicateAllocatedSizeByOwner[claim.ownerNodeID, default: 0] += claim.allocatedSize
     }
 }

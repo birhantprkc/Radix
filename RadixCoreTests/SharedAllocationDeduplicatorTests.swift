@@ -1,12 +1,12 @@
 import XCTest
 @testable import RadixCore
 
-final class HardLinkDeduplicatorTests: XCTestCase {
+final class SharedAllocationDeduplicatorTests: XCTestCase {
     func testIndexBasedStoreConstructionPreservesCancellation() {
         let root = makeDirectory(id: "/root", allocatedSize: 0, descendantFileCount: 0)
         let rootIndex = FileTreeNodeIndex(rawValue: 0)
 
-        XCTAssertThrowsError(try HardLinkDeduplicator.deduplicatedStore(
+        XCTAssertThrowsError(try SharedAllocationDeduplicator.deduplicatedStore(
             rootIndex: rootIndex,
             nodes: [root],
             indexByNodeID: [root.id: rootIndex],
@@ -21,7 +21,7 @@ final class HardLinkDeduplicatorTests: XCTestCase {
                 accessibleItemCount: 1,
                 inaccessibleItemCount: 0
             ),
-            hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(),
+            sharedAllocationAccumulator: SharedAllocationOwnerAccumulator(),
             minimumAllocatedSizeByNodeID: [:],
             cancellationCheck: { throw CancellationError() }
         )) { error in
@@ -45,7 +45,7 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         ]
         let indices = nodes.indices.map { FileTreeNodeIndex(rawValue: UInt32($0)) }
 
-        let store = HardLinkDeduplicator.deduplicatedStore(
+        let store = SharedAllocationDeduplicator.deduplicatedStore(
             rootIndex: indices[0],
             nodes: nodes,
             indexByNodeID: Dictionary(uniqueKeysWithValues: zip(nodes.map(\.id), indices)),
@@ -66,9 +66,9 @@ final class HardLinkDeduplicatorTests: XCTestCase {
                 accessibleItemCount: 5,
                 inaccessibleItemCount: 0
             ),
-            hardLinkClaims: [
-                HardLinkClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
-                HardLinkClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
+            sharedAllocationClaims: [
+                SharedAllocationClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
+                SharedAllocationClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
             ],
             minimumAllocatedSizeByNodeID: [:]
         )
@@ -93,22 +93,22 @@ final class HardLinkDeduplicatorTests: XCTestCase {
             makeFile(id: visibleFileID, allocatedSize: 100)
         ]
         let indices = nodes.indices.map { FileTreeNodeIndex(rawValue: UInt32($0)) }
-        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
         // Package work may finish first even though its nested path sorts later.
-        hardLinkAccumulator.record(HardLinkClaim(
+        sharedAllocationAccumulator.record(SharedAllocationClaim(
             identity: identity,
             ownerNodeID: packageID,
             path: packageLinkPath,
             allocatedSize: 100
         ))
-        hardLinkAccumulator.record(HardLinkClaim(
+        sharedAllocationAccumulator.record(SharedAllocationClaim(
             identity: identity,
             ownerNodeID: visibleFileID,
             path: visibleFileID,
             allocatedSize: 100
         ))
 
-        let store = HardLinkDeduplicator.deduplicatedStore(
+        let store = SharedAllocationDeduplicator.deduplicatedStore(
             rootIndex: indices[0],
             nodes: nodes,
             indexByNodeID: Dictionary(uniqueKeysWithValues: zip(nodes.map(\.id), indices)),
@@ -127,13 +127,13 @@ final class HardLinkDeduplicatorTests: XCTestCase {
                 accessibleItemCount: 3,
                 inaccessibleItemCount: 0
             ),
-            hardLinkAccumulator: hardLinkAccumulator,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
             minimumAllocatedSizeByNodeID: [packageID: 20]
         )
 
-        XCTAssertEqual(hardLinkAccumulator.identityCount, 1)
-        XCTAssertEqual(hardLinkAccumulator.winner(for: identity)?.ownerNodeID, visibleFileID)
-        XCTAssertEqual(hardLinkAccumulator.duplicateAllocatedSizeByOwner, [packageID: 100])
+        XCTAssertEqual(sharedAllocationAccumulator.identityCount, 1)
+        XCTAssertEqual(sharedAllocationAccumulator.winner(for: identity)?.ownerNodeID, visibleFileID)
+        XCTAssertEqual(sharedAllocationAccumulator.duplicateAllocatedSizeByOwner, [packageID: 100])
         XCTAssertEqual(store.node(id: visibleFileID)?.allocatedSize, 100)
         XCTAssertEqual(store.node(id: packageID)?.allocatedSize, 20)
         XCTAssertEqual(store.root.allocatedSize, 120)
@@ -186,7 +186,7 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         childIDsByID[rootID] = rootChildIDs
 
         let identity = FileIdentity(device: 1, inode: 42)
-        let store = HardLinkDeduplicator.deduplicatedStore(
+        let store = SharedAllocationDeduplicator.deduplicatedStore(
             rootID: rootID,
             nodesByID: nodesByID,
             childIDsByID: childIDsByID,
@@ -199,9 +199,9 @@ final class HardLinkDeduplicatorTests: XCTestCase {
                 accessibleItemCount: nodesByID.count,
                 inaccessibleItemCount: 0
             ),
-            hardLinkClaims: [
-                HardLinkClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
-                HardLinkClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
+            sharedAllocationClaims: [
+                SharedAllocationClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
+                SharedAllocationClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
             ],
             minimumAllocatedSizeByNodeID: [:]
         )
@@ -229,7 +229,7 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         let identity = FileIdentity(device: 1, inode: 45)
         let totalAllocatedSize: Int64 = 250
 
-        let store = HardLinkDeduplicator.deduplicatedStore(
+        let store = SharedAllocationDeduplicator.deduplicatedStore(
             rootID: rootID,
             nodesByID: [
                 rootID: makeDirectory(id: rootID, allocatedSize: totalAllocatedSize, descendantFileCount: 3),
@@ -259,9 +259,9 @@ final class HardLinkDeduplicatorTests: XCTestCase {
                 accessibleItemCount: 6,
                 inaccessibleItemCount: 0
             ),
-            hardLinkClaims: [
-                HardLinkClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
-                HardLinkClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
+            sharedAllocationClaims: [
+                SharedAllocationClaim(identity: identity, ownerNodeID: firstLinkID, path: firstLinkID, allocatedSize: 100),
+                SharedAllocationClaim(identity: identity, ownerNodeID: duplicateLinkID, path: duplicateLinkID, allocatedSize: 100)
             ],
             minimumAllocatedSizeByNodeID: [:]
         )
@@ -358,7 +358,7 @@ final class HardLinkDeduplicatorTests: XCTestCase {
         let root = makeDirectory(id: "/root", children: [winner, loser])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [winner, loser]])
 
-        let rebalancedStore = try HardLinkDeduplicator.rebalancedStore(store)
+        let rebalancedStore = try SharedAllocationDeduplicator.rebalancedStore(store)
 
         XCTAssertEqual(rebalancedStore.contentID, store.contentID)
         XCTAssertEqual(rebalancedStore.root, store.root)

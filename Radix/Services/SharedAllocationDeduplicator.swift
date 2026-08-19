@@ -1,5 +1,5 @@
 //
-//  HardLinkDeduplicator.swift
+//  SharedAllocationDeduplicator.swift
 //  Radix
 //
 //  Created by Codex on 6/12/26.
@@ -7,12 +7,12 @@
 
 import Foundation
 
-nonisolated struct HardLinkDeduplicator {
+nonisolated struct SharedAllocationDeduplicator {
     nonisolated static func claim(
         for metadata: NodeMetadata,
         ownerNodeID: String,
         path: String
-    ) -> HardLinkClaim? {
+    ) -> SharedAllocationClaim? {
         guard !metadata.isDirectory,
               !metadata.isSymbolicLink else {
             return nil
@@ -23,7 +23,7 @@ nonisolated struct HardLinkDeduplicator {
             return nil
         }
 
-        return HardLinkClaim(
+        return SharedAllocationClaim(
             fileIdentity: metadata.fileIdentity,
             hardLinkIdentity: hardLinkIdentity,
             cloneIdentity: metadata.cloneIdentity,
@@ -40,7 +40,7 @@ nonisolated struct HardLinkDeduplicator {
         childIDsByID inputChildIDsByID: [String: [String]],
         parentIDByID: [String: String],
         aggregateStats: ScanAggregateStats,
-        hardLinkClaims: [HardLinkClaim],
+        sharedAllocationClaims: [SharedAllocationClaim],
         minimumAllocatedSizeByNodeID: [String: Int64]
     ) -> FileTreeStore {
         deduplicatedStore(
@@ -49,7 +49,7 @@ nonisolated struct HardLinkDeduplicator {
             childIDsByID: inputChildIDsByID,
             parentIDByID: parentIDByID,
             aggregateStats: aggregateStats,
-            hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(hardLinkClaims),
+            sharedAllocationAccumulator: SharedAllocationOwnerAccumulator(sharedAllocationClaims),
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
         )
     }
@@ -60,10 +60,10 @@ nonisolated struct HardLinkDeduplicator {
         childIDsByID inputChildIDsByID: [String: [String]],
         parentIDByID: [String: String],
         aggregateStats: ScanAggregateStats,
-        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        sharedAllocationAccumulator: SharedAllocationOwnerAccumulator,
         minimumAllocatedSizeByNodeID: [String: Int64]
     ) -> FileTreeStore {
-        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        let duplicateAllocatedSizeByOwner = sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
             return FileTreeStore(
                 verifiedRootID: rootID,
@@ -124,7 +124,7 @@ nonisolated struct HardLinkDeduplicator {
         childSpans: [FileTreeChildSpan],
         childIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
-        hardLinkClaims: [HardLinkClaim],
+        sharedAllocationClaims: [SharedAllocationClaim],
         minimumAllocatedSizeByNodeID: [String: Int64]
     ) -> FileTreeStore {
         deduplicatedStore(
@@ -135,7 +135,7 @@ nonisolated struct HardLinkDeduplicator {
             childSpans: childSpans,
             childIndices: childIndices,
             aggregateStats: aggregateStats,
-            hardLinkAccumulator: HardLinkIdentityOwnerAccumulator(hardLinkClaims),
+            sharedAllocationAccumulator: SharedAllocationOwnerAccumulator(sharedAllocationClaims),
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
         )
     }
@@ -148,7 +148,7 @@ nonisolated struct HardLinkDeduplicator {
         childSpans: [FileTreeChildSpan],
         childIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
-        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        sharedAllocationAccumulator: SharedAllocationOwnerAccumulator,
         minimumAllocatedSizeByNodeID: [String: Int64]
     ) -> FileTreeStore {
         deduplicatedStore(
@@ -159,7 +159,7 @@ nonisolated struct HardLinkDeduplicator {
             childSpans: childSpans,
             childIndices: childIndices,
             aggregateStats: aggregateStats,
-            hardLinkAccumulator: hardLinkAccumulator,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
             minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID,
             cancellationCheck: {}
         )
@@ -173,11 +173,11 @@ nonisolated struct HardLinkDeduplicator {
         childSpans: [FileTreeChildSpan],
         childIndices inputChildIndices: [FileTreeNodeIndex],
         aggregateStats: ScanAggregateStats,
-        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        sharedAllocationAccumulator: SharedAllocationOwnerAccumulator,
         minimumAllocatedSizeByNodeID: [String: Int64],
         cancellationCheck: () throws -> Void
     ) rethrows -> FileTreeStore {
-        let duplicateAllocatedSizeByOwner = try hardLinkAccumulator.duplicateAllocatedSizeByOwner(
+        let duplicateAllocatedSizeByOwner = try sharedAllocationAccumulator.duplicateAllocatedSizeByOwner(
             cancellationCheck: cancellationCheck
         )
         guard !duplicateAllocatedSizeByOwner.isEmpty else {
@@ -257,7 +257,7 @@ nonisolated struct HardLinkDeduplicator {
         _ store: FileTreeStore,
         cancellationCheck: () throws -> Void = {}
     ) throws -> FileTreeStore {
-        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
         var claimNodeIndices: [FileTreeNodeIndex] = []
 
         for (offset, nodeIndex) in store.indexedNodeIndices().enumerated() {
@@ -268,13 +268,13 @@ nonisolated struct HardLinkDeduplicator {
                   let claim = claim(for: node) else {
                 continue
             }
-            hardLinkAccumulator.record(claim)
+            sharedAllocationAccumulator.record(claim)
             claimNodeIndices.append(nodeIndex)
         }
 
         return try rebalancedStore(
             store,
-            hardLinkAccumulator: hardLinkAccumulator,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
             claimNodeIndices: claimNodeIndices,
             cancellationCheck: cancellationCheck
         )
@@ -282,12 +282,12 @@ nonisolated struct HardLinkDeduplicator {
 
     nonisolated static func rebalancedStore(
         _ store: FileTreeStore,
-        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        sharedAllocationAccumulator: SharedAllocationOwnerAccumulator,
         claimNodeIndices: [FileTreeNodeIndex],
         cancellationCheck: () throws -> Void
     ) throws -> FileTreeStore {
         let replacements = try rebalancedAllocatedSizeReplacements(
-            hardLinkAccumulator: hardLinkAccumulator,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
             claimNodeIndices: claimNodeIndices,
             nodeAt: { nodeIndex in
                 guard let node = store.node(at: nodeIndex) else {
@@ -306,14 +306,14 @@ nonisolated struct HardLinkDeduplicator {
     }
 
     nonisolated static func rebalancedAllocatedSizeReplacements(
-        hardLinkAccumulator: HardLinkIdentityOwnerAccumulator,
+        sharedAllocationAccumulator: SharedAllocationOwnerAccumulator,
         claimNodeIndices: [FileTreeNodeIndex],
         nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
         cancellationCheck: () throws -> Void
     ) throws -> [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)] {
-        guard !hardLinkAccumulator.isEmpty else { return [] }
+        guard !sharedAllocationAccumulator.isEmpty else { return [] }
 
-        let duplicateAllocatedSizeByOwner = try hardLinkAccumulator.duplicateAllocatedSizeByOwner(
+        let duplicateAllocatedSizeByOwner = try sharedAllocationAccumulator.duplicateAllocatedSizeByOwner(
             cancellationCheck: cancellationCheck
         )
         var replacements: [(nodeIndex: FileTreeNodeIndex, allocatedSize: Int64)] = []
@@ -440,7 +440,7 @@ nonisolated struct HardLinkDeduplicator {
         }
     }
 
-    nonisolated static func claim(for node: FileNodeRecord) -> HardLinkClaim? {
+    nonisolated static func claim(for node: FileNodeRecord) -> SharedAllocationClaim? {
         guard !node.isDirectory,
               !node.isSymbolicLink,
               !node.isSynthetic else {
@@ -452,7 +452,7 @@ nonisolated struct HardLinkDeduplicator {
             return nil
         }
 
-        return HardLinkClaim(
+        return SharedAllocationClaim(
             fileIdentity: node.fileIdentity,
             hardLinkIdentity: hardLinkIdentity,
             cloneIdentity: node.cloneIdentity,
@@ -515,7 +515,7 @@ nonisolated struct HardLinkDeduplicator {
     }
 }
 
-nonisolated struct HardLinkClaim: Sendable {
+nonisolated struct SharedAllocationClaim: Sendable {
     let fileIdentity: FileIdentity?
     let hardLinkIdentity: FileIdentity?
     let cloneIdentity: CloneIdentity?

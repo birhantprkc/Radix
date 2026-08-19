@@ -1,7 +1,7 @@
 import XCTest
 @testable import RadixCore
 
-final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
+final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
     func testWinnerAndCorrectionsAreIndependentOfArrivalOrder() throws {
         let identity = FileIdentity(device: 1, inode: 42)
         let expectedWinner = claim(identity, owner: "/owner-a", path: "/a", size: 100)
@@ -17,7 +17,7 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
         ]
 
         for order in orders {
-            let accumulator = HardLinkIdentityOwnerAccumulator(order)
+            let accumulator = SharedAllocationOwnerAccumulator(order)
 
             let winner = try XCTUnwrap(accumulator.winner(for: identity))
             XCTAssertEqual(winner.path, expectedWinner.path)
@@ -31,7 +31,7 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
 
     func testRecordingEarlierWinnerMovesPreviousWinnerIntoCorrections() throws {
         let identity = FileIdentity(device: 2, inode: 7)
-        var accumulator = HardLinkIdentityOwnerAccumulator()
+        var accumulator = SharedAllocationOwnerAccumulator()
 
         accumulator.record(claim(identity, owner: "/z-owner", path: "/z", size: 80))
         XCTAssertTrue(accumulator.duplicateAllocatedSizeByOwner.isEmpty)
@@ -59,14 +59,14 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
             claim(firstIdentity, owner: "/package-b/a", path: "/a", size: 64),
             claim(secondIdentity, owner: "/shared-owner", path: "/c", size: 32),
         ]
-        let firstLocal = HardLinkIdentityOwnerAccumulator(firstClaims)
-        let secondLocal = HardLinkIdentityOwnerAccumulator(secondClaims)
+        let firstLocal = SharedAllocationOwnerAccumulator(firstClaims)
+        let secondLocal = SharedAllocationOwnerAccumulator(secondClaims)
 
         var forward = firstLocal
         forward.merge(secondLocal)
         var reverse = secondLocal
         reverse.merge(firstLocal)
-        let direct = HardLinkIdentityOwnerAccumulator(firstClaims + secondClaims)
+        let direct = SharedAllocationOwnerAccumulator(firstClaims + secondClaims)
 
         XCTAssertEqual(forward.duplicateAllocatedSizeByOwner, direct.duplicateAllocatedSizeByOwner)
         XCTAssertEqual(reverse.duplicateAllocatedSizeByOwner, direct.duplicateAllocatedSizeByOwner)
@@ -79,7 +79,7 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
 
     func testNonpositiveClaimsDoNotCreateOwnersOrCorrections() {
         let identity = FileIdentity(device: 4, inode: 9)
-        let accumulator = HardLinkIdentityOwnerAccumulator([
+        let accumulator = SharedAllocationOwnerAccumulator([
             claim(identity, owner: "/zero", path: "/zero", size: 0),
             claim(identity, owner: "/negative", path: "/negative", size: -1),
         ])
@@ -93,7 +93,7 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
     func testRepeatedIdenticalClaimsPreserveExistingDeduplicationSemantics() throws {
         let identity = FileIdentity(device: 5, inode: 20)
         let repeated = claim(identity, owner: "/owner", path: "/file", size: 128)
-        let accumulator = HardLinkIdentityOwnerAccumulator([repeated, repeated, repeated])
+        let accumulator = SharedAllocationOwnerAccumulator([repeated, repeated, repeated])
 
         XCTAssertEqual(try XCTUnwrap(accumulator.winner(for: identity)).ownerNodeID, repeated.ownerNodeID)
         XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [repeated.ownerNodeID: 256])
@@ -108,7 +108,7 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
                 size: 1
             )
         }
-        let accumulator = HardLinkIdentityOwnerAccumulator(claims)
+        let accumulator = SharedAllocationOwnerAccumulator(claims)
         var checkCount = 0
 
         XCTAssertThrowsError(try accumulator.duplicateAllocatedSizeByOwner {
@@ -149,7 +149,7 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
             dataSize: 80
         )
 
-        let accumulator = HardLinkIdentityOwnerAccumulator([source, hardLink, cloneWithResourceFork])
+        let accumulator = SharedAllocationOwnerAccumulator([source, hardLink, cloneWithResourceFork])
 
         XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [
             "/b-hard-link": 100,
@@ -162,8 +162,8 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
         owner: String,
         path: String,
         size: Int64
-    ) -> HardLinkClaim {
-        HardLinkClaim(
+    ) -> SharedAllocationClaim {
+        SharedAllocationClaim(
             identity: identity,
             ownerNodeID: owner,
             path: path,
@@ -178,8 +178,8 @@ final class HardLinkIdentityOwnerAccumulatorTests: XCTestCase {
         owner: String,
         totalSize: Int64,
         dataSize: Int64
-    ) -> HardLinkClaim {
-        HardLinkClaim(
+    ) -> SharedAllocationClaim {
+        SharedAllocationClaim(
             fileIdentity: fileIdentity,
             hardLinkIdentity: hardLinkIdentity,
             cloneIdentity: cloneIdentity,

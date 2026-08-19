@@ -3552,24 +3552,24 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(resumed?.warnings.count, reference?.warnings.count)
         let hardLinkIdentity = try XCTUnwrap(metadataLoader.metadata(for: originalURL).fileIdentity)
         XCTAssertEqual(
-            resumed?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path,
-            reference?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path
+            resumed?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path,
+            reference?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path
         )
         XCTAssertEqual(
-            resumed?.hardLinkAccumulator.duplicateAllocatedSizeByOwner,
-            reference?.hardLinkAccumulator.duplicateAllocatedSizeByOwner
+            resumed?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
+            reference?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         )
-        XCTAssertEqual(resumed?.hardLinkAccumulator.identityCount, 1)
+        XCTAssertEqual(resumed?.sharedAllocationAccumulator.identityCount, 1)
         XCTAssertEqual(resumedSerial?.descendantFileCount, resumed?.descendantFileCount)
         XCTAssertEqual(resumedSerial?.logicalSize, resumed?.logicalSize)
         XCTAssertEqual(resumedSerial?.allocatedSize, resumed?.allocatedSize)
         XCTAssertEqual(
-            resumedSerial?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path,
-            resumed?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path
+            resumedSerial?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path,
+            resumed?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path
         )
         XCTAssertEqual(
-            resumedSerial?.hardLinkAccumulator.duplicateAllocatedSizeByOwner,
-            resumed?.hardLinkAccumulator.duplicateAllocatedSizeByOwner
+            resumedSerial?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
+            resumed?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         )
     }
 
