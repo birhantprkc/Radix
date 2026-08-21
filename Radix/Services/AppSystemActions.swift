@@ -260,10 +260,6 @@ extension AppSystemActions {
         asyncTargetCapacityDescriptions != nil
     }
 
-    var usesAsyncVolumeAvailableCapacity: Bool {
-        asyncVolumeAvailableCapacityForImportantUsage != nil
-    }
-
     func currentFullDiskAccessStatus() -> FullDiskAccessStatus {
         fullDiskAccessStatus()
     }

@@ -1015,13 +1015,6 @@ final class AppModel: ObservableObject {
         showComparisonNodeInBrowser(beforeNode: node.beforeNode, afterNode: node.afterNode)
     }
 
-    func canShowComparisonLocationInBrowser(_ location: ScanComparisonLocationChange) -> Bool {
-        canShowComparisonNodeInBrowser(
-            beforeNode: location.beforeNode,
-            afterNode: location.afterNode
-        )
-    }
-
     private func canRevealComparisonNodeInFinder(
         beforeNode: FileNodeRecord?,
         afterNode: FileNodeRecord?

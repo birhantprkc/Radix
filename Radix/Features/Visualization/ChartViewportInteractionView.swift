@@ -168,10 +168,6 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
         .copy
     }
 
-    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
-        true
-    }
-
     func draggingSession(
         _ session: NSDraggingSession,
         endedAt screenPoint: NSPoint,
