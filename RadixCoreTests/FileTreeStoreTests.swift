@@ -1077,6 +1077,22 @@ final class FileTreeStoreTests: XCTestCase {
         ))
     }
 
+    func testSubtreeNodeCountStopsAtLimit() {
+        let files = (0..<10).map { index in
+            makeFileNode(
+                id: "/root/file-\(index).dat",
+                name: "file-\(index).dat",
+                size: 1
+            )
+        }
+        let root = makeDirectoryNode(id: "/root", name: "root", children: files)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: files])
+
+        XCTAssertEqual(store.subtreeNodeCount(rootedAt: root.id, upTo: 4), 4)
+        XCTAssertEqual(store.subtreeNodeCount(rootedAt: root.id, upTo: 0), 0)
+        XCTAssertEqual(store.subtreeNodeCount(rootedAt: "/missing", upTo: 4), 0)
+    }
+
     func testReplacingRootCanChangeRootID() throws {
         let oldChild = makeFileNode(id: "/root/old.txt", name: "old.txt", size: 4)
         let oldRoot = makeDirectoryNode(id: "/root", name: "root", children: [oldChild])

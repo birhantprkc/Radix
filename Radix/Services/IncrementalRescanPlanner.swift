@@ -151,7 +151,11 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
             }
         }
         for subtreeID in rescanSubtreeIDs {
-            incrementalWorkItemCount += treeStore.subtreeNodeCount(rootedAt: subtreeID)
+            let remainingWorkItemCount = fullScanWorkThreshold - incrementalWorkItemCount
+            incrementalWorkItemCount += treeStore.subtreeNodeCount(
+                rootedAt: subtreeID,
+                upTo: remainingWorkItemCount
+            )
             if incrementalWorkItemCount >= fullScanWorkThreshold {
                 return .fullScan(reason: .incrementalWorkTooBroad)
             }

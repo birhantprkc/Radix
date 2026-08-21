@@ -1711,10 +1711,18 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func subtreeNodeCount(rootedAt nodeID: String) -> Int {
+        subtreeNodeCount(rootedAt: nodeID, upTo: .max)
+    }
+
+    nonisolated func subtreeNodeCount(
+        rootedAt nodeID: String,
+        upTo limit: Int
+    ) -> Int {
+        guard limit > 0 else { return 0 }
         guard let rootIndex = nodeIndex(id: nodeID) else { return 0 }
         var count = 0
         var stack = [rootIndex]
-        while let nodeIndex = stack.popLast() {
+        while count < limit, let nodeIndex = stack.popLast() {
             count += 1
             stack.append(contentsOf: activeChildren(of: nodeIndex))
         }
