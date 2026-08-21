@@ -1091,6 +1091,25 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.subtreeNodeCount(rootedAt: root.id, upTo: 4), 4)
         XCTAssertEqual(store.subtreeNodeCount(rootedAt: root.id, upTo: 0), 0)
         XCTAssertEqual(store.subtreeNodeCount(rootedAt: "/missing", upTo: 4), 0)
+        XCTAssertEqual(store.subtreeNodeCount(rootedAt: root.id), files.count + 1)
+        XCTAssertEqual(store.subtreeNodeCount(rootedAt: root.id, upTo: .max), files.count + 1)
+
+        let nestedFolder = makeDirectoryNode(id: "/root/nested", name: "nested", children: files)
+        let nestedRoot = makeDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [nestedFolder]
+        )
+        let nestedStore = FileTreeStore(
+            root: nestedRoot,
+            childrenByID: [
+                nestedRoot.id: [nestedFolder],
+                nestedFolder.id: files,
+            ]
+        )
+
+        XCTAssertEqual(nestedStore.subtreeNodeCount(rootedAt: nestedRoot.id, upTo: 5), 5)
+        XCTAssertEqual(nestedStore.subtreeNodeCount(rootedAt: nestedFolder.id, upTo: 7), 7)
     }
 
     func testReplacingRootCanChangeRootID() throws {

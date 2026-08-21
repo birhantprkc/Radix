@@ -611,29 +611,16 @@ nonisolated struct FileTreeStore: Sendable {
         nodeRecords.count
     }
 
+    /// Aggregate stats are always resolved during construction so repeated
+    /// reads never re-traverse the tree.
     nonisolated var aggregateStats: ScanAggregateStats {
         if let logicalScope {
             return logicalScope.aggregateStats
         }
-        if let precomputedAggregateStats {
-            return precomputedAggregateStats
+        guard let precomputedAggregateStats else {
+            preconditionFailure("FileTreeStore aggregate stats were not resolved during construction.")
         }
-
-        return computedAggregateStats()
-    }
-
-    private nonisolated func computedAggregateStats() -> ScanAggregateStats {
-        var accumulator = AggregateStatsAccumulator()
-
-        for nodeIndex in activeOrderedNodeIndices {
-            guard let node = node(at: nodeIndex) else { continue }
-            accumulator.include(
-                node,
-                hasMaterializedChildren: !activeChildren(of: nodeIndex).isEmpty
-            )
-        }
-
-        return accumulator.stats(root: root)
+        return precomputedAggregateStats
     }
 
     nonisolated init(root: FileNodeRecord) {
@@ -699,13 +686,21 @@ nonisolated struct FileTreeStore: Sendable {
             )
             : topology.nodesByID
         self.nodeRecords = topology.orderedNodeIDs.compactMap { storedNodes[$0] }
-        self.topologyArena = FileTreeTopologyArena(
+        let topologyArena = FileTreeTopologyArena(
             rootID: rootID,
             nodesByID: storedNodes,
             childIDsByID: topology.childIDsByID,
             orderedNodeIDs: topology.orderedNodeIDs
         )
-        self.precomputedAggregateStats = topology.didDropReferences ? nil : aggregateStats
+        self.topologyArena = topologyArena
+        if let aggregateStats, !topology.didDropReferences {
+            self.precomputedAggregateStats = aggregateStats
+        } else {
+            self.precomputedAggregateStats = Self.computedAggregateStats(
+                nodeRecords: nodeRecords,
+                topologyArena: topologyArena
+            )
+        }
         self.logicalScope = nil
     }
 
@@ -721,6 +716,26 @@ nonisolated struct FileTreeStore: Sendable {
             nodesByID: nodesByID,
             childIDsByID: childIDsByID,
             aggregateStats: aggregateStats
+        )
+    }
+
+    private nonisolated static func computedAggregateStats(
+        nodeRecords: [FileNodeRecord],
+        topologyArena: FileTreeTopologyArena
+    ) -> ScanAggregateStats {
+        var accumulator = AggregateStatsAccumulator()
+
+        for nodeIndex in topologyArena.orderedNodeIndices {
+            let offset = Int(nodeIndex.rawValue)
+            guard offset < nodeRecords.count else { continue }
+            accumulator.include(
+                nodeRecords[offset],
+                hasMaterializedChildren: topologyArena.childSpans[offset].count > 0
+            )
+        }
+
+        return accumulator.stats(
+            root: nodeRecords[Int(topologyArena.rootIndex.rawValue)]
         )
     }
 
@@ -1724,7 +1739,16 @@ nonisolated struct FileTreeStore: Sendable {
         var stack = [rootIndex]
         while count < limit, let nodeIndex = stack.popLast() {
             count += 1
-            stack.append(contentsOf: activeChildren(of: nodeIndex))
+            // Enqueue only as many children as could still be counted within
+            // the limit so huge fan-outs do not build an oversized frontier.
+            let remainingCapacity = limit - count - stack.count
+            guard remainingCapacity > 0 else { continue }
+            let children = activeChildren(of: nodeIndex)
+            if children.count <= remainingCapacity {
+                stack.append(contentsOf: children)
+            } else {
+                stack.append(contentsOf: children.prefix(remainingCapacity))
+            }
         }
         return count
     }
