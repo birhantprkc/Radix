@@ -319,6 +319,8 @@ nonisolated extension FileSystemEventFlags {
         copy(kFSEventStreamEventFlagItemIsFile, to: .itemIsFile)
         copy(kFSEventStreamEventFlagItemIsDir, to: .itemIsDirectory)
         copy(kFSEventStreamEventFlagItemIsSymlink, to: .itemIsSymbolicLink)
+        copy(kFSEventStreamEventFlagItemIsHardlink, to: .itemIsHardLink)
+        copy(kFSEventStreamEventFlagItemIsLastHardlink, to: .itemIsLastHardLink)
         copy(kFSEventStreamEventFlagItemCloned, to: .itemCloned)
         self = mappedFlags
     }

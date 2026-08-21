@@ -49,6 +49,8 @@ nonisolated struct FileSystemEventFlags: OptionSet, Codable, Hashable, Sendable 
     static let itemIsDirectory = Self(rawValue: 1 << 13)
     static let itemIsSymbolicLink = Self(rawValue: 1 << 14)
     static let itemCloned = Self(rawValue: 1 << 15)
+    static let itemIsHardLink = Self(rawValue: 1 << 16)
+    static let itemIsLastHardLink = Self(rawValue: 1 << 17)
 }
 
 nonisolated struct FileSystemEventRecord: Codable, Hashable, Sendable {
@@ -100,6 +102,7 @@ nonisolated enum IncrementalRescanFallbackReason: String, Codable, Hashable, Sen
     case noMaterializedAncestor
     case autoSummarizedBoundary
     case incrementalWorkTooBroad
+    case sharedAllocationTopologyChanged
     case directoryRelistFailed
     case changedSubtreeUnavailable
     case subtreeRescanFailed
@@ -146,7 +149,8 @@ nonisolated extension IncrementalRescanFallbackReason {
              .readOnlyBaseline,
              .noMaterializedAncestor,
              .autoSummarizedBoundary,
-             .cloneTopologyChanged:
+             .cloneTopologyChanged,
+             .sharedAllocationTopologyChanged:
             return .previousScanUnavailable
         case .directoryRelistFailed,
              .changedSubtreeUnavailable,

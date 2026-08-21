@@ -518,8 +518,61 @@ final class ScanCoordinator: ObservableObject {
             )
         } catch is CancellationError {
             completeFolderRescanAsCancelled(id: rescanID)
+        } catch ScanSnapshotTransformError.sharedAllocationRequiresFullScan {
+            await continueFolderRescanAsFullScan(
+                baseline: baseline,
+                rescanID: rescanID
+            )
         } catch {
             failFolderRescan(error, nodeName: node.name, rescanID: rescanID)
+        }
+    }
+
+    private func continueFolderRescanAsFullScan(
+        baseline: ScanSnapshot,
+        rescanID: UUID
+    ) async {
+        guard activeScanID == rescanID,
+              let options = baseline.scanOptions else {
+            completeFolderRescanAsCancelled(id: rescanID)
+            return
+        }
+
+        progress.executionMode = .fullFallback(.sharedAllocationTopologyChanged)
+        scanMetrics = ScanMetrics()
+        resetProgressThrottling()
+        do {
+            var fullSnapshot: ScanSnapshot?
+            for try await event in scanService.scan(
+                target: baseline.target,
+                options: options
+            ) {
+                guard activeScanID == rescanID else { return }
+                switch event {
+                case .progress(let metrics):
+                    handleProgress(metrics, operationID: rescanID)
+                case .finished(let snapshot):
+                    fullSnapshot = snapshot
+                case .executionMode, .warning:
+                    break
+                }
+            }
+
+            try Task.checkCancellation()
+            guard activeScanID == rescanID,
+                  let fullSnapshot else {
+                completeFolderRescanAsCancelled(id: rescanID)
+                return
+            }
+            finishScan(with: fullSnapshot, scanID: rescanID)
+        } catch is CancellationError {
+            completeFolderRescanAsCancelled(id: rescanID)
+        } catch {
+            failFolderRescan(
+                error,
+                nodeName: baseline.root.name,
+                rescanID: rescanID
+            )
         }
     }
 
@@ -675,6 +728,7 @@ final class ScanCoordinator: ObservableObject {
 
         activeScanID = nil
         scanTask = nil
+        folderRescanState = nil
         phase = .displaying
         publishCompletionNotice(for: progress.executionMode)
         onScanFinished?(snapshot)

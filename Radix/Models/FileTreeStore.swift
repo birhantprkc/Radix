@@ -1634,6 +1634,27 @@ nonisolated struct FileTreeStore: Sendable {
         return count
     }
 
+    nonisolated func subtreeContainsSharedAllocationMetadata(
+        rootedAt nodeID: String,
+        cancellationCheck: () throws -> Void
+    ) throws -> Bool {
+        guard let rootIndex = nodeIndex(id: nodeID) else { return false }
+        var stack = [rootIndex]
+        var visitedCount = 0
+        while let nodeIndex = stack.popLast() {
+            if visitedCount.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            visitedCount += 1
+            if let node = node(at: nodeIndex),
+               node.cloneIdentity != nil || node.linkCount > 1 {
+                return true
+            }
+            stack.append(contentsOf: activeChildren(of: nodeIndex))
+        }
+        return false
+    }
+
     nonisolated func indexedNodeIDs(excludingRoot: Bool = false) -> [String] {
         activeOrderedNodeIndices.compactMap { nodeIndex in
             guard !excludingRoot || nodeIndex != activeRootIndex else { return nil }

@@ -17,6 +17,20 @@ final class IncrementalScanServiceTests: XCTestCase {
         )
     }
 
+    func testFSEventFlagMappingPreservesHardLinkEvents() {
+        let rawFlags = FSEventStreamEventFlags(
+            kFSEventStreamEventFlagItemCreated |
+                kFSEventStreamEventFlagItemIsFile |
+                kFSEventStreamEventFlagItemIsHardlink |
+                kFSEventStreamEventFlagItemIsLastHardlink
+        )
+
+        XCTAssertEqual(
+            FileSystemEventFlags(fseventRawValue: rawFlags),
+            [.itemCreated, .itemIsFile, .itemIsHardLink, .itemIsLastHardLink]
+        )
+    }
+
     func testDarwinHistoryProviderCapturesCheckpointForLocalDirectory() throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

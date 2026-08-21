@@ -37,9 +37,17 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
             if eventPath == targetPath {
                 return .fullScan(reason: .changedScanRoot)
             }
+            if !event.flags.intersection([.itemIsHardLink, .itemIsLastHardLink]).isEmpty {
+                return .fullScan(reason: .sharedAllocationTopologyChanged)
+            }
             if !event.flags.intersection([.itemModified, .itemRemoved]).isEmpty,
-               treeStore.node(id: eventPath)?.cloneIdentity != nil {
-                return .fullScan(reason: .cloneTopologyChanged)
+               let existingNode = treeStore.node(id: eventPath) {
+                if existingNode.cloneIdentity != nil {
+                    return .fullScan(reason: .cloneTopologyChanged)
+                }
+                if existingNode.linkCount > 1 {
+                    return .fullScan(reason: .sharedAllocationTopologyChanged)
+                }
             }
 
             let knownIsDirectory: Bool?

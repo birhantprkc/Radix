@@ -221,6 +221,40 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         }
     }
 
+    func testHardLinkEventsRequireFullScan() {
+        let identity = FileIdentity(device: 1, inode: 42)
+        let hardLink = file(
+            "/scan/folder/shared.bin",
+            fileIdentity: identity,
+            linkCount: 2
+        )
+        let folder = directory("/scan/folder", children: [hardLink])
+        let root = directory("/scan", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [hardLink],
+        ])
+        let target = ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory))
+
+        let cases: [(FileSystemEventFlags, IncrementalRescanFallbackReason)] = [
+            ([.itemModified, .itemIsFile], .sharedAllocationTopologyChanged),
+            ([.itemCreated, .itemIsFile, .itemIsHardLink], .sharedAllocationTopologyChanged),
+            ([.itemRemoved, .itemIsFile, .itemIsLastHardLink], .sharedAllocationTopologyChanged),
+        ]
+        for (flags, expectedReason) in cases {
+            let eventPath = flags.contains(.itemCreated)
+                ? "/scan/folder/new-link.bin"
+                : hardLink.id
+            let plan = IncrementalRescanPlanner().plan(
+                history: history([event(eventPath, flags: flags)]),
+                target: target,
+                treeStore: store
+            )
+
+            XCTAssertEqual(plan, .fullScan(reason: expectedReason))
+        }
+    }
+
     func testEventInsidePackageUsesMaterializedPackageLeaf() {
         let fixture = makeFixture()
         let plan = IncrementalRescanPlanner().plan(
@@ -347,6 +381,8 @@ final class IncrementalRescanPlannerTests: XCTestCase {
 
     private func file(
         _ path: String,
+        fileIdentity: FileIdentity? = nil,
+        linkCount: UInt64 = 1,
         cloneIdentity: CloneIdentity? = nil
     ) -> FileNodeRecord {
         FileNodeRecord(
@@ -359,6 +395,8 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             logicalSize: 1,
             descendantFileCount: 1,
             lastModified: nil,
+            fileIdentity: fileIdentity,
+            linkCount: linkCount,
             cloneIdentity: cloneIdentity,
             isPackage: false,
             isAccessible: true,

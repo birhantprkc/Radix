@@ -408,6 +408,102 @@ final class ScanCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testFolderRescanFallsBackToFullScanForCloneMetadata() async throws {
+        let service = ControlledScanService()
+        let coordinator = ScanCoordinator(
+            scanService: service,
+            progressThrottleDuration: .zero
+        )
+        let rootTarget = makeCoordinatorTarget("/scan/shared")
+        let folderTarget = makeCoordinatorTarget("/scan/shared/Changed")
+        let cloneIdentity = CloneIdentity(device: 1, cloneID: 42)
+        let changedClone = makeTestFileNode(
+            id: folderTarget.id + "/shared.dat",
+            name: "shared.dat",
+            size: 20,
+            cloneIdentity: cloneIdentity,
+            mayShareDataBlocks: true
+        )
+        let siblingClone = makeTestFileNode(
+            id: rootTarget.id + "/shared.dat",
+            name: "shared.dat",
+            size: 0,
+            unduplicatedAllocatedSize: 20,
+            cloneIdentity: cloneIdentity,
+            mayShareDataBlocks: true
+        )
+        let folder = makeTestDirectoryNode(
+            id: folderTarget.id,
+            name: "Changed",
+            children: [changedClone]
+        )
+        let root = makeTestDirectoryNode(
+            id: rootTarget.id,
+            name: "shared",
+            children: [folder, siblingClone]
+        )
+        let baselineStore = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder, siblingClone],
+            folder.id: [changedClone],
+        ])
+        let options = ScanOptions()
+        let baseline = makeCoordinatorSnapshot(
+            target: rootTarget,
+            root: root,
+            store: baselineStore,
+            scanOptions: options
+        )
+        coordinator.restoreCompletedSnapshot(baseline)
+
+        XCTAssertTrue(coordinator.rescanFolder(id: folder.id))
+
+        let replacementFile = makeTestFileNode(
+            id: changedClone.id,
+            name: changedClone.name,
+            size: 40,
+            cloneIdentity: cloneIdentity,
+            mayShareDataBlocks: true
+        )
+        let replacementRoot = makeTestDirectoryNode(
+            id: folder.id,
+            name: folder.name,
+            children: [replacementFile]
+        )
+        service.yield(.finished(makeCoordinatorSnapshot(
+            target: folderTarget,
+            root: replacementRoot,
+            store: FileTreeStore(
+                root: replacementRoot,
+                childrenByID: [replacementRoot.id: [replacementFile]]
+            )
+        )), scanIndex: 0)
+        service.finish(scanIndex: 0)
+
+        try await waitUntil("shared folder rescan starts full fallback") {
+            service.requests.count == 2
+                && coordinator.progress.executionMode
+                    == .fullFallback(.sharedAllocationTopologyChanged)
+        }
+        let fallbackRequest = try XCTUnwrap(service.requests.dropFirst().first)
+        XCTAssertEqual(fallbackRequest.target, rootTarget)
+        XCTAssertEqual(fallbackRequest.options, options)
+
+        let fullSnapshot = makeCoordinatorSnapshot(
+            target: rootTarget,
+            scanOptions: options
+        )
+        service.yield(.finished(fullSnapshot), scanIndex: 1)
+        service.finish(scanIndex: 1)
+
+        try await waitUntil("shared folder full fallback finishes") {
+            coordinator.scanCompletionNotice
+                == .fullFallback(.sharedAllocationTopologyChanged)
+        }
+        XCTAssertEqual(coordinator.snapshot?.id, fullSnapshot.id)
+        XCTAssertNil(coordinator.folderRescanState)
+    }
+
+    @MainActor
     func testFolderRescanRefreshesWholeVolumeCapacityAccounting() async throws {
         let service = ControlledScanService()
         let refreshedCapacity = VolumeCapacitySnapshot(
