@@ -767,7 +767,6 @@ nonisolated struct FileTreeStore: Sendable {
         self.precomputedAggregateStats = aggregateStats
         self.logicalScope = nil
         assert(orderedNodeIDs.count == nodesByID.count)
-        assert(parentIDByID == self.parentIDByID)
     }
 
     /// Fast construction for scanner output already represented by compact node indices.

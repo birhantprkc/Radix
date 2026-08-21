@@ -1077,6 +1077,52 @@ final class FileTreeStoreTests: XCTestCase {
         ))
     }
 
+    func testVerifiedRootIDInitProjectsSuppliedTopology() {
+        let leaf = makeFileNode(id: "/root/folder/file.txt", name: "file.txt", size: 4)
+        let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])
+        let sibling = makeFileNode(id: "/root/sibling.txt", name: "sibling.txt", size: 8)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [sibling, folder])
+
+        let store = FileTreeStore(
+            verifiedRootID: root.id,
+            nodesByID: [
+                root.id: root,
+                sibling.id: sibling,
+                folder.id: folder,
+                leaf.id: leaf,
+            ],
+            childIDsByID: [
+                root.id: [sibling.id, folder.id],
+                folder.id: [leaf.id],
+            ],
+            parentIDByID: [
+                sibling.id: root.id,
+                folder.id: root.id,
+                leaf.id: folder.id,
+            ],
+            aggregateStats: ScanAggregateStats(
+                totalAllocatedSize: 12,
+                totalLogicalSize: 12,
+                fileCount: 2,
+                directoryCount: 1,
+                accessibleItemCount: 3,
+                inaccessibleItemCount: 0
+            )
+        )
+
+        XCTAssertEqual(store.rootID, root.id)
+        XCTAssertEqual(store.nodesByID[root.id], root)
+        XCTAssertEqual(store.nodesByID[leaf.id], leaf)
+        XCTAssertEqual(store.childIDsByID[root.id], [sibling.id, folder.id])
+        XCTAssertEqual(store.childIDsByID[folder.id], [leaf.id])
+        XCTAssertEqual(store.parentIDByID[sibling.id], root.id)
+        XCTAssertEqual(store.parentIDByID[folder.id], root.id)
+        XCTAssertEqual(store.parentIDByID[leaf.id], folder.id)
+        XCTAssertNil(store.parentIDByID[root.id])
+        XCTAssertEqual(store.aggregateStats.totalAllocatedSize, 12)
+        XCTAssertEqual(store.aggregateStats.fileCount, 2)
+    }
+
     func testSubtreeNodeCountStopsAtLimit() {
         let files = (0..<10).map { index in
             makeFileNode(
