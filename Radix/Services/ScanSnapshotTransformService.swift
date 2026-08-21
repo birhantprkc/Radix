@@ -11,6 +11,25 @@ nonisolated enum ScanSnapshotTransformError: Error, Sendable {
     case sharedAllocationRequiresFullScan
 }
 
+private nonisolated enum SubtreeRescanAllocationValidator {
+    static func validate(
+        baseline: FileTreeStore,
+        targetID: String,
+        replacement: FileTreeStore,
+        cancellationCheck: () throws -> Void
+    ) throws {
+        if try baseline.subtreeContainsSharedAllocationMetadata(
+            rootedAt: targetID,
+            cancellationCheck: cancellationCheck
+        ) || replacement.subtreeContainsSharedAllocationMetadata(
+            rootedAt: replacement.rootID,
+            cancellationCheck: cancellationCheck
+        ) {
+            throw ScanSnapshotTransformError.sharedAllocationRequiresFullScan
+        }
+    }
+}
+
 protocol ScanSnapshotTransforming: Sendable {
     func replacingNode(
         in snapshot: ScanSnapshot,
@@ -59,15 +78,12 @@ extension ScanSnapshotTransforming {
         volumeCapacity: VolumeCapacitySnapshot?,
         reconcilesVolumeCapacity: Bool
     ) async throws -> ScanSnapshot? {
-        if try snapshot.treeStore.subtreeContainsSharedAllocationMetadata(
-            rootedAt: targetID,
+        try SubtreeRescanAllocationValidator.validate(
+            baseline: snapshot.treeStore,
+            targetID: targetID,
+            replacement: replacement,
             cancellationCheck: { try Task.checkCancellation() }
-        ) || replacement.subtreeContainsSharedAllocationMetadata(
-            rootedAt: replacement.rootID,
-            cancellationCheck: { try Task.checkCancellation() }
-        ) {
-            throw ScanSnapshotTransformError.sharedAllocationRequiresFullScan
-        }
+        )
         return try await replacingNode(
             in: snapshot,
             id: targetID,
@@ -153,15 +169,12 @@ actor ScanSnapshotTransformService {
         volumeCapacity: VolumeCapacitySnapshot?,
         reconcilesVolumeCapacity: Bool
     ) async throws -> ScanSnapshot? {
-        if try snapshot.treeStore.subtreeContainsSharedAllocationMetadata(
-            rootedAt: targetID,
+        try SubtreeRescanAllocationValidator.validate(
+            baseline: snapshot.treeStore,
+            targetID: targetID,
+            replacement: replacement,
             cancellationCheck: { try Task.checkCancellation() }
-        ) || replacement.subtreeContainsSharedAllocationMetadata(
-            rootedAt: replacement.rootID,
-            cancellationCheck: { try Task.checkCancellation() }
-        ) {
-            throw ScanSnapshotTransformError.sharedAllocationRequiresFullScan
-        }
+        )
         return try snapshot.replacingNode(
             id: targetID,
             with: replacement,
