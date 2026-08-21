@@ -34,11 +34,13 @@ nonisolated struct CompletedScanCache {
         return snapshot
     }
 
-    mutating func snapshot(containing target: ScanTarget, options: ScanOptions) -> ScanSnapshot? {
+    mutating func mostRecentSnapshot(
+        matchingOrContaining target: ScanTarget,
+        options: ScanOptions
+    ) -> ScanSnapshot? {
         for key in keysByRecency.reversed() where key.options == options {
             guard let snapshot = snapshotsByKey[key],
-                  snapshot.target.id != target.id,
-                  snapshot.treeStore.node(id: target.id) != nil else {
+                  key.targetID == target.id || snapshot.treeStore.node(id: target.id) != nil else {
                 continue
             }
 
@@ -191,38 +193,69 @@ final class SidebarScanCacheController {
         }
 
         let cacheKey = ScanCacheKey(target: target, options: options)
-        if let cachedSnapshot = completedScanCache.snapshot(for: cacheKey) {
-            if currentSnapshot?.id == cachedSnapshot.id {
-                cancelPendingSidebarTargetRestore()
-                cancelDeferredScanStart()
-                activeScanCacheKey = nil
-                displayedScanCacheKey = cacheKey
-            } else {
-                restoreCachedSnapshot(
+        if let cachedSnapshot = completedScanCache.mostRecentSnapshot(
+            matchingOrContaining: target,
+            options: options
+        ) {
+            if cachedSnapshot.target.id == target.id {
+                applyExactCachedSnapshot(
                     cachedSnapshot,
                     cacheKey: cacheKey,
+                    currentSnapshot: currentSnapshot,
                     cancelDeferredScanStart: cancelDeferredScanStart,
                     restoreSnapshot: restoreSnapshot
                 )
+                return false
             }
-            return false
+
+            if scheduleContainedSidebarTargetRestore(
+                target,
+                options: options,
+                from: cachedSnapshot,
+                currentSnapshot: currentSnapshot,
+                isTargetActive: isTargetActive,
+                cancelDeferredScanStart: cancelDeferredScanStart,
+                restoreSnapshot: restoreSnapshot,
+                startScan: startScan
+            ) {
+                return false
+            }
         }
 
-        if let containingSnapshot = completedScanCache.snapshot(containing: target, options: options),
-           scheduleContainedSidebarTargetRestore(
-               target,
-               options: options,
-               from: containingSnapshot,
-               currentSnapshot: currentSnapshot,
-               isTargetActive: isTargetActive,
-               cancelDeferredScanStart: cancelDeferredScanStart,
-               restoreSnapshot: restoreSnapshot,
-               startScan: startScan
-           ) {
+        if let cachedSnapshot = completedScanCache.snapshot(for: cacheKey) {
+            applyExactCachedSnapshot(
+                cachedSnapshot,
+                cacheKey: cacheKey,
+                currentSnapshot: currentSnapshot,
+                cancelDeferredScanStart: cancelDeferredScanStart,
+                restoreSnapshot: restoreSnapshot
+            )
             return false
         }
 
         return true
+    }
+
+    private func applyExactCachedSnapshot(
+        _ snapshot: ScanSnapshot,
+        cacheKey: ScanCacheKey,
+        currentSnapshot: ScanSnapshot?,
+        cancelDeferredScanStart: () -> Void,
+        restoreSnapshot: SnapshotRestoration
+    ) {
+        if currentSnapshot?.id == snapshot.id {
+            cancelPendingSidebarTargetRestore()
+            cancelDeferredScanStart()
+            activeScanCacheKey = nil
+            displayedScanCacheKey = cacheKey
+        } else {
+            restoreCachedSnapshot(
+                snapshot,
+                cacheKey: cacheKey,
+                cancelDeferredScanStart: cancelDeferredScanStart,
+                restoreSnapshot: restoreSnapshot
+            )
+        }
     }
 
     private func restoreCachedSnapshot(
