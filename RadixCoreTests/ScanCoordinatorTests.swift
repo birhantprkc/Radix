@@ -487,6 +487,10 @@ final class ScanCoordinatorTests: XCTestCase {
         let fallbackRequest = try XCTUnwrap(service.requests.dropFirst().first)
         XCTAssertEqual(fallbackRequest.target, rootTarget)
         XCTAssertEqual(fallbackRequest.options, options)
+        XCTAssertEqual(
+            coordinator.folderRescanState,
+            FolderRescanState(nodeName: rootTarget.displayName)
+        )
 
         let fullSnapshot = makeCoordinatorSnapshot(
             target: rootTarget,

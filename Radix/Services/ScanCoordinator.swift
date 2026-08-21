@@ -539,6 +539,7 @@ final class ScanCoordinator: ObservableObject {
         }
 
         progress.executionMode = .fullFallback(.sharedAllocationTopologyChanged)
+        folderRescanState = FolderRescanState(nodeName: baseline.target.displayName)
         scanMetrics = ScanMetrics()
         resetProgressThrottling()
         do {
