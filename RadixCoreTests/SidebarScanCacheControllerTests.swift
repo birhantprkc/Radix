@@ -89,6 +89,66 @@ final class SidebarScanCacheControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testControllerReplacesDisplayedCachedSnapshotAfterRefresh() throws {
+        let controller = SidebarScanCacheController(minimumRetainedSnapshotCount: 2, maxTotalNodeCount: 100)
+        let recorder = SidebarScanCacheRecorder()
+        let cachedSnapshot = makeCacheSnapshot("/cache/refreshed", childCount: 1)
+        let refreshedFile = makeTestFileNode(
+            id: cachedSnapshot.target.id + "/refreshed.txt",
+            name: "refreshed.txt"
+        )
+        let refreshedRoot = makeTestDirectoryNode(
+            id: cachedSnapshot.root.id,
+            name: cachedSnapshot.root.name,
+            children: [refreshedFile]
+        )
+        let refreshedStore = FileTreeStore(
+            root: refreshedRoot,
+            childrenByID: [refreshedRoot.id: [refreshedFile]]
+        )
+        let refreshedSnapshot = ScanSnapshot(
+            id: cachedSnapshot.id,
+            target: cachedSnapshot.target,
+            treeStore: refreshedStore,
+            startedAt: cachedSnapshot.startedAt,
+            finishedAt: .now,
+            scanWarnings: [],
+            aggregateStats: refreshedStore.aggregateStats,
+            isComplete: true,
+            scanOptions: cachedSnapshot.scanOptions
+        )
+        let options = ScanOptions()
+
+        controller.prepareForScanStart(target: cachedSnapshot.target, options: options)
+        controller.handleCompletedScanSnapshot(cachedSnapshot)
+        controller.handleCompletedScanSnapshot(refreshedSnapshot)
+
+        let shouldStartScan = controller.applyCachedOrContainedSidebarTarget(
+            cachedSnapshot.target,
+            options: options,
+            currentSnapshot: nil,
+            isTargetActive: { _ in true },
+            cancelDeferredScanStart: {},
+            restoreSnapshot: { snapshot, target in
+                recorder.restoredSnapshots.append(snapshot)
+                recorder.restoredTargets.append(target)
+            },
+            startScan: { target in
+                recorder.startedTargets.append(target)
+            }
+        )
+
+        XCTAssertFalse(shouldStartScan)
+        let restoredSnapshot = try XCTUnwrap(recorder.restoredSnapshots.first)
+        XCTAssertEqual(restoredSnapshot.id, cachedSnapshot.id)
+        XCTAssertEqual(
+            restoredSnapshot.treeStore.children(of: refreshedRoot.id).map(\.id),
+            [refreshedFile.id]
+        )
+        XCTAssertTrue(recorder.startedTargets.isEmpty)
+    }
+
+    @MainActor
     func testControllerKeepsCurrentCachedParentWhenChildScopeIsPending() async {
         let controller = SidebarScanCacheController(minimumRetainedSnapshotCount: 2, maxTotalNodeCount: 100)
         let recorder = SidebarScanCacheRecorder()

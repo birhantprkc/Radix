@@ -952,6 +952,7 @@ final class ScanCoordinator: ObservableObject {
             guard snapshotRevision == transformRevision else { continue }
 
             publishSnapshot(updatedSnapshot, startsNewContext: false)
+            completedScanSnapshot = updatedSnapshot
             return expandedSnapshot.root.id
         }
         return nil

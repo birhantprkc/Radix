@@ -715,6 +715,10 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertEqual(updatedSnapshot.treeStore.children(of: summarizedNode.id).map(\.id), [expandedFile.id])
         XCTAssertEqual(updatedSnapshot.scanWarnings.map(\.path), [expansionWarning.path])
         XCTAssertEqual(coordinator.fileTreeStore?.root.id, root.id)
+        XCTAssertEqual(
+            coordinator.completedScanSnapshot?.treeStore.children(of: summarizedNode.id).map(\.id),
+            [expandedFile.id]
+        )
         XCTAssertNil(coordinator.expandingNodeID)
     }
 

@@ -158,7 +158,7 @@ final class SidebarScanCacheController {
             activeScanCacheKey = nil
         }
 
-        guard let cacheKey = activeScanCacheKey,
+        guard let cacheKey = activeScanCacheKey ?? displayedScanCacheKey,
               cacheKey.targetID == snapshot.target.id else {
             return
         }
