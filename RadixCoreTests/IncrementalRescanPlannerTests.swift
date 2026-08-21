@@ -129,6 +129,32 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         XCTAssertEqual(plan, .fullScan(reason: .incrementalWorkTooBroad))
     }
 
+    func testSingleBroadSubtreeFallsBackToFullScan() {
+        let changedFiles = (0..<40).map { index in
+            file("/scan/changed/file-\(index).dat")
+        }
+        let changed = directory("/scan/changed", children: changedFiles)
+        let paddingFiles = (0..<20).map { index in
+            file("/scan/padding-\(index).dat")
+        }
+        let rootChildren = [changed] + paddingFiles
+        let root = directory("/scan", children: rootChildren)
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: rootChildren,
+            changed.id: changedFiles,
+        ])
+
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event(changed.id, flags: [.mustScanSubdirectories, .itemIsDirectory]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: store
+        )
+
+        XCTAssertEqual(plan, .fullScan(reason: .incrementalWorkTooBroad))
+    }
+
     func testNestedEventsCoalesceToTopLevelChangedSubtree() {
         let fixture = makeFixture()
         let plan = IncrementalRescanPlanner().plan(

@@ -25,7 +25,6 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         case incompleteMetadata
         case duplicateEntry
         case identityChanged
-        case replacementCollision
     }
 
     private struct ShallowReplacement: Sendable {
@@ -419,18 +418,18 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         baseline: ScanSnapshot,
         classificationWorkerLimit: Int
     ) async throws -> ShallowReplacement {
-        guard let originalSubtree = baseline.treeStore.subtreeContents(rootedAt: directoryID),
-              originalSubtree.root.isDirectory,
-              !originalSubtree.root.isSymbolicLink else {
+        guard let originalRoot = baseline.treeStore.node(id: directoryID),
+              originalRoot.isDirectory,
+              !originalRoot.isSymbolicLink else {
             throw ShallowRelistError.invalidDirectory
         }
         if ScanEngine.requiresDeepScanForAutoSummary(
-            at: originalSubtree.root.url,
+            at: originalRoot.url,
             scanTarget: target,
             options: options
         ) {
             let replacement = try await scannedReplacement(
-                at: originalSubtree.root.url,
+                at: originalRoot.url,
                 scanTarget: target,
                 options: options
             )
@@ -441,22 +440,21 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             )
         }
         let listing = try await engine.shallowDirectoryListing(
-            at: originalSubtree.root.url,
+            at: originalRoot.url,
             scanTarget: target,
             options: options,
             classificationWorkerLimit: classificationWorkerLimit
         )
         guard listing.directoryMetadata.fileIdentity != nil,
-              listing.directoryMetadata.fileIdentity == originalSubtree.root.fileIdentity else {
+              listing.directoryMetadata.fileIdentity == originalRoot.fileIdentity else {
             throw ShallowRelistError.identityChanged
         }
 
-        var nodesByID = originalSubtree.nodesByID
-        var childIDsByID = originalSubtree.childIDsByID
-        let originalChildIDs = originalSubtree.childIDsByID[directoryID] ?? []
         var currentChildIDs = Set<String>()
         currentChildIDs.reserveCapacity(listing.entries.count)
         var preservedSubtreeIDs = Set<String>()
+        var childSubtrees: [FileTreeStore.SubtreeSource] = []
+        childSubtrees.reserveCapacity(listing.entries.count)
         var replacementWarnings: [ScanWarning] = []
 
         for entry in listing.entries {
@@ -471,62 +469,55 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             }
 
             if canPreserveDirectory(
-                baselineNode: originalSubtree.nodesByID[childID],
+                baselineNode: baseline.treeStore.node(id: childID),
                 metadata: metadata
             ) {
+                guard let subtree = FileTreeStore.SubtreeSource(
+                    store: baseline.treeStore,
+                    rootedAt: childID
+                ) else {
+                    throw ShallowRelistError.incompleteMetadata
+                }
+                childSubtrees.append(subtree)
                 preservedSubtreeIDs.insert(childID)
                 continue
             }
 
-            removeSubtree(
-                rootedAt: childID,
-                originalChildIDsByID: originalSubtree.childIDsByID,
-                nodesByID: &nodesByID,
-                childIDsByID: &childIDsByID
-            )
             if metadata.isDirectory, !metadata.isSymbolicLink {
                 let childSnapshot = try await scannedReplacement(
                     at: entry.url,
                     scanTarget: target,
                     options: options
                 )
-                for (replacementID, node) in childSnapshot.treeStore.nodesByID {
-                    guard nodesByID[replacementID] == nil else {
-                        throw ShallowRelistError.replacementCollision
-                    }
-                    nodesByID[replacementID] = node
+                guard childSnapshot.treeStore.rootID == childID,
+                      let subtree = FileTreeStore.SubtreeSource(
+                          store: childSnapshot.treeStore,
+                          rootedAt: childID
+                      ) else {
+                    throw ShallowRelistError.incompleteMetadata
                 }
-                for (replacementID, childIDs) in childSnapshot.treeStore.childIDsByID {
-                    childIDsByID[replacementID] = childIDs
-                }
+                childSubtrees.append(subtree)
                 replacementWarnings.append(contentsOf: childSnapshot.scanWarnings)
             } else {
-                nodesByID[childID] = engine.makeFileNode(
+                let child = engine.makeFileNode(
                     url: entry.url,
                     metadata: metadata
                 )
+                childSubtrees.append(FileTreeStore.SubtreeSource(node: child))
             }
         }
 
-        for removedChildID in originalChildIDs where !currentChildIDs.contains(removedChildID) {
-            removeSubtree(
-                rootedAt: removedChildID,
-                originalChildIDsByID: originalSubtree.childIDsByID,
-                nodesByID: &nodesByID,
-                childIDsByID: &childIDsByID
-            )
+        childSubtrees.sort {
+            FileTreeStore.areInDisplayOrder($0.root, $1.root)
         }
-
-        let children = FileTreeStore.sortedChildren(
-            currentChildIDs.compactMap { nodesByID[$0] }
-        )
+        let children = childSubtrees.map(\.root)
         guard children.count == currentChildIDs.count else {
             throw ShallowRelistError.incompleteMetadata
         }
-        nodesByID[directoryID] = FileNodeRecord.directory(
+        let replacementRoot = FileNodeRecord.directory(
             id: directoryID,
-            url: originalSubtree.root.url,
-            name: originalSubtree.root.name,
+            url: originalRoot.url,
+            name: originalRoot.name,
             children: children,
             lastModified: listing.directoryMetadata.lastModified,
             fileIdentity: listing.directoryMetadata.fileIdentity,
@@ -535,11 +526,6 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             isAccessible: listing.directoryMetadata.isReadable,
             childrenAreSorted: true
         )
-        if children.isEmpty {
-            childIDsByID.removeValue(forKey: directoryID)
-        } else {
-            childIDsByID[directoryID] = children.map(\.id)
-        }
         replacementWarnings.append(contentsOf: baseline.scanWarnings.filter { warning in
             preservedSubtreeIDs.contains { subtreeID in
                 Self.path(warning.path, isContainedIn: subtreeID)
@@ -547,10 +533,10 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         })
         return ShallowReplacement(
             directoryID: directoryID,
-            treeStore: FileTreeStore(
-                rootID: directoryID,
-                nodesByID: nodesByID,
-                childIDsByID: childIDsByID
+            treeStore: try FileTreeStore.combining(
+                root: replacementRoot,
+                childSubtrees: childSubtrees,
+                cancellationCheck: { try Task.checkCancellation() }
             ),
             warnings: replacementWarnings
         )
@@ -598,20 +584,6 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             return false
         }
         return true
-    }
-
-    private nonisolated func removeSubtree(
-        rootedAt nodeID: String,
-        originalChildIDsByID: [String: [String]],
-        nodesByID: inout [String: FileNodeRecord],
-        childIDsByID: inout [String: [String]]
-    ) {
-        var stack = [nodeID]
-        while let removedID = stack.popLast() {
-            stack.append(contentsOf: originalChildIDsByID[removedID] ?? [])
-            nodesByID.removeValue(forKey: removedID)
-            childIDsByID.removeValue(forKey: removedID)
-        }
     }
 
     private nonisolated static func path(_ path: String, isContainedIn rootPath: String) -> Bool {

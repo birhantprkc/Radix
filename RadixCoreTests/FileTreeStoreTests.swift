@@ -1119,6 +1119,33 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(updated.aggregateStats.directoryCount, 3)
     }
 
+    func testReplacingSubtreesCanChangeRootID() throws {
+        let oldChild = makeFileNode(id: "/root/old.txt", name: "old.txt", size: 5)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [oldChild])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [oldChild]])
+        let newChild = makeFileNode(id: "/replacement/new.txt", name: "new.txt", size: 9)
+        let replacementRoot = makeDirectoryNode(
+            id: "/replacement",
+            name: "replacement",
+            children: [newChild]
+        )
+
+        let updated = try XCTUnwrap(try store.replacingSubtrees(
+            [
+                root.id: FileTreeStore(
+                    root: replacementRoot,
+                    childrenByID: [replacementRoot.id: [newChild]]
+                ),
+            ],
+            cancellationCheck: {}
+        ))
+
+        XCTAssertEqual(updated.rootID, replacementRoot.id)
+        XCTAssertEqual(updated.root.allocatedSize, 9)
+        XCTAssertEqual(updated.children(of: replacementRoot.id), [newChild])
+        XCTAssertNil(updated.node(id: root.id))
+    }
+
     func testReplacingSubtreesRejectsOverlappingTargets() throws {
         let leaf = makeFileNode(id: "/root/folder/leaf.txt", name: "leaf.txt", size: 4)
         let folder = makeDirectoryNode(id: "/root/folder", name: "folder", children: [leaf])
@@ -1158,6 +1185,24 @@ final class FileTreeStoreTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains(sharedID))
         }
         XCTAssertEqual(store.root.allocatedSize, 2)
+    }
+
+    func testReplacingSubtreesRejectsIDRemovedByAnotherTarget() throws {
+        let oldA = makeFileNode(id: "/root/A", name: "A", size: 1)
+        let oldB = makeFileNode(id: "/root/B", name: "B", size: 1)
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [oldA, oldB])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [oldA, oldB]])
+        let replacementB = makeFileNode(id: "/root/replacement-B", name: "replacement-B", size: 2)
+
+        XCTAssertThrowsError(try store.replacingSubtrees(
+            [
+                oldA.id: FileTreeStore(root: oldB),
+                oldB.id: FileTreeStore(root: replacementB),
+            ],
+            cancellationCheck: {}
+        )) { error in
+            XCTAssertTrue(error.localizedDescription.contains(oldB.id))
+        }
     }
 
     func testReplacingSubtreesRebalancesHardLinksAcrossReplacementBoundaries() throws {
