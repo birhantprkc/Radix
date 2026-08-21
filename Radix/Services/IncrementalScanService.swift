@@ -72,23 +72,40 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
         options: ScanOptions,
         executionMode: ScanExecutionMode
     ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
-        let checkpoint: ScanIncrementalCheckpoint?
-        do {
-            checkpoint = try eventHistoryProvider.currentCheckpoint(for: target.url)
-        } catch {
-            checkpoint = nil
-            Self.logger.info(
-                "Incremental checkpoint unavailable: \(error, privacy: .private)"
-            )
-        }
-        return bridge(
-            engine.scan(target: target, options: options),
-            executionMode: executionMode
-        ) { snapshot in
-            self.snapshot(
-                snapshot,
-                checkpoint: checkpoint
-            )
+        AsyncThrowingStream { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                continuation.yield(.executionMode(executionMode))
+
+                let checkpoint: ScanIncrementalCheckpoint?
+                do {
+                    checkpoint = try self.eventHistoryProvider.currentCheckpoint(for: target.url)
+                } catch {
+                    checkpoint = nil
+                    Self.logger.info(
+                        "Incremental checkpoint unavailable: \(error, privacy: .private)"
+                    )
+                }
+
+                do {
+                    try Task.checkCancellation()
+                    for try await event in self.engine.scan(target: target, options: options) {
+                        if case .finished(let snapshot) = event {
+                            continuation.yield(.finished(self.snapshot(
+                                snapshot,
+                                checkpoint: checkpoint
+                            )))
+                        } else {
+                            continuation.yield(event)
+                        }
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
 
@@ -625,33 +642,6 @@ nonisolated final class IncrementalScanService: ScanEventStreaming, @unchecked S
             continuation.yield(event)
         }
         continuation.finish()
-    }
-
-    private nonisolated func bridge(
-        _ stream: AsyncThrowingStream<ScanProgressEvent, Error>,
-        executionMode: ScanExecutionMode,
-        finishedTransform: @escaping @Sendable (ScanSnapshot) -> ScanSnapshot
-    ) -> AsyncThrowingStream<ScanProgressEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task(priority: .userInitiated) {
-                do {
-                    continuation.yield(.executionMode(executionMode))
-                    for try await event in stream {
-                        if case .finished(let snapshot) = event {
-                            continuation.yield(.finished(finishedTransform(snapshot)))
-                        } else {
-                            continuation.yield(event)
-                        }
-                    }
-                    continuation.finish()
-                } catch is CancellationError {
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { @Sendable _ in task.cancel() }
-        }
     }
 
     private nonisolated func incrementalRescanEligibility(
