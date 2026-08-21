@@ -1734,6 +1734,9 @@ nonisolated struct FileTreeStore: Sendable {
             }
             visitedCount += 1
             if let node = node(at: nodeIndex),
+               !node.isDirectory,
+               !node.isSymbolicLink,
+               !node.isSynthetic,
                node.cloneIdentity != nil || node.linkCount > 1 {
                 return true
             }

@@ -1054,6 +1054,29 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.node(id: sibling.id)?.name, sibling.name)
     }
 
+    func testSharedAllocationMetadataIgnoresDirectoryLinkCounts() throws {
+        let ordinaryFile = makeFileNode(
+            id: "/root/ordinary.dat",
+            name: "ordinary.dat",
+            size: 4
+        )
+        let root = makeTestDirectoryNode(
+            id: "/root",
+            name: "root",
+            children: [ordinaryFile],
+            linkCount: 42
+        )
+        let store = FileTreeStore(
+            root: root,
+            childrenByID: [root.id: [ordinaryFile]]
+        )
+
+        XCTAssertFalse(try store.subtreeContainsSharedAllocationMetadata(
+            rootedAt: root.id,
+            cancellationCheck: {}
+        ))
+    }
+
     func testReplacingRootCanChangeRootID() throws {
         let oldChild = makeFileNode(id: "/root/old.txt", name: "old.txt", size: 4)
         let oldRoot = makeDirectoryNode(id: "/root", name: "root", children: [oldChild])

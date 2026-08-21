@@ -37,19 +37,6 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
             if eventPath == targetPath {
                 return .fullScan(reason: .changedScanRoot)
             }
-            if !event.flags.intersection([.itemIsHardLink, .itemIsLastHardLink]).isEmpty {
-                return .fullScan(reason: .sharedAllocationTopologyChanged)
-            }
-            if !event.flags.intersection([.itemModified, .itemRemoved]).isEmpty,
-               let existingNode = treeStore.node(id: eventPath) {
-                if existingNode.cloneIdentity != nil {
-                    return .fullScan(reason: .cloneTopologyChanged)
-                }
-                if existingNode.linkCount > 1 {
-                    return .fullScan(reason: .sharedAllocationTopologyChanged)
-                }
-            }
-
             let knownIsDirectory: Bool?
             if event.flags.contains(.itemIsDirectory) {
                 knownIsDirectory = true
@@ -64,6 +51,24 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
                    isDirectory: knownIsDirectory
                ) == true {
                 continue
+            }
+            if event.flags.contains(.itemCloned) {
+                return .fullScan(reason: .cloneTopologyChanged)
+            }
+            if !event.flags.intersection([.itemIsHardLink, .itemIsLastHardLink]).isEmpty {
+                return .fullScan(reason: .sharedAllocationTopologyChanged)
+            }
+            if let existingNode = treeStore.node(id: eventPath) {
+                if !event.flags.intersection([.itemModified, .itemRemoved]).isEmpty,
+                   existingNode.cloneIdentity != nil {
+                    return .fullScan(reason: .cloneTopologyChanged)
+                }
+                if !existingNode.isDirectory,
+                   !existingNode.isSymbolicLink,
+                   !existingNode.isSynthetic,
+                   existingNode.linkCount > 1 {
+                    return .fullScan(reason: .sharedAllocationTopologyChanged)
+                }
             }
 
             var candidatePath = initialCandidatePath(
@@ -190,7 +195,6 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         if !flags.intersection([.volumeMounted, .volumeUnmounted]).isEmpty {
             return .nestedVolumeChanged
         }
-        if flags.contains(.itemCloned) { return .cloneTopologyChanged }
         return nil
     }
 

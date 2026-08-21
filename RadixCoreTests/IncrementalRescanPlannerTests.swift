@@ -264,6 +264,7 @@ final class IncrementalRescanPlannerTests: XCTestCase {
 
         let cases: [(FileSystemEventFlags, IncrementalRescanFallbackReason)] = [
             ([.itemModified, .itemIsFile], .sharedAllocationTopologyChanged),
+            ([.itemMetadataModified, .itemIsFile], .sharedAllocationTopologyChanged),
             ([.itemCreated, .itemIsFile, .itemIsHardLink], .sharedAllocationTopologyChanged),
             ([.itemRemoved, .itemIsFile, .itemIsLastHardLink], .sharedAllocationTopologyChanged),
         ]
@@ -279,6 +280,25 @@ final class IncrementalRescanPlannerTests: XCTestCase {
 
             XCTAssertEqual(plan, .fullScan(reason: expectedReason))
         }
+    }
+
+    func testDirectoryLinkCountDoesNotRequireSharedAllocationFallback() {
+        let folder = directory("/scan/folder", children: [], linkCount: 12)
+        let root = directory("/scan", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [folder]])
+
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event(folder.id, flags: [.itemModified, .itemIsDirectory]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: store
+        )
+
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [],
+            rescanSubtreeIDs: [folder.id]
+        ))
     }
 
     func testEventInsidePackageUsesMaterializedPackageLeaf() {
@@ -319,6 +339,27 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         let plan = IncrementalRescanPlanner().plan(
             history: history([
                 event("/scan/folder/debug.log", flags: [.itemModified, .itemIsFile]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: fixture.store,
+            exclusionMatcher: matcher
+        )
+
+        XCTAssertEqual(plan, .noChanges)
+    }
+
+    func testExcludedSharedAllocationEventDoesNotTriggerFullScan() {
+        let fixture = makeFixture()
+        let matcher = ScanExclusionMatcher(
+            patterns: ["*.log"],
+            rootPath: "/scan"
+        )
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event(
+                    "/scan/folder/debug.log",
+                    flags: [.itemModified, .itemIsFile, .itemCloned, .itemIsHardLink]
+                ),
             ]),
             target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
             treeStore: fixture.store,
@@ -393,13 +434,18 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         return (store, folder, package, autoSummary)
     }
 
-    private func directory(_ path: String, children: [FileNodeRecord]) -> FileNodeRecord {
+    private func directory(
+        _ path: String,
+        children: [FileNodeRecord],
+        linkCount: UInt64 = 1
+    ) -> FileNodeRecord {
         FileNodeRecord.directory(
             id: path,
             url: URL(filePath: path, directoryHint: .isDirectory),
             name: URL(filePath: path).lastPathComponent,
             children: children,
             lastModified: nil,
+            linkCount: linkCount,
             isPackage: false,
             isAccessible: true
         )
