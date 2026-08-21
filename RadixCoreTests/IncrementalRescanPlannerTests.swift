@@ -181,6 +181,7 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             (.eventIDsWrapped, .eventIDsWrapped),
             (.rootChanged, .watchedRootChanged),
             (.volumeMounted, .nestedVolumeChanged),
+            (.itemCloned, .cloneTopologyChanged),
         ]
 
         for (flags, expectedReason) in cases {
@@ -190,6 +191,33 @@ final class IncrementalRescanPlannerTests: XCTestCase {
                 treeStore: fixture.store
             )
             XCTAssertEqual(plan, .fullScan(reason: expectedReason))
+        }
+    }
+
+    func testChangingExistingCloneMemberRequiresFullScan() {
+        let clone = file(
+            "/scan/folder/clone.bin",
+            cloneIdentity: CloneIdentity(device: 1, cloneID: 42)
+        )
+        let folder = directory("/scan/folder", children: [clone])
+        let root = directory("/scan", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [clone],
+        ])
+        let target = ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory))
+
+        for flags: FileSystemEventFlags in [
+            [.itemModified, .itemIsFile],
+            [.itemRemoved, .itemIsFile],
+        ] {
+            let plan = IncrementalRescanPlanner().plan(
+                history: history([event(clone.id, flags: flags)]),
+                target: target,
+                treeStore: store
+            )
+
+            XCTAssertEqual(plan, .fullScan(reason: .cloneTopologyChanged))
         }
     }
 
@@ -317,7 +345,10 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         )
     }
 
-    private func file(_ path: String) -> FileNodeRecord {
+    private func file(
+        _ path: String,
+        cloneIdentity: CloneIdentity? = nil
+    ) -> FileNodeRecord {
         FileNodeRecord(
             id: path,
             url: URL(filePath: path),
@@ -328,6 +359,7 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             logicalSize: 1,
             descendantFileCount: 1,
             lastModified: nil,
+            cloneIdentity: cloneIdentity,
             isPackage: false,
             isAccessible: true,
             isSelfAccessible: true,

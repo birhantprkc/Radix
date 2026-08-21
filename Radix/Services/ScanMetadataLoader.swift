@@ -165,10 +165,16 @@ nonisolated final class LinkCountCapabilityCache: @unchecked Sendable {
 nonisolated final class CloneMappingCapabilityCache: @unchecked Sendable {
     nonisolated struct ProbeResult: Sendable {
         let identity: CloneIdentity?
+        let mayShareDataBlocks: Bool
         let supportsCloneMapping: Bool?
 
-        init(identity: CloneIdentity?, supportsCloneMapping: Bool?) {
+        init(
+            identity: CloneIdentity?,
+            mayShareDataBlocks: Bool = false,
+            supportsCloneMapping: Bool?
+        ) {
             self.identity = identity
+            self.mayShareDataBlocks = mayShareDataBlocks
             self.supportsCloneMapping = supportsCloneMapping
         }
     }
@@ -188,10 +194,10 @@ nonisolated final class CloneMappingCapabilityCache: @unchecked Sendable {
         self.volumeRootProvider = volumeRootProvider
     }
 
-    func cloneIdentity(for url: URL) -> CloneIdentity? {
+    func cloneMetadata(for url: URL) -> (identity: CloneIdentity?, mayShareDataBlocks: Bool) {
         let cachedSupport = cache.value(for: url)
         if cachedSupport == false {
-            return nil
+            return (nil, false)
         }
 
         let probe = probeProvider(url)
@@ -203,7 +209,7 @@ nonisolated final class CloneMappingCapabilityCache: @unchecked Sendable {
                 volumeRootPath: volumeRootProvider(url)
             )
         }
-        return probe.identity
+        return (probe.identity, probe.mayShareDataBlocks)
     }
 
     private static func defaultProbe(for url: URL) -> ProbeResult {
@@ -227,6 +233,10 @@ nonisolated struct ScanMetadataLoader: Sendable {
     ) -> (identity: FileIdentity?, linkCount: UInt64)
     typealias FileAllocatedSizeProvider = @Sendable (URL) -> Int64?
     typealias FileStatusProvider = @Sendable (URL) -> FileStatus?
+
+    static let cloneProbeOptions = UInt32(
+        FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW | FSOPT_RETURN_REALDEV
+    )
 
     static let scanResourceKeys: Set<URLResourceKey> = [
         .isDirectoryKey,
@@ -458,9 +468,9 @@ nonisolated struct ScanMetadataLoader: Sendable {
             fileIdentity = fileIdentity ?? fileSystemInfo.identity
             linkCount = values.linkCount.map(UInt64.init) ?? fileSystemInfo.linkCount
         }
-        let cloneIdentity = !isDirectory && !isSymbolicLink
-            ? cloneMappingCapabilityCache.cloneIdentity(for: url)
-            : nil
+        let cloneMetadata = !isDirectory && !isSymbolicLink
+            ? cloneMappingCapabilityCache.cloneMetadata(for: url)
+            : (identity: nil, mayShareDataBlocks: false)
         let volumeCapacity: VolumeCapacitySnapshot?
         if includeVolumeDetails,
            let totalCapacity = values.volumeTotalCapacity,
@@ -486,7 +496,8 @@ nonisolated struct ScanMetadataLoader: Sendable {
             volumeCapacity: volumeCapacity,
             fileIdentity: fileIdentity,
             linkCount: linkCount,
-            cloneIdentity: cloneIdentity
+            cloneIdentity: cloneMetadata.identity,
+            mayShareDataBlocks: cloneMetadata.mayShareDataBlocks
         )
     }
 
@@ -577,7 +588,11 @@ nonisolated struct ScanMetadataLoader: Sendable {
         var attributes = attrlist()
         attributes.bitmapcount = UInt16(ATTR_BIT_MAP_COUNT)
         attributes.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_DEVID)
-        attributes.forkattr = attrgroup_t(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
+        attributes.forkattr = attrgroup_t(
+            ATTR_CMNEXT_CLONEID |
+            ATTR_CMNEXT_EXT_FLAGS |
+            ATTR_CMNEXT_CLONE_REFCNT
+        )
 
         var buffer = [UInt8](repeating: 0, count: 64)
         let result = url.withUnsafeFileSystemRepresentation { path in
@@ -588,7 +603,7 @@ nonisolated struct ScanMetadataLoader: Sendable {
                     &attributes,
                     rawBuffer.baseAddress,
                     rawBuffer.count,
-                    UInt32(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)
+                    cloneProbeOptions
                 )
             }
         }
@@ -622,15 +637,27 @@ nonisolated struct ScanMetadataLoader: Sendable {
             guard returned.commonattr & attrgroup_t(ATTR_CMN_DEVID) != 0,
                   returned.forkattr & requiredForkAttributes == requiredForkAttributes,
                   let deviceID: dev_t = cursor.read(),
-                  let cloneID: UInt64 = cursor.read(),
-                  let cloneReferenceCount: UInt32 = cursor.read() else {
+                  let cloneID: UInt64 = cursor.read() else {
                 return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: false)
+            }
+            let extendedFlags: UInt64
+            if returned.forkattr & attrgroup_t(ATTR_CMNEXT_EXT_FLAGS) != 0 {
+                guard let value: UInt64 = cursor.read() else {
+                    return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: nil)
+                }
+                extendedFlags = value
+            } else {
+                extendedFlags = 0
+            }
+            guard let cloneReferenceCount: UInt32 = cursor.read() else {
+                return CloneMappingCapabilityCache.ProbeResult(identity: nil, supportsCloneMapping: nil)
             }
             let identity = cloneID > 0 && cloneReferenceCount > 1
                 ? CloneIdentity(device: UInt64(truncatingIfNeeded: deviceID), cloneID: cloneID)
                 : nil
             return CloneMappingCapabilityCache.ProbeResult(
                 identity: identity,
+                mayShareDataBlocks: extendedFlags & UInt64(EF_MAY_SHARE_BLOCKS) != 0,
                 supportsCloneMapping: true
             )
         }
@@ -658,6 +685,7 @@ nonisolated struct NodeMetadata: Sendable {
     let fileIdentity: FileIdentity?
     let linkCount: UInt64
     let cloneIdentity: CloneIdentity?
+    let mayShareDataBlocks: Bool
 
     init(
         isDirectory: Bool,
@@ -672,7 +700,8 @@ nonisolated struct NodeMetadata: Sendable {
         volumeCapacity: VolumeCapacitySnapshot?,
         fileIdentity: FileIdentity?,
         linkCount: UInt64,
-        cloneIdentity: CloneIdentity? = nil
+        cloneIdentity: CloneIdentity? = nil,
+        mayShareDataBlocks: Bool = false
     ) {
         self.isDirectory = isDirectory
         self.isPackage = isPackage
@@ -687,6 +716,7 @@ nonisolated struct NodeMetadata: Sendable {
         self.fileIdentity = fileIdentity
         self.linkCount = linkCount
         self.cloneIdentity = cloneIdentity
+        self.mayShareDataBlocks = mayShareDataBlocks
     }
 }
 

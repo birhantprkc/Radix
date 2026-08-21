@@ -213,6 +213,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         case fileIdentity = "f"
         case linkCount = "k"
         case cloneIdentity = "o"
+        case mayShareDataBlocks = "h"
         case isPackage = "g"
         case isAccessible = "r"
         case isSelfAccessible = "q"
@@ -234,6 +235,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
     let fileIdentity: ScanArchiveFileIdentity?
     let linkCount: UInt64
     let cloneIdentity: ScanArchiveCloneIdentity?
+    let mayShareDataBlocks: Bool
     let isPackage: Bool
     let isAccessible: Bool
     let isSelfAccessible: Bool
@@ -261,6 +263,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         self.fileIdentity = node.fileIdentity.map(ScanArchiveFileIdentity.init)
         self.linkCount = node.linkCount
         self.cloneIdentity = node.cloneIdentity.map(ScanArchiveCloneIdentity.init)
+        self.mayShareDataBlocks = node.mayShareDataBlocks
         self.isPackage = node.isPackage
         self.isAccessible = node.isAccessible
         self.isSelfAccessible = node.isSelfAccessible
@@ -293,6 +296,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         self.fileIdentity = try container.decodeIfPresent(ScanArchiveFileIdentity.self, forKey: .fileIdentity)
         self.linkCount = try container.decodeIfPresent(UInt64.self, forKey: .linkCount) ?? 1
         self.cloneIdentity = try container.decodeIfPresent(ScanArchiveCloneIdentity.self, forKey: .cloneIdentity)
+        self.mayShareDataBlocks = try container.decodeIfPresent(Bool.self, forKey: .mayShareDataBlocks) ?? false
         self.isPackage = try container.decodeIfPresent(Bool.self, forKey: .isPackage) ?? false
         self.isAccessible = try container.decodeIfPresent(Bool.self, forKey: .isAccessible) ?? true
         self.isSelfAccessible = try container.decodeIfPresent(Bool.self, forKey: .isSelfAccessible) ?? isAccessible
@@ -342,6 +346,9 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
         }
         if let cloneIdentity {
             try container.encode(cloneIdentity, forKey: .cloneIdentity)
+        }
+        if mayShareDataBlocks {
+            try container.encode(true, forKey: .mayShareDataBlocks)
         }
         if isPackage {
             try container.encode(true, forKey: .isPackage)
@@ -405,6 +412,7 @@ nonisolated struct ScanArchiveNode: Codable, Sendable {
             fileIdentity: try fileIdentity?.modelIdentity(),
             linkCount: max(linkCount, 1),
             cloneIdentity: cloneIdentity?.modelIdentity(),
+            mayShareDataBlocks: mayShareDataBlocks,
             isPackage: isPackage,
             isAccessible: isAccessible,
             isSelfAccessible: isSelfAccessible,

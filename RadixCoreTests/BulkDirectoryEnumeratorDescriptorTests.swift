@@ -3,6 +3,13 @@ import XCTest
 @testable import RadixCore
 
 final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
+    func testBulkEnumerationRequestsPhysicalDeviceIdentity() {
+        XCTAssertNotEqual(
+            BulkDirectoryEnumerator.attributeOptions & UInt64(FSOPT_RETURN_REALDEV),
+            0
+        )
+    }
+
     func testNativeNameRejectsUnsafeOrLossyComponents() {
         XCTAssertNil(BulkDirectoryEnumerator.NativeName(fileSystemBytes: []))
         XCTAssertNil(BulkDirectoryEnumerator.NativeName(fileSystemBytes: Array(".".utf8)))
@@ -172,6 +179,7 @@ final class BulkDirectoryEnumeratorDescriptorTests: XCTestCase {
             XCTAssertEqual(nativeMetadata.fileIdentity, pathMetadata.fileIdentity, name)
             XCTAssertEqual(nativeMetadata.linkCount, pathMetadata.linkCount, name)
             XCTAssertEqual(nativeMetadata.cloneIdentity, pathMetadata.cloneIdentity, name)
+            XCTAssertEqual(nativeMetadata.mayShareDataBlocks, pathMetadata.mayShareDataBlocks, name)
         }
     }
 

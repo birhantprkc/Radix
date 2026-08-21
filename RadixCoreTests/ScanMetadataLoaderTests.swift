@@ -3,6 +3,13 @@ import XCTest
 @testable import RadixCore
 
 final class ScanMetadataLoaderTests: XCTestCase {
+    func testCloneProbeRequestsPhysicalDeviceIdentity() {
+        XCTAssertNotEqual(
+            ScanMetadataLoader.cloneProbeOptions & UInt32(FSOPT_RETURN_REALDEV),
+            0
+        )
+    }
+
     func testDatalessFlagClassification() {
         XCTAssertTrue(ScanMetadataLoader.isDataless(fileFlags: UInt32(SF_DATALESS)))
         XCTAssertFalse(ScanMetadataLoader.isDataless(fileFlags: nil))
@@ -125,8 +132,8 @@ final class ScanMetadataLoaderTests: XCTestCase {
             }
         )
 
-        XCTAssertNil(cache.cloneIdentity(for: URL(filePath: "/Users/example/first.bin")))
-        XCTAssertNil(cache.cloneIdentity(for: URL(filePath: "/Volumes/External/second.bin")))
+        XCTAssertNil(cache.cloneMetadata(for: URL(filePath: "/Users/example/first.bin")).identity)
+        XCTAssertNil(cache.cloneMetadata(for: URL(filePath: "/Volumes/External/second.bin")).identity)
 
         XCTAssertEqual(counters.probeCount, 2)
     }

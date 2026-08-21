@@ -734,6 +734,7 @@ final class ScanEngineTests: XCTestCase {
             XCTAssertEqual(optimizedNode.descendantFileCount, foundationNode.descendantFileCount, nodeID)
             XCTAssertEqual(optimizedNode.linkCount, foundationNode.linkCount, nodeID)
             XCTAssertEqual(optimizedNode.cloneIdentity, foundationNode.cloneIdentity, nodeID)
+            XCTAssertEqual(optimizedNode.mayShareDataBlocks, foundationNode.mayShareDataBlocks, nodeID)
             XCTAssertEqual(optimizedNode.isPackage, foundationNode.isPackage, nodeID)
             XCTAssertEqual(optimizedNode.isAccessible, foundationNode.isAccessible, nodeID)
             XCTAssertEqual(optimizedNode.isSelfAccessible, foundationNode.isSelfAccessible, nodeID)
@@ -2188,6 +2189,8 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(clonedMetadata.allocatedSize, originalMetadata.allocatedSize)
         XCTAssertNotNil(originalMetadata.cloneIdentity)
         XCTAssertEqual(clonedMetadata.cloneIdentity, originalMetadata.cloneIdentity)
+        XCTAssertTrue(originalMetadata.mayShareDataBlocks)
+        XCTAssertTrue(clonedMetadata.mayShareDataBlocks)
 
         let snapshot = try await finishedSnapshot(
             target: ScanTarget(url: rootURL),
@@ -2264,8 +2267,12 @@ final class ScanEngineTests: XCTestCase {
         try clonedFile.synchronize()
 
         let metadataLoader = ScanMetadataLoader()
-        XCTAssertNil(try metadataLoader.metadata(for: originalURL).cloneIdentity)
-        XCTAssertNil(try metadataLoader.metadata(for: clonedURL).cloneIdentity)
+        let originalMetadata = try metadataLoader.metadata(for: originalURL)
+        let clonedMetadata = try metadataLoader.metadata(for: clonedURL)
+        XCTAssertNil(originalMetadata.cloneIdentity)
+        XCTAssertNil(clonedMetadata.cloneIdentity)
+        XCTAssertTrue(originalMetadata.mayShareDataBlocks)
+        XCTAssertTrue(clonedMetadata.mayShareDataBlocks)
 
         let snapshot = try await finishedSnapshot(
             target: ScanTarget(url: rootURL),
@@ -2275,6 +2282,7 @@ final class ScanEngineTests: XCTestCase {
 
         XCTAssertEqual(snapshot.aggregateStats.fileCount, 2)
         XCTAssertTrue(children.allSatisfy { $0.allocatedSize > 0 })
+        XCTAssertTrue(children.allSatisfy(\.mayShareDataBlocks))
         XCTAssertEqual(snapshot.root.allocatedSize, children.map(\.allocatedSize).reduce(0, +))
     }
 
@@ -3544,24 +3552,24 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(resumed?.warnings.count, reference?.warnings.count)
         let hardLinkIdentity = try XCTUnwrap(metadataLoader.metadata(for: originalURL).fileIdentity)
         XCTAssertEqual(
-            resumed?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path,
-            reference?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path
+            resumed?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path,
+            reference?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path
         )
         XCTAssertEqual(
-            resumed?.hardLinkAccumulator.duplicateAllocatedSizeByOwner,
-            reference?.hardLinkAccumulator.duplicateAllocatedSizeByOwner
+            resumed?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
+            reference?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         )
-        XCTAssertEqual(resumed?.hardLinkAccumulator.identityCount, 1)
+        XCTAssertEqual(resumed?.sharedAllocationAccumulator.identityCount, 1)
         XCTAssertEqual(resumedSerial?.descendantFileCount, resumed?.descendantFileCount)
         XCTAssertEqual(resumedSerial?.logicalSize, resumed?.logicalSize)
         XCTAssertEqual(resumedSerial?.allocatedSize, resumed?.allocatedSize)
         XCTAssertEqual(
-            resumedSerial?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path,
-            resumed?.hardLinkAccumulator.winner(for: hardLinkIdentity)?.path
+            resumedSerial?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path,
+            resumed?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path
         )
         XCTAssertEqual(
-            resumedSerial?.hardLinkAccumulator.duplicateAllocatedSizeByOwner,
-            resumed?.hardLinkAccumulator.duplicateAllocatedSizeByOwner
+            resumedSerial?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
+            resumed?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         )
     }
 

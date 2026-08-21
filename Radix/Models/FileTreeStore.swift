@@ -1920,8 +1920,8 @@ nonisolated struct FileTreeStore: Sendable {
         var compactedChildIndices: [FileTreeNodeIndex] = []
         compactedChildIndices.reserveCapacity(max(retainedCount - 1, 0))
         var statsAccumulator = AggregateStatsAccumulator()
-        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
-        var hardLinkClaimNodeIndices: [FileTreeNodeIndex] = []
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+        var sharedAllocationClaimNodeIndices: [FileTreeNodeIndex] = []
 
         for oldOffset in nodeRecords.indices where !removed[oldOffset] {
             let newOffset = Int(oldToNewRawIndex[oldOffset])
@@ -1956,20 +1956,20 @@ nonisolated struct FileTreeStore: Sendable {
                 compactedNodes[newOffset],
                 hasMaterializedChildren: childCount > 0
             )
-            if let claim = HardLinkDeduplicator.claim(for: compactedNodes[newOffset]) {
-                hardLinkAccumulator.record(claim)
-                hardLinkClaimNodeIndices.append(FileTreeNodeIndex(rawValue: UInt32(newOffset)))
+            if let claim = SharedAllocationDeduplicator.claim(for: compactedNodes[newOffset]) {
+                sharedAllocationAccumulator.record(claim)
+                sharedAllocationClaimNodeIndices.append(FileTreeNodeIndex(rawValue: UInt32(newOffset)))
             }
         }
 
-        let hardLinkReplacements = try HardLinkDeduplicator.rebalancedAllocatedSizeReplacements(
-            hardLinkAccumulator: hardLinkAccumulator,
-            claimNodeIndices: hardLinkClaimNodeIndices,
+        let sharedAllocationReplacements = try SharedAllocationDeduplicator.rebalancedAllocatedSizeReplacements(
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
+            claimNodeIndices: sharedAllocationClaimNodeIndices,
             nodeAt: { compactedNodes[Int($0.rawValue)] },
             cancellationCheck: cancellationCheck
         )
         _ = try Self.applyAllocatedSizeReplacements(
-            hardLinkReplacements,
+            sharedAllocationReplacements,
             to: &compactedNodes,
             rootIndex: compactedRootIndex,
             parentRawIndices: compactedParentRawIndices,
@@ -2025,6 +2025,7 @@ nonisolated struct FileTreeStore: Sendable {
             fileIdentity: root.fileIdentity,
             linkCount: root.linkCount,
             cloneIdentity: root.cloneIdentity,
+            mayShareDataBlocks: root.mayShareDataBlocks,
             isPackage: root.isPackage,
             isAccessible: root.isSelfAccessible,
             isSelfAccessible: root.isSelfAccessible,
@@ -2140,14 +2141,14 @@ nonisolated struct FileTreeStore: Sendable {
             childIDsByID: updatedChildIDs,
             parentIDByID: updatedParentIDs
         )
-        return try HardLinkDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
+        return try SharedAllocationDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
     }
 
     /// Replaces multiple disjoint subtrees as one topology transaction.
     ///
     /// All replacements are validated before the store is changed. Their shared
-    /// ancestor chain is then rebuilt once, followed by one scan-wide hard-link
-    /// rebalance so links crossing replacement boundaries remain correct.
+    /// ancestor chain is then rebuilt once, followed by one scan-wide shared-
+    /// allocation rebalance so claims crossing replacement boundaries remain correct.
     nonisolated func replacingSubtrees(
         _ replacements: [String: FileTreeStore]
     ) -> FileTreeStore? {
@@ -2163,7 +2164,7 @@ nonisolated struct FileTreeStore: Sendable {
         if replacements.count == 1,
            let replacement = replacements[rootID],
            replacement.rootID == rootID {
-            return try HardLinkDeduplicator.rebalancedStore(
+            return try SharedAllocationDeduplicator.rebalancedStore(
                 replacement,
                 cancellationCheck: cancellationCheck
             )
@@ -2353,7 +2354,7 @@ nonisolated struct FileTreeStore: Sendable {
             parentIDByID: updatedParentIDs,
             aggregateStats: aggregateStats
         )
-        return try HardLinkDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
+        return try SharedAllocationDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
     }
 
     private nonisolated func preflightReplacement(
@@ -2434,8 +2435,8 @@ nonisolated struct FileTreeStore: Sendable {
             ))
         }
         var statsAccumulator = AggregateStatsAccumulator()
-        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
-        var hardLinkClaimIndices: [FileTreeNodeIndex] = []
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+        var sharedAllocationClaimIndices: [FileTreeNodeIndex] = []
         var stack = [targetIndex]
 
         while let nodeIndex = stack.popLast() {
@@ -2447,9 +2448,9 @@ nonisolated struct FileTreeStore: Sendable {
             membership.insert(nodeIndex)
             orderedNodeIndices.append(nodeIndex)
             statsAccumulator.include(node, hasMaterializedChildren: !children.isEmpty)
-            if let claim = HardLinkDeduplicator.claim(for: node) {
-                hardLinkAccumulator.record(claim)
-                hardLinkClaimIndices.append(nodeIndex)
+            if let claim = SharedAllocationDeduplicator.claim(for: node) {
+                sharedAllocationAccumulator.record(claim)
+                sharedAllocationClaimIndices.append(nodeIndex)
             }
             guard !children.isEmpty else { continue }
             stack.reserveCapacity(stack.count + children.count)
@@ -2461,9 +2462,9 @@ nonisolated struct FileTreeStore: Sendable {
             }
         }
 
-        let allocationReplacements = try HardLinkDeduplicator.rebalancedAllocatedSizeReplacements(
-            hardLinkAccumulator: hardLinkAccumulator,
-            claimNodeIndices: hardLinkClaimIndices,
+        let allocationReplacements = try SharedAllocationDeduplicator.rebalancedAllocatedSizeReplacements(
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
+            claimNodeIndices: sharedAllocationClaimIndices,
             nodeAt: { nodeRecords[Int($0.rawValue)] },
             cancellationCheck: cancellationCheck
         )
@@ -2670,8 +2671,8 @@ nonisolated struct FileTreeStore: Sendable {
         var orderedNodeIndices: [FileTreeNodeIndex] = []
         var affectedScopedIndices: [FileTreeNodeIndex] = []
         var statsAccumulator = AggregateStatsAccumulator()
-        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
-        var hardLinkClaimIndices: [FileTreeNodeIndex] = []
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+        var sharedAllocationClaimIndices: [FileTreeNodeIndex] = []
         var stack = [(sourceIndex: targetIndex, scopedParentRawIndex: UInt32.max)]
         affectedScopedIndices.reserveCapacity(affectedAncestorCount)
 
@@ -2694,9 +2695,9 @@ nonisolated struct FileTreeStore: Sendable {
                 affectedScopedIndices.append(scopedIndex)
             }
             statsAccumulator.include(node, hasMaterializedChildren: !sourceChildren.isEmpty)
-            if let claim = HardLinkDeduplicator.claim(for: node) {
-                hardLinkAccumulator.record(claim)
-                hardLinkClaimIndices.append(scopedIndex)
+            if let claim = SharedAllocationDeduplicator.claim(for: node) {
+                sharedAllocationAccumulator.record(claim)
+                sharedAllocationClaimIndices.append(scopedIndex)
             }
             for (childOffset, childIndex) in sourceChildren.reversed().enumerated() {
                 if childOffset.isMultiple(of: 256) {
@@ -2760,10 +2761,10 @@ nonisolated struct FileTreeStore: Sendable {
             orderedNodeIndices: orderedNodeIndices,
             aggregateStats: statsAccumulator.stats(root: scopedNodes[0])
         )
-        return try HardLinkDeduplicator.rebalancedStore(
+        return try SharedAllocationDeduplicator.rebalancedStore(
             scopedStore,
-            hardLinkAccumulator: hardLinkAccumulator,
-            claimNodeIndices: hardLinkClaimIndices,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
+            claimNodeIndices: sharedAllocationClaimIndices,
             cancellationCheck: cancellationCheck
         )
     }
@@ -2972,6 +2973,8 @@ nonisolated struct FileTreeStore: Sendable {
             lastModified: node.lastModified,
             fileIdentity: node.fileIdentity,
             linkCount: node.linkCount,
+            cloneIdentity: node.cloneIdentity,
+            mayShareDataBlocks: node.mayShareDataBlocks,
             isPackage: node.isPackage,
             isAccessible: node.isSelfAccessible && totals.childrenAreAccessible,
             isSelfAccessible: node.isSelfAccessible,

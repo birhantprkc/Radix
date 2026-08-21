@@ -331,7 +331,7 @@ actor ScanEngine {
     private struct LeafNodeResult: Sendable {
         let node: FileNodeRecord
         let warnings: [ScanWarning]
-        let hardLinkAccumulator: HardLinkIdentityOwnerAccumulator
+        let sharedAllocationAccumulator: SharedAllocationOwnerAccumulator
         let minimumAllocatedSize: Int64?
         let summaryVisitedItemCount: Int
     }
@@ -349,7 +349,7 @@ actor ScanEngine {
         let metadata: NodeMetadata
         let weight: Double
         let node: FileNodeRecord
-        let hardLinkClaim: HardLinkClaim?
+        let sharedAllocationClaim: SharedAllocationClaim?
     }
 
     private struct PreparedOrdinaryLeafBatch: Sendable {
@@ -1080,7 +1080,7 @@ actor ScanEngine {
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
         metrics.currentPath = target.url.path
         metrics.recalculateProgress()
-        var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
         var minimumAllocatedSizeByNodeID: [String: Int64] = [:]
         let atomicSummaryWorkerLimit = ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options)
         let atomicSummaryPool = AtomicDirectorySummaryPool(
@@ -1150,7 +1150,7 @@ actor ScanEngine {
                     0
                 )
             }
-            hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
+            sharedAllocationAccumulator.merge(leafResult.sharedAllocationAccumulator)
             if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                 minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
             }
@@ -1173,13 +1173,13 @@ actor ScanEngine {
                 force: true
             )
             let rawStore = FileTreeStore(root: leafResult.node)
-            let store = HardLinkDeduplicator.deduplicatedStore(
+            let store = SharedAllocationDeduplicator.deduplicatedStore(
                 rootID: leafResult.node.id,
                 nodesByID: [leafResult.node.id: leafResult.node],
                 childIDsByID: [:],
                 parentIDByID: [:],
                 aggregateStats: rawStore.aggregateStats,
-                hardLinkAccumulator: hardLinkAccumulator,
+                sharedAllocationAccumulator: sharedAllocationAccumulator,
                 minimumAllocatedSizeByNodeID: minimumAllocatedSizeByNodeID
             )
             await atomicSummaryPool.finish()
@@ -1447,7 +1447,7 @@ actor ScanEngine {
                             continuation: continuation,
                             emissionState: &emissionState
                         )
-                        hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
+                        sharedAllocationAccumulator.merge(leafResult.sharedAllocationAccumulator)
                         if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                             minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
                         }
@@ -1676,7 +1676,7 @@ actor ScanEngine {
                         metrics.pendingPackageSummaryCount - 1,
                         0
                     )
-                    hardLinkAccumulator.merge(leafResult.hardLinkAccumulator)
+                    sharedAllocationAccumulator.merge(leafResult.sharedAllocationAccumulator)
                     if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
                         minimumAllocatedSizeByNodeID[leafResult.node.id] = minimumAllocatedSize
                     }
@@ -1756,7 +1756,7 @@ actor ScanEngine {
                         isSynthetic: false,
                         isAutoSummarized: true
                     )
-                    hardLinkAccumulator.merge(summary.hardLinkAccumulator)
+                    sharedAllocationAccumulator.merge(summary.sharedAllocationAccumulator)
                     minimumAllocatedSizeByNodeID[atomicNode.id] = meta.allocatedSize
                     // The summarized children will never be enqueued: count them as
                     // completed and release their frontier claims.
@@ -1811,7 +1811,7 @@ actor ScanEngine {
                             parentKey: batch.parentKey,
                             nextKey: &nextKey,
                             scanKeyByNodeID: &scanKeyByNodeID,
-                            hardLinkAccumulator: &hardLinkAccumulator,
+                            sharedAllocationAccumulator: &sharedAllocationAccumulator,
                             metrics: &metrics,
                             warnings: &warnings,
                             continuation: continuation,
@@ -1875,7 +1875,7 @@ actor ScanEngine {
                             metadata: childMetadata,
                             weight: item.weight / totalWeightUnits,
                             node: childNode,
-                            hardLinkClaim: HardLinkDeduplicator.claim(
+                            sharedAllocationClaim: SharedAllocationDeduplicator.claim(
                                 for: childMetadata,
                                 ownerNodeID: childNode.id,
                                 path: childNode.id
@@ -1886,7 +1886,7 @@ actor ScanEngine {
                             parentKey: itemKey,
                             nextKey: &nextKey,
                             scanKeyByNodeID: &scanKeyByNodeID,
-                            hardLinkAccumulator: &hardLinkAccumulator,
+                            sharedAllocationAccumulator: &sharedAllocationAccumulator,
                             metrics: &metrics,
                             warnings: &warnings,
                             continuation: continuation,
@@ -1957,7 +1957,7 @@ actor ScanEngine {
         #if DEBUG
         let correctionResolutionStart = diagnostics?.start()
         #endif
-        let duplicateAllocatedSizeByOwner = hardLinkAccumulator.duplicateAllocatedSizeByOwner
+        let duplicateAllocatedSizeByOwner = sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         #if DEBUG
         diagnostics?.record(
             operation: "scan.finalize.resolve_corrections",
@@ -2063,7 +2063,7 @@ actor ScanEngine {
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
             } else if let onlyChild = completed.node {
                 // Leaf node or inaccessible directory: use the child directly.
-                let correctedChild = HardLinkDeduplicator.deduplicatedNode(
+                let correctedChild = SharedAllocationDeduplicator.deduplicatedNode(
                     onlyChild,
                     duplicateAllocatedSize: duplicateAllocatedSizeByOwner[onlyChild.id] ?? 0,
                     minimumAllocatedSize: minimumAllocatedSizeByNodeID[onlyChild.id] ?? 0
@@ -2179,7 +2179,7 @@ actor ScanEngine {
                 metadata: metadata,
                 weight: request.parentWeight / request.totalWeightUnits,
                 node: node,
-                hardLinkClaim: HardLinkDeduplicator.claim(
+                sharedAllocationClaim: SharedAllocationDeduplicator.claim(
                     for: metadata,
                     ownerNodeID: node.id,
                     path: node.id
@@ -2195,7 +2195,7 @@ actor ScanEngine {
         parentKey: Int,
         nextKey: inout Int,
         scanKeyByNodeID: inout [String: Int],
-        hardLinkAccumulator: inout HardLinkIdentityOwnerAccumulator,
+        sharedAllocationAccumulator: inout SharedAllocationOwnerAccumulator,
         metrics: inout ScanMetrics,
         warnings: inout [ScanWarning],
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
@@ -2229,8 +2229,8 @@ actor ScanEngine {
         }
         childrenKeysByKey[parentKey]!.append(childKey)
 
-        if let hardLinkClaim = item.hardLinkClaim {
-            hardLinkAccumulator.record(hardLinkClaim)
+        if let sharedAllocationClaim = item.sharedAllocationClaim {
+            sharedAllocationAccumulator.record(sharedAllocationClaim)
         }
         metrics.currentPath = childPath
         applyLeafMetrics(childNode, weight: item.weight, metrics: &metrics)
@@ -2852,6 +2852,7 @@ actor ScanEngine {
             fileIdentity: metadata.fileIdentity,
             linkCount: metadata.linkCount,
             cloneIdentity: metadata.cloneIdentity,
+            mayShareDataBlocks: metadata.mayShareDataBlocks,
             isPackage: metadata.isPackage,
             isAccessible: metadata.isReadable,
             isSelfAccessible: metadata.isReadable,
@@ -2878,19 +2879,19 @@ actor ScanEngine {
                 url: url,
                 metadata: metadata
             )
-            let hardLinkClaim = HardLinkDeduplicator.claim(
+            let sharedAllocationClaim = SharedAllocationDeduplicator.claim(
                 for: metadata,
                 ownerNodeID: node.id,
                 path: url.path
             )
-            var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
-            if let hardLinkClaim {
-                hardLinkAccumulator.record(hardLinkClaim)
+            var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+            if let sharedAllocationClaim {
+                sharedAllocationAccumulator.record(sharedAllocationClaim)
             }
             return LeafNodeResult(
                 node: node,
                 warnings: [],
-                hardLinkAccumulator: hardLinkAccumulator,
+                sharedAllocationAccumulator: sharedAllocationAccumulator,
                 minimumAllocatedSize: nil,
                 summaryVisitedItemCount: 0
             )
@@ -2915,19 +2916,19 @@ actor ScanEngine {
                 url: url,
                 metadata: metadata
             )
-            let hardLinkClaim = HardLinkDeduplicator.claim(
+            let sharedAllocationClaim = SharedAllocationDeduplicator.claim(
                 for: metadata,
                 ownerNodeID: node.id,
                 path: url.path
             )
-            var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
-            if let hardLinkClaim {
-                hardLinkAccumulator.record(hardLinkClaim)
+            var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+            if let sharedAllocationClaim {
+                sharedAllocationAccumulator.record(sharedAllocationClaim)
             }
             return LeafNodeResult(
                 node: node,
                 warnings: [],
-                hardLinkAccumulator: hardLinkAccumulator,
+                sharedAllocationAccumulator: sharedAllocationAccumulator,
                 minimumAllocatedSize: nil,
                 summaryVisitedItemCount: 0
             )
@@ -2953,7 +2954,7 @@ actor ScanEngine {
                 isAutoSummarized: false
             ),
             warnings: summary.warnings,
-            hardLinkAccumulator: summary.hardLinkAccumulator,
+            sharedAllocationAccumulator: summary.sharedAllocationAccumulator,
             minimumAllocatedSize: metadata.allocatedSize,
             summaryVisitedItemCount: summary.visitedItemCount
         )

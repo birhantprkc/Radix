@@ -37,6 +37,10 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
             if eventPath == targetPath {
                 return .fullScan(reason: .changedScanRoot)
             }
+            if !event.flags.intersection([.itemModified, .itemRemoved]).isEmpty,
+               treeStore.node(id: eventPath)?.cloneIdentity != nil {
+                return .fullScan(reason: .cloneTopologyChanged)
+            }
 
             let knownIsDirectory: Bool?
             if event.flags.contains(.itemIsDirectory) {
@@ -178,6 +182,7 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         if !flags.intersection([.volumeMounted, .volumeUnmounted]).isEmpty {
             return .nestedVolumeChanged
         }
+        if flags.contains(.itemCloned) { return .cloneTopologyChanged }
         return nil
     }
 

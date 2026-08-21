@@ -98,7 +98,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
     private var visitedItemCount = 0
     private var isAccessible = true
     private var warnings: [ScanWarning] = []
-    private var hardLinkAccumulator = HardLinkIdentityOwnerAccumulator()
+    private var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
 
     init(seed: AtomicDirectorySummaryPartial? = nil) {
         guard let seed else { return }
@@ -108,7 +108,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
         visitedItemCount = seed.visitedItemCount
         isAccessible = seed.isAccessible
         warnings = seed.warnings
-        hardLinkAccumulator = seed.hardLinkAccumulator
+        sharedAllocationAccumulator = seed.sharedAllocationAccumulator
     }
 
     func updateAccessibility(_ readable: Bool) {
@@ -138,7 +138,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
         )
         isAccessible = isAccessible && partial.isAccessible
         warnings.append(contentsOf: partial.warnings)
-        hardLinkAccumulator.merge(partial.hardLinkAccumulator)
+        sharedAllocationAccumulator.merge(partial.sharedAllocationAccumulator)
         lock.unlock()
     }
 
@@ -152,7 +152,7 @@ nonisolated final class AtomicSummaryAccumulator: @unchecked Sendable {
             visitedItemCount: max(overrideVisitedItemCount ?? visitedItemCount, 0),
             isAccessible: isAccessible,
             warnings: warnings,
-            hardLinkAccumulator: hardLinkAccumulator
+            sharedAllocationAccumulator: sharedAllocationAccumulator
         )
     }
 }

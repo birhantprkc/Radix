@@ -244,7 +244,7 @@ private nonisolated final class FSEventHistoryCollector: @unchecked Sendable {
             }
 
             let eventID = eventIDs[index]
-            let mappedFlags = Self.flags(from: rawFlag)
+            let mappedFlags = FileSystemEventFlags(fseventRawValue: rawFlag)
             // RootChanged carries event ID zero and must never be filtered out.
             guard mappedFlags.contains(.rootChanged) ||
                     (eventID > since.eventID && eventID <= through.eventID) else {
@@ -290,12 +290,14 @@ private nonisolated final class FSEventHistoryCollector: @unchecked Sendable {
         lock.unlock()
         continuation?.resume(with: result)
     }
+}
 
-    private static func flags(from rawValue: FSEventStreamEventFlags) -> FileSystemEventFlags {
-        var flags: FileSystemEventFlags = []
+nonisolated extension FileSystemEventFlags {
+    init(fseventRawValue rawValue: FSEventStreamEventFlags) {
+        var mappedFlags: FileSystemEventFlags = []
         func copy(_ source: Int, to destination: FileSystemEventFlags) {
             if rawValue & UInt32(source) != 0 {
-                flags.insert(destination)
+                mappedFlags.insert(destination)
             }
         }
 
@@ -317,7 +319,8 @@ private nonisolated final class FSEventHistoryCollector: @unchecked Sendable {
         copy(kFSEventStreamEventFlagItemIsFile, to: .itemIsFile)
         copy(kFSEventStreamEventFlagItemIsDir, to: .itemIsDirectory)
         copy(kFSEventStreamEventFlagItemIsSymlink, to: .itemIsSymbolicLink)
-        return flags
+        copy(kFSEventStreamEventFlagItemCloned, to: .itemCloned)
+        self = mappedFlags
     }
 }
 

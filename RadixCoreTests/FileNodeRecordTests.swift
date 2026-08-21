@@ -26,4 +26,21 @@ final class FileNodeRecordTests: XCTestCase {
 
         XCTAssertEqual(visualizationRoot.itemKind(activeTarget: target), "Volume")
     }
+
+    func testSharedAPFSStorageStatusDistinguishesFullAndPartialClones() {
+        let fullClone = makeTestFileNode(
+            id: "/full.bin",
+            name: "full.bin",
+            cloneIdentity: CloneIdentity(device: 1, cloneID: 2),
+            mayShareDataBlocks: true
+        )
+        let partialClone = makeTestFileNode(
+            id: "/partial.bin",
+            name: "partial.bin",
+            mayShareDataBlocks: true
+        )
+
+        XCTAssertEqual(fullClone.secondaryStatusText, "Shared APFS storage")
+        XCTAssertEqual(partialClone.secondaryStatusText, "May share APFS storage")
+    }
 }

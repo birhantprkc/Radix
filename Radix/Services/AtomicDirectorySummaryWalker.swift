@@ -209,7 +209,7 @@ extension AtomicDirectorySummarizer {
         )
         state.isAccessible = state.isAccessible && summary.isAccessible
         state.warnings.append(contentsOf: summary.warnings)
-        state.hardLinkAccumulator.merge(summary.hardLinkAccumulator)
+        state.sharedAllocationAccumulator.merge(summary.sharedAllocationAccumulator)
     }
 
     nonisolated private func updateAtomicAccessibility(_ isReadable: Bool, in state: AtomicDirectorySummaryState) {
@@ -233,12 +233,12 @@ extension AtomicDirectorySummarizer {
             state.descendantFileCount = ScanIntegerMath.addingClamped(state.descendantFileCount, 1)
         }
 
-        if let claim = HardLinkDeduplicator.claim(
+        if let claim = SharedAllocationDeduplicator.claim(
             for: metadata,
             ownerNodeID: state.ownerNodeID,
             path: url.path
         ) {
-            state.hardLinkAccumulator.record(claim)
+            state.sharedAllocationAccumulator.record(claim)
         }
     }
 
@@ -250,7 +250,7 @@ extension AtomicDirectorySummarizer {
             visitedItemCount: state.visitedItemCount,
             isAccessible: state.isAccessible,
             warnings: state.warnings,
-            hardLinkAccumulator: state.hardLinkAccumulator
+            sharedAllocationAccumulator: state.sharedAllocationAccumulator
         )
     }
 
