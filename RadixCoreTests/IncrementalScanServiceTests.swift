@@ -17,6 +17,20 @@ final class IncrementalScanServiceTests: XCTestCase {
         )
     }
 
+    func testFSEventFlagMappingPreservesHardLinkEvents() {
+        let rawFlags = FSEventStreamEventFlags(
+            kFSEventStreamEventFlagItemCreated |
+                kFSEventStreamEventFlagItemIsFile |
+                kFSEventStreamEventFlagItemIsHardlink |
+                kFSEventStreamEventFlagItemIsLastHardlink
+        )
+
+        XCTAssertEqual(
+            FileSystemEventFlags(fseventRawValue: rawFlags),
+            [.itemCreated, .itemIsFile, .itemIsHardLink, .itemIsLastHardLink]
+        )
+    }
+
     func testDarwinHistoryProviderCapturesCheckpointForLocalDirectory() throws {
         let rootURL = try makeIncrementalTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -97,6 +111,26 @@ final class IncrementalScanServiceTests: XCTestCase {
 
         XCTAssertEqual(result.executionModes, [.full])
         XCTAssertEqual(result.snapshot.incrementalCheckpoint?.eventID, 10)
+    }
+
+    @MainActor
+    func testFullScanCapturesCheckpointOffMainThread() async throws {
+        let rootURL = try makeIncrementalTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let history = IncrementalHistoryStub(
+            checkpoints: [checkpoint(10)],
+            events: []
+        )
+        let service = IncrementalScanService(eventHistoryProvider: history)
+
+        _ = try await incrementalScanResult(
+            from: service.scan(
+                target: ScanTarget(url: rootURL),
+                options: ScanOptions()
+            )
+        )
+
+        XCTAssertEqual(history.checkpointMainThreadObservations, [false])
     }
 
     func testMissingCheckpointReportsFullFallbackReason() async throws {
@@ -670,6 +704,7 @@ private final class IncrementalHistoryStub: FileSystemEventHistoryProviding, @un
     private let events: [FileSystemEventRecord]
     private let beforeReturningHistory: @Sendable () throws -> Void
     private var historyRequests = 0
+    private var checkpointThreadObservations: [Bool] = []
 
     init(
         checkpoints: [ScanIncrementalCheckpoint],
@@ -687,10 +722,17 @@ private final class IncrementalHistoryStub: FileSystemEventHistoryProviding, @un
         return historyRequests
     }
 
+    var checkpointMainThreadObservations: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return checkpointThreadObservations
+    }
+
     func currentCheckpoint(for targetURL: URL) throws -> ScanIncrementalCheckpoint {
         _ = targetURL
         lock.lock()
         defer { lock.unlock() }
+        checkpointThreadObservations.append(Thread.isMainThread)
         guard !checkpoints.isEmpty else {
             throw FileSystemEventHistoryError.eventIDUnavailable(targetURL.path)
         }

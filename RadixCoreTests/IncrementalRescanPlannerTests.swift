@@ -129,6 +129,32 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         XCTAssertEqual(plan, .fullScan(reason: .incrementalWorkTooBroad))
     }
 
+    func testSingleBroadSubtreeFallsBackToFullScan() {
+        let changedFiles = (0..<40).map { index in
+            file("/scan/changed/file-\(index).dat")
+        }
+        let changed = directory("/scan/changed", children: changedFiles)
+        let paddingFiles = (0..<20).map { index in
+            file("/scan/padding-\(index).dat")
+        }
+        let rootChildren = [changed] + paddingFiles
+        let root = directory("/scan", children: rootChildren)
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: rootChildren,
+            changed.id: changedFiles,
+        ])
+
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event(changed.id, flags: [.mustScanSubdirectories, .itemIsDirectory]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: store
+        )
+
+        XCTAssertEqual(plan, .fullScan(reason: .incrementalWorkTooBroad))
+    }
+
     func testNestedEventsCoalesceToTopLevelChangedSubtree() {
         let fixture = makeFixture()
         let plan = IncrementalRescanPlanner().plan(
@@ -221,6 +247,60 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         }
     }
 
+    func testHardLinkEventsRequireFullScan() {
+        let identity = FileIdentity(device: 1, inode: 42)
+        let hardLink = file(
+            "/scan/folder/shared.bin",
+            fileIdentity: identity,
+            linkCount: 2
+        )
+        let folder = directory("/scan/folder", children: [hardLink])
+        let root = directory("/scan", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [folder],
+            folder.id: [hardLink],
+        ])
+        let target = ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory))
+
+        let cases: [(FileSystemEventFlags, IncrementalRescanFallbackReason)] = [
+            ([.itemModified, .itemIsFile], .sharedAllocationTopologyChanged),
+            ([.itemMetadataModified, .itemIsFile], .sharedAllocationTopologyChanged),
+            ([.itemCreated, .itemIsFile, .itemIsHardLink], .sharedAllocationTopologyChanged),
+            ([.itemRemoved, .itemIsFile, .itemIsLastHardLink], .sharedAllocationTopologyChanged),
+        ]
+        for (flags, expectedReason) in cases {
+            let eventPath = flags.contains(.itemCreated)
+                ? "/scan/folder/new-link.bin"
+                : hardLink.id
+            let plan = IncrementalRescanPlanner().plan(
+                history: history([event(eventPath, flags: flags)]),
+                target: target,
+                treeStore: store
+            )
+
+            XCTAssertEqual(plan, .fullScan(reason: expectedReason))
+        }
+    }
+
+    func testDirectoryLinkCountDoesNotRequireSharedAllocationFallback() {
+        let folder = directory("/scan/folder", children: [], linkCount: 12)
+        let root = directory("/scan", children: [folder])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [folder]])
+
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event(folder.id, flags: [.itemModified, .itemIsDirectory]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: store
+        )
+
+        XCTAssertEqual(plan, .update(
+            relistDirectoryIDs: [],
+            rescanSubtreeIDs: [folder.id]
+        ))
+    }
+
     func testEventInsidePackageUsesMaterializedPackageLeaf() {
         let fixture = makeFixture()
         let plan = IncrementalRescanPlanner().plan(
@@ -259,6 +339,27 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         let plan = IncrementalRescanPlanner().plan(
             history: history([
                 event("/scan/folder/debug.log", flags: [.itemModified, .itemIsFile]),
+            ]),
+            target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
+            treeStore: fixture.store,
+            exclusionMatcher: matcher
+        )
+
+        XCTAssertEqual(plan, .noChanges)
+    }
+
+    func testExcludedSharedAllocationEventDoesNotTriggerFullScan() {
+        let fixture = makeFixture()
+        let matcher = ScanExclusionMatcher(
+            patterns: ["*.log"],
+            rootPath: "/scan"
+        )
+        let plan = IncrementalRescanPlanner().plan(
+            history: history([
+                event(
+                    "/scan/folder/debug.log",
+                    flags: [.itemModified, .itemIsFile, .itemCloned, .itemIsHardLink]
+                ),
             ]),
             target: ScanTarget(url: URL(filePath: "/scan", directoryHint: .isDirectory)),
             treeStore: fixture.store,
@@ -333,13 +434,18 @@ final class IncrementalRescanPlannerTests: XCTestCase {
         return (store, folder, package, autoSummary)
     }
 
-    private func directory(_ path: String, children: [FileNodeRecord]) -> FileNodeRecord {
+    private func directory(
+        _ path: String,
+        children: [FileNodeRecord],
+        linkCount: UInt64 = 1
+    ) -> FileNodeRecord {
         FileNodeRecord.directory(
             id: path,
             url: URL(filePath: path, directoryHint: .isDirectory),
             name: URL(filePath: path).lastPathComponent,
             children: children,
             lastModified: nil,
+            linkCount: linkCount,
             isPackage: false,
             isAccessible: true
         )
@@ -347,6 +453,8 @@ final class IncrementalRescanPlannerTests: XCTestCase {
 
     private func file(
         _ path: String,
+        fileIdentity: FileIdentity? = nil,
+        linkCount: UInt64 = 1,
         cloneIdentity: CloneIdentity? = nil
     ) -> FileNodeRecord {
         FileNodeRecord(
@@ -359,6 +467,8 @@ final class IncrementalRescanPlannerTests: XCTestCase {
             logicalSize: 1,
             descendantFileCount: 1,
             lastModified: nil,
+            fileIdentity: fileIdentity,
+            linkCount: linkCount,
             cloneIdentity: cloneIdentity,
             isPackage: false,
             isAccessible: true,

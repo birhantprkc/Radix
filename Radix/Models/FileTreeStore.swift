@@ -15,12 +15,6 @@ nonisolated struct PreparedFileTreeNodeSet: Sendable {
     fileprivate let indices: Set<FileTreeNodeIndex>
 }
 
-nonisolated struct FileTreeSubtreeContents: Sendable {
-    let root: FileNodeRecord
-    let nodesByID: [String: FileNodeRecord]
-    let childIDsByID: [String: [String]]
-}
-
 nonisolated struct FileTreeChildSpan: Sendable {
     var start: UInt32 = 0
     var count: UInt32 = 0
@@ -340,6 +334,25 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
 }
 
 nonisolated struct FileTreeStore: Sendable {
+    nonisolated struct SubtreeSource: Sendable {
+        let root: FileNodeRecord
+        fileprivate let store: FileTreeStore?
+
+        nonisolated init(node: FileNodeRecord) {
+            self.root = node
+            self.store = nil
+        }
+
+        nonisolated init?(
+            store: FileTreeStore,
+            rootedAt nodeID: String
+        ) {
+            guard let root = store.node(id: nodeID) else { return nil }
+            self.root = root
+            self.store = store
+        }
+    }
+
     private struct NodeMembership: Sendable {
         private var words: [UInt64]
 
@@ -496,16 +509,6 @@ nonisolated struct FileTreeStore: Sendable {
         let orderedNodeIDs: [String]
         let materializedDirectoryIDs: Set<String>
         let didDropReferences: Bool
-    }
-
-    private struct SubtreeReplacementPlan {
-        let targetID: String
-        let oldParentID: String?
-        let oldSubtreeIDs: Set<String>
-        let replacementRootID: String
-        let replacementNodesByID: [String: FileNodeRecord]
-        let replacementChildIDsByID: [String: [String]]
-        let replacementParentIDByID: [String: String]
     }
 
     private struct AggregateStatsAccumulator {
@@ -930,6 +933,90 @@ nonisolated struct FileTreeStore: Sendable {
         self.topologyArena = topologyArena
         self.precomputedAggregateStats = aggregateStats
         self.logicalScope = logicalScope
+    }
+
+    nonisolated static func combining(
+        root: FileNodeRecord,
+        childSubtrees: [SubtreeSource],
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore {
+        guard !childSubtrees.isEmpty else { return FileTreeStore(root: root) }
+
+        var nodes = [root]
+        var indexByNodeID = [root.id: FileTreeNodeIndex(rawValue: 0)]
+        var parentRawIndices = [UInt32.max]
+        var orderedNodeIndices = [FileTreeNodeIndex(rawValue: 0)]
+        var statsAccumulator = AggregateStatsAccumulator()
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+        var sharedAllocationClaimIndices: [FileTreeNodeIndex] = []
+        statsAccumulator.include(root, hasMaterializedChildren: true)
+        if let claim = SharedAllocationDeduplicator.claim(for: root) {
+            sharedAllocationAccumulator.record(claim)
+            sharedAllocationClaimIndices.append(FileTreeNodeIndex(rawValue: 0))
+        }
+
+        typealias TraversalEntry = (
+            sourceOrdinal: Int,
+            sourceIndex: FileTreeNodeIndex?,
+            parentRawIndex: UInt32
+        )
+        var stack: [TraversalEntry] = []
+        stack.reserveCapacity(childSubtrees.count)
+        for ordinal in childSubtrees.indices.reversed() {
+            let source = childSubtrees[ordinal]
+            let sourceIndex = source.store?.nodeIndex(id: source.root.id)
+            stack.append((ordinal, sourceIndex, 0))
+        }
+
+        while let entry = stack.popLast() {
+            if nodes.count.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let source = childSubtrees[entry.sourceOrdinal]
+            let node: FileNodeRecord
+            let children: ChildIndexCollection
+            if let sourceIndex = entry.sourceIndex, let store = source.store {
+                guard let storedNode = store.node(at: sourceIndex) else { continue }
+                node = storedNode
+                children = store.activeChildren(of: sourceIndex)
+            } else {
+                node = source.root
+                children = .replacement([])
+            }
+
+            let nodeIndex = FileTreeNodeIndex(rawValue: UInt32(nodes.count))
+            guard indexByNodeID.updateValue(nodeIndex, forKey: node.id) == nil else {
+                throw StoreError.replacementIDCollision(node.id)
+            }
+            nodes.append(node)
+            parentRawIndices.append(entry.parentRawIndex)
+            orderedNodeIndices.append(nodeIndex)
+            statsAccumulator.include(node, hasMaterializedChildren: !children.isEmpty)
+            if let claim = SharedAllocationDeduplicator.claim(for: node) {
+                sharedAllocationAccumulator.record(claim)
+                sharedAllocationClaimIndices.append(nodeIndex)
+            }
+
+            for childIndex in children.reversed() {
+                stack.append((entry.sourceOrdinal, childIndex, nodeIndex.rawValue))
+            }
+        }
+
+        let combinedStore = try finalizedCompactedStore(
+            nodes: &nodes,
+            indexByNodeID: indexByNodeID,
+            parentRawIndices: parentRawIndices,
+            orderedNodeIndices: &orderedNodeIndices,
+            affectedNodeIndices: [],
+            statsAccumulator: &statsAccumulator,
+            cancellationCheck: cancellationCheck
+        )
+        return try SharedAllocationDeduplicator.rebalancedStore(
+            combinedStore,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
+            claimNodeIndices: sharedAllocationClaimIndices,
+            cancellationCheck: cancellationCheck
+        )
     }
 
     nonisolated static func sortedChildren(_ children: [FileNodeRecord]) -> [FileNodeRecord] {
@@ -1624,14 +1711,46 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated func subtreeNodeCount(rootedAt nodeID: String) -> Int {
+        subtreeNodeCount(rootedAt: nodeID, upTo: .max)
+    }
+
+    nonisolated func subtreeNodeCount(
+        rootedAt nodeID: String,
+        upTo limit: Int
+    ) -> Int {
+        guard limit > 0 else { return 0 }
         guard let rootIndex = nodeIndex(id: nodeID) else { return 0 }
         var count = 0
         var stack = [rootIndex]
-        while let nodeIndex = stack.popLast() {
+        while count < limit, let nodeIndex = stack.popLast() {
             count += 1
             stack.append(contentsOf: activeChildren(of: nodeIndex))
         }
         return count
+    }
+
+    nonisolated func subtreeContainsSharedAllocationMetadata(
+        rootedAt nodeID: String,
+        cancellationCheck: () throws -> Void
+    ) throws -> Bool {
+        guard let rootIndex = nodeIndex(id: nodeID) else { return false }
+        var stack = [rootIndex]
+        var visitedCount = 0
+        while let nodeIndex = stack.popLast() {
+            if visitedCount.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            visitedCount += 1
+            if let node = node(at: nodeIndex),
+               !node.isDirectory,
+               !node.isSymbolicLink,
+               !node.isSynthetic,
+               node.cloneIdentity != nil || node.linkCount > 1 {
+                return true
+            }
+            stack.append(contentsOf: activeChildren(of: nodeIndex))
+        }
+        return false
     }
 
     nonisolated func indexedNodeIDs(excludingRoot: Bool = false) -> [String] {
@@ -2043,105 +2162,10 @@ nonisolated struct FileTreeStore: Sendable {
         with replacement: FileTreeStore,
         cancellationCheck: () throws -> Void
     ) throws -> FileTreeStore? {
-        try cancellationCheck()
-        guard nodeIndex(id: targetID) != nil else { return nil }
-        if logicalScope != nil {
-            return try materialized(cancellationCheck: cancellationCheck).replacingSubtree(
-                id: targetID,
-                with: replacement,
-                cancellationCheck: cancellationCheck
-            )
-        }
-
-        let replacementNodesByID = replacement.nodesByID
-        let replacementChildIDsByID = replacement.childIDsByID
-        let replacementParentIDByID = replacement.parentIDByID
-        let existingParentIDs = parentIDByID
-        let existingChildIDs = childIDsByID
-        let oldParentID = existingParentIDs[targetID]
-        let oldSubtreeIDs = Set(try subtreeNodeIDs(
-            rootedAt: targetID,
-            cancellationCheck: cancellationCheck
-        ))
-        try preflightReplacement(
-            nodesByID: replacementNodesByID,
-            removing: oldSubtreeIDs,
+        try replacingSubtrees(
+            [targetID: replacement],
             cancellationCheck: cancellationCheck
         )
-        var updatedNodes = nodesByID
-        var updatedChildIDs = existingChildIDs
-        var updatedParentIDs = existingParentIDs
-
-        for (offset, oldID) in oldSubtreeIDs.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            updatedNodes.removeValue(forKey: oldID)
-            updatedChildIDs.removeValue(forKey: oldID)
-            updatedParentIDs.removeValue(forKey: oldID)
-        }
-
-        for (offset, entry) in replacementNodesByID.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            updatedNodes[entry.key] = entry.value
-        }
-        for (offset, entry) in replacementChildIDsByID.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            updatedChildIDs[entry.key] = entry.value
-        }
-        for (offset, entry) in replacementParentIDByID.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            updatedParentIDs[entry.key] = entry.value
-        }
-
-        let updatedRootID: String
-        if let oldParentID {
-            let previousChildIDs = existingChildIDs[oldParentID] ?? []
-            updatedChildIDs[oldParentID] = previousChildIDs.map { childID in
-                childID == targetID ? replacement.rootID : childID
-            }
-            updatedParentIDs[replacement.rootID] = oldParentID
-            updatedRootID = rootID
-        } else {
-            updatedParentIDs.removeValue(forKey: replacement.rootID)
-            updatedRootID = replacement.rootID
-        }
-
-        var cursor = oldParentID
-        while let currentID = cursor {
-            try cancellationCheck()
-            guard let current = updatedNodes[currentID] else { break }
-            let childRecords = (updatedChildIDs[currentID] ?? []).compactMap { updatedNodes[$0] }
-            let sortedChildRecords = Self.sortedChildren(childRecords)
-            updatedNodes[currentID] = FileNodeRecord.directory(
-                id: current.id,
-                url: current.url,
-                name: current.name,
-                children: sortedChildRecords,
-                lastModified: current.lastModified,
-                fileIdentity: current.fileIdentity,
-                linkCount: current.linkCount,
-                isPackage: current.isPackage,
-                isAccessible: current.isSelfAccessible,
-                childrenAreSorted: true
-            )
-            updatedChildIDs[currentID] = sortedChildRecords.map(\.id)
-            cursor = updatedParentIDs[currentID]
-        }
-
-        let updatedStore = FileTreeStore(
-            rootID: updatedRootID,
-            nodesByID: updatedNodes,
-            childIDsByID: updatedChildIDs,
-            parentIDByID: updatedParentIDs
-        )
-        return try SharedAllocationDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
     }
 
     /// Replaces multiple disjoint subtrees as one topology transaction.
@@ -2176,224 +2200,177 @@ nonisolated struct FileTreeStore: Sendable {
             )
         }
 
-        let existingParentIDs = parentIDByID
-        let existingChildIDs = childIDsByID
         let targetIDs = Array(replacements.keys)
-        for targetID in targetIDs {
-            guard nodeIndex(id: targetID) != nil else { return nil }
+        var targetIndices: [FileTreeNodeIndex] = []
+        targetIndices.reserveCapacity(targetIDs.count)
+        var targetOrdinalByIndex: [FileTreeNodeIndex: Int] = [:]
+        targetOrdinalByIndex.reserveCapacity(targetIDs.count)
+        for (ordinal, targetID) in targetIDs.enumerated() {
+            guard let targetIndex = nodeIndex(id: targetID) else { return nil }
+            targetIndices.append(targetIndex)
+            targetOrdinalByIndex[targetIndex] = ordinal
         }
 
-        let targetIDSet = Set(targetIDs)
-        for targetID in targetIDs {
-            var cursor = existingParentIDs[targetID]
-            while let ancestorID = cursor {
+        for (ordinal, targetIndex) in targetIndices.enumerated() {
+            var cursor = topologyArena.parentIndex(of: targetIndex)
+            while let ancestorIndex = cursor {
                 try cancellationCheck()
-                if targetIDSet.contains(ancestorID) {
-                    throw StoreError.overlappingReplacementTargets(ancestorID, targetID)
+                if let ancestorOrdinal = targetOrdinalByIndex[ancestorIndex] {
+                    throw StoreError.overlappingReplacementTargets(
+                        targetIDs[ancestorOrdinal],
+                        targetIDs[ordinal]
+                    )
                 }
-                cursor = existingParentIDs[ancestorID]
+                cursor = topologyArena.parentIndex(of: ancestorIndex)
             }
         }
 
-        var plans: [SubtreeReplacementPlan] = []
-        plans.reserveCapacity(replacements.count)
-        for (offset, targetID) in targetIDs.enumerated() {
-            if offset.isMultiple(of: 64) {
-                try cancellationCheck()
+        let replacementStores = targetIDs.compactMap { replacements[$0] }
+        var removalOwnerByOffset = Array(repeating: UInt32.max, count: nodeRecords.count)
+        var removedNodeCount = 0
+        for (ordinal, targetIndex) in targetIndices.enumerated() {
+            var stack = [targetIndex]
+            while let nodeIndex = stack.popLast() {
+                if removedNodeCount.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                let nodeOffset = Int(nodeIndex.rawValue)
+                precondition(removalOwnerByOffset[nodeOffset] == UInt32.max)
+                removalOwnerByOffset[nodeOffset] = UInt32(ordinal)
+                removedNodeCount += 1
+                stack.append(contentsOf: topologyArena.children(of: nodeIndex))
             }
-            guard let replacement = replacements[targetID] else { continue }
-            plans.append(SubtreeReplacementPlan(
-                targetID: targetID,
-                oldParentID: existingParentIDs[targetID],
-                oldSubtreeIDs: Set(try subtreeNodeIDs(
-                    rootedAt: targetID,
-                    cancellationCheck: cancellationCheck
-                )),
-                replacementRootID: replacement.rootID,
-                replacementNodesByID: replacement.nodesByID,
-                replacementChildIDsByID: replacement.childIDsByID,
-                replacementParentIDByID: replacement.parentIDByID
-            ))
         }
 
-        var replacementOwnerByNodeID: [String: String] = [:]
-        replacementOwnerByNodeID.reserveCapacity(plans.reduce(0) { $0 + $1.replacementNodesByID.count })
-        for plan in plans {
-            try preflightReplacement(
-                nodesByID: plan.replacementNodesByID,
-                removing: plan.oldSubtreeIDs,
-                cancellationCheck: cancellationCheck
-            )
-            for (offset, replacementID) in plan.replacementNodesByID.keys.enumerated() {
+        let replacementNodeCount = replacementStores.reduce(0) { $0 + $1.nodeCount }
+        var replacementNodeIDs = Set<String>()
+        replacementNodeIDs.reserveCapacity(replacementNodeCount)
+        for (ordinal, replacement) in replacementStores.enumerated() {
+            for (offset, replacementIndex) in replacement.indexedNodeIndices().enumerated() {
                 if offset.isMultiple(of: 256) {
                     try cancellationCheck()
                 }
-                if replacementOwnerByNodeID.updateValue(plan.targetID, forKey: replacementID) != nil {
+                guard let replacementNode = replacement.node(at: replacementIndex) else { continue }
+                let replacementID = replacementNode.id
+                if !replacementNodeIDs.insert(replacementID).inserted {
+                    throw StoreError.replacementIDCollision(replacementID)
+                }
+                if let existingIndex = nodeIndex(id: replacementID),
+                   removalOwnerByOffset[Int(existingIndex.rawValue)] != UInt32(ordinal) {
                     throw StoreError.replacementIDCollision(replacementID)
                 }
             }
         }
 
-        let removedIDs = plans.reduce(into: Set<String>()) { result, plan in
-            result.formUnion(plan.oldSubtreeIDs)
-        }
-        var updatedNodes = nodesByID
-        var updatedChildIDs = existingChildIDs
-        var updatedParentIDs = existingParentIDs
-
-        for (offset, removedID) in removedIDs.enumerated() {
-            if offset.isMultiple(of: 256) {
+        var affectedAncestorMembership = NodeMembership(nodeCapacity: nodeRecords.count)
+        for targetIndex in targetIndices {
+            var cursor = topologyArena.parentIndex(of: targetIndex)
+            while let ancestorIndex = cursor {
                 try cancellationCheck()
-            }
-            updatedNodes.removeValue(forKey: removedID)
-            updatedChildIDs.removeValue(forKey: removedID)
-            updatedParentIDs.removeValue(forKey: removedID)
-        }
-
-        for plan in plans {
-            for (offset, entry) in plan.replacementNodesByID.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                updatedNodes[entry.key] = entry.value
-            }
-            for (offset, entry) in plan.replacementChildIDsByID.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                updatedChildIDs[entry.key] = entry.value
-            }
-            for (offset, entry) in plan.replacementParentIDByID.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                updatedParentIDs[entry.key] = entry.value
+                affectedAncestorMembership.insert(ancestorIndex)
+                cursor = topologyArena.parentIndex(of: ancestorIndex)
             }
         }
 
-        let replacementRootIDByTargetID = Dictionary(uniqueKeysWithValues: plans.map {
-            ($0.targetID, $0.replacementRootID)
-        })
-        let affectedParentIDs = Set(plans.compactMap(\.oldParentID))
-        for parentID in affectedParentIDs {
-            try cancellationCheck()
-            let previousChildIDs = existingChildIDs[parentID] ?? []
-            let replacementChildIDs = previousChildIDs.compactMap { childID -> String? in
-                if let replacementRootID = replacementRootIDByTargetID[childID] {
-                    return replacementRootID
-                }
-                return removedIDs.contains(childID) ? nil : childID
-            }
-            if replacementChildIDs.isEmpty {
-                updatedChildIDs.removeValue(forKey: parentID)
-            } else {
-                updatedChildIDs[parentID] = replacementChildIDs
-            }
-        }
+        let finalNodeCount = nodeRecords.count - removedNodeCount + replacementNodeCount
+        var compactedNodes: [FileNodeRecord] = []
+        var compactedIndexByNodeID: [String: FileTreeNodeIndex] = [:]
+        var parentRawIndices: [UInt32] = []
+        var orderedNodeIndices: [FileTreeNodeIndex] = []
+        var affectedCompactedIndices: [FileTreeNodeIndex] = []
+        var replacementRootCompactedIndices: [FileTreeNodeIndex] = []
+        var statsAccumulator = AggregateStatsAccumulator()
+        var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
+        var sharedAllocationClaimIndices: [FileTreeNodeIndex] = []
+        compactedNodes.reserveCapacity(finalNodeCount)
+        compactedIndexByNodeID.reserveCapacity(finalNodeCount)
+        parentRawIndices.reserveCapacity(finalNodeCount)
+        orderedNodeIndices.reserveCapacity(finalNodeCount)
 
-        for plan in plans {
-            if let oldParentID = plan.oldParentID {
-                updatedParentIDs[plan.replacementRootID] = oldParentID
-            } else {
-                updatedParentIDs.removeValue(forKey: plan.replacementRootID)
-            }
-        }
-
-        let updatedRootID: String
-        if let rootPlan = plans.first(where: { $0.oldParentID == nil }) {
-            updatedRootID = rootPlan.replacementRootID
-        } else {
-            updatedRootID = rootID
-        }
-
-        var affectedAncestorIDs = Set<String>()
-        for parentID in affectedParentIDs {
-            var cursor: String? = parentID
-            while let currentID = cursor {
-                try cancellationCheck()
-                affectedAncestorIDs.insert(currentID)
-                cursor = updatedParentIDs[currentID]
-            }
-        }
-
-        let orderedNodeIDs = topologyArena.orderedNodeIndices.compactMap { node(at: $0)?.id }
-        for currentID in orderedNodeIDs.reversed() where affectedAncestorIDs.contains(currentID) {
-            try cancellationCheck()
-            guard let current = updatedNodes[currentID] else { continue }
-            let childRecords = (updatedChildIDs[currentID] ?? []).compactMap { updatedNodes[$0] }
-            let sortedChildRecords = Self.sortedChildren(childRecords)
-            updatedNodes[currentID] = FileNodeRecord.directory(
-                id: current.id,
-                url: current.url,
-                name: current.name,
-                children: sortedChildRecords,
-                lastModified: current.lastModified,
-                fileIdentity: current.fileIdentity,
-                linkCount: current.linkCount,
-                isPackage: current.isPackage,
-                isAccessible: current.isSelfAccessible,
-                childrenAreSorted: true
+        typealias TraversalEntry = (
+            sourceOrdinal: Int,
+            sourceIndex: FileTreeNodeIndex,
+            parentRawIndex: UInt32
+        )
+        let baselineSourceOrdinal = -1
+        let rootEntry: TraversalEntry
+        if let rootReplacementOrdinal = targetOrdinalByIndex[topologyArena.rootIndex] {
+            rootEntry = (
+                rootReplacementOrdinal,
+                replacementStores[rootReplacementOrdinal].activeRootIndex,
+                UInt32.max
             )
-            if sortedChildRecords.isEmpty {
-                updatedChildIDs.removeValue(forKey: currentID)
-            } else {
-                updatedChildIDs[currentID] = sortedChildRecords.map(\.id)
+        } else {
+            rootEntry = (baselineSourceOrdinal, topologyArena.rootIndex, UInt32.max)
+        }
+        var traversalStack = [rootEntry]
+
+        while let entry = traversalStack.popLast() {
+            if compactedNodes.count.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let sourceStore = entry.sourceOrdinal == baselineSourceOrdinal
+                ? self
+                : replacementStores[entry.sourceOrdinal]
+            guard let node = sourceStore.node(at: entry.sourceIndex) else { continue }
+            let sourceChildren = sourceStore.activeChildren(of: entry.sourceIndex)
+            let compactedIndex = FileTreeNodeIndex(rawValue: UInt32(compactedNodes.count))
+            precondition(
+                compactedIndexByNodeID.updateValue(compactedIndex, forKey: node.id) == nil
+            )
+            compactedNodes.append(node)
+            parentRawIndices.append(entry.parentRawIndex)
+            orderedNodeIndices.append(compactedIndex)
+            statsAccumulator.include(node, hasMaterializedChildren: !sourceChildren.isEmpty)
+            if let claim = SharedAllocationDeduplicator.claim(for: node) {
+                sharedAllocationAccumulator.record(claim)
+                sharedAllocationClaimIndices.append(compactedIndex)
+            }
+
+            let isReplacementRoot = entry.sourceOrdinal != baselineSourceOrdinal
+                && entry.sourceIndex == sourceStore.activeRootIndex
+            if isReplacementRoot {
+                replacementRootCompactedIndices.append(compactedIndex)
+            } else if entry.sourceOrdinal == baselineSourceOrdinal
+                && affectedAncestorMembership.contains(entry.sourceIndex) {
+                affectedCompactedIndices.append(compactedIndex)
+            }
+
+            for childIndex in sourceChildren.reversed() {
+                if entry.sourceOrdinal == baselineSourceOrdinal,
+                   let replacementOrdinal = targetOrdinalByIndex[childIndex] {
+                    traversalStack.append((
+                        replacementOrdinal,
+                        replacementStores[replacementOrdinal].activeRootIndex,
+                        compactedIndex.rawValue
+                    ))
+                } else {
+                    traversalStack.append((
+                        entry.sourceOrdinal,
+                        childIndex,
+                        compactedIndex.rawValue
+                    ))
+                }
             }
         }
 
-        let aggregateStats = try Self.aggregateStats(
-            rootID: updatedRootID,
-            nodesByID: updatedNodes,
-            childIDsByID: updatedChildIDs,
+        precondition(compactedNodes.count == finalNodeCount)
+        let compactedStore = try Self.finalizedCompactedStore(
+            nodes: &compactedNodes,
+            indexByNodeID: compactedIndexByNodeID,
+            parentRawIndices: parentRawIndices,
+            orderedNodeIndices: &orderedNodeIndices,
+            affectedNodeIndices: affectedCompactedIndices,
+            changedNodeIndices: replacementRootCompactedIndices,
+            statsAccumulator: &statsAccumulator,
             cancellationCheck: cancellationCheck
         )
-        let updatedStore = FileTreeStore(
-            verifiedRootID: updatedRootID,
-            nodesByID: updatedNodes,
-            childIDsByID: updatedChildIDs,
-            parentIDByID: updatedParentIDs,
-            aggregateStats: aggregateStats
+        return try SharedAllocationDeduplicator.rebalancedStore(
+            compactedStore,
+            sharedAllocationAccumulator: sharedAllocationAccumulator,
+            claimNodeIndices: sharedAllocationClaimIndices,
+            cancellationCheck: cancellationCheck
         )
-        return try SharedAllocationDeduplicator.rebalancedStore(updatedStore, cancellationCheck: cancellationCheck)
-    }
-
-    private nonisolated func preflightReplacement(
-        nodesByID replacementNodesByID: [String: FileNodeRecord],
-        removing oldSubtreeIDs: Set<String>,
-        cancellationCheck: () throws -> Void
-    ) throws {
-        for (offset, replacementID) in replacementNodesByID.keys.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            if nodeIndex(id: replacementID) != nil && !oldSubtreeIDs.contains(replacementID) {
-                throw StoreError.replacementIDCollision(replacementID)
-            }
-        }
-    }
-
-    private nonisolated static func aggregateStats(
-        rootID: String,
-        nodesByID: [String: FileNodeRecord],
-        childIDsByID: [String: [String]],
-        cancellationCheck: () throws -> Void
-    ) throws -> ScanAggregateStats {
-        guard let root = nodesByID[rootID] else {
-            preconditionFailure("Verified FileTreeStore root is missing.")
-        }
-
-        var accumulator = AggregateStatsAccumulator()
-        for (offset, node) in nodesByID.values.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            accumulator.include(
-                node,
-                hasMaterializedChildren: childIDsByID[node.id]?.isEmpty == false
-            )
-        }
-
-        return accumulator.stats(root: root)
     }
 
     /// Returns an independently mutable compact store for the visible scope.
@@ -2583,6 +2560,7 @@ nonisolated struct FileTreeStore: Sendable {
     private nonisolated static func finalizeCompactedSubtree(
         nodes: inout [FileNodeRecord],
         affectedNodeIndices: [FileTreeNodeIndex],
+        changedNodeIndices: [FileTreeNodeIndex] = [],
         childSpans: [FileTreeChildSpan],
         childIndices: inout [FileTreeNodeIndex],
         orderedNodeIndices: inout [FileTreeNodeIndex],
@@ -2591,7 +2569,8 @@ nonisolated struct FileTreeStore: Sendable {
     ) throws {
         var didReorderChildren = false
         if !affectedNodeIndices.isEmpty {
-            let affectedNodeIndexSet = Set(affectedNodeIndices)
+            var affectedNodeIndexSet = Set(affectedNodeIndices)
+            affectedNodeIndexSet.formUnion(changedNodeIndices)
             for nodeIndex in affectedNodeIndices.reversed() {
                 try cancellationCheck()
                 let nodeOffset = Int(nodeIndex.rawValue)
@@ -2636,6 +2615,85 @@ nonisolated struct FileTreeStore: Sendable {
             )
         }
         try cancellationCheck()
+    }
+
+    private nonisolated static func finalizedCompactedStore(
+        nodes: inout [FileNodeRecord],
+        indexByNodeID: [String: FileTreeNodeIndex]? = nil,
+        parentRawIndices: [UInt32],
+        orderedNodeIndices: inout [FileTreeNodeIndex],
+        affectedNodeIndices: [FileTreeNodeIndex],
+        changedNodeIndices: [FileTreeNodeIndex] = [],
+        statsAccumulator: inout AggregateStatsAccumulator,
+        cancellationCheck: () throws -> Void
+    ) throws -> FileTreeStore {
+        var childSpans = Array(repeating: FileTreeChildSpan(), count: nodes.count)
+        for (offset, parentRawIndex) in parentRawIndices.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            if parentRawIndex != UInt32.max {
+                childSpans[Int(parentRawIndex)].count += 1
+            }
+        }
+
+        var childCount = 0
+        for offset in childSpans.indices {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            childSpans[offset].start = UInt32(childCount)
+            childCount += Int(childSpans[offset].count)
+        }
+
+        var nextChildRawOffset = childSpans.map(\.start)
+        var childIndices = Array(
+            repeating: FileTreeNodeIndex(rawValue: 0),
+            count: childCount
+        )
+        for (offset, parentRawIndex) in parentRawIndices.enumerated()
+        where parentRawIndex != UInt32.max {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let parentOffset = Int(parentRawIndex)
+            childIndices[Int(nextChildRawOffset[parentOffset])] = FileTreeNodeIndex(
+                rawValue: UInt32(offset)
+            )
+            nextChildRawOffset[parentOffset] += 1
+        }
+
+        try finalizeCompactedSubtree(
+            nodes: &nodes,
+            affectedNodeIndices: affectedNodeIndices,
+            changedNodeIndices: changedNodeIndices,
+            childSpans: childSpans,
+            childIndices: &childIndices,
+            orderedNodeIndices: &orderedNodeIndices,
+            statsAccumulator: &statsAccumulator,
+            cancellationCheck: cancellationCheck
+        )
+        if let indexByNodeID {
+            return FileTreeStore(
+                verifiedRootIndex: FileTreeNodeIndex(rawValue: 0),
+                nodes: nodes,
+                indexByNodeID: indexByNodeID,
+                parentRawIndices: parentRawIndices,
+                childSpans: childSpans,
+                childIndices: childIndices,
+                orderedNodeIndices: orderedNodeIndices,
+                aggregateStats: statsAccumulator.stats(root: nodes[0])
+            )
+        }
+        return FileTreeStore(
+            verifiedRootIndex: FileTreeNodeIndex(rawValue: 0),
+            nodes: nodes,
+            parentRawIndices: parentRawIndices,
+            childSpans: childSpans,
+            childIndices: childIndices,
+            orderedNodeIndices: orderedNodeIndices,
+            aggregateStats: statsAccumulator.stats(root: nodes[0])
+        )
     }
 
     private nonisolated func compactedSubtree(
@@ -2710,56 +2768,13 @@ nonisolated struct FileTreeStore: Sendable {
             }
         }
 
-        var childSpans = Array(repeating: FileTreeChildSpan(), count: scopedNodes.count)
-        for (scopedOffset, parentRawIndex) in parentRawIndices.enumerated() {
-            if scopedOffset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            if parentRawIndex != UInt32.max {
-                childSpans[Int(parentRawIndex)].count += 1
-            }
-        }
-
-        var childCount = 0
-        for scopedOffset in childSpans.indices {
-            if scopedOffset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            childSpans[scopedOffset].start = UInt32(childCount)
-            childCount += Int(childSpans[scopedOffset].count)
-        }
-
-        var nextChildRawOffset = childSpans.map(\.start)
-        var childIndices = Array(repeating: FileTreeNodeIndex(rawValue: 0), count: childCount)
-        for (scopedOffset, parentRawIndex) in parentRawIndices.enumerated()
-        where parentRawIndex != UInt32.max {
-            if scopedOffset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            let parentOffset = Int(parentRawIndex)
-            let childRawOffset = nextChildRawOffset[parentOffset]
-            childIndices[Int(childRawOffset)] = FileTreeNodeIndex(rawValue: UInt32(scopedOffset))
-            nextChildRawOffset[parentOffset] += 1
-        }
-
-        let scopedRootIndex = FileTreeNodeIndex(rawValue: 0)
-        try Self.finalizeCompactedSubtree(
+        let scopedStore = try Self.finalizedCompactedStore(
             nodes: &scopedNodes,
-            affectedNodeIndices: affectedScopedIndices,
-            childSpans: childSpans,
-            childIndices: &childIndices,
+            parentRawIndices: parentRawIndices,
             orderedNodeIndices: &orderedNodeIndices,
+            affectedNodeIndices: affectedScopedIndices,
             statsAccumulator: &statsAccumulator,
             cancellationCheck: cancellationCheck
-        )
-        let scopedStore = FileTreeStore(
-            verifiedRootIndex: scopedRootIndex,
-            nodes: scopedNodes,
-            parentRawIndices: parentRawIndices,
-            childSpans: childSpans,
-            childIndices: childIndices,
-            orderedNodeIndices: orderedNodeIndices,
-            aggregateStats: statsAccumulator.stats(root: scopedNodes[0])
         )
         return try SharedAllocationDeduplicator.rebalancedStore(
             scopedStore,
@@ -2767,76 +2782,6 @@ nonisolated struct FileTreeStore: Sendable {
             claimNodeIndices: sharedAllocationClaimIndices,
             cancellationCheck: cancellationCheck
         )
-    }
-
-    nonisolated func subtreeContents(rootedAt targetID: String) -> FileTreeSubtreeContents? {
-        try? subtreeContents(rootedAt: targetID, cancellationCheck: {})
-    }
-
-    nonisolated func subtreeContents(
-        rootedAt targetID: String,
-        cancellationCheck: () throws -> Void
-    ) throws -> FileTreeSubtreeContents? {
-        try cancellationCheck()
-        guard let targetIndex = nodeIndex(id: targetID) else { return nil }
-
-        var scopedNodes: [String: FileNodeRecord] = [:]
-        var scopedChildIDs: [String: [String]] = [:]
-        var stack = [targetIndex]
-
-        while let currentIndex = stack.popLast() {
-            try cancellationCheck()
-            guard let record = node(at: currentIndex) else { continue }
-            let currentID = record.id
-            scopedNodes[currentID] = record
-
-            let childIndices = activeChildren(of: currentIndex)
-            guard !childIndices.isEmpty else { continue }
-
-            var scopedChildren: [String] = []
-            scopedChildren.reserveCapacity(childIndices.count)
-            for (offset, childIndex) in childIndices.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                guard let childID = self.node(at: childIndex)?.id else { continue }
-                scopedChildren.append(childID)
-                stack.append(childIndex)
-            }
-
-            if !scopedChildren.isEmpty {
-                scopedChildIDs[currentID] = scopedChildren
-            }
-        }
-
-        guard let root = scopedNodes[targetID] else { return nil }
-        return FileTreeSubtreeContents(
-            root: root,
-            nodesByID: scopedNodes,
-            childIDsByID: scopedChildIDs
-        )
-    }
-
-    nonisolated func subtreeNodeIDs(rootedAt id: String) -> [String] {
-        (try? subtreeNodeIDs(rootedAt: id, cancellationCheck: {})) ?? []
-    }
-
-    private nonisolated func subtreeNodeIDs(
-        rootedAt id: String,
-        cancellationCheck: () throws -> Void
-    ) throws -> [String] {
-        guard let rootIndex = nodeIndex(id: id) else { return [] }
-        var result: [String] = []
-        var stack = [rootIndex]
-
-        while let currentIndex = stack.popLast() {
-            try cancellationCheck()
-            guard let currentID = node(at: currentIndex)?.id else { continue }
-            result.append(currentID)
-            stack.append(contentsOf: activeChildren(of: currentIndex))
-        }
-
-        return result
     }
 
     private nonisolated static func sanitizedTopology(

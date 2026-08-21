@@ -7,6 +7,29 @@
 
 import Foundation
 
+nonisolated enum ScanSnapshotTransformError: Error, Sendable {
+    case sharedAllocationRequiresFullScan
+}
+
+private nonisolated enum SubtreeRescanAllocationValidator {
+    static func validate(
+        baseline: FileTreeStore,
+        targetID: String,
+        replacement: FileTreeStore,
+        cancellationCheck: () throws -> Void
+    ) throws {
+        if try baseline.subtreeContainsSharedAllocationMetadata(
+            rootedAt: targetID,
+            cancellationCheck: cancellationCheck
+        ) || replacement.subtreeContainsSharedAllocationMetadata(
+            rootedAt: replacement.rootID,
+            cancellationCheck: cancellationCheck
+        ) {
+            throw ScanSnapshotTransformError.sharedAllocationRequiresFullScan
+        }
+    }
+}
+
 protocol ScanSnapshotTransforming: Sendable {
     func replacingNode(
         in snapshot: ScanSnapshot,
@@ -55,7 +78,13 @@ extension ScanSnapshotTransforming {
         volumeCapacity: VolumeCapacitySnapshot?,
         reconcilesVolumeCapacity: Bool
     ) async throws -> ScanSnapshot? {
-        try await replacingNode(
+        try SubtreeRescanAllocationValidator.validate(
+            baseline: snapshot.treeStore,
+            targetID: targetID,
+            replacement: replacement,
+            cancellationCheck: { try Task.checkCancellation() }
+        )
+        return try await replacingNode(
             in: snapshot,
             id: targetID,
             with: replacement,
@@ -108,7 +137,7 @@ actor ScanSnapshotTransformService {
         with replacement: FileTreeStore,
         additionalWarnings: [ScanWarning] = []
     ) async throws -> ScanSnapshot? {
-        try snapshot.replacingNode(
+        return try snapshot.replacingNode(
             id: targetID,
             with: replacement,
             additionalWarnings: additionalWarnings,
@@ -140,7 +169,13 @@ actor ScanSnapshotTransformService {
         volumeCapacity: VolumeCapacitySnapshot?,
         reconcilesVolumeCapacity: Bool
     ) async throws -> ScanSnapshot? {
-        try snapshot.replacingNode(
+        try SubtreeRescanAllocationValidator.validate(
+            baseline: snapshot.treeStore,
+            targetID: targetID,
+            replacement: replacement,
+            cancellationCheck: { try Task.checkCancellation() }
+        )
+        return try snapshot.replacingNode(
             id: targetID,
             with: replacement,
             additionalWarnings: additionalWarnings,

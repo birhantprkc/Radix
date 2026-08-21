@@ -8,7 +8,7 @@ import Foundation
 /// Converts advisory filesystem events into conservative directory relists and
 /// subtree rescans that can be spliced into a prior `FileTreeStore`.
 nonisolated struct IncrementalRescanPlanner: Sendable {
-    private static let broadRelistDirectoryThreshold = 32
+    private static let minimumBroadWorkItemCount = 32
 
     private enum UpdateKind {
         case relistDirectory
@@ -37,11 +37,6 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
             if eventPath == targetPath {
                 return .fullScan(reason: .changedScanRoot)
             }
-            if !event.flags.intersection([.itemModified, .itemRemoved]).isEmpty,
-               treeStore.node(id: eventPath)?.cloneIdentity != nil {
-                return .fullScan(reason: .cloneTopologyChanged)
-            }
-
             let knownIsDirectory: Bool?
             if event.flags.contains(.itemIsDirectory) {
                 knownIsDirectory = true
@@ -56,6 +51,24 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
                    isDirectory: knownIsDirectory
                ) == true {
                 continue
+            }
+            if event.flags.contains(.itemCloned) {
+                return .fullScan(reason: .cloneTopologyChanged)
+            }
+            if !event.flags.intersection([.itemIsHardLink, .itemIsLastHardLink]).isEmpty {
+                return .fullScan(reason: .sharedAllocationTopologyChanged)
+            }
+            if let existingNode = treeStore.node(id: eventPath) {
+                if !event.flags.intersection([.itemModified, .itemRemoved]).isEmpty,
+                   existingNode.cloneIdentity != nil {
+                    return .fullScan(reason: .cloneTopologyChanged)
+                }
+                if !existingNode.isDirectory,
+                   !existingNode.isSymbolicLink,
+                   !existingNode.isSynthetic,
+                   existingNode.linkCount > 1 {
+                    return .fullScan(reason: .sharedAllocationTopologyChanged)
+                }
             }
 
             var candidatePath = initialCandidatePath(
@@ -126,21 +139,25 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
                 continue
             }
         }
-        let updateRootCount = relistDirectoryIDs.count + rescanSubtreeIDs.count
-        if updateRootCount >= Self.broadRelistDirectoryThreshold {
-            let fullScanWorkThreshold = max(treeStore.nodeCount / 2, 1)
-            var incrementalWorkItemCount = 0
-            for directoryID in relistDirectoryIDs {
-                incrementalWorkItemCount += treeStore.childCount(of: directoryID) + 1
-                if incrementalWorkItemCount >= fullScanWorkThreshold {
-                    return .fullScan(reason: .incrementalWorkTooBroad)
-                }
+        let fullScanWorkThreshold = max(
+            treeStore.nodeCount / 2,
+            Self.minimumBroadWorkItemCount
+        )
+        var incrementalWorkItemCount = 0
+        for directoryID in relistDirectoryIDs {
+            incrementalWorkItemCount += treeStore.childCount(of: directoryID) + 1
+            if incrementalWorkItemCount >= fullScanWorkThreshold {
+                return .fullScan(reason: .incrementalWorkTooBroad)
             }
-            for subtreeID in rescanSubtreeIDs {
-                incrementalWorkItemCount += treeStore.subtreeNodeCount(rootedAt: subtreeID)
-                if incrementalWorkItemCount >= fullScanWorkThreshold {
-                    return .fullScan(reason: .incrementalWorkTooBroad)
-                }
+        }
+        for subtreeID in rescanSubtreeIDs {
+            let remainingWorkItemCount = fullScanWorkThreshold - incrementalWorkItemCount
+            incrementalWorkItemCount += treeStore.subtreeNodeCount(
+                rootedAt: subtreeID,
+                upTo: remainingWorkItemCount
+            )
+            if incrementalWorkItemCount >= fullScanWorkThreshold {
+                return .fullScan(reason: .incrementalWorkTooBroad)
             }
         }
         return .update(
@@ -182,7 +199,6 @@ nonisolated struct IncrementalRescanPlanner: Sendable {
         if !flags.intersection([.volumeMounted, .volumeUnmounted]).isEmpty {
             return .nestedVolumeChanged
         }
-        if flags.contains(.itemCloned) { return .cloneTopologyChanged }
         return nil
     }
 
