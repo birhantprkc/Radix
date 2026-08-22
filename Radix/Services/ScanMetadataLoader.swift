@@ -743,6 +743,13 @@ nonisolated enum FileIdentity: Hashable, Sendable {
         }
         return false
     }
+
+    nonisolated var fileSystemDeviceID: UInt64? {
+        if case .fileSystem(let device, _) = self {
+            return device
+        }
+        return nil
+    }
 }
 
 private nonisolated struct ScanMetadataAttributeCursor {

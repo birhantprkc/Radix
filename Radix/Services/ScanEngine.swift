@@ -148,6 +148,91 @@ actor ScanEngine {
         static let standard = ScanBehavior(excludesStartupVolumeInternals: false)
     }
 
+    nonisolated struct ScanMountedFileSystem: Sendable {
+        let mountPath: String
+        let deviceName: String
+        let fileSystemType: String
+    }
+
+    /// Decides whether directory traversal may cross a device boundary. Nested
+    /// mounts from foreign containers (DMGs, network shares, autofs, other disks)
+    /// become leaf nodes so their bytes are not folded into the scanned tree,
+    /// while firmlinked volumes of the scan root's own APFS container remain
+    /// traversable (a startup-scan must reach the Data volume's user data).
+    nonisolated struct ScanVolumeBoundaryPolicy: Sendable {
+        private let rootDeviceID: UInt64?
+        private let rootContainerID: String?
+        private let containerMountPaths: [String]
+
+        static func resolve(
+            rootPath: String,
+            rootDeviceID: UInt64?,
+            mountedFileSystems: [ScanMountedFileSystem]
+        ) -> ScanVolumeBoundaryPolicy {
+            let normalizedRootPath = normalizedMountPath(rootPath)
+            let rootMount = mountedFileSystems
+                .filter { isPath(normalizedRootPath, within: $0.mountPath) }
+                .max { $0.mountPath.count < $1.mountPath.count }
+            guard let rootMount,
+                  let rootContainerID = containerIdentifier(of: rootMount) else {
+                return ScanVolumeBoundaryPolicy(
+                    rootDeviceID: rootDeviceID,
+                    rootContainerID: nil,
+                    containerMountPaths: []
+                )
+            }
+
+            let containerMountPaths = mountedFileSystems
+                .filter {
+                    $0.fileSystemType == "apfs"
+                        && containerIdentifier(of: $0) == rootContainerID
+                }
+                .map { normalizedMountPath($0.mountPath) }
+                .sorted { $0.count > $1.count }
+
+            return ScanVolumeBoundaryPolicy(
+                rootDeviceID: rootDeviceID,
+                rootContainerID: rootContainerID,
+                containerMountPaths: containerMountPaths
+            )
+        }
+
+        func shouldStopDescent(childPath: String, childDeviceID: UInt64?) -> Bool {
+            guard let childDeviceID,
+                  let rootDeviceID else {
+                return false
+            }
+            guard childDeviceID != rootDeviceID else { return false }
+
+            let normalizedChildPath = Self.normalizedMountPath(childPath)
+            return !containerMountPaths.contains { mountPath in
+                Self.isPath(normalizedChildPath, within: mountPath)
+            }
+        }
+
+        private static func normalizedMountPath(_ path: String) -> String {
+            var path = path
+            while path.count > 1 && path.hasSuffix("/") {
+                path.removeLast()
+            }
+            return path
+        }
+
+        private static func isPath(_ path: String, within mountPath: String) -> Bool {
+            path == mountPath || path.hasPrefix(mountPath + "/")
+        }
+
+        /// APFS synthesizer names encode the container in the disk number:
+        /// "disk3s5" and "disk3s1s1" both belong to container "disk3".
+        private static func containerIdentifier(of mount: ScanMountedFileSystem) -> String? {
+            let deviceName = (mount.deviceName as NSString).lastPathComponent
+            guard let match = deviceName.firstMatch(of: /^disk(\d+)(s\d+)+$/) else {
+                return deviceName.isEmpty ? nil : deviceName
+            }
+            return "disk\(match.1)"
+        }
+    }
+
     private struct AggregateStatsAccumulator {
         private(set) var fileCount = 0
         private(set) var directoryCount = 0
@@ -609,6 +694,30 @@ actor ScanEngine {
             let buffer = rawBuffer.bindMemory(to: CChar.self)
             guard let baseAddress = buffer.baseAddress else { return nil }
             return String(cString: baseAddress)
+        }
+    }
+
+    nonisolated static func defaultMountedFileSystems() -> [ScanMountedFileSystem] {
+        var mountBuffer: UnsafeMutablePointer<statfs>?
+        let mountCount = getmntinfo(&mountBuffer, MNT_NOWAIT)
+        guard mountCount > 0, let mountBuffer else { return [] }
+
+        return (0..<Int(mountCount)).compactMap { offset in
+            let entry = mountBuffer[offset]
+            func cString<T>(from field: T) -> String {
+                withUnsafeBytes(of: field) { rawBuffer -> String in
+                    let buffer = rawBuffer.bindMemory(to: CChar.self)
+                    guard let baseAddress = buffer.baseAddress else { return "" }
+                    return String(cString: baseAddress)
+                }
+            }
+            let mountPath = cString(from: entry.f_mntonname)
+            guard !mountPath.isEmpty else { return nil }
+            return ScanMountedFileSystem(
+                mountPath: mountPath,
+                deviceName: cString(from: entry.f_mntfromname),
+                fileSystemType: cString(from: entry.f_fstypename)
+            )
         }
     }
 
@@ -1075,6 +1184,11 @@ actor ScanEngine {
         guard !rootMetadata.isDataless else {
             throw ScanEngineError.cloudOnlyRoot
         }
+        let volumeBoundaryPolicy = ScanVolumeBoundaryPolicy.resolve(
+            rootPath: target.url.standardizedFileURL.path,
+            rootDeviceID: rootMetadata.fileIdentity?.fileSystemDeviceID,
+            mountedFileSystems: Self.defaultMountedFileSystems()
+        )
         metrics.discoveredItems = 1
         metrics.volumeCapacity = target.kind == .volume ? rootMetadata.volumeCapacity : nil
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
@@ -1310,7 +1424,11 @@ actor ScanEngine {
                     }
                     metrics.currentPath = item.url.path
 
-                    if shouldTraverseDirectory(metadata: meta, options: options) {
+                    if shouldTraverseDirectory(metadata: meta, options: options),
+                       !volumeBoundaryPolicy.shouldStopDescent(
+                           childPath: item.url.standardizedFileURL.path,
+                           childDeviceID: meta.fileIdentity?.fileSystemDeviceID
+                       ) {
                         metrics.directoriesVisited += 1
                         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
