@@ -475,25 +475,73 @@ private struct StatsSettingsPane: View {
                 }
 
                 Section("Scanning") {
-                    StatValueRow("Scans run", value: countText(appModel.usageStats.totalScansRun))
-                    StatValueRow("Largest scan", value: sizeText(appModel.usageStats.largestScanBytes))
-                    StatValueRow("Average scan speed", value: rateText(appModel.usageStats.averageScanBytesPerSecond))
-                    StatValueRow("Fastest scan speed", value: rateText(appModel.usageStats.fastestScanBytesPerSecond))
+                    StatValueRow(
+                        String(
+                            localized: "Scans run",
+                            comment: "Stats pane label for the total number of scans run."
+                        ),
+                        value: countText(appModel.usageStats.totalScansRun)
+                    )
+                    StatValueRow(
+                        String(
+                            localized: "Largest scan",
+                            comment: "Stats pane label for the largest scan by size."
+                        ),
+                        value: sizeText(appModel.usageStats.largestScanBytes)
+                    )
+                    StatValueRow(
+                        String(
+                            localized: "Average scan speed",
+                            comment: "Stats pane label for the average scan throughput."
+                        ),
+                        value: rateText(appModel.usageStats.averageScanBytesPerSecond)
+                    )
+                    StatValueRow(
+                        String(
+                            localized: "Fastest scan speed",
+                            comment: "Stats pane label for the fastest scan throughput."
+                        ),
+                        value: rateText(appModel.usageStats.fastestScanBytesPerSecond)
+                    )
                 }
 
                 Section("Interaction") {
                     StatValueRow(
-                        "Sunburst segments clicked",
+                        String(
+                            localized: "Sunburst segments clicked",
+                            comment: "Stats pane label for how often sunburst segments were clicked."
+                        ),
                         value: countText(appModel.usageStats.sunburstSegmentsClicked)
                     )
                 }
 
                 Section("Trash") {
-                    StatValueRow("Files deleted", value: countText(appModel.usageStats.filesDeleted))
-                    StatValueRow("Folders deleted", value: countText(appModel.usageStats.foldersDeleted))
-                    StatValueRow("Bytes moved to Trash", value: sizeText(appModel.usageStats.bytesMovedToTrash))
                     StatValueRow(
-                        "Largest trash move",
+                        String(
+                            localized: "Files deleted",
+                            comment: "Stats pane label for the number of files moved to Trash."
+                        ),
+                        value: countText(appModel.usageStats.filesDeleted)
+                    )
+                    StatValueRow(
+                        String(
+                            localized: "Folders deleted",
+                            comment: "Stats pane label for the number of folders moved to Trash."
+                        ),
+                        value: countText(appModel.usageStats.foldersDeleted)
+                    )
+                    StatValueRow(
+                        String(
+                            localized: "Bytes moved to Trash",
+                            comment: "Stats pane label for the total bytes moved to Trash."
+                        ),
+                        value: sizeText(appModel.usageStats.bytesMovedToTrash)
+                    )
+                    StatValueRow(
+                        String(
+                            localized: "Largest trash move",
+                            comment: "Stats pane label for the largest single move to Trash."
+                        ),
                         value: sizeText(appModel.usageStats.largestTrashMoveBytes)
                     )
                 }
