@@ -2314,10 +2314,19 @@ final class AppModel: ObservableObject {
         of nodes: [FileNodeRecord]
     ) -> CloudStorageLocation.Impact? {
         var containsCloudStorage = false
+        var existenceByRootPath: [String: Bool] = [:]
+        let cloudRootExists = { (root: URL) -> Bool in
+            if let cachedExistence = existenceByRootPath[root.path] {
+                return cachedExistence
+            }
+            let rootExists = self.dependencies.systemActions.fileExists(root)
+            existenceByRootPath[root.path] = rootExists
+            return rootExists
+        }
         for node in nodes {
             switch CloudStorageLocation.impact(
                 of: node.url,
-                cloudRootExists: dependencies.systemActions.fileExists
+                cloudRootExists: cloudRootExists
             ) {
             case .storedInCloud:
                 return .storedInCloud
