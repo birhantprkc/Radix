@@ -1258,6 +1258,67 @@ nonisolated struct FileTreeStore: Sendable {
         return uniqueChildren
     }
 
+    private nonisolated struct AffectedDirectoryRepair {
+        let index: FileTreeNodeIndex
+        let source: FileNodeRecord
+        let repaired: FileNodeRecord
+        let orderedChildren: [FileTreeNodeIndex]
+        let didReorderChildren: Bool
+    }
+
+    /// Shared post-order repair pass for affected directories: restores child
+    /// display order and re-derives each directory record, deepest first.
+    /// Repairs become visible to later iterations through an internal overlay,
+    /// mirroring how callers previously stored results mid-loop. Callers persist
+    /// the returned repairs into their own storage afterwards.
+    private nonisolated static func repairedAffectedDirectories(
+        postorder directories: [FileTreeNodeIndex],
+        isChanged: (FileTreeNodeIndex) -> Bool,
+        baseRecordAt: (FileTreeNodeIndex) -> FileNodeRecord,
+        currentChildren: (FileTreeNodeIndex) -> some Collection<FileTreeNodeIndex>,
+        cancellationCheck: () throws -> Void
+    ) throws -> [AffectedDirectoryRepair] {
+        var appliedRepairs: [FileTreeNodeIndex: FileNodeRecord] = [:]
+        func recordAt(_ nodeIndex: FileTreeNodeIndex) -> FileNodeRecord {
+            appliedRepairs[nodeIndex] ?? baseRecordAt(nodeIndex)
+        }
+
+        var results: [AffectedDirectoryRepair] = []
+        results.reserveCapacity(directories.count)
+        for nodeIndex in directories.reversed() {
+            try cancellationCheck()
+            let source = recordAt(nodeIndex)
+            guard source.isDirectory else { continue }
+
+            let originalChildren = currentChildren(nodeIndex)
+            let orderedChildren = try restoringDisplayOrderAfterChanges(
+                originalChildren,
+                isChanged: isChanged,
+                nodeAt: recordAt,
+                cancellationCheck: cancellationCheck
+            )
+            var childRecords: [FileNodeRecord] = []
+            childRecords.reserveCapacity(orderedChildren.count)
+            for (offset, childIndex) in orderedChildren.enumerated() {
+                if offset.isMultiple(of: 256) {
+                    try cancellationCheck()
+                }
+                childRecords.append(recordAt(childIndex))
+            }
+            let repaired = repairingDirectoryRecord(source, children: childRecords)
+            let didReorderChildren = !orderedChildren.elementsEqual(originalChildren)
+            appliedRepairs[nodeIndex] = repaired
+            results.append(AffectedDirectoryRepair(
+                index: nodeIndex,
+                source: source,
+                repaired: repaired,
+                orderedChildren: orderedChildren,
+                didReorderChildren: didReorderChildren
+            ))
+        }
+        return results
+    }
+
     nonisolated func node(id: String?) -> FileNodeRecord? {
         guard let index = nodeIndex(id: id) else { return nil }
         return node(at: index)
@@ -1573,33 +1634,23 @@ nonisolated struct FileTreeStore: Sendable {
             capacity: changedRecordCount,
             cancellationCheck: cancellationCheck
         )
-        for nodeIndex in changedNodeIndices.reversed() {
-            try cancellationCheck()
-            let nodeOffset = Int(nodeIndex.rawValue)
-            guard nodes[nodeOffset].isDirectory else { continue }
-
-            let span = childSpans[nodeOffset]
+        let repairs = try Self.repairedAffectedDirectories(
+            postorder: changedNodeIndices,
+            isChanged: { changedByOffset[Int($0.rawValue)] },
+            baseRecordAt: { nodes[Int($0.rawValue)] },
+            currentChildren: { nodeIndex in
+                let span = childSpans[Int(nodeIndex.rawValue)]
+                let start = Int(span.start)
+                return childIndices[start..<start + Int(span.count)]
+            },
+            cancellationCheck: cancellationCheck
+        )
+        for repair in repairs {
+            let offset = Int(repair.index.rawValue)
+            nodes[offset] = repair.repaired
+            let span = childSpans[offset]
             let start = Int(span.start)
-            let end = start + Int(span.count)
-            let children = try Self.restoringDisplayOrderAfterChanges(
-                childIndices[start..<end],
-                changedByOffset: changedByOffset,
-                nodeAt: { nodes[Int($0.rawValue)] },
-                cancellationCheck: cancellationCheck
-            )
-            var childRecords: [FileNodeRecord] = []
-            childRecords.reserveCapacity(children.count)
-            for (offset, childIndex) in children.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                childRecords.append(nodes[Int(childIndex.rawValue)])
-            }
-            nodes[nodeOffset] = Self.repairingDirectoryRecord(
-                nodes[nodeOffset],
-                children: childRecords
-            )
-            childIndices.replaceSubrange(start..<end, with: children)
+            childIndices.replaceSubrange(start..<start + Int(span.count), with: repair.orderedChildren)
         }
         return true
     }
