@@ -360,10 +360,8 @@ final class AppModel: ObservableObject {
         quickLookController.installKeyMonitor()
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            cleanup()
-        }
+    isolated deinit {
+        cleanup()
     }
 
     func cleanup() {
