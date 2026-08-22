@@ -614,6 +614,50 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertLessThanOrEqual(fallbackPool.debugCounters.peakOpenDescriptorCount, 1)
     }
 
+    func testFoundationFallbackRejectsDirectoryReplacedDuringEnumeration() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        let foreignRootURL = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+            try? FileManager.default.removeItem(at: foreignRootURL)
+        }
+
+        let directoryURL = rootURL.appending(path: "ReplaceMe", directoryHint: .isDirectory)
+        let originalDirectoryURL = rootURL.appending(path: "Original", directoryHint: .isDirectory)
+        let foreignFileURL = foreignRootURL.appending(path: "foreign.bin")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try Data("foreign".utf8).write(to: foreignFileURL)
+
+        let engine = ScanEngine(directoryContents: { url, keys, options, cancellationCheck in
+            try cancellationCheck()
+            if url.standardizedFileURL == directoryURL.standardizedFileURL {
+                try FileManager.default.moveItem(at: directoryURL, to: originalDirectoryURL)
+                try FileManager.default.createSymbolicLink(
+                    at: directoryURL,
+                    withDestinationURL: foreignRootURL
+                )
+            }
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: keys,
+                options: options
+            )
+            try cancellationCheck()
+            return contents
+        })
+
+        let snapshot = try await finishedSnapshot(
+            target: ScanTarget(url: rootURL),
+            options: ScanOptions(),
+            engine: engine
+        )
+
+        XCTAssertNil(snapshot.treeStore.node(id: directoryURL.appending(path: "foreign.bin").path))
+        XCTAssertTrue(snapshot.scanWarnings.contains { warning in
+            warning.path == directoryURL.path && warning.category == .fileSystem
+        })
+    }
+
     func testBulkAndFoundationScannersMatchAdversarialFixture() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

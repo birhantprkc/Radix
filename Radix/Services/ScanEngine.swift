@@ -152,6 +152,19 @@ actor ScanEngine {
         let mountPath: String
         let deviceName: String
         let fileSystemType: String
+        let deviceID: UInt64?
+
+        init(
+            mountPath: String,
+            deviceName: String,
+            fileSystemType: String,
+            deviceID: UInt64? = nil
+        ) {
+            self.mountPath = mountPath
+            self.deviceName = deviceName
+            self.fileSystemType = fileSystemType
+            self.deviceID = deviceID
+        }
     }
 
     /// Decides whether directory traversal may cross a device boundary. Nested
@@ -161,8 +174,7 @@ actor ScanEngine {
     /// traversable (a startup-scan must reach the Data volume's user data).
     nonisolated struct ScanVolumeBoundaryPolicy: Sendable {
         private let rootDeviceID: UInt64?
-        private let rootContainerID: String?
-        private let containerMountPaths: [String]
+        private let containerDeviceIDs: Set<UInt64>
 
         static func resolve(
             rootPath: String,
@@ -171,43 +183,41 @@ actor ScanEngine {
         ) -> ScanVolumeBoundaryPolicy {
             let normalizedRootPath = normalizedMountPath(rootPath)
             let rootMount = mountedFileSystems
-                .filter { isPath(normalizedRootPath, within: $0.mountPath) }
+                .filter {
+                    isPath(
+                        normalizedRootPath,
+                        within: normalizedMountPath($0.mountPath)
+                    )
+                }
                 .max { $0.mountPath.count < $1.mountPath.count }
             guard let rootMount,
                   let rootContainerID = containerIdentifier(of: rootMount) else {
                 return ScanVolumeBoundaryPolicy(
                     rootDeviceID: rootDeviceID,
-                    rootContainerID: nil,
-                    containerMountPaths: []
+                    containerDeviceIDs: []
                 )
             }
 
-            let containerMountPaths = mountedFileSystems
+            let containerDeviceIDs = Set(mountedFileSystems
                 .filter {
                     $0.fileSystemType == "apfs"
                         && containerIdentifier(of: $0) == rootContainerID
                 }
-                .map { normalizedMountPath($0.mountPath) }
-                .sorted { $0.count > $1.count }
+                .compactMap(\.deviceID))
 
             return ScanVolumeBoundaryPolicy(
                 rootDeviceID: rootDeviceID,
-                rootContainerID: rootContainerID,
-                containerMountPaths: containerMountPaths
+                containerDeviceIDs: containerDeviceIDs
             )
         }
 
-        func shouldStopDescent(childPath: String, childDeviceID: UInt64?) -> Bool {
+        func shouldStopDescent(childDeviceID: UInt64?) -> Bool {
             guard let childDeviceID,
                   let rootDeviceID else {
                 return false
             }
             guard childDeviceID != rootDeviceID else { return false }
-
-            let normalizedChildPath = Self.normalizedMountPath(childPath)
-            return !containerMountPaths.contains { mountPath in
-                Self.isPath(normalizedChildPath, within: mountPath)
-            }
+            return !containerDeviceIDs.contains(childDeviceID)
         }
 
         private static func normalizedMountPath(_ path: String) -> String {
@@ -219,7 +229,10 @@ actor ScanEngine {
         }
 
         private static func isPath(_ path: String, within mountPath: String) -> Bool {
-            path == mountPath || path.hasPrefix(mountPath + "/")
+            if mountPath == "/" {
+                return path.hasPrefix("/")
+            }
+            return path == mountPath || path.hasPrefix(mountPath + "/")
         }
 
         /// APFS synthesizer names encode the container in the disk number:
@@ -713,10 +726,24 @@ actor ScanEngine {
             }
             let mountPath = cString(from: entry.f_mntonname)
             guard !mountPath.isEmpty else { return nil }
+            let fileSystemType = cString(from: entry.f_fstypename)
+            let deviceID: UInt64?
+            if fileSystemType == "apfs" {
+                var mountStatus = stat()
+                let statusResult = mountPath.withCString { path in
+                    lstat(path, &mountStatus)
+                }
+                deviceID = statusResult == 0
+                    ? UInt64(truncatingIfNeeded: mountStatus.st_dev)
+                    : nil
+            } else {
+                deviceID = nil
+            }
             return ScanMountedFileSystem(
                 mountPath: mountPath,
                 deviceName: cString(from: entry.f_mntfromname),
-                fileSystemType: cString(from: entry.f_fstypename)
+                fileSystemType: fileSystemType,
+                deviceID: deviceID
             )
         }
     }
@@ -1426,7 +1453,6 @@ actor ScanEngine {
 
                     if shouldTraverseDirectory(metadata: meta, options: options),
                        !volumeBoundaryPolicy.shouldStopDescent(
-                           childPath: item.url.standardizedFileURL.path,
                            childDeviceID: meta.fileIdentity?.fileSystemDeviceID
                        ) {
                         metrics.directoriesVisited += 1
@@ -2744,18 +2770,11 @@ actor ScanEngine {
             options.insert(.skipsHiddenFiles)
         }
 
-        if let expectedIdentity, expectedIdentity.isFileSystemIdentity {
-            let currentMetadata = try metadataLoader.metadata(for: url)
-            if let currentIdentity = currentMetadata.fileIdentity,
-               currentIdentity.isFileSystemIdentity,
-               currentIdentity != expectedIdentity {
-                throw NSError(
-                    domain: NSPOSIXErrorDomain,
-                    code: Int(ESTALE),
-                    userInfo: [NSURLErrorKey: url]
-                )
-            }
-        }
+        try verifyFoundationDirectoryIdentity(
+            expectedIdentity,
+            at: url,
+            metadataLoader: metadataLoader
+        )
 
         let prefetchKeys = shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
             ? nil
@@ -2764,6 +2783,14 @@ actor ScanEngine {
         let enumerationStart = DispatchTime.now().uptimeNanoseconds
         #endif
         let enumerationResult = try directoryContents(url, prefetchKeys, options, cancellationCheck)
+        // FileManager has no descriptor-relative directory API. Bookend its
+        // path-based enumeration so any replacement that persists across the
+        // call is discarded instead of entering the scan.
+        try verifyFoundationDirectoryIdentity(
+            expectedIdentity,
+            at: url,
+            metadataLoader: metadataLoader
+        )
         #if DEBUG
         let enumerationNanoseconds = DispatchTime.now().uptimeNanoseconds - enumerationStart
         #endif
@@ -2826,6 +2853,24 @@ actor ScanEngine {
             directoryLease: nil
         )
         #endif
+    }
+
+    private nonisolated static func verifyFoundationDirectoryIdentity(
+        _ expectedIdentity: FileIdentity?,
+        at url: URL,
+        metadataLoader: ScanMetadataLoader
+    ) throws {
+        guard let expectedIdentity, expectedIdentity.isFileSystemIdentity else { return }
+        let currentIdentity = try metadataLoader.metadata(for: url).fileIdentity
+        guard let currentIdentity,
+              currentIdentity.isFileSystemIdentity,
+              currentIdentity == expectedIdentity else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(ESTALE),
+                userInfo: [NSURLErrorKey: url]
+            )
+        }
     }
 
     private nonisolated static func classifiedDirectoryEntries(
