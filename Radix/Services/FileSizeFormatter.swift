@@ -16,7 +16,10 @@ nonisolated enum RadixFormatters {
 
     static func date(_ date: Date?) -> String {
         guard let date else {
-            return "Unknown"
+            return String(
+                localized: "Unknown",
+                comment: "Placeholder for a file whose modification date is unavailable."
+            )
         }
         return formatterCache.date(date)
     }

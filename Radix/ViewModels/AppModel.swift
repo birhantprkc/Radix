@@ -1125,7 +1125,10 @@ final class AppModel: ObservableObject {
         guard setup.canCompare,
               setup.resolvedCandidates != nil else {
             var updatedSetup = setup
-            updatedSetup.errorMessage = setup.validationMessage ?? "Choose two scans to compare."
+            updatedSetup.errorMessage = setup.validationMessage ?? String(
+                localized: "Choose two scans to compare.",
+                comment: "Error shown when confirming a comparison with missing scans."
+            )
             pendingComparisonSetup = updatedSetup
             return
         }
@@ -1171,8 +1174,10 @@ final class AppModel: ObservableObject {
         guard pendingComparisonSetup != nil else { return }
         guard pendingComparisonSetup?.loadingSlot == nil else { return }
         guard sourceURL.pathExtension.lowercased() == ScanArchiveService.fileExtension else {
-            pendingComparisonSetup?.errorMessage =
-                "Drop a .\(ScanArchiveService.fileExtension) saved scan."
+            pendingComparisonSetup?.errorMessage = String(
+                localized: "Drop a .\(ScanArchiveService.fileExtension) saved scan.",
+                comment: "Error shown when a dropped file is not a saved scan archive."
+            )
             return
         }
 
@@ -1183,7 +1188,10 @@ final class AppModel: ObservableObject {
         guard var setup = pendingComparisonSetup else { return }
         guard canUseCurrentScanInComparisonSetup,
               let snapshot = scanCoordinator.snapshot else {
-            setup.errorMessage = "Complete a live scan before using it in a comparison."
+            setup.errorMessage = String(
+                localized: "Complete a live scan before using it in a comparison.",
+                comment: "Error shown when the current scan cannot be used for comparison."
+            )
             pendingComparisonSetup = setup
             return
         }

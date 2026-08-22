@@ -1,6 +1,251 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Unknown" : {
+      "comment" : "Placeholder for a file whose modification date is unavailable.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unbekannt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desconocido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inconnu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sconosciuto"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知"
+          }
+        }
+      }
+    },
+    "Choose two scans to compare." : {
+      "comment" : "Error shown when confirming a comparison with missing scans.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie zwei Scans zum Vergleichen aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige dos análisis para comparar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez deux analyses à comparer."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli due scansioni da confrontare."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择要比较的两个扫描。"
+          }
+        }
+      }
+    },
+    "Drop a .%@ saved scan." : {
+      "comment" : "Error shown when a dropped file is not a saved scan archive.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ziehen Sie einen gespeicherten Scan (.%@) hierher."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra un análisis guardado .%@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déposez une analyse enregistrée .%@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trascina una scansione salvata .%@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请拖入已保存的扫描（.%@）。"
+          }
+        }
+      }
+    },
+    "Complete a live scan before using it in a comparison." : {
+      "comment" : "Error shown when the current scan cannot be used for comparison.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen Sie einen Live-Scan ab, bevor Sie ihn für einen Vergleich verwenden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completa un análisis en vivo antes de usarlo en una comparación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminez une analyse en direct avant de l'utiliser dans une comparaison."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completa una scansione in tempo reale prima di usarla in un confronto."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先完成实时扫描，再将其用于比较。"
+          }
+        }
+      }
+    },
+    "Choose two different scans." : {
+      "comment" : "Error shown when both comparison slots contain the same scan.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie zwei unterschiedliche Scans aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige dos análisis distintos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez deux analyses différentes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli due scansioni diverse."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择两个不同的扫描。"
+          }
+        }
+      }
+    },
+    "Choose scans of the same location." : {
+      "comment" : "Error shown when comparing scans of different locations.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wählen Sie Scans desselben Standorts aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige análisis de la misma ubicación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez des analyses du même emplacement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli scansioni della stessa posizione."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择同一位置的扫描。"
+          }
+        }
+      }
+    },
+    "The earlier scan must precede the later scan." : {
+      "comment" : "Error shown when comparison slots are in reverse chronological order.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der frühere Scan muss vor dem späteren Scan liegen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El análisis anterior debe preceder al posterior."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’analyse antérieure doit précéder l’analyse postérieure."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La scansione precedente deve precedere quella successiva."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "较早的扫描必须早于较晚的扫描。"
+          }
+        }
+      }
+    },
     "" : {
       "localizations" : {
         "de" : {

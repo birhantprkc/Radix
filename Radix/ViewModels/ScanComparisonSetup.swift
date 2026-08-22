@@ -124,14 +124,23 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
             return nil
         }
         if before.source == after.source {
-            return "Choose two different scans."
+            return String(
+                localized: "Choose two different scans.",
+                comment: "Error shown when both comparison slots contain the same scan."
+            )
         }
         guard before.targetKind == after.targetKind,
               Self.normalizedRootPath(before.path) == Self.normalizedRootPath(after.path) else {
-            return "Choose scans of the same location."
+            return String(
+                localized: "Choose scans of the same location.",
+                comment: "Error shown when comparing scans of different locations."
+            )
         }
         if before.scanDate > after.scanDate {
-            return "The earlier scan must precede the later scan."
+            return String(
+                localized: "The earlier scan must precede the later scan.",
+                comment: "Error shown when comparison slots are in reverse chronological order."
+            )
         }
         return nil
     }
