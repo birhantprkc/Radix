@@ -68,6 +68,62 @@ struct DiscardPileSnapshot: Equatable, Sendable {
     let summary: DiscardPileSummary
 }
 
+enum FileActionError: LocalizedError {
+    case noSelection
+    case unavailable(path: String)
+    case changedSinceScan(path: String)
+    case missingScannedIdentity(path: String)
+    case currentIdentityUnavailable(path: String, reason: String)
+    case unsupported
+    case directoryRequired
+    case packageContentsHidden(settingEnabled: Bool)
+    case folderRequiredForDrop
+    case fullDiskAccessSettingsUnavailable
+    case readOnlySnapshot
+    case currentComparisonSnapshotUnavailable
+
+    var alertTitle: String? {
+        switch self {
+        case .packageContentsHidden:
+            return String(localized: "Package Contents Hidden", comment: "Alert title explaining that a package's contents were not expanded.")
+        default:
+            return nil
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .noSelection:
+            return String(localized: "Select an item first.", comment: "Error shown when a file action is requested without a selection.")
+        case .unavailable(let path):
+            return String(localized: "The item at \(path) is no longer available.", comment: "Error shown when a selected item has disappeared.")
+        case .changedSinceScan(let path):
+            return String(localized: "The item at \(path) changed since this scan. Rescan before moving it to Trash.", comment: "Safety error shown when a selected item changed after scanning.")
+        case .missingScannedIdentity(let path):
+            return String(localized: "Radix could not verify the scanned identity for \(path). Rescan before moving it to Trash.", comment: "Safety error shown when a scanned file identity cannot be verified.")
+        case .currentIdentityUnavailable(let path, let reason):
+            return String(localized: "Radix could not verify the current identity for \(path): \(reason)", comment: "Safety error shown when the current file identity cannot be verified.")
+        case .unsupported:
+            return String(localized: "This item does not support that action.", comment: "Error shown when a selected item cannot perform the requested action.")
+        case .directoryRequired:
+            return String(localized: "Choose a folder with contents to zoom in.", comment: "Error shown when zooming requires a directory.")
+        case .packageContentsHidden(let settingEnabled):
+            if settingEnabled {
+                return String(localized: "Radix scanned this package before package contents were expanded. Rescan this location to zoom into it.", comment: "Error shown when a package needs to be rescanned after enabling package expansion.")
+            }
+            return String(localized: "Radix scanned this package as a single item. To zoom into it, turn on “Treat app bundles and packages as folders” in Settings, then rescan this location.", comment: "Error explaining how to enable package expansion before zooming into a package.")
+        case .folderRequiredForDrop:
+            return String(localized: "Drop a folder or mounted volume to start a scan.", comment: "Error shown when a dropped item is not a folder or volume.")
+        case .fullDiskAccessSettingsUnavailable:
+            return String(localized: "Radix could not open Full Disk Access settings.", comment: "Error shown when System Settings cannot open Full Disk Access.")
+        case .readOnlySnapshot:
+            return String(localized: "Imported snapshots are read-only.", comment: "Error shown when a file action is attempted on an imported snapshot.")
+        case .currentComparisonSnapshotUnavailable:
+            return String(localized: "Current scan changed. Start the comparison again.", comment: "Error shown when the live scan changed during comparison setup.")
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     typealias PendingTrashSelection = TrashFlowController.PendingTrashSelection
@@ -86,62 +142,6 @@ final class AppModel: ObservableObject {
         case navigateToParent
         case resetFocusToRoot
         case clearSelection
-    }
-
-    private enum FileActionError: LocalizedError {
-        case noSelection
-        case unavailable(path: String)
-        case changedSinceScan(path: String)
-        case missingScannedIdentity(path: String)
-        case currentIdentityUnavailable(path: String, reason: String)
-        case unsupported
-        case directoryRequired
-        case packageContentsHidden(settingEnabled: Bool)
-        case folderRequiredForDrop
-        case fullDiskAccessSettingsUnavailable
-        case readOnlySnapshot
-        case currentComparisonSnapshotUnavailable
-
-        var alertTitle: String? {
-            switch self {
-            case .packageContentsHidden:
-                return String(localized: "Package Contents Hidden", comment: "Alert title explaining that a package's contents were not expanded.")
-            default:
-                return nil
-            }
-        }
-
-        var errorDescription: String? {
-            switch self {
-            case .noSelection:
-                return String(localized: "Select an item first.", comment: "Error shown when a file action is requested without a selection.")
-            case .unavailable(let path):
-                return String(localized: "The item at \(path) is no longer available.", comment: "Error shown when a selected item has disappeared.")
-            case .changedSinceScan(let path):
-                return String(localized: "The item at \(path) changed since this scan. Rescan before moving it to Trash.", comment: "Safety error shown when a selected item changed after scanning.")
-            case .missingScannedIdentity(let path):
-                return String(localized: "Radix could not verify the scanned identity for \(path). Rescan before moving it to Trash.", comment: "Safety error shown when a scanned file identity cannot be verified.")
-            case .currentIdentityUnavailable(let path, let reason):
-                return String(localized: "Radix could not verify the current identity for \(path): \(reason)", comment: "Safety error shown when the current file identity cannot be verified.")
-            case .unsupported:
-                return String(localized: "This item does not support that action.", comment: "Error shown when a selected item cannot perform the requested action.")
-            case .directoryRequired:
-                return String(localized: "Choose a folder with contents to zoom in.", comment: "Error shown when zooming requires a directory.")
-            case .packageContentsHidden(let settingEnabled):
-                if settingEnabled {
-                    return String(localized: "Radix scanned this package before package contents were expanded. Rescan this location to zoom into it.", comment: "Error shown when a package needs to be rescanned after enabling package expansion.")
-                }
-                return String(localized: "Radix scanned this package as a single item. To zoom into it, turn on “Treat app bundles and packages as folders” in Settings, then rescan this location.", comment: "Error explaining how to enable package expansion before zooming into a package.")
-            case .folderRequiredForDrop:
-                return String(localized: "Drop a folder or mounted volume to start a scan.", comment: "Error shown when a dropped item is not a folder or volume.")
-            case .fullDiskAccessSettingsUnavailable:
-                return String(localized: "Radix could not open Full Disk Access settings.", comment: "Error shown when System Settings cannot open Full Disk Access.")
-            case .readOnlySnapshot:
-                return String(localized: "Imported snapshots are read-only.", comment: "Error shown when a file action is attempted on an imported snapshot.")
-            case .currentComparisonSnapshotUnavailable:
-                return String(localized: "Current scan changed. Start the comparison again.", comment: "Error shown when the live scan changed during comparison setup.")
-            }
-        }
     }
 
     @Published var showHiddenFiles = true
@@ -2100,19 +2100,12 @@ final class AppModel: ObservableObject {
         for nodes: [FileNodeRecord],
         allowingHiddenNodes: Bool = false
     ) throws {
-        guard nodes.allSatisfy({ node in
-            node.supportsMoveToTrash(
-                activeTarget: scanCoordinator.selectedTarget,
-                trashSafetyPolicy: scanCoordinator.trashSafetyPolicy
-            )
-        }) else {
-            throw FileActionError.unsupported
-        }
-
-        let trashNodes = topLevelTrashNodes(from: nodes)
-        pendingTrashSelection = PendingTrashSelection(
-            nodes: trashNodes,
-            allowsHiddenNodes: allowingHiddenNodes
+        try trashFlow.stageTrashRequest(
+            for: nodes,
+            activeTarget: scanCoordinator.selectedTarget,
+            trashSafetyPolicy: scanCoordinator.trashSafetyPolicy,
+            fileTreeStore: scanCoordinator.fileTreeStore,
+            allowingHiddenNodes: allowingHiddenNodes
         )
     }
 
@@ -2213,17 +2206,11 @@ final class AppModel: ObservableObject {
     }
 
     func removeDiscardPileNode(id nodeID: FileNodeRecord.ID) {
-        guard discardPile.nodeIDs.contains(nodeID) else { return }
-        let remainingIDs = discardPile.nodeIDs.filter { $0 != nodeID }
-        discardPile = DiscardPileState(
-            nodeIDs: remainingIDs,
-            snapshotID: discardPile.snapshotID
-        )
+        trashFlow.removeDiscardPileNode(id: nodeID)
     }
 
     func clearDiscardPile() {
-        guard !discardPile.isEmpty else { return }
-        discardPile = DiscardPileState()
+        trashFlow.clearDiscardPile()
     }
 
     @discardableResult
@@ -2797,9 +2784,10 @@ final class AppModel: ObservableObject {
     }
 
     private func topLevelTrashNodes(from nodes: [FileNodeRecord]) -> [FileNodeRecord] {
-        guard let fileTreeStore = scanCoordinator.fileTreeStore else { return nodes }
-        let nodesByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return fileTreeStore.topLevelNodeIDs(from: nodes.map(\.id)).compactMap { nodesByID[$0] }
+        TrashFlowController.topLevelTrashNodes(
+            from: nodes,
+            fileTreeStore: scanCoordinator.fileTreeStore
+        )
     }
 
     private func hiddenNodeIDs(for snapshotID: UUID?) -> Set<FileNodeRecord.ID> {

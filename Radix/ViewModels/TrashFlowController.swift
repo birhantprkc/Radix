@@ -112,6 +112,54 @@ final class TrashFlowController {
         postTrashRemovalTask = nil
     }
 
+    /// Validates trash support, reduces nodes to top-level items, and stages
+    /// the pending confirmation. Throws when any node cannot be trashed.
+    func stageTrashRequest(
+        for nodes: [FileNodeRecord],
+        activeTarget: ScanTarget?,
+        trashSafetyPolicy: TrashSafetyPolicy,
+        fileTreeStore: FileTreeStore?,
+        allowingHiddenNodes: Bool = false
+    ) throws {
+        guard nodes.allSatisfy({ node in
+            node.supportsMoveToTrash(
+                activeTarget: activeTarget,
+                trashSafetyPolicy: trashSafetyPolicy
+            )
+        }) else {
+            throw FileActionError.unsupported
+        }
+
+        let trashNodes = Self.topLevelTrashNodes(from: nodes, fileTreeStore: fileTreeStore)
+        pendingTrashSelection = PendingTrashSelection(
+            nodes: trashNodes,
+            allowsHiddenNodes: allowingHiddenNodes
+        )
+    }
+
+    func removeDiscardPileNode(id nodeID: FileNodeRecord.ID) {
+        guard discardPile.nodeIDs.contains(nodeID) else { return }
+        let remainingIDs = discardPile.nodeIDs.filter { $0 != nodeID }
+        discardPile = DiscardPileState(
+            nodeIDs: remainingIDs,
+            snapshotID: discardPile.snapshotID
+        )
+    }
+
+    func clearDiscardPile() {
+        guard !discardPile.isEmpty else { return }
+        discardPile = DiscardPileState()
+    }
+
+    static func topLevelTrashNodes(
+        from nodes: [FileNodeRecord],
+        fileTreeStore: FileTreeStore?
+    ) -> [FileNodeRecord] {
+        guard let fileTreeStore else { return nodes }
+        let nodesByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return fileTreeStore.topLevelNodeIDs(from: nodes.map(\.id)).compactMap { nodesByID[$0] }
+    }
+
     private func notifyChanged() {
         onChange?()
     }
