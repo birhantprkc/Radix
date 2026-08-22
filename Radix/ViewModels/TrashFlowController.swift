@@ -69,7 +69,7 @@ final class TrashFlowController {
         didSet { notifyChanged() }
     }
 
-    var optimisticTrashVisibility = OptimisticTrashVisibilityState()
+    private(set) var optimisticTrashVisibility = OptimisticTrashVisibilityState()
 
     var confirmedTrashMoveTask: Task<Void, Never>?
     var postTrashRemovalTask: Task<Void, Never>?
@@ -110,6 +110,26 @@ final class TrashFlowController {
         postTrashRemovalRequests.removeAll()
         postTrashRemovalTask?.cancel()
         postTrashRemovalTask = nil
+    }
+
+    @discardableResult
+    func replaceOptimisticTrashVisibility(
+        nodeIDs: Set<FileNodeRecord.ID>,
+        snapshotID: UUID?
+    ) -> Bool {
+        let updatedState = OptimisticTrashVisibilityState(
+            nodeIDs: nodeIDs,
+            snapshotID: snapshotID
+        )
+        guard updatedState != optimisticTrashVisibility else { return false }
+        optimisticTrashVisibility = updatedState
+        notifyChanged()
+        return true
+    }
+
+    @discardableResult
+    func clearOptimisticTrashVisibility() -> Bool {
+        replaceOptimisticTrashVisibility(nodeIDs: [], snapshotID: nil)
     }
 
     /// Validates trash support, reduces nodes to top-level items, and stages
@@ -200,11 +220,10 @@ final class TrashFlowController {
             ? optimisticTrashVisibility.nodeIDs
             : []
         let hiddenIDs = existingIDs.union(nodeIDs)
-        optimisticTrashVisibility = OptimisticTrashVisibilityState(
+        replaceOptimisticTrashVisibility(
             nodeIDs: hiddenIDs,
             snapshotID: snapshotID
         )
-        notifyChanged()
         return true
     }
 
@@ -227,11 +246,10 @@ final class TrashFlowController {
         guard !unmovedNodeIDs.isEmpty else { return }
 
         let hiddenIDs = optimisticTrashVisibility.nodeIDs.subtracting(unmovedNodeIDs)
-        optimisticTrashVisibility = OptimisticTrashVisibilityState(
+        replaceOptimisticTrashVisibility(
             nodeIDs: hiddenIDs,
             snapshotID: snapshotID
         )
-        notifyChanged()
     }
 
     /// Runs one confirmed trash move synchronously and reports the outcome.

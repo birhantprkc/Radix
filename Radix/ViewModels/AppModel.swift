@@ -129,7 +129,6 @@ final class AppModel: ObservableObject {
     typealias PendingTrashSelection = TrashFlowController.PendingTrashSelection
     typealias PendingCloudFileAction = TrashFlowController.PendingCloudFileAction
     typealias PostTrashRemovalRequest = TrashFlowController.PostTrashRemovalRequest
-    private typealias OptimisticTrashVisibilityState = TrashFlowController.OptimisticTrashVisibilityState
 
     private enum NavigationAction: Sendable {
         case select(FileNodeRecord.ID?)
@@ -230,8 +229,7 @@ final class AppModel: ObservableObject {
     }
 
     private var optimisticTrashVisibility: TrashFlowController.OptimisticTrashVisibilityState {
-        get { trashFlow.optimisticTrashVisibility }
-        set { trashFlow.optimisticTrashVisibility = newValue }
+        trashFlow.optimisticTrashVisibility
     }
 
     private var confirmedTrashMoveTask: Task<Void, Never>? {
@@ -1556,19 +1554,15 @@ final class AppModel: ObservableObject {
     }
 
     private func cancelPostTrashSnapshotRemoval() {
-        postTrashRemovalRequests.removeAll()
-        postTrashRemovalTask?.cancel()
-        postTrashRemovalTask = nil
+        trashFlow.cancelPostTrashSnapshotRemoval()
     }
 
     private func cancelConfirmedTrashMove() {
-        confirmedTrashMoveTask?.cancel()
-        confirmedTrashMoveTask = nil
+        trashFlow.cancelConfirmedTrashMove()
     }
 
     private func clearOptimisticTrashVisibility() {
-        guard optimisticTrashVisibility.snapshotID != nil else { return }
-        optimisticTrashVisibility = OptimisticTrashVisibilityState()
+        trashFlow.clearOptimisticTrashVisibility()
     }
 
     private func scheduleDeferredViewUpdate(
@@ -2826,13 +2820,13 @@ final class AppModel: ObservableObject {
         guard optimisticTrashVisibility.snapshotID != nil else { return }
         guard let snapshot,
               optimisticTrashVisibility.snapshotID == snapshot.id else {
-            optimisticTrashVisibility = OptimisticTrashVisibilityState()
+            trashFlow.clearOptimisticTrashVisibility()
             return
         }
 
         let nodeIDs = optimisticTrashVisibility.nodeIDs.filter { snapshot.treeStore.node(id: $0) != nil }
         guard nodeIDs != optimisticTrashVisibility.nodeIDs else { return }
-        optimisticTrashVisibility = OptimisticTrashVisibilityState(
+        trashFlow.replaceOptimisticTrashVisibility(
             nodeIDs: nodeIDs,
             snapshotID: snapshot.id
         )

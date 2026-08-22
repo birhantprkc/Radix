@@ -904,6 +904,32 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testOptimisticTrashVisibilityMutationsPublishThroughAppModel() {
+        let model = AppModel(dependencies: makeDependencies())
+        let snapshotID = UUID()
+        var publicationCount = 0
+        let cancellable = model.objectWillChange.sink {
+            publicationCount += 1
+        }
+        defer { cancellable.cancel() }
+
+        XCTAssertTrue(model.trashFlow.replaceOptimisticTrashVisibility(
+            nodeIDs: ["/selection/file.txt"],
+            snapshotID: snapshotID
+        ))
+        XCTAssertEqual(publicationCount, 1)
+
+        XCTAssertFalse(model.trashFlow.replaceOptimisticTrashVisibility(
+            nodeIDs: ["/selection/file.txt"],
+            snapshotID: snapshotID
+        ))
+        XCTAssertEqual(publicationCount, 1)
+
+        XCTAssertTrue(model.trashFlow.clearOptimisticTrashVisibility())
+        XCTAssertEqual(publicationCount, 2)
+    }
+
+    @MainActor
     func testAsyncDiscardPileTrashDoesNotRemoveNewSnapshotListEntry() async throws {
         let probe = AsyncTrashActionProbe()
         var actions = AppSystemActions.inert
