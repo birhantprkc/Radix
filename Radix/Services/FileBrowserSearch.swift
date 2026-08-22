@@ -157,9 +157,7 @@ actor FileSearchService: FileSearching {
 
 enum SearchNormalizer {
     nonisolated static func normalize(_ value: String) -> String {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
     nonisolated static func queryIncludesPath(_ query: String) -> Bool {
