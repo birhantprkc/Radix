@@ -284,6 +284,7 @@ final class AppModel: ObservableObject {
     private var deferredNavigationContextID: UUID?
     private var deferredNavigationContextSnapshotID: UUID?
     private var postTrashRemovalTask: Task<Void, Never>?
+    private var confirmedTrashMoveTask: Task<Void, Never>?
     private var exportPanelTask: Task<Void, Never>?
     private var exportPanelRequestID: UUID?
     private var comparisonPanelTask: Task<Void, Never>?
@@ -374,6 +375,7 @@ final class AppModel: ObservableObject {
         cancelDeferredDiscardPileAdd()
         cancelDeferredNavigationContextUpdate()
         cancelPostTrashSnapshotRemoval()
+        cancelConfirmedTrashMove()
         sidebarScanCacheController.resetTransientState()
         fullDiskAccessRefreshTask?.cancel()
         fullDiskAccessRefreshTask = nil
@@ -407,6 +409,7 @@ final class AppModel: ObservableObject {
         cancelDeferredDiscardPileAdd()
         cancelDeferredNavigationContextUpdate()
         cancelPostTrashSnapshotRemoval()
+        cancelConfirmedTrashMove()
         sidebarScanCacheController.clearActiveScanTracking()
         if scanCoordinator.canStopScan {
             scanCoordinator.stopScan()
@@ -1592,6 +1595,11 @@ final class AppModel: ObservableObject {
         postTrashRemovalTask = nil
     }
 
+    private func cancelConfirmedTrashMove() {
+        confirmedTrashMoveTask?.cancel()
+        confirmedTrashMoveTask = nil
+    }
+
     private func clearOptimisticTrashVisibility() {
         guard optimisticTrashVisibility.snapshotID != nil else { return }
         optimisticTrashVisibility = OptimisticTrashVisibilityState()
@@ -2320,7 +2328,7 @@ final class AppModel: ObservableObject {
         let statsFileTreeStore = scanCoordinator.fileTreeStore
 
         if usesAsyncTrashActions {
-            Task { @MainActor [weak self] in
+            confirmedTrashMoveTask = Task { @MainActor [weak self] in
                 await self?.performConfirmedTrashMove(
                     nodes,
                     originalSnapshotID: originalSnapshotID,
@@ -2383,6 +2391,7 @@ final class AppModel: ObservableObject {
         hideTrashNodesDuringMove(nodes, snapshotID: originalSnapshotID)
 
         var actionError: Error?
+        var wasCancelled = false
         for node in nodes {
             do {
                 let verificationResult = try await moveToTrash(node)
@@ -2391,6 +2400,9 @@ final class AppModel: ObservableObject {
                     break
                 }
                 movedNodes.append(node)
+            } catch is CancellationError {
+                wasCancelled = true
+                break
             } catch {
                 actionError = error
                 break
@@ -2404,6 +2416,13 @@ final class AppModel: ObservableObject {
             originalSnapshotID: originalSnapshotID,
             statsFileTreeStore: statsFileTreeStore
         )
+        if wasCancelled {
+            unhideTrashNodesAfterFailedMove(
+                requestedNodes: nodes,
+                movedNodes: movedNodes,
+                snapshotID: originalSnapshotID
+            )
+        }
     }
 
     private func fileActionError(

@@ -944,6 +944,47 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testSuspendingMainWindowCancelsInFlightAsyncDiscardPileTrashMove() async throws {
+        let probe = AsyncTrashActionProbe()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.asyncMoveToTrash = { node in
+            if node.name == "second.bin" {
+                await probe.move(node.url)
+                try Task.checkCancellation()
+            }
+            return .matches
+        }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+
+        let first = makeTestFileNode(id: "/selection/first.bin", name: "first.bin", size: 40)
+        let second = makeTestFileNode(id: "/selection/second.bin", name: "second.bin", size: 60)
+        let root = makeTestDirectoryNode(id: "/selection", name: "selection", children: [first, second])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+        model.addNodesToDiscardPile([first, second])
+        XCTAssertTrue(model.requestMoveDiscardPileToTrash())
+        model.confirmMovePendingSelectionToTrash()
+
+        try await probe.waitUntilStarted()
+        let startedURLs = await probe.movedURLs()
+        XCTAssertEqual(startedURLs, [second.url])
+        XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(first.id))
+        XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(second.id))
+
+        model.suspendMainWindowActivity()
+        await probe.finish()
+
+        try await waitUntil("cancelled trash move reconciled", timeout: 2) {
+            model.usageStats.bytesMovedToTrash == first.allocatedSize
+        }
+        XCTAssertNil(model.lastErrorMessage)
+        XCTAssertEqual(model.discardPile.nodeIDs, [second.id])
+    }
+
+    @MainActor
     func testConfirmPendingTrashRecordsTrashUsageStats() {
         let recorder = AppModelActionRecorder()
         let usageStats = SpyAppUsageStatsStore()
