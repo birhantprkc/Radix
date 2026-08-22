@@ -2640,37 +2640,30 @@ nonisolated struct FileTreeStore: Sendable {
         if !affectedNodeIndices.isEmpty {
             var affectedNodeIndexSet = Set(affectedNodeIndices)
             affectedNodeIndexSet.formUnion(changedNodeIndices)
-            for nodeIndex in affectedNodeIndices.reversed() {
-                try cancellationCheck()
-                let nodeOffset = Int(nodeIndex.rawValue)
-                guard nodes[nodeOffset].isDirectory else { continue }
-
-                let span = childSpans[nodeOffset]
-                let childStart = Int(span.start)
-                let childEnd = childStart + Int(span.count)
-                let reorderedChildren = try restoringDisplayOrderAfterChanges(
-                    childIndices[childStart..<childEnd],
-                    isChanged: { affectedNodeIndexSet.contains($0) },
-                    nodeAt: { nodes[Int($0.rawValue)] },
-                    cancellationCheck: cancellationCheck
-                )
-
-                var totals = MaterializedDirectoryTotals()
-                for (offset, childIndex) in reorderedChildren.enumerated() {
-                    if offset.isMultiple(of: 256) {
-                        try cancellationCheck()
-                    }
-                    let childOffset = childStart + offset
-                    if childIndices[childOffset] != childIndex {
-                        childIndices[childOffset] = childIndex
-                        didReorderChildren = true
-                    }
-                    totals.include(nodes[Int(childIndex.rawValue)])
+            let repairs = try Self.repairedAffectedDirectories(
+                postorder: affectedNodeIndices,
+                isChanged: { affectedNodeIndexSet.contains($0) },
+                baseRecordAt: { nodes[Int($0.rawValue)] },
+                currentChildren: { nodeIndex in
+                    let span = childSpans[Int(nodeIndex.rawValue)]
+                    let start = Int(span.start)
+                    return childIndices[start..<start + Int(span.count)]
+                },
+                cancellationCheck: cancellationCheck
+            )
+            for repair in repairs {
+                let offset = Int(repair.index.rawValue)
+                nodes[offset] = repair.repaired
+                statsAccumulator.replaceAccessibility(from: repair.source, to: repair.repaired)
+                let span = childSpans[offset]
+                let start = Int(span.start)
+                if repair.didReorderChildren {
+                    childIndices.replaceSubrange(
+                        start..<start + Int(span.count),
+                        with: repair.orderedChildren
+                    )
+                    didReorderChildren = true
                 }
-                let source = nodes[nodeOffset]
-                let repaired = repairingDirectoryRecord(source, totals: totals)
-                statsAccumulator.replaceAccessibility(from: source, to: repaired)
-                nodes[nodeOffset] = repaired
             }
         }
 
