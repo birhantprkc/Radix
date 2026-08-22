@@ -70,47 +70,10 @@ struct DiscardPileSnapshot: Equatable, Sendable {
 
 @MainActor
 final class AppModel: ObservableObject {
-    private struct PostTrashRemovalRequest: Sendable {
-        let nodeIDs: [FileNodeRecord.ID]
-        let fallbackFocusID: FileNodeRecord.ID?
-    }
-
-    private struct OptimisticTrashVisibilityState: Equatable, Sendable {
-        let nodeIDs: Set<FileNodeRecord.ID>
-        let snapshotID: UUID?
-
-        init(
-            nodeIDs: Set<FileNodeRecord.ID> = [],
-            snapshotID: UUID? = nil
-        ) {
-            self.nodeIDs = nodeIDs
-            self.snapshotID = nodeIDs.isEmpty ? nil : snapshotID
-        }
-    }
-
-    struct PendingTrashSelection {
-        let nodes: [FileNodeRecord]
-        let allowsHiddenNodes: Bool
-
-        init(
-            nodes: [FileNodeRecord],
-            allowsHiddenNodes: Bool = false
-        ) {
-            self.nodes = nodes
-            self.allowsHiddenNodes = allowsHiddenNodes
-        }
-    }
-
-    struct PendingCloudFileAction {
-        enum Kind: Equatable {
-            case addToDiscardPile
-            case moveToTrash(allowsHiddenNodes: Bool)
-        }
-
-        let kind: Kind
-        let nodes: [FileNodeRecord]
-        let cloudImpact: CloudStorageLocation.Impact
-    }
+    typealias PendingTrashSelection = TrashFlowController.PendingTrashSelection
+    typealias PendingCloudFileAction = TrashFlowController.PendingCloudFileAction
+    typealias PostTrashRemovalRequest = TrashFlowController.PostTrashRemovalRequest
+    private typealias OptimisticTrashVisibilityState = TrashFlowController.OptimisticTrashVisibilityState
 
     private enum NavigationAction: Sendable {
         case select(FileNodeRecord.ID?)
@@ -236,37 +199,52 @@ final class AppModel: ObservableObject {
             synchronizeImportPreviewPresentation()
         }
     }
-    @Published var pendingTrashSelection: PendingTrashSelection? {
-        didSet {
-            synchronizeTrashConfirmationPresentation()
-        }
+    let trashFlow = TrashFlowController()
+
+    var pendingTrashSelection: PendingTrashSelection? {
+        get { trashFlow.pendingTrashSelection }
+        set { trashFlow.pendingTrashSelection = newValue }
     }
+
     /// Convenience mirror of a single-node pending trash request. Every pending
     /// request is owned by `pendingTrashSelection`; this exposes it for callers
     /// that only care about the common one-node case.
     var pendingTrashNode: FileNodeRecord? {
-        get {
-            guard let nodes = pendingTrashSelection?.nodes, nodes.count == 1 else {
-                return nil
-            }
-            return nodes.first
-        }
-        set {
-            if let node = newValue {
-                pendingTrashSelection = PendingTrashSelection(nodes: [node])
-            } else {
-                pendingTrashSelection = nil
-            }
-        }
+        get { trashFlow.pendingTrashNode }
+        set { trashFlow.pendingTrashNode = newValue }
     }
-    @Published private(set) var pendingCloudFileAction: PendingCloudFileAction? {
-        didSet {
-            synchronizeCloudFileConfirmationPresentation()
-        }
+
+    private(set) var pendingCloudFileAction: PendingCloudFileAction? {
+        get { trashFlow.pendingCloudFileAction }
+        set { trashFlow.pendingCloudFileAction = newValue }
     }
-    @Published private(set) var discardPile = DiscardPileState()
+
+    private(set) var discardPile: DiscardPileState {
+        get { trashFlow.discardPile }
+        set { trashFlow.discardPile = newValue }
+    }
+
+    private var optimisticTrashVisibility: TrashFlowController.OptimisticTrashVisibilityState {
+        get { trashFlow.optimisticTrashVisibility }
+        set { trashFlow.optimisticTrashVisibility = newValue }
+    }
+
+    private var confirmedTrashMoveTask: Task<Void, Never>? {
+        get { trashFlow.confirmedTrashMoveTask }
+        set { trashFlow.confirmedTrashMoveTask = newValue }
+    }
+
+    private var postTrashRemovalTask: Task<Void, Never>? {
+        get { trashFlow.postTrashRemovalTask }
+        set { trashFlow.postTrashRemovalTask = newValue }
+    }
+
+    private var postTrashRemovalRequests: [TrashFlowController.PostTrashRemovalRequest] {
+        get { trashFlow.postTrashRemovalRequests }
+        set { trashFlow.postTrashRemovalRequests = newValue }
+    }
+
     @Published private(set) var usageStats = AppUsageStats.empty
-    @Published private var optimisticTrashVisibility = OptimisticTrashVisibilityState()
     @Published private var diskFreeSpaceCapacityCache: DiskFreeSpaceCapacityCache?
 
     private let dependencies: AppDependencies
@@ -296,15 +274,12 @@ final class AppModel: ObservableObject {
     private var deferredNavigationContextTask: Task<Void, Never>?
     private var deferredNavigationContextID: UUID?
     private var deferredNavigationContextSnapshotID: UUID?
-    private var postTrashRemovalTask: Task<Void, Never>?
-    private var confirmedTrashMoveTask: Task<Void, Never>?
     private var exportPanelTask: Task<Void, Never>?
     private var exportPanelRequestID: UUID?
     private var comparisonPanelTask: Task<Void, Never>?
     private var comparisonPanelRequestID: UUID?
     private var readyDeferredArchiveImportURL: URL?
     private var exportConfirmationDismissTask: Task<Void, Never>?
-    private var postTrashRemovalRequests: [PostTrashRemovalRequest] = []
     private var fullDiskAccessRefreshTask: Task<Void, Never>?
     private var targetCapacityDescriptionsRefreshTask: Task<Void, Never>?
     private var diskFreeSpaceCapacityRefreshTask: Task<Void, Never>?
@@ -365,6 +340,12 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
         archiveWorkflow.onBecameIdle = { [weak self] in
             self?.resumeReadyDeferredArchiveImportIfPossible()
+        }
+        trashFlow.onChange = { [weak self] in
+            guard let self else { return }
+            self.synchronizeTrashConfirmationPresentation()
+            self.synchronizeCloudFileConfirmationPresentation()
+            self.objectWillChange.send()
         }
         observeNavigationModel()
         observeScanCoordinator()

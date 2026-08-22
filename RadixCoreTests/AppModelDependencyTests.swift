@@ -1753,7 +1753,7 @@ final class AppModelDependencyTests: XCTestCase {
         model.select(nodeID: folder.id)
 
         var observedFocusID: FileNodeRecord.ID?
-        let cancellable = model.$discardPile.dropFirst().sink { _ in
+        let cancellable = model.trashFlow.$discardPile.dropFirst().sink { _ in
             observedFocusID = model.navigation.focusedNodeID
         }
         defer { cancellable.cancel() }

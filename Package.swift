@@ -107,6 +107,7 @@ let package = Package(
                 "ViewModels/ScanComparisonSetup.swift",
                 "ViewModels/SidebarScanCacheController.swift",
                 "ViewModels/SidebarModel.swift",
+                "ViewModels/TrashFlowController.swift",
                 "ViewModels/WorkspaceNavigationModel.swift"
             ],
             swiftSettings: [
