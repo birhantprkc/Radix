@@ -2977,91 +2977,91 @@ final class ScanEngineTests: XCTestCase {
         let standardBehavior = ScanEngine.ScanBehavior.standard
 
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/.file"),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/.nofollow", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/.resolve", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: standardBehavior
             )
         )
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/dev", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/.vol", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/Volumes", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertFalse(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/System/Volumes", directoryHint: .isDirectory),
                 under: URL(filePath: "/System", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertTrue(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/System/Library", directoryHint: .isDirectory),
                 under: URL(filePath: "/System", directoryHint: .isDirectory),
                 behavior: startupBehavior
             )
         )
         XCTAssertTrue(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/System/Volumes", directoryHint: .isDirectory),
                 under: URL(filePath: "/System", directoryHint: .isDirectory),
                 behavior: standardBehavior
             )
         )
         XCTAssertTrue(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/.file"),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: standardBehavior
             )
         )
         XCTAssertTrue(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/dev", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: standardBehavior
             )
         )
         XCTAssertTrue(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/.vol", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: standardBehavior
             )
         )
         XCTAssertTrue(
-            ScanEngine.includedChildURL(
+            ScanDirectoryEntryFilter.includes(
                 URL(filePath: "/Volumes", directoryHint: .isDirectory),
                 under: URL(filePath: "/", directoryHint: .isDirectory),
                 behavior: standardBehavior
@@ -3356,28 +3356,6 @@ final class ScanEngineTests: XCTestCase {
             XCTAssertEqual(children(of: parallelChild, in: parallelSnapshot).map(\.name), children(of: serialChild, in: serialSnapshot).map(\.name))
         }
         XCTAssertFalse(parallelSnapshot.treeStore.nodesByID.keys.contains { $0.hasSuffix("ignored.skip") })
-    }
-
-    func testDuplicateAssemblyChildrenAreCollapsedBeforeDirectoryTotals() {
-        let kept = makeScanEngineFileNode(id: "/root/duplicate.txt", name: "kept.txt", size: 5)
-        let dropped = makeScanEngineFileNode(id: kept.id, name: "dropped.txt", size: 50)
-        let sibling = makeScanEngineFileNode(id: "/root/sibling.txt", name: "sibling.txt", size: 7)
-
-        let uniqueChildren = ScanEngine.uniqueNodesForAssembly([kept, dropped, sibling])
-        let directory = FileNodeRecord.directory(
-            id: "/root",
-            url: URL(filePath: "/root", directoryHint: .isDirectory),
-            name: "root",
-            children: uniqueChildren,
-            lastModified: nil,
-            isPackage: false,
-            isAccessible: true
-        )
-
-        XCTAssertEqual(uniqueChildren.map(\.name), ["kept.txt", "sibling.txt"])
-        XCTAssertEqual(directory.allocatedSize, 12)
-        XCTAssertEqual(directory.logicalSize, 12)
-        XCTAssertEqual(directory.descendantFileCount, 2)
     }
 
     func testProgressFractionIsMonotonicAndCompletes() async throws {

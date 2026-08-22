@@ -749,7 +749,7 @@ final class ScanCoordinatorTests: XCTestCase {
         let snapshot = makeCoordinatorSnapshot(target: target, root: root, store: store)
         coordinator.replaceCurrentSnapshot(snapshot)
 
-        let didRemove = await coordinator.removeNodeFromCurrentSnapshot(id: removedDirectory.id)
+        let didRemove = await coordinator.removeNodesFromCurrentSnapshot(ids: [removedDirectory.id])
         let recordedRemovingNodeIDs = await transformService.recordedRemovingNodeIDs()
 
         XCTAssertTrue(didRemove)
@@ -800,10 +800,10 @@ final class ScanCoordinatorTests: XCTestCase {
         ))
 
         let firstRemoval = Task { @MainActor in
-            await coordinator.removeNodeFromCurrentSnapshot(id: first.id)
+            await coordinator.removeNodesFromCurrentSnapshot(ids: [first.id])
         }
         await transformService.waitUntilPaused()
-        let didRemoveSecond = await coordinator.removeNodeFromCurrentSnapshot(id: second.id)
+        let didRemoveSecond = await coordinator.removeNodesFromCurrentSnapshot(ids: [second.id])
         await transformService.resume()
         let didRemoveFirst = await firstRemoval.value
         let batches = await transformService.recordedRemovalBatches()
@@ -832,7 +832,7 @@ final class ScanCoordinatorTests: XCTestCase {
         coordinator.replaceCurrentSnapshot(originalSnapshot)
 
         let removal = Task { @MainActor in
-            await coordinator.removeNodeFromCurrentSnapshot(id: removed.id)
+            await coordinator.removeNodesFromCurrentSnapshot(ids: [removed.id])
         }
         await transformService.waitUntilPaused()
 
@@ -895,7 +895,7 @@ final class ScanCoordinatorTests: XCTestCase {
         scanService.finish(scanIndex: 0)
         await transformService.waitUntilPaused()
 
-        let didRemove = await coordinator.removeNodeFromCurrentSnapshot(id: removed.id)
+        let didRemove = await coordinator.removeNodesFromCurrentSnapshot(ids: [removed.id])
         await transformService.resume()
         try await waitUntil("expansion retry") {
             expansionResult != nil
@@ -1474,7 +1474,7 @@ final class ScanCoordinatorTests: XCTestCase {
         model.select(nodeID: child.id)
 
         model.pendingTrashNode = child
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         try await waitUntil("trashed child removed from current snapshot") {
             model.scanState.snapshot?.treeStore.node(id: child.id) == nil
@@ -1512,13 +1512,13 @@ final class ScanCoordinatorTests: XCTestCase {
         model.navigation.reconcileAfterSnapshotApplied(snapshot)
 
         model.pendingTrashNode = first
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
         try await waitUntil("first trashed child removed") {
             model.scanState.snapshot?.treeStore.node(id: first.id) == nil
         }
 
         model.pendingTrashNode = second
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
         try await waitUntil("second trashed child removed") {
             model.scanState.snapshot?.treeStore.node(id: second.id) == nil
         }
@@ -1583,7 +1583,7 @@ final class ScanCoordinatorTests: XCTestCase {
         model.navigation.reconcileAfterSnapshotApplied(snapshot)
 
         model.pendingTrashNode = root
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertNil(model.scanState.snapshot)
         XCTAssertNil(model.scanState.selectedTarget)
@@ -1641,7 +1641,7 @@ final class ScanCoordinatorTests: XCTestCase {
         }
 
         model.pendingTrashNode = secondChild
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
         try await waitUntil("trashed child removed from second snapshot") {
             model.scanState.snapshot?.treeStore.node(id: secondChild.id) == nil
         }

@@ -2230,10 +2230,6 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func confirmMovePendingNodeToTrash() {
-        confirmMovePendingSelectionToTrash()
-    }
-
     func confirmMovePendingSelectionToTrash() {
         let allowsHiddenNodes = pendingTrashSelection?.allowsHiddenNodes == true
         let nodes = pendingTrashSelection?.nodes ?? pendingTrashNode.map { [$0] }

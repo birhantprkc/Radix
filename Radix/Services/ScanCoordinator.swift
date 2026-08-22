@@ -333,11 +333,6 @@ final class ScanCoordinator: ObservableObject {
     }
 
     @discardableResult
-    func removeNodeFromCurrentSnapshot(id nodeID: FileNodeRecord.ID) async -> Bool {
-        await removeNodesFromCurrentSnapshot(ids: [nodeID])
-    }
-
-    @discardableResult
     func removeNodesFromCurrentSnapshot(ids nodeIDs: [FileNodeRecord.ID]) async -> Bool {
         guard let initialSnapshot = snapshot else { return false }
         let removalNodeIDs = initialSnapshot.treeStore.topLevelNodeIDs(from: nodeIDs)

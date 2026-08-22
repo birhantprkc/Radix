@@ -2515,32 +2515,6 @@ actor ScanEngine {
         metrics.pendingDirectoryCount = max(metrics.pendingDirectoryCount - 1, 0)
     }
 
-    nonisolated static func uniqueNodesForAssembly(_ nodes: [FileNodeRecord]) -> [FileNodeRecord] {
-        guard nodes.count > 1 else { return nodes }
-
-        var seenIDs = Set<String>()
-        seenIDs.reserveCapacity(nodes.count)
-        for node in nodes {
-            guard seenIDs.insert(node.id).inserted else {
-                return uniqueNodesAfterDuplicateFound(nodes)
-            }
-        }
-
-        return nodes
-    }
-
-    private nonisolated static func uniqueNodesAfterDuplicateFound(_ nodes: [FileNodeRecord]) -> [FileNodeRecord] {
-        var seenIDs = Set<String>()
-        var uniqueNodes: [FileNodeRecord] = []
-        uniqueNodes.reserveCapacity(nodes.count)
-
-        for node in nodes where seenIDs.insert(node.id).inserted {
-            uniqueNodes.append(node)
-        }
-
-        return uniqueNodes
-    }
-
     private nonisolated func recordDuplicateNode(
         at url: URL,
         weight: Double,
@@ -3015,10 +2989,6 @@ actor ScanEngine {
 
     private nonisolated static func shouldFilterStartupVolumeInternals(under parentURL: URL, behavior: ScanBehavior) -> Bool {
         behavior.excludesStartupVolumeInternals && (parentURL.path == "/" || parentURL.path == "/System")
-    }
-
-    nonisolated static func includedChildURL(_ childURL: URL, under parentURL: URL, behavior: ScanBehavior) -> Bool {
-        ScanDirectoryEntryFilter.includes(childURL, under: parentURL, behavior: behavior)
     }
 
     /// Startup-volume firmlinks deliberately resolve from the sealed System

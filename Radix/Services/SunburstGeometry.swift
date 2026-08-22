@@ -404,16 +404,6 @@ enum SunburstRenderer {
     }
 }
 
-nonisolated enum SunburstHitTester {
-    nonisolated static func segment(
-        at point: CGPoint,
-        in size: CGSize,
-        segments: [SunburstSegment]
-    ) -> SunburstSegment? {
-        SunburstHitTestIndex(segments: segments).segment(at: point, in: size)
-    }
-}
-
 nonisolated enum SunburstCenterHitTester {
     nonisolated static func contains(
         point: CGPoint,

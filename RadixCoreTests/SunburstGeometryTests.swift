@@ -143,7 +143,7 @@ final class SunburstGeometryTests: XCTestCase {
         let size = CGSize(width: 300, height: 300)
         let hitPoint = pointInside(segment: firstSegment, in: size)
 
-        XCTAssertEqual(SunburstHitTester.segment(at: hitPoint, in: size, segments: segments)?.id, firstSegment.id)
+        XCTAssertEqual(SunburstHitTestIndex(segments: segments).segment(at: hitPoint, in: size)?.id, firstSegment.id)
     }
 
     func testCenterHitTesterMatchesLayoutHole() throws {
@@ -165,7 +165,7 @@ final class SunburstGeometryTests: XCTestCase {
         XCTAssertTrue(SunburstCenterHitTester.contains(point: CGPoint(x: 150, y: 150), in: size))
         XCTAssertTrue(SunburstCenterHitTester.contains(point: pointInRing(radius: 0.21, in: size), in: size))
         XCTAssertFalse(SunburstCenterHitTester.contains(point: pointInRing(radius: 0.23, in: size), in: size))
-        XCTAssertNil(SunburstHitTester.segment(at: CGPoint(x: 150, y: 150), in: size, segments: segments))
+        XCTAssertNil(SunburstHitTestIndex(segments: segments).segment(at: CGPoint(x: 150, y: 150), in: size))
     }
 
     func testHitTestIndexFindsSegmentInMatchingRing() throws {

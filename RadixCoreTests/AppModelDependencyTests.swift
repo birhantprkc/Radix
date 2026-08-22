@@ -829,7 +829,7 @@ final class AppModelDependencyTests: XCTestCase {
         let file = installSelection(on: model)
 
         model.pendingTrashNode = file
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertEqual(recorder.movedToTrashURLs, [file.url])
         XCTAssertNil(model.pendingTrashNode)
@@ -851,7 +851,7 @@ final class AppModelDependencyTests: XCTestCase {
         model.scanState.selectedTarget = ScanTarget(url: URL(filePath: "/selection", directoryHint: .isDirectory))
 
         model.pendingTrashNode = file
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertNil(model.pendingTrashNode)
         XCTAssertNil(model.pendingTrashSelection)
@@ -889,7 +889,7 @@ final class AppModelDependencyTests: XCTestCase {
         model.scanState.selectedTarget = ScanTarget(url: URL(filePath: "/selection", directoryHint: .isDirectory))
 
         model.pendingTrashNode = file
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         try await probe.waitUntilStarted()
         XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(file.id))
@@ -1002,7 +1002,7 @@ final class AppModelDependencyTests: XCTestCase {
         installSelection(on: model, file: file)
 
         model.pendingTrashNode = file
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertEqual(verifiedNodeIDs, [file.id])
         XCTAssertEqual(recorder.movedToTrashURLs, [file.url])
@@ -1023,7 +1023,7 @@ final class AppModelDependencyTests: XCTestCase {
         installSelection(on: model, file: file)
 
         model.pendingTrashNode = file
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
         XCTAssertEqual(
@@ -1042,7 +1042,7 @@ final class AppModelDependencyTests: XCTestCase {
         installSelection(on: model, file: file)
 
         model.pendingTrashNode = file
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
         XCTAssertEqual(
@@ -1082,7 +1082,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.pendingTrashSelection = AppModel.PendingTrashSelection(nodes: [first, second])
         model.pendingTrashNode = first
-        model.confirmMovePendingNodeToTrash()
+        model.confirmMovePendingSelectionToTrash()
 
         XCTAssertEqual(verifiedNodeIDs, [first.id, second.id])
         XCTAssertEqual(recorder.movedToTrashURLs, [first.url])
