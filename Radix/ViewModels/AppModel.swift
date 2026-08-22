@@ -1228,10 +1228,10 @@ final class AppModel: ObservableObject {
                 guard let self,
                       var currentSetup = pendingComparisonSetup,
                       currentSetup.id == setupID,
-                      currentSetup.loadingSlot == slot else {
+                      let loadedSlot = currentSetup.loadingSlot else {
                     return
                 }
-                currentSetup.setCandidate(ScanComparisonCandidate(preview: preview), for: slot)
+                currentSetup.setCandidate(ScanComparisonCandidate(preview: preview), for: loadedSlot)
                 currentSetup.loadingSlot = nil
                 currentSetup.errorMessage = currentSetup.validationMessage
                 pendingComparisonSetup = currentSetup
@@ -1248,15 +1248,14 @@ final class AppModel: ObservableObject {
                 pendingComparisonSetup = currentSetup
             },
             onFinish: { [weak self] in
-                self?.clearComparisonSetupLoadingSlot(setupID: setupID, slot: slot)
+                self?.clearComparisonSetupLoadingSlot(setupID: setupID)
             }
         )
     }
 
-    private func clearComparisonSetupLoadingSlot(setupID: UUID, slot: ScanComparisonSlot) {
+    private func clearComparisonSetupLoadingSlot(setupID: UUID) {
         guard var setup = pendingComparisonSetup,
-              setup.id == setupID,
-              setup.loadingSlot == slot else {
+              setup.id == setupID else {
             return
         }
         setup.loadingSlot = nil

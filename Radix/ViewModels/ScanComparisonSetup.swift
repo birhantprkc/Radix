@@ -207,6 +207,14 @@ nonisolated struct ScanComparisonSetup: Identifiable, Equatable, Sendable {
 
     mutating func swap() {
         Swift.swap(&before, &after)
+        switch loadingSlot {
+        case .before:
+            loadingSlot = .after
+        case .after:
+            loadingSlot = .before
+        case nil:
+            break
+        }
     }
 
     private static func normalizedRootPath(_ path: String) -> String {

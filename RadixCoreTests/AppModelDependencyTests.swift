@@ -2955,6 +2955,48 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
+    func testSwapDuringComparisonPreviewLoadLandsResultInSwappedSlot() async throws {
+        let archiveURL = URL(filePath: "/tmp/swap-loading.radixscan", directoryHint: .isDirectory)
+        let snapshot = makeComparisonSnapshot(
+            rootPath: "/swap-root",
+            fileSize: 10,
+            sourceURL: archiveURL
+        )
+        let previewProbe = AsyncValueProbe<Void>()
+        let archiveService = try SpyScanArchiveService(
+            previewResultsByURL: [
+                archiveURL: makeArchivePreview(archiveURL: archiveURL, snapshot: snapshot),
+            ],
+            previewWaitProbe: previewProbe
+        )
+        let model = AppModel(dependencies: makeDependencies(scanArchiveService: archiveService))
+
+        model.compareScanSnapshots()
+        model.dropComparisonSnapshot(archiveURL, for: .before)
+
+        try await waitForAsyncCondition("comparison preview load started") {
+            await previewProbe.isWaiting
+        }
+        XCTAssertEqual(model.pendingComparisonSetup?.loadingSlot, .before)
+
+        model.swapPendingComparisonSetup()
+        XCTAssertEqual(model.pendingComparisonSetup?.loadingSlot, .after)
+        XCTAssertNil(model.pendingComparisonSetup?.before)
+        XCTAssertNil(model.pendingComparisonSetup?.after)
+
+        await previewProbe.resume(returning: ())
+
+        try await waitForAsyncCondition("swapped comparison preview loaded") {
+            model.pendingComparisonSetup?.loadingSlot == nil
+        }
+        XCTAssertNil(model.pendingComparisonSetup?.before)
+        XCTAssertEqual(
+            model.pendingComparisonSetup?.after?.displayName,
+            snapshot.target.displayName
+        )
+    }
+
+    @MainActor
     func testDroppedComparisonSnapshotRejectsOtherFileTypes() async throws {
         let archiveService = SpyScanArchiveService()
         let model = AppModel(dependencies: makeDependencies(scanArchiveService: archiveService))
