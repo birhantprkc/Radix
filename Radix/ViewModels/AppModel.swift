@@ -236,14 +236,27 @@ final class AppModel: ObservableObject {
             synchronizeImportPreviewPresentation()
         }
     }
-    @Published var pendingTrashNode: FileNodeRecord? {
+    @Published var pendingTrashSelection: PendingTrashSelection? {
         didSet {
             synchronizeTrashConfirmationPresentation()
         }
     }
-    @Published var pendingTrashSelection: PendingTrashSelection? {
-        didSet {
-            synchronizeTrashConfirmationPresentation()
+    /// Convenience mirror of a single-node pending trash request. Every pending
+    /// request is owned by `pendingTrashSelection`; this exposes it for callers
+    /// that only care about the common one-node case.
+    var pendingTrashNode: FileNodeRecord? {
+        get {
+            guard let nodes = pendingTrashSelection?.nodes, nodes.count == 1 else {
+                return nil
+            }
+            return nodes.first
+        }
+        set {
+            if let node = newValue {
+                pendingTrashSelection = PendingTrashSelection(nodes: [node])
+            } else {
+                pendingTrashSelection = nil
+            }
         }
     }
     @Published private(set) var pendingCloudFileAction: PendingCloudFileAction? {
@@ -2070,7 +2083,6 @@ final class AppModel: ObservableObject {
                 throw FileActionError.unsupported
             }
 
-            pendingTrashNode = node
             pendingTrashSelection = PendingTrashSelection(nodes: [node])
         } catch {
             presentError(error)
@@ -2117,7 +2129,6 @@ final class AppModel: ObservableObject {
         }
 
         let trashNodes = topLevelTrashNodes(from: nodes)
-        pendingTrashNode = trashNodes.first
         pendingTrashSelection = PendingTrashSelection(
             nodes: trashNodes,
             allowsHiddenNodes: allowingHiddenNodes
@@ -2245,10 +2256,9 @@ final class AppModel: ObservableObject {
 
     func confirmMovePendingSelectionToTrash() {
         let allowsHiddenNodes = pendingTrashSelection?.allowsHiddenNodes == true
-        let nodes = pendingTrashSelection?.nodes ?? pendingTrashNode.map { [$0] }
-        guard let nodes, !nodes.isEmpty else { return }
-        pendingTrashNode = nil
-        self.pendingTrashSelection = nil
+        let nodes = pendingTrashSelection?.nodes ?? []
+        guard !nodes.isEmpty else { return }
+        pendingTrashSelection = nil
 
         if !allowsHiddenNodes {
             do {
@@ -2533,7 +2543,6 @@ final class AppModel: ObservableObject {
     }
 
     func cancelPendingTrash() {
-        pendingTrashNode = nil
         pendingTrashSelection = nil
     }
 
@@ -3019,7 +3028,6 @@ final class AppModel: ObservableObject {
         navigationModel.reset()
         pendingComparisonSetup = nil
         pendingImportPreview = nil
-        pendingTrashNode = nil
         pendingTrashSelection = nil
         pendingCloudFileAction = nil
         discardPile = DiscardPileState()
@@ -3053,7 +3061,6 @@ final class AppModel: ObservableObject {
         navigationModel.reset()
         pendingComparisonSetup = nil
         pendingImportPreview = nil
-        pendingTrashNode = nil
         pendingTrashSelection = nil
         pendingCloudFileAction = nil
         discardPile = DiscardPileState()

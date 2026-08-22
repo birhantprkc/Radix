@@ -1122,7 +1122,6 @@ final class AppModelDependencyTests: XCTestCase {
         model.navigation.reconcileAfterSnapshotApplied(snapshot)
 
         model.pendingTrashSelection = AppModel.PendingTrashSelection(nodes: [first, second])
-        model.pendingTrashNode = first
         model.confirmMovePendingSelectionToTrash()
 
         XCTAssertEqual(verifiedNodeIDs, [first.id, second.id])
