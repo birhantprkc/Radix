@@ -30,7 +30,11 @@ struct BreadcrumbBar: View {
         .font(.subheadline.weight(isCurrent ? .semibold : .regular))
         .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
         .lineLimit(1)
-        .accessibilityLabel(isCurrent ? "Current location, \(node.name)" : "Show \(node.name)")
-        .accessibilityHint(isCurrent ? "Current focus in the filesystem hierarchy." : "Navigates to this location.")
+        .accessibilityLabel(isCurrent
+            ? String(localized: "Current location, \(node.name)", comment: "Accessibility label for the breadcrumb button of the location currently shown.")
+            : String(localized: "Show \(node.name)", comment: "Accessibility label for a breadcrumb button that navigates to an ancestor location."))
+        .accessibilityHint(isCurrent
+            ? String(localized: "Current focus in the filesystem hierarchy.", comment: "Accessibility hint for the breadcrumb button of the current location.")
+            : String(localized: "Navigates to this location.", comment: "Accessibility hint for ancestor breadcrumb buttons."))
     }
 }

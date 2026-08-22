@@ -84,8 +84,14 @@ struct FileBrowserSearchFilterBar: View {
                 .foregroundStyle(.tertiary)
         }
         .buttonStyle(.plain)
-        .help(scope == .currentContents ? "Clear current contents filter" : "Clear entire scan search")
-        .accessibilityLabel(scope == .currentContents ? "Clear current contents filter" : "Clear entire scan search")
+        .help(clearButtonLocalizedText)
+        .accessibilityLabel(clearButtonLocalizedText)
+    }
+
+    private var clearButtonLocalizedText: String {
+        scope == .currentContents
+            ? String(localized: "Clear current contents filter", comment: "Help text for clearing the current-folder search filter.")
+            : String(localized: "Clear entire scan search", comment: "Help text for clearing the whole-scan search.")
     }
 
     private var filterEditorButton: some View {

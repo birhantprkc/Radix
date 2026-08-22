@@ -247,6 +247,7 @@ final class LocalizationCatalogTests: XCTestCase {
         let source = try String(contentsOf: fileURL, encoding: .utf8)
         let patterns = [
             #"\bString\s*\(\s*localized\s*:\s*"((?:\\.|[^"\\])*)""#,
+            #"\b\w+\(\s*localized\s*:\s*"((?:\\.|[^"\\])*)""#,
             #"\b(?:Text|Label|Button|Toggle|Picker|Section|TextField|SecureField|Menu|GroupBox|LabeledContent|NavigationLink|CommandMenu|ProgressView|TableColumn|Window)\s*\(\s*"((?:\\.|[^"\\])*)""#,
             #"\bContentUnavailableView\s*\(\s*"((?:\\.|[^"\\])*)""#,
             #"\.(?:navigationTitle|accessibilityLabel|accessibilityHint|help|confirmationDialog|alert)\s*\(\s*"((?:\\.|[^"\\])*)""#,
