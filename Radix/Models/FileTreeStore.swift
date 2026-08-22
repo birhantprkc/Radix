@@ -145,8 +145,8 @@ nonisolated private struct FileTreeTopologyArena: Sendable {
         precondition(parentRawIndices.count == nodes.count, "Verified parent topology count does not match nodes.")
         precondition(childSpans.count == nodes.count, "Verified child topology count does not match nodes.")
         precondition(Int(rootIndex.rawValue) < nodes.count, "Verified root index is out of range.")
-        assert(orderedNodeIndices.count == nodes.count)
-        assert(childIndices.count == max(nodes.count - 1, 0))
+        precondition(orderedNodeIndices.count == nodes.count, "Verified node order count does not match nodes.")
+        precondition(childIndices.count == max(nodes.count - 1, 0), "Verified child index count does not match nodes.")
 
         let indexByNodeID: [String: FileTreeNodeIndex]
         if let verifiedIndexByNodeID {
@@ -766,7 +766,7 @@ nonisolated struct FileTreeStore: Sendable {
         self.nodeRecords = orderedNodeIDs.compactMap { nodesByID[$0] }
         self.precomputedAggregateStats = aggregateStats
         self.logicalScope = nil
-        assert(orderedNodeIDs.count == nodesByID.count)
+        precondition(orderedNodeIDs.count == nodesByID.count, "FileTreeStore node order count does not match its node map.")
     }
 
     /// Fast construction for scanner output already represented by compact node indices.
@@ -2877,6 +2877,9 @@ nonisolated struct FileTreeStore: Sendable {
 
         while let nodeID = stack.popLast() {
             orderedNodeIDs.append(nodeID)
+            if orderedNodeIDs.count > nodeCount {
+                preconditionFailure("FileTreeStore topology reaches more nodes than declared.")
+            }
             if let childIDs = childIDsByID[nodeID] {
                 stack.append(contentsOf: childIDs.reversed())
             }
