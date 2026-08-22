@@ -641,12 +641,12 @@ nonisolated struct FileTreeStore: Sendable {
 
         while let parent = stack.popLast() {
             guard let inputChildren = inputChildrenByID[parent.id] else { continue }
-            let (uniqueChildren, droppedChildIDs) = Self.uniqueChildrenAndDroppedIDs(
+            let uniqueChildren = Self.uniqueChildren(
                 inputChildren,
                 seenNodeIDs: &seenNodeIDs
             )
             let children = Self.sortedChildren(uniqueChildren)
-            childIDsByID[parent.id] = children.map(\.id) + droppedChildIDs
+            childIDsByID[parent.id] = children.map(\.id)
             guard !children.isEmpty else { continue }
 
             for child in children {
@@ -1244,23 +1244,18 @@ nonisolated struct FileTreeStore: Sendable {
         return result
     }
 
-    private nonisolated static func uniqueChildrenAndDroppedIDs(
+    private nonisolated static func uniqueChildren(
         _ children: [FileNodeRecord],
         seenNodeIDs: inout Set<String>
-    ) -> (uniqueChildren: [FileNodeRecord], droppedChildIDs: [String]) {
+    ) -> [FileNodeRecord] {
         var uniqueChildren: [FileNodeRecord] = []
-        var droppedChildIDs: [String] = []
         uniqueChildren.reserveCapacity(children.count)
 
-        for child in children {
-            if seenNodeIDs.insert(child.id).inserted {
-                uniqueChildren.append(child)
-            } else {
-                droppedChildIDs.append(child.id)
-            }
+        for child in children where seenNodeIDs.insert(child.id).inserted {
+            uniqueChildren.append(child)
         }
 
-        return (uniqueChildren, droppedChildIDs)
+        return uniqueChildren
     }
 
     nonisolated func node(id: String?) -> FileNodeRecord? {
@@ -2813,13 +2808,7 @@ nonisolated struct FileTreeStore: Sendable {
         childIDsByID inputChildIDsByID: [String: [String]]
     ) -> SanitizedTopology {
         guard let root = inputNodesByID[rootID] else {
-            return SanitizedTopology(
-                nodesByID: inputNodesByID,
-                childIDsByID: inputChildIDsByID,
-                orderedNodeIDs: [],
-                materializedDirectoryIDs: [],
-                didDropReferences: true
-            )
+            preconditionFailure("FileTreeStore root is missing from its nodes.")
         }
 
         var nodesByID = [rootID: root]
