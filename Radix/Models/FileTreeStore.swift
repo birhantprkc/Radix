@@ -2517,35 +2517,24 @@ nonisolated struct FileTreeStore: Sendable {
 
         var reorderedChildren: [FileTreeNodeIndex: [FileTreeNodeIndex]] = [:]
         reorderedChildren.reserveCapacity(affectedDirectoryIndices.count)
-        for directoryIndex in orderedNodeIndices.reversed()
-        where affectedDirectoryIndices.contains(directoryIndex) {
-            try cancellationCheck()
-            let sourceChildren = topologyArena.children(of: directoryIndex)
-            let children = try Self.restoringDisplayOrderAfterChanges(
-                sourceChildren,
-                isChanged: { changedRecordIndices.contains($0) },
-                nodeAt: { index in
-                    replacementRecords[index] ?? nodeRecords[Int(index.rawValue)]
-                },
-                cancellationCheck: cancellationCheck
-            )
-
-            var totals = MaterializedDirectoryTotals()
-            for (offset, childIndex) in children.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                totals.include(replacementRecords[childIndex] ?? nodeRecords[Int(childIndex.rawValue)])
+        let affectedDirectories = orderedNodeIndices
+            .filter { affectedDirectoryIndices.contains($0) }
+        let repairs = try Self.repairedAffectedDirectories(
+            postorder: affectedDirectories,
+            isChanged: { changedRecordIndices.contains($0) },
+            baseRecordAt: { nodeIndex in
+                replacementRecords[nodeIndex] ?? nodeRecords[Int(nodeIndex.rawValue)]
+            },
+            currentChildren: { topologyArena.children(of: $0) },
+            cancellationCheck: cancellationCheck
+        )
+        for repair in repairs {
+            if repair.repaired != repair.source {
+                replacementRecords[repair.index] = repair.repaired
+                changedRecordIndices.insert(repair.index)
             }
-
-            let source = nodeRecords[Int(directoryIndex.rawValue)]
-            let repaired = Self.repairingDirectoryRecord(source, totals: totals)
-            if repaired != source {
-                replacementRecords[directoryIndex] = repaired
-                changedRecordIndices.insert(directoryIndex)
-            }
-            if !children.elementsEqual(sourceChildren) {
-                reorderedChildren[directoryIndex] = children
+            if repair.didReorderChildren {
+                reorderedChildren[repair.index] = repair.orderedChildren
             }
         }
 
