@@ -1121,21 +1121,6 @@ nonisolated struct FileTreeStore: Sendable {
 
     private nonisolated static func restoringDisplayOrderAfterChanges<Children>(
         _ childIndices: Children,
-        changedByOffset: [Bool],
-        nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
-        cancellationCheck: () throws -> Void
-    ) throws -> [FileTreeNodeIndex]
-    where Children: Collection, Children.Element == FileTreeNodeIndex {
-        try restoringDisplayOrderAfterChanges(
-            childIndices,
-            isChanged: { changedByOffset[Int($0.rawValue)] },
-            nodeAt: nodeAt,
-            cancellationCheck: cancellationCheck
-        )
-    }
-
-    private nonisolated static func restoringDisplayOrderAfterChanges<Children>(
-        _ childIndices: Children,
         isChanged: (FileTreeNodeIndex) -> Bool,
         nodeAt: (FileTreeNodeIndex) -> FileNodeRecord,
         cancellationCheck: () throws -> Void
