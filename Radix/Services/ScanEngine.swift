@@ -2744,6 +2744,19 @@ actor ScanEngine {
             options.insert(.skipsHiddenFiles)
         }
 
+        if let expectedIdentity, expectedIdentity.isFileSystemIdentity {
+            let currentMetadata = try metadataLoader.metadata(for: url)
+            if let currentIdentity = currentMetadata.fileIdentity,
+               currentIdentity.isFileSystemIdentity,
+               currentIdentity != expectedIdentity {
+                throw NSError(
+                    domain: NSPOSIXErrorDomain,
+                    code: Int(ESTALE),
+                    userInfo: [NSURLErrorKey: url]
+                )
+            }
+        }
+
         let prefetchKeys = shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
             ? nil
             : Array(resourceKeys)
