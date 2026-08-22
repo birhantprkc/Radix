@@ -188,18 +188,23 @@ final class AppModel: ObservableObject {
         }
     }
     @Published private(set) var exportConfirmation: ExportConfirmationState?
-    @Published private(set) var scanComparison: ScanComparison?
-    @Published var pendingComparisonSetup: ScanComparisonSetup? {
-        didSet {
-            synchronizeComparisonSetupPresentation()
-        }
+    let trashFlow = TrashFlowController()
+    let comparisonFlow = ComparisonFlowController()
+
+    private(set) var scanComparison: ScanComparison? {
+        get { comparisonFlow.scanComparison }
+        set { comparisonFlow.setScanComparison(newValue) }
+    }
+
+    var pendingComparisonSetup: ScanComparisonSetup? {
+        get { comparisonFlow.pendingComparisonSetup }
+        set { comparisonFlow.pendingComparisonSetup = newValue }
     }
     @Published var pendingImportPreview: ScanArchivePreview? {
         didSet {
             synchronizeImportPreviewPresentation()
         }
     }
-    let trashFlow = TrashFlowController()
 
     var pendingTrashSelection: PendingTrashSelection? {
         get { trashFlow.pendingTrashSelection }
@@ -345,6 +350,11 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.synchronizeTrashConfirmationPresentation()
             self.synchronizeCloudFileConfirmationPresentation()
+            self.objectWillChange.send()
+        }
+        comparisonFlow.onChange = { [weak self] in
+            guard let self else { return }
+            self.synchronizeComparisonSetupPresentation()
             self.objectWillChange.send()
         }
         observeNavigationModel()

@@ -103,6 +103,7 @@ let package = Package(
                 "ViewModels/ArchiveWorkflowCoordinator.swift",
                 "ViewModels/AppModel.swift",
                 "ViewModels/AppPresentationCoordinator.swift",
+                "ViewModels/ComparisonFlowController.swift",
                 "ViewModels/ScanComparisonBrowserModel.swift",
                 "ViewModels/ScanComparisonSetup.swift",
                 "ViewModels/SidebarScanCacheController.swift",
