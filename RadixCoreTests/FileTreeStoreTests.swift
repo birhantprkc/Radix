@@ -359,6 +359,67 @@ final class FileTreeStoreTests: XCTestCase {
         XCTAssertEqual(store.childIDs(of: root.id), children.map(\.id))
     }
 
+    func testReplacingAllocatedSizesRepairsNestedAncestorRollups() throws {
+        let a1 = makeFileNode(id: "/root/a/a1.bin", name: "a1.bin", size: 40)
+        let a2 = makeFileNode(id: "/root/a/a2.bin", name: "a2.bin", size: 30)
+        let dirA = makeDirectoryNode(id: "/root/a", name: "a", children: [a1, a2])
+        let b1 = makeFileNode(id: "/root/b/b1.bin", name: "b1.bin", size: 10)
+        let dirB = makeDirectoryNode(id: "/root/b", name: "b", children: [b1])
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [dirA, dirB])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [dirA, dirB],
+            dirA.id: [a1, a2],
+            dirB.id: [b1]
+        ])
+        let a1Index = try XCTUnwrap(store.nodeIndex(id: a1.id))
+        let b1Index = try XCTUnwrap(store.nodeIndex(id: b1.id))
+
+        let updatedStore = try store.replacingAllocatedSizes(
+            [
+                (nodeIndex: a1Index, allocatedSize: 5),
+                (nodeIndex: b1Index, allocatedSize: 100)
+            ],
+            cancellationCheck: {}
+        )
+
+        XCTAssertEqual(updatedStore.node(id: dirA.id)?.allocatedSize, 35)
+        XCTAssertEqual(updatedStore.node(id: dirA.id)?.descendantFileCount, 2)
+        XCTAssertEqual(updatedStore.node(id: dirB.id)?.allocatedSize, 100)
+        XCTAssertEqual(updatedStore.root.allocatedSize, 135)
+        XCTAssertEqual(updatedStore.root.descendantFileCount, 3)
+        XCTAssertEqual(updatedStore.aggregateStats.fileCount, 3)
+        XCTAssertEqual(updatedStore.aggregateStats.accessibleItemCount, 6)
+        XCTAssertEqual(updatedStore.childIDs(of: dirA.id), [a2.id, a1.id])
+        XCTAssertEqual(updatedStore.childIDs(of: root.id), [dirB.id, dirA.id])
+    }
+
+    func testReplacingAllocatedSizesLeavesUnaffectedBranchesUntouched() throws {
+        let a1 = makeFileNode(id: "/root/a/a1.bin", name: "a1.bin", size: 20)
+        let dirA = makeDirectoryNode(id: "/root/a", name: "a", children: [a1])
+        let c1 = makeFileNode(id: "/root/c/c1.bin", name: "c1.bin", size: 9)
+        let c2 = makeFileNode(id: "/root/c/c2.bin", name: "c2.bin", size: 4)
+        let dirC = makeDirectoryNode(id: "/root/c", name: "c", children: [c1, c2])
+        let root = makeDirectoryNode(id: "/root", name: "root", children: [dirA, dirC])
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [dirA, dirC],
+            dirA.id: [a1],
+            dirC.id: [c1, c2]
+        ])
+        let a1Index = try XCTUnwrap(store.nodeIndex(id: a1.id))
+
+        let updatedStore = try store.replacingAllocatedSizes(
+            [(nodeIndex: a1Index, allocatedSize: 50)],
+            cancellationCheck: {}
+        )
+
+        XCTAssertEqual(updatedStore.node(id: c1.id), c1)
+        XCTAssertEqual(updatedStore.node(id: c2.id), c2)
+        XCTAssertEqual(updatedStore.node(id: dirC.id), dirC)
+        XCTAssertEqual(updatedStore.childIDs(of: dirC.id), [c1.id, c2.id])
+        XCTAssertEqual(updatedStore.childIDs(of: root.id), [dirA.id, dirC.id])
+        XCTAssertEqual(updatedStore.root.allocatedSize, 63)
+    }
+
     func testRemovingSubtreeSaturatesAncestorTotalsAndRepairsAccessibility() throws {
         let maximum = makeFileNode(id: "/root/maximum.bin", name: "maximum.bin", size: .max)
         let tiny = makeFileNode(id: "/root/tiny.bin", name: "tiny.bin", size: 1)
