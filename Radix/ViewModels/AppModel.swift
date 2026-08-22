@@ -266,18 +266,26 @@ final class AppModel: ObservableObject {
     private static let viewUpdateDeferralDelay: Duration = .milliseconds(1)
     private static let scanPreferencePersistenceDebounce: RunLoop.SchedulerTimeType.Stride = .milliseconds(50)
     private var cancellables = Set<AnyCancellable>()
-    private var deferredScanStartTask: Task<Void, Never>?
-    private var deferredScanStartID: UUID?
-    private var deferredSidebarSelectionTask: Task<Void, Never>?
-    private var deferredSidebarSelectionID: UUID?
-    private var deferredNavigationActionTask: Task<Void, Never>?
-    private var deferredNavigationActionID: UUID?
-    private var deferredVisualizationModeTask: Task<Void, Never>?
-    private var deferredVisualizationModeID: UUID?
-    private var deferredDiscardPileAddTask: Task<Void, Never>?
-    private var deferredDiscardPileAddID: UUID?
-    private var deferredNavigationContextTask: Task<Void, Never>?
-    private var deferredNavigationContextID: UUID?
+    private enum DeferredWorkKind {
+        case scanStart
+        case sidebarSelection
+        case navigationAction
+        case visualizationMode
+        case discardPileAdd
+        case navigationContext
+    }
+
+    private struct DeferredWorkBox {
+        var id: UUID?
+        var task: Task<Void, Never>?
+
+        mutating func cancel() {
+            task?.cancel()
+            self = DeferredWorkBox()
+        }
+    }
+
+    private var deferredWorkBoxes: [DeferredWorkKind: DeferredWorkBox] = [:]
     private var deferredNavigationContextSnapshotID: UUID?
     private var exportPanelTask: Task<Void, Never>?
     private var exportPanelRequestID: UUID?
@@ -1490,54 +1498,49 @@ final class AppModel: ObservableObject {
         sidebarScanCacheController.cancelPendingSidebarTargetRestore()
 
         scheduleDeferredViewUpdate(
-            id: \.deferredScanStartID,
-            task: \.deferredScanStartTask
+            .scanStart
         ) { model in
             model.startScanNow(target, intent: intent)
         }
     }
 
+    private func cancelDeferrals(_ kinds: DeferredWorkKind...) {
+        for kind in kinds {
+            deferredWorkBoxes[kind]?.cancel()
+            deferredWorkBoxes[kind] = nil
+        }
+        if kinds.contains(.navigationContext) {
+            deferredNavigationContextSnapshotID = nil
+        }
+    }
+
     private func cancelDeferredScanStart() {
-        deferredScanStartID = nil
-        deferredScanStartTask?.cancel()
-        deferredScanStartTask = nil
+        cancelDeferrals(.scanStart)
     }
 
     private func cancelDeferredSidebarSelection() {
-        deferredSidebarSelectionID = nil
-        deferredSidebarSelectionTask?.cancel()
-        deferredSidebarSelectionTask = nil
+        cancelDeferrals(.sidebarSelection)
     }
 
     private func cancelDeferredNavigationAction() {
-        deferredNavigationActionID = nil
-        deferredNavigationActionTask?.cancel()
-        deferredNavigationActionTask = nil
+        cancelDeferrals(.navigationAction)
     }
 
     private func cancelDeferredVisualizationModeUpdate() {
-        deferredVisualizationModeID = nil
-        deferredVisualizationModeTask?.cancel()
-        deferredVisualizationModeTask = nil
+        cancelDeferrals(.visualizationMode)
     }
 
     private func cancelDeferredDiscardPileAdd() {
-        deferredDiscardPileAddID = nil
-        deferredDiscardPileAddTask?.cancel()
-        deferredDiscardPileAddTask = nil
+        cancelDeferrals(.discardPileAdd)
     }
 
     private func cancelDeferredNavigationContextUpdate() {
-        deferredNavigationContextSnapshotID = nil
-        deferredNavigationContextID = nil
-        deferredNavigationContextTask?.cancel()
-        deferredNavigationContextTask = nil
+        cancelDeferrals(.navigationContext)
     }
 
     private func scheduleDeferredNavigationContextUpdate(for snapshotID: UUID) {
         scheduleDeferredViewUpdate(
-            id: \.deferredNavigationContextID,
-            task: \.deferredNavigationContextTask
+            .navigationContext
         ) { model in
             guard model.deferredNavigationContextSnapshotID == snapshotID,
                   model.scanCoordinator.snapshot?.id == snapshotID else {
@@ -1569,24 +1572,23 @@ final class AppModel: ObservableObject {
     }
 
     private func scheduleDeferredViewUpdate(
-        id idKeyPath: ReferenceWritableKeyPath<AppModel, UUID?>,
-        task taskKeyPath: ReferenceWritableKeyPath<AppModel, Task<Void, Never>?>,
+        _ kind: DeferredWorkKind,
         perform: @MainActor @Sendable @escaping (AppModel) -> Void
     ) {
         let actionID = UUID()
-        self[keyPath: idKeyPath] = actionID
-        self[keyPath: taskKeyPath] = Task { @MainActor [weak self] in
+        deferredWorkBoxes[kind] = DeferredWorkBox(id: actionID, task: nil)
+        let task = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.viewUpdateDeferralDelay)
             guard let self,
-                  self[keyPath: idKeyPath] == actionID,
+                  self.deferredWorkBoxes[kind]?.id == actionID,
                   !Task.isCancelled else {
                 return
             }
 
-            self[keyPath: idKeyPath] = nil
-            self[keyPath: taskKeyPath] = nil
+            self.deferredWorkBoxes[kind] = nil
             perform(self)
         }
+        deferredWorkBoxes[kind]?.task = task
     }
 
     func setScanVisualizationModeAfterViewUpdate(_ mode: ScanVisualizationMode) {
@@ -1594,8 +1596,7 @@ final class AppModel: ObservableObject {
         guard scanVisualizationMode != mode else { return }
 
         scheduleDeferredViewUpdate(
-            id: \.deferredVisualizationModeID,
-            task: \.deferredVisualizationModeTask
+            .visualizationMode
         ) { model in
             model.scanVisualizationMode = mode
         }
@@ -1805,8 +1806,7 @@ final class AppModel: ObservableObject {
         cancelDeferredNavigationAction()
 
         scheduleDeferredViewUpdate(
-            id: \.deferredNavigationActionID,
-            task: \.deferredNavigationActionTask
+            .navigationAction
         ) { model in
             model.performNavigationAction(action)
         }
@@ -1877,8 +1877,7 @@ final class AppModel: ObservableObject {
         cancelDeferredSidebarSelection()
 
         scheduleDeferredViewUpdate(
-            id: \.deferredSidebarSelectionID,
-            task: \.deferredSidebarSelectionTask
+            .sidebarSelection
         ) { model in
             model.selectSidebarTargetNow(id: id)
         }
@@ -2162,8 +2161,7 @@ final class AppModel: ObservableObject {
         cancelDeferredDiscardPileAdd()
 
         scheduleDeferredViewUpdate(
-            id: \.deferredDiscardPileAddID,
-            task: \.deferredDiscardPileAddTask
+            .discardPileAdd
         ) { model in
             model.addNodesToDiscardPile(nodes)
         }
