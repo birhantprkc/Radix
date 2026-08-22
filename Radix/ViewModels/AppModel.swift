@@ -1110,39 +1110,26 @@ final class AppModel: ObservableObject {
     }
 
     func swapPendingComparisonSetup() {
-        guard var setup = pendingComparisonSetup else { return }
-        setup.swap()
-        setup.errorMessage = setup.validationMessage
-        pendingComparisonSetup = setup
+        comparisonFlow.swapPendingSetup()
     }
 
     func cancelComparisonSetup() {
-        guard pendingComparisonSetup != nil else { return }
+        guard comparisonFlow.hasPendingSetup else { return }
         cancelArchiveOperation()
-        pendingComparisonSetup = nil
+        comparisonFlow.clearPendingSetup()
     }
 
     func confirmComparisonSetup() {
-        guard let setup = pendingComparisonSetup else { return }
-        guard setup.canCompare,
-              setup.resolvedCandidates != nil else {
-            var updatedSetup = setup
-            updatedSetup.errorMessage = setup.validationMessage ?? String(
-                localized: "Choose two scans to compare.",
-                comment: "Error shown when confirming a comparison with missing scans."
-            )
-            pendingComparisonSetup = updatedSetup
-            return
-        }
-        if let currentSnapshotID = setup.currentSnapshotID,
-           scanCoordinator.snapshot?.id != currentSnapshotID {
-            pendingComparisonSetup = nil
+        switch comparisonFlow.confirmPendingSetup(
+            currentLiveSnapshotID: scanCoordinator.snapshot?.id
+        ) {
+        case .confirmed(let setup):
+            startComparison(setup)
+        case .staleCurrentSnapshot:
             presentError(FileActionError.currentComparisonSnapshotUnavailable)
-            return
+        case .validationFailed, .noPendingSetup:
+            break
         }
-
-        startComparison(setup)
-        pendingComparisonSetup = nil
     }
 
     func chooseComparisonSnapshot(for slot: ScanComparisonSlot) {
@@ -1173,40 +1160,26 @@ final class AppModel: ObservableObject {
     }
 
     func dropComparisonSnapshot(_ sourceURL: URL, for slot: ScanComparisonSlot) {
-        guard pendingComparisonSetup != nil else { return }
-        guard pendingComparisonSetup?.loadingSlot == nil else { return }
-        guard sourceURL.pathExtension.lowercased() == ScanArchiveService.fileExtension else {
-            pendingComparisonSetup?.errorMessage = String(
-                localized: "Drop a .\(ScanArchiveService.fileExtension) saved scan.",
-                comment: "Error shown when a dropped file is not a saved scan archive."
-            )
+        guard let info = comparisonFlow.beginPreview(
+            from: sourceURL,
+            for: slot,
+            savedScanExtension: ScanArchiveService.fileExtension
+        ) else {
             return
         }
-
-        previewComparisonSnapshot(from: sourceURL, for: slot)
+        runComparisonPreview(from: sourceURL, info: info)
     }
 
     func useCurrentScanForComparisonSlot(_ slot: ScanComparisonSlot) {
-        guard var setup = pendingComparisonSetup else { return }
-        guard canUseCurrentScanInComparisonSetup,
-              let snapshot = scanCoordinator.snapshot else {
-            setup.errorMessage = String(
-                localized: "Complete a live scan before using it in a comparison.",
-                comment: "Error shown when the current scan cannot be used for comparison."
-            )
-            pendingComparisonSetup = setup
-            return
-        }
-        setup.setCandidate(ScanComparisonCandidate(snapshot: snapshot), for: slot)
-        setup.errorMessage = setup.validationMessage
-        pendingComparisonSetup = setup
+        comparisonFlow.assignCurrentSnapshot(
+            scanCoordinator.snapshot,
+            for: slot,
+            isEligible: canUseCurrentScanInComparisonSetup
+        )
     }
 
     func clearComparisonSlot(_ slot: ScanComparisonSlot) {
-        guard var setup = pendingComparisonSetup else { return }
-        setup.setCandidate(nil, for: slot)
-        setup.errorMessage = nil
-        pendingComparisonSetup = setup
+        comparisonFlow.clearComparisonSlot(slot)
     }
 
     private func beginComparisonSetup(
@@ -1218,17 +1191,17 @@ final class AppModel: ObservableObject {
     }
 
     private func previewComparisonSnapshot(from sourceURL: URL, for slot: ScanComparisonSlot) {
-        guard var setup = pendingComparisonSetup,
-              setup.loadingSlot == nil else {
+        guard let info = comparisonFlow.beginPreview(
+            from: sourceURL,
+            for: slot,
+            savedScanExtension: nil
+        ) else {
             return
         }
+        runComparisonPreview(from: sourceURL, info: info)
+    }
 
-        setup.loadingSlot = slot
-        setup.errorMessage = nil
-        setup.setCandidate(nil, for: slot)
-        pendingComparisonSetup = setup
-        let setupID = setup.id
-
+    private func runComparisonPreview(from sourceURL: URL, info: ComparisonFlowController.PreviewBeginInfo) {
         let archiveService = dependencies.scanArchiveService
         archiveWorkflow.start(
             work: {
@@ -1236,40 +1209,21 @@ final class AppModel: ObservableObject {
             },
             onSuccess: { [weak self] preview in
                 guard let self,
-                      var currentSetup = pendingComparisonSetup,
-                      currentSetup.id == setupID,
-                      let loadedSlot = currentSetup.loadingSlot else {
+                      self.comparisonFlow.applyPreview(preview, info: info) else {
                     return
                 }
-                currentSetup.setCandidate(ScanComparisonCandidate(preview: preview), for: loadedSlot)
-                currentSetup.loadingSlot = nil
-                currentSetup.errorMessage = currentSetup.validationMessage
-                pendingComparisonSetup = currentSetup
-                lastErrorMessage = nil
+                self.lastErrorMessage = nil
             },
             onFailure: { [weak self] error in
-                guard let self,
-                      var currentSetup = pendingComparisonSetup,
-                      currentSetup.id == setupID else {
-                    return
-                }
-                currentSetup.loadingSlot = nil
-                currentSetup.errorMessage = error.localizedDescription
-                pendingComparisonSetup = currentSetup
+                _ = self?.comparisonFlow.failPreview(
+                    info: info,
+                    message: error.localizedDescription
+                )
             },
             onFinish: { [weak self] in
-                self?.clearComparisonSetupLoadingSlot(setupID: setupID)
+                self?.comparisonFlow.clearLoadingSlot(info: info)
             }
         )
-    }
-
-    private func clearComparisonSetupLoadingSlot(setupID: UUID) {
-        guard var setup = pendingComparisonSetup,
-              setup.id == setupID else {
-            return
-        }
-        setup.loadingSlot = nil
-        pendingComparisonSetup = setup
     }
 
     private func previewArchiveSnapshotComparison(sourceURLs: [URL]) {
