@@ -1274,6 +1274,7 @@ nonisolated struct FileTreeStore: Sendable {
     private nonisolated static func repairedAffectedDirectories(
         postorder directories: [FileTreeNodeIndex],
         isChanged: (FileTreeNodeIndex) -> Bool,
+        shouldRepair: (FileTreeNodeIndex) -> Bool = { _ in true },
         baseRecordAt: (FileTreeNodeIndex) -> FileNodeRecord,
         currentChildren: (FileTreeNodeIndex) -> some Collection<FileTreeNodeIndex>,
         cancellationCheck: () throws -> Void
@@ -1288,12 +1289,12 @@ nonisolated struct FileTreeStore: Sendable {
         for nodeIndex in directories.reversed() {
             try cancellationCheck()
             let source = recordAt(nodeIndex)
-            guard source.isDirectory else { continue }
+            guard source.isDirectory, shouldRepair(nodeIndex) else { continue }
 
             let originalChildren = currentChildren(nodeIndex)
             let orderedChildren = try restoringDisplayOrderAfterChanges(
                 originalChildren,
-                isChanged: isChanged,
+                isChanged: { isChanged($0) || appliedRepairs[$0] != nil },
                 nodeAt: recordAt,
                 cancellationCheck: cancellationCheck
             )
@@ -2037,48 +2038,25 @@ nonisolated struct FileTreeStore: Sendable {
             capacity: affectedAncestorCount,
             cancellationCheck: cancellationCheck
         )
-        for oldIndex in affectedNodeIndices.reversed() {
-            let oldOffset = Int(oldIndex.rawValue)
-            try cancellationCheck()
-            guard !removed[oldOffset],
-                  nodeRecords[oldOffset].isDirectory else {
-                continue
-            }
-
-            let existingChildren = topologyArena.children(of: oldIndex)
-            var survivingChildren: [FileTreeNodeIndex] = []
-            survivingChildren.reserveCapacity(existingChildren.count)
-            for (offset, childIndex) in existingChildren.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
+        let repairs = try Self.repairedAffectedDirectories(
+            postorder: affectedNodeIndices,
+            isChanged: { affectedAncestors[Int($0.rawValue)] },
+            shouldRepair: { !removed[Int($0.rawValue)] },
+            baseRecordAt: { nodeIndex in
+                let offset = Int(nodeIndex.rawValue)
+                return repairedRecordsByOffset[offset] ?? nodeRecords[offset]
+            },
+            currentChildren: { nodeIndex in
+                topologyArena.children(of: nodeIndex).filter { childIndex in
+                    !removed[Int(childIndex.rawValue)]
                 }
-                if !removed[Int(childIndex.rawValue)] {
-                    survivingChildren.append(childIndex)
-                }
-            }
-            survivingChildren = try Self.restoringDisplayOrderAfterChanges(
-                survivingChildren,
-                changedByOffset: affectedAncestors,
-                nodeAt: { childIndex in
-                    let childOffset = Int(childIndex.rawValue)
-                    return repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset]
-                },
-                cancellationCheck: cancellationCheck
-            )
-            var children: [FileNodeRecord] = []
-            children.reserveCapacity(survivingChildren.count)
-            for (offset, childIndex) in survivingChildren.enumerated() {
-                if offset.isMultiple(of: 256) {
-                    try cancellationCheck()
-                }
-                let childOffset = Int(childIndex.rawValue)
-                children.append(repairedRecordsByOffset[childOffset] ?? nodeRecords[childOffset])
-            }
-            repairedRecordsByOffset[oldOffset] = Self.repairingDirectoryRecord(
-                nodeRecords[oldOffset],
-                children: children
-            )
-            reorderedChildrenByOffset[oldOffset] = survivingChildren
+            },
+            cancellationCheck: cancellationCheck
+        )
+        for repair in repairs {
+            let oldOffset = Int(repair.index.rawValue)
+            repairedRecordsByOffset[oldOffset] = repair.repaired
+            reorderedChildrenByOffset[oldOffset] = repair.orderedChildren
         }
 
         let retainedCount = nodeRecords.count - removedCount
