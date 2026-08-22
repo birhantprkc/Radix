@@ -2318,20 +2318,74 @@ final class AppModel: ObservableObject {
     private func performConfirmedTrashMove(_ nodes: [FileNodeRecord]) {
         let originalSnapshotID = scanCoordinator.snapshot?.id
         let statsFileTreeStore = scanCoordinator.fileTreeStore
+        let actions = dependencies.systemActions
 
         if usesAsyncTrashActions {
             confirmedTrashMoveTask = Task { @MainActor [weak self] in
-                await self?.performConfirmedTrashMove(
+                await self?.trashFlow.runConfirmedMoveAsynchronously(
                     nodes,
                     originalSnapshotID: originalSnapshotID,
-                    statsFileTreeStore: statsFileTreeStore
+                    statsFileTreeStore: statsFileTreeStore,
+                    actions: actions,
+                    beginMove: { snapshotID, _ in
+                        guard let self else { return }
+                        let activeFileTreeStore = self.scanCoordinator.fileTreeStore
+                        let didHide = self.trashFlow.hideTrashNodesDuringMove(
+                            nodes,
+                            snapshotID: snapshotID,
+                            activeSnapshotID: self.scanCoordinator.snapshot?.id,
+                            activeFileTreeStore: activeFileTreeStore
+                        )
+                        if didHide, let activeFileTreeStore {
+                            self.reconcileNavigationForDiscardPileHiddenNodes(
+                                hiddenNodeIDs: self.hiddenNodeIDs(for: snapshotID),
+                                fileTreeStore: activeFileTreeStore
+                            )
+                        }
+                    },
+                    onFinish: { requested, moved, actionError, wasCancelled in
+                        self?.finishConfirmedTrashMove(
+                            requestedNodes: requested,
+                            movedNodes: moved,
+                            actionError: actionError,
+                            originalSnapshotID: originalSnapshotID,
+                            statsFileTreeStore: statsFileTreeStore,
+                            wasCancelled: wasCancelled
+                        )
+                    }
                 )
             }
         } else {
-            performConfirmedTrashMoveSynchronously(
+            trashFlow.runConfirmedMoveSynchronously(
                 nodes,
                 originalSnapshotID: originalSnapshotID,
-                statsFileTreeStore: statsFileTreeStore
+                statsFileTreeStore: statsFileTreeStore,
+                actions: actions,
+                beginMove: { snapshotID, _ in
+                    let activeFileTreeStore = scanCoordinator.fileTreeStore
+                    let didHide = trashFlow.hideTrashNodesDuringMove(
+                        nodes,
+                        snapshotID: snapshotID,
+                        activeSnapshotID: scanCoordinator.snapshot?.id,
+                        activeFileTreeStore: activeFileTreeStore
+                    )
+                    if didHide, let activeFileTreeStore {
+                        reconcileNavigationForDiscardPileHiddenNodes(
+                            hiddenNodeIDs: hiddenNodeIDs(for: snapshotID),
+                            fileTreeStore: activeFileTreeStore
+                        )
+                    }
+                },
+                onFinish: { requested, moved, actionError in
+                    finishConfirmedTrashMove(
+                        requestedNodes: requested,
+                        movedNodes: moved,
+                        actionError: actionError,
+                        originalSnapshotID: originalSnapshotID,
+                        statsFileTreeStore: statsFileTreeStore,
+                        wasCancelled: false
+                    )
+                }
             )
         }
     }
@@ -2340,117 +2394,13 @@ final class AppModel: ObservableObject {
         dependencies.systemActions.asyncMoveToTrash != nil
     }
 
-    private func performConfirmedTrashMoveSynchronously(
-        _ nodes: [FileNodeRecord],
-        originalSnapshotID: UUID?,
-        statsFileTreeStore: FileTreeStore?
-    ) {
-        var movedNodes: [FileNodeRecord] = []
-
-        hideTrashNodesDuringMove(nodes, snapshotID: originalSnapshotID)
-
-        var actionError: Error?
-        for node in nodes {
-            do {
-                let verificationResult = try dependencies.systemActions.moveToTrash(node)
-                if let identityError = fileActionError(for: verificationResult, node: node) {
-                    actionError = identityError
-                    break
-                }
-                movedNodes.append(node)
-            } catch {
-                actionError = error
-                break
-            }
-        }
-
-        finishConfirmedTrashMove(
-            requestedNodes: nodes,
-            movedNodes,
-            actionError: actionError,
-            originalSnapshotID: originalSnapshotID,
-            statsFileTreeStore: statsFileTreeStore
-        )
-    }
-
-    private func performConfirmedTrashMove(
-        _ nodes: [FileNodeRecord],
-        originalSnapshotID: UUID?,
-        statsFileTreeStore: FileTreeStore?
-    ) async {
-        var movedNodes: [FileNodeRecord] = []
-
-        hideTrashNodesDuringMove(nodes, snapshotID: originalSnapshotID)
-
-        var actionError: Error?
-        var wasCancelled = false
-        for node in nodes {
-            do {
-                let verificationResult = try await moveToTrash(node)
-                if let identityError = fileActionError(for: verificationResult, node: node) {
-                    actionError = identityError
-                    break
-                }
-                movedNodes.append(node)
-            } catch is CancellationError {
-                wasCancelled = true
-                break
-            } catch {
-                actionError = error
-                break
-            }
-        }
-
-        finishConfirmedTrashMove(
-            requestedNodes: nodes,
-            movedNodes,
-            actionError: actionError,
-            originalSnapshotID: originalSnapshotID,
-            statsFileTreeStore: statsFileTreeStore
-        )
-        if wasCancelled {
-            unhideTrashNodesAfterFailedMove(
-                requestedNodes: nodes,
-                movedNodes: movedNodes,
-                snapshotID: originalSnapshotID
-            )
-        }
-    }
-
-    private func fileActionError(
-        for result: TrashIdentityVerificationResult,
-        node: FileNodeRecord
-    ) -> Error? {
-        switch result {
-        case .matches:
-            return nil
-        case .missingCurrentItem:
-            return FileActionError.unavailable(path: node.url.path)
-        case .missingScannedIdentity:
-            return FileActionError.missingScannedIdentity(path: node.url.path)
-        case .mismatch:
-            return FileActionError.changedSinceScan(path: node.url.path)
-        case .metadataUnavailable(let reason):
-            return FileActionError.currentIdentityUnavailable(path: node.url.path, reason: reason)
-        }
-    }
-
-    private func moveToTrash(
-        _ node: FileNodeRecord
-    ) async throws -> TrashIdentityVerificationResult {
-        if let asyncMoveToTrash = dependencies.systemActions.asyncMoveToTrash {
-            return try await asyncMoveToTrash(node)
-        } else {
-            return try dependencies.systemActions.moveToTrash(node)
-        }
-    }
-
     private func finishConfirmedTrashMove(
         requestedNodes: [FileNodeRecord],
-        _ movedNodes: [FileNodeRecord],
+        movedNodes: [FileNodeRecord],
         actionError: Error?,
         originalSnapshotID: UUID?,
-        statsFileTreeStore: FileTreeStore?
+        statsFileTreeStore: FileTreeStore?,
+        wasCancelled: Bool = false
     ) {
         if !movedNodes.isEmpty {
             if discardPile.snapshotID == originalSnapshotID {
@@ -2465,12 +2415,18 @@ final class AppModel: ObservableObject {
         }
 
         if let actionError {
-            unhideTrashNodesAfterFailedMove(
+            trashFlow.unhideTrashNodesAfterFailedMove(
                 requestedNodes: requestedNodes,
                 movedNodes: movedNodes,
                 snapshotID: originalSnapshotID
             )
             presentError(actionError)
+        } else if wasCancelled {
+            trashFlow.unhideTrashNodesAfterFailedMove(
+                requestedNodes: requestedNodes,
+                movedNodes: movedNodes,
+                snapshotID: originalSnapshotID
+            )
         }
     }
 
@@ -2817,58 +2773,6 @@ final class AppModel: ObservableObject {
             fileTreeStore: fileTreeStore
         )
         discardPile = DiscardPileState(nodeIDs: deduplicatedIDs, snapshotID: snapshot.id)
-    }
-
-    private func hideTrashNodesDuringMove(
-        _ nodes: [FileNodeRecord],
-        snapshotID: UUID?
-    ) {
-        guard let snapshotID,
-              scanCoordinator.snapshot?.id == snapshotID,
-              let fileTreeStore = scanCoordinator.fileTreeStore else {
-            return
-        }
-
-        let nodeIDs = Set(fileTreeStore.topLevelNodeIDs(from: nodes.map(\.id)))
-        guard !nodeIDs.isEmpty else { return }
-
-        let existingIDs = optimisticTrashVisibility.snapshotID == snapshotID
-            ? optimisticTrashVisibility.nodeIDs
-            : []
-        let hiddenIDs = existingIDs.union(nodeIDs)
-        optimisticTrashVisibility = OptimisticTrashVisibilityState(
-            nodeIDs: hiddenIDs,
-            snapshotID: snapshotID
-        )
-        reconcileNavigationForDiscardPileHiddenNodes(
-            hiddenNodeIDs: hiddenNodeIDs(for: snapshotID),
-            fileTreeStore: fileTreeStore
-        )
-    }
-
-    private func unhideTrashNodesAfterFailedMove(
-        requestedNodes: [FileNodeRecord],
-        movedNodes: [FileNodeRecord],
-        snapshotID: UUID?
-    ) {
-        guard let snapshotID,
-              optimisticTrashVisibility.snapshotID == snapshotID else {
-            return
-        }
-
-        let movedNodeIDs = Set(movedNodes.map(\.id))
-        let unmovedNodeIDs = Set(
-            requestedNodes
-                .map(\.id)
-                .filter { !movedNodeIDs.contains($0) }
-        )
-        guard !unmovedNodeIDs.isEmpty else { return }
-
-        let hiddenIDs = optimisticTrashVisibility.nodeIDs.subtracting(unmovedNodeIDs)
-        optimisticTrashVisibility = OptimisticTrashVisibilityState(
-            nodeIDs: hiddenIDs,
-            snapshotID: snapshotID
-        )
     }
 
     private func deduplicatedDiscardPileIDs(

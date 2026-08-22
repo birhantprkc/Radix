@@ -160,6 +160,153 @@ final class TrashFlowController {
         return fileTreeStore.topLevelNodeIDs(from: nodes.map(\.id)).compactMap { nodesByID[$0] }
     }
 
+    static func fileActionError(
+        for result: TrashIdentityVerificationResult,
+        node: FileNodeRecord
+    ) -> Error? {
+        switch result {
+        case .matches:
+            return nil
+        case .missingCurrentItem:
+            return FileActionError.unavailable(path: node.url.path)
+        case .missingScannedIdentity:
+            return FileActionError.missingScannedIdentity(path: node.url.path)
+        case .mismatch:
+            return FileActionError.changedSinceScan(path: node.url.path)
+        case .metadataUnavailable(let reason):
+            return FileActionError.currentIdentityUnavailable(path: node.url.path, reason: reason)
+        }
+    }
+
+    /// Applies optimistic visibility for the duration of a move. Returns
+    /// whether any state changed so callers can run follow-up reconciliation.
+    @discardableResult
+    func hideTrashNodesDuringMove(
+        _ nodes: [FileNodeRecord],
+        snapshotID: UUID?,
+        activeSnapshotID: UUID?,
+        activeFileTreeStore: FileTreeStore?
+    ) -> Bool {
+        guard let snapshotID,
+              activeSnapshotID == snapshotID,
+              let activeFileTreeStore else {
+            return false
+        }
+
+        let nodeIDs = Set(activeFileTreeStore.topLevelNodeIDs(from: nodes.map(\.id)))
+        guard !nodeIDs.isEmpty else { return false }
+
+        let existingIDs = optimisticTrashVisibility.snapshotID == snapshotID
+            ? optimisticTrashVisibility.nodeIDs
+            : []
+        let hiddenIDs = existingIDs.union(nodeIDs)
+        optimisticTrashVisibility = OptimisticTrashVisibilityState(
+            nodeIDs: hiddenIDs,
+            snapshotID: snapshotID
+        )
+        notifyChanged()
+        return true
+    }
+
+    func unhideTrashNodesAfterFailedMove(
+        requestedNodes: [FileNodeRecord],
+        movedNodes: [FileNodeRecord],
+        snapshotID: UUID?
+    ) {
+        guard let snapshotID,
+              optimisticTrashVisibility.snapshotID == snapshotID else {
+            return
+        }
+
+        let movedNodeIDs = Set(movedNodes.map(\.id))
+        let unmovedNodeIDs = Set(
+            requestedNodes
+                .map(\.id)
+                .filter { !movedNodeIDs.contains($0) }
+        )
+        guard !unmovedNodeIDs.isEmpty else { return }
+
+        let hiddenIDs = optimisticTrashVisibility.nodeIDs.subtracting(unmovedNodeIDs)
+        optimisticTrashVisibility = OptimisticTrashVisibilityState(
+            nodeIDs: hiddenIDs,
+            snapshotID: snapshotID
+        )
+        notifyChanged()
+    }
+
+    /// Runs one confirmed trash move synchronously and reports the outcome.
+    /// `beginMove` applies optimistic hiding using the caller's live snapshot
+    /// state; `onFinish` applies cross-model side effects on the caller.
+    func runConfirmedMoveSynchronously(
+        _ nodes: [FileNodeRecord],
+        originalSnapshotID: UUID?,
+        statsFileTreeStore: FileTreeStore?,
+        actions: AppSystemActions,
+        beginMove: (UUID?, FileTreeStore?) -> Void,
+        onFinish: (_ requested: [FileNodeRecord], _ moved: [FileNodeRecord], _ actionError: Error?) -> Void
+    ) {
+        beginMove(originalSnapshotID, statsFileTreeStore)
+
+        var movedNodes: [FileNodeRecord] = []
+        var actionError: Error?
+        for node in nodes {
+            do {
+                let verificationResult = try actions.moveToTrash(node)
+                if let identityError = Self.fileActionError(for: verificationResult, node: node) {
+                    actionError = identityError
+                    break
+                }
+                movedNodes.append(node)
+            } catch {
+                actionError = error
+                break
+            }
+        }
+
+        onFinish(nodes, movedNodes, actionError)
+    }
+
+    /// Async counterpart of runConfirmedMoveSynchronously; cancellation stops
+    /// the loop and is reported through the returned flag so unmoved items can
+    /// be restored without presenting a spurious error.
+    func runConfirmedMoveAsynchronously(
+        _ nodes: [FileNodeRecord],
+        originalSnapshotID: UUID?,
+        statsFileTreeStore: FileTreeStore?,
+        actions: AppSystemActions,
+        beginMove: (UUID?, FileTreeStore?) -> Void,
+        onFinish: (_ requested: [FileNodeRecord], _ moved: [FileNodeRecord], _ actionError: Error?, _ wasCancelled: Bool) -> Void
+    ) async {
+        beginMove(originalSnapshotID, statsFileTreeStore)
+
+        var movedNodes: [FileNodeRecord] = []
+        var actionError: Error?
+        var wasCancelled = false
+        for node in nodes {
+            do {
+                let verificationResult: TrashIdentityVerificationResult
+                if let asyncMoveToTrash = actions.asyncMoveToTrash {
+                    verificationResult = try await asyncMoveToTrash(node)
+                } else {
+                    verificationResult = try actions.moveToTrash(node)
+                }
+                if let identityError = Self.fileActionError(for: verificationResult, node: node) {
+                    actionError = identityError
+                    break
+                }
+                movedNodes.append(node)
+            } catch is CancellationError {
+                wasCancelled = true
+                break
+            } catch {
+                actionError = error
+                break
+            }
+        }
+
+        onFinish(nodes, movedNodes, actionError, wasCancelled)
+    }
+
     private func notifyChanged() {
         onChange?()
     }
