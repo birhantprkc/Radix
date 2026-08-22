@@ -42,6 +42,8 @@ actor CurrentContentsSearchService {
 }
 
 actor FileSearchService: FileSearching {
+    nonisolated private static let normalizedPathCacheLimit = 50_000
+
     private var cachedIndex: CachedFileSearchIndex?
 
     func search(
@@ -95,6 +97,9 @@ actor FileSearchService: FileSearching {
                 normalizedPath = cachedPath
             } else {
                 normalizedPath = SearchNormalizer.normalize(treeStore.node(id: entry.id)?.url.path ?? "")
+                if cachedIndex?.index.normalizedPathsByID.count ?? 0 >= Self.normalizedPathCacheLimit {
+                    cachedIndex?.index.normalizedPathsByID.removeAll(keepingCapacity: false)
+                }
                 cachedIndex?.index.normalizedPathsByID[entry.id] = normalizedPath
             }
 
