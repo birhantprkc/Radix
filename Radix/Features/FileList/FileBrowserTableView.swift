@@ -51,12 +51,10 @@ struct FileBrowserTableView: View {
     private var tableSelection: Binding<Set<String>> {
         Binding(
             get: {
-                let displayedIDs = Set(model.displayedNodes.map(\.id))
-                return navigation.selectedNodeIDs.intersection(displayedIDs)
+                navigation.selectedNodeIDs.filter { model.displayedNode(id: $0) != nil }
             },
             set: { newValue in
-                let displayedIDs = Set(model.displayedNodes.map(\.id))
-                let selectedIDs = newValue.intersection(displayedIDs)
+                let selectedIDs = newValue.filter { model.displayedNode(id: $0) != nil }
                 let primaryID = primarySelectionID(in: selectedIDs)
 
                 if navigation.selectedNodeIDs != selectedIDs || navigation.selectedNodeID != primaryID {
