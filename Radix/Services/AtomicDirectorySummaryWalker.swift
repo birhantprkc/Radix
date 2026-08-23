@@ -14,6 +14,7 @@ extension AtomicDirectorySummarizer {
         treatPackagesAsDirectories: Bool,
         workerLimit: Int,
         ownerNodeID: String,
+        expectedRootIdentity: FileIdentity? = nil,
         exclusionMatcher: ScanExclusionMatcher,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
@@ -37,7 +38,8 @@ extension AtomicDirectorySummarizer {
                 cancellationCheck: cancellationCheck,
                 metrics: metrics,
                 continuation: continuation,
-                resumeState: resumeState
+                resumeState: resumeState,
+                expectedRootIdentity: expectedRootIdentity
             )
         } catch is AtomicSummaryRootFallbackRequired {
             resumeState?.invalidateCursors()
@@ -52,7 +54,8 @@ extension AtomicDirectorySummarizer {
                 cancellationCheck: cancellationCheck,
                 metrics: metrics,
                 continuation: continuation,
-                forcesFoundationTraversal: true
+                forcesFoundationTraversal: true,
+                expectedRootIdentity: expectedRootIdentity
             )
         }
         #if DEBUG
@@ -181,6 +184,7 @@ extension AtomicDirectorySummarizer {
                     treatPackagesAsDirectories: nestedTreatsPackagesAsDirectories,
                     workerLimit: workerLimit,
                     ownerNodeID: state.ownerNodeID,
+                    expectedRootIdentity: metadata.fileIdentity,
                     exclusionMatcher: exclusionMatcher,
                     cancellationCheck: cancellationCheck,
                     metrics: &metrics,

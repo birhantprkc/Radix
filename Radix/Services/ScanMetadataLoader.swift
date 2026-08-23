@@ -420,6 +420,36 @@ nonisolated struct ScanMetadataLoader: Sendable {
         )
     }
 
+    /// Loads the descriptor-independent identity used to protect Foundation's
+    /// path-based directory enumeration from persistent replacement.
+    nonisolated func fileSystemIdentity(at url: URL) throws -> FileIdentity {
+        guard let identity = fileSystemInfoProvider(url, diagnostics).identity,
+              identity.isFileSystemIdentity else {
+            throw Self.staleFileSystemIdentityError(for: url)
+        }
+        return identity
+    }
+
+    /// Best-effort callers pass `nil`; protected callers fail closed when the
+    /// current path no longer names the filesystem object they discovered.
+    nonisolated func validateFileSystemIdentity(
+        _ expectedIdentity: FileIdentity?,
+        at url: URL
+    ) throws {
+        guard let expectedIdentity, expectedIdentity.isFileSystemIdentity else { return }
+        guard try fileSystemIdentity(at: url) == expectedIdentity else {
+            throw Self.staleFileSystemIdentityError(for: url)
+        }
+    }
+
+    private nonisolated static func staleFileSystemIdentityError(for url: URL) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(ESTALE),
+            userInfo: [NSURLErrorKey: url]
+        )
+    }
+
     private nonisolated static func nodeMetadata(
         for url: URL,
         resourceValues values: URLResourceValues,

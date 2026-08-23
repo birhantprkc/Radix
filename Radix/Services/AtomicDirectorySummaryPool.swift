@@ -35,6 +35,7 @@ nonisolated private final class AtomicSummaryGenerationToken: @unchecked Sendabl
 
 nonisolated struct AtomicSummaryPoolRequest: @unchecked Sendable {
     let url: URL
+    let expectedRootIdentity: FileIdentity?
     let includeHiddenFiles: Bool
     let treatPackagesAsDirectories: Bool
     let progressWeight: Double
@@ -617,7 +618,8 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
             AtomicSummaryWorkItem(
                 url: request.url,
                 treatPackagesAsDirectories: request.treatPackagesAsDirectories,
-                ownerNodeID: request.ownerNodeID
+                ownerNodeID: request.ownerNodeID,
+                expectedIdentity: request.expectedRootIdentity
             )
         ]
 
@@ -817,7 +819,8 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
                 AtomicSummaryWorkItem(
                     url: job.request.url,
                     treatPackagesAsDirectories: job.request.treatPackagesAsDirectories,
-                    ownerNodeID: job.request.ownerNodeID
+                    ownerNodeID: job.request.ownerNodeID,
+                    expectedIdentity: job.request.expectedRootIdentity
                 )
             )
             makeRunnableLocked(job)

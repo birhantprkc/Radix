@@ -655,7 +655,7 @@ actor ScanEngine {
            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval)
     }
 
-    private nonisolated static func defaultDirectoryContents(
+    nonisolated static func defaultDirectoryContents(
         url: URL,
         keys: [URLResourceKey]?,
         options: FileManager.DirectoryEnumerationOptions,
@@ -1277,6 +1277,7 @@ actor ScanEngine {
                 url: target.url,
                 metadata: rootMetadata,
                 options: options,
+                behavior: behavior,
                 exclusionMatcher: exclusionMatcher,
                 atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                 progressWeight: 1,
@@ -1583,6 +1584,7 @@ actor ScanEngine {
                             url: item.url,
                             metadata: meta,
                             options: options,
+                            behavior: behavior,
                             exclusionMatcher: exclusionMatcher,
                             atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                             progressWeight: item.weight,
@@ -1633,6 +1635,7 @@ actor ScanEngine {
                             url: taskItem.url,
                             metadata: taskMetadata,
                             options: options,
+                            behavior: behavior,
                             exclusionMatcher: exclusionMatcher,
                             atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                             progressWeight: taskItem.weight,
@@ -1662,6 +1665,10 @@ actor ScanEngine {
                             url: candidate.item.url,
                             childEntries: candidate.contents.entries,
                             metadata: candidate.metadata,
+                            expectedRootIdentity: Self.verifiesDirectoryIdentity(
+                                at: candidate.item.url,
+                                behavior: behavior
+                            ) ? candidate.metadata.fileIdentity : nil,
                             includeHiddenFiles: options.includeHiddenFiles,
                             treatPackagesAsDirectories: options.treatPackagesAsDirectories,
                             isNodeDependencyLayout: candidate.isNodeDependencyLayout,
@@ -2770,10 +2777,9 @@ actor ScanEngine {
             options.insert(.skipsHiddenFiles)
         }
 
-        try verifyFoundationDirectoryIdentity(
+        try metadataLoader.validateFileSystemIdentity(
             expectedIdentity,
-            at: url,
-            metadataLoader: metadataLoader
+            at: url
         )
 
         let prefetchKeys = shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
@@ -2786,10 +2792,9 @@ actor ScanEngine {
         // FileManager has no descriptor-relative directory API. Bookend its
         // path-based enumeration so any replacement that persists across the
         // call is discarded instead of entering the scan.
-        try verifyFoundationDirectoryIdentity(
+        try metadataLoader.validateFileSystemIdentity(
             expectedIdentity,
-            at: url,
-            metadataLoader: metadataLoader
+            at: url
         )
         #if DEBUG
         let enumerationNanoseconds = DispatchTime.now().uptimeNanoseconds - enumerationStart
@@ -2853,24 +2858,6 @@ actor ScanEngine {
             directoryLease: nil
         )
         #endif
-    }
-
-    private nonisolated static func verifyFoundationDirectoryIdentity(
-        _ expectedIdentity: FileIdentity?,
-        at url: URL,
-        metadataLoader: ScanMetadataLoader
-    ) throws {
-        guard let expectedIdentity, expectedIdentity.isFileSystemIdentity else { return }
-        let currentIdentity = try metadataLoader.metadata(for: url).fileIdentity
-        guard let currentIdentity,
-              currentIdentity.isFileSystemIdentity,
-              currentIdentity == expectedIdentity else {
-            throw NSError(
-                domain: NSPOSIXErrorDomain,
-                code: Int(ESTALE),
-                userInfo: [NSURLErrorKey: url]
-            )
-        }
     }
 
     private nonisolated static func classifiedDirectoryEntries(
@@ -3041,6 +3028,7 @@ actor ScanEngine {
         url: URL,
         metadata: NodeMetadata,
         options: ScanOptions,
+        behavior: ScanBehavior,
         exclusionMatcher: ScanExclusionMatcher,
         atomicDirectorySummarizer: AtomicDirectorySummarizer,
         progressWeight: Double,
@@ -3082,6 +3070,10 @@ actor ScanEngine {
             progressKind: .package,
             representedItemCount: 0,
             ownerNodeID: url.path,
+            expectedRootIdentity: Self.verifiesDirectoryIdentity(
+                at: url,
+                behavior: behavior
+            ) ? metadata.fileIdentity : nil,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
             metrics: &metrics,

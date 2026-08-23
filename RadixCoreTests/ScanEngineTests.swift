@@ -3,6 +3,360 @@ import XCTest
 @testable import RadixCore
 
 final class ScanEngineTests: XCTestCase {
+    func testFoundationAtomicWorkResultSeedsProtectedChildrenAndPreservesSemantics() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let nestedURL = rootURL.appending(path: "Nested", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
+        try Data(repeating: 0x11, count: 11).write(to: rootURL.appending(path: "visible.bin"))
+        try Data(repeating: 0x22, count: 7).write(to: rootURL.appending(path: ".hidden.bin"))
+        try Data(repeating: 0x33, count: 13).write(to: rootURL.appending(path: "ignored.tmp"))
+        try Data(repeating: 0x44, count: 20).write(to: nestedURL.appending(path: "nested.bin"))
+
+        let metadataLoader = ScanMetadataLoader()
+        let expectedIdentity = try metadataLoader.fileSystemIdentity(at: rootURL)
+        let (progressReporter, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        let rootResult = try AtomicDirectorySummarizer.processFoundationWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                expectedIdentity: expectedIdentity
+            ),
+            includeHiddenFiles: false,
+            exclusionMatcher: ScanExclusionMatcher(patterns: ["*.tmp"], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            progressVisitedItemCount: 0
+        )
+
+        XCTAssertEqual(rootResult.partial.descendantFileCount, 1)
+        XCTAssertEqual(rootResult.partial.logicalSize, 11)
+        XCTAssertEqual(rootResult.partial.visitedItemCount, 3)
+        XCTAssertTrue(rootResult.partial.warnings.isEmpty)
+        XCTAssertEqual(rootResult.pendingItems.count, 1)
+        let childWork = try XCTUnwrap(rootResult.pendingItems.first)
+        XCTAssertEqual(
+            childWork.url.resolvingSymlinksInPath(),
+            nestedURL.resolvingSymlinksInPath()
+        )
+        XCTAssertTrue(childWork.expectedIdentity?.isFileSystemIdentity == true)
+
+        let childResult = try AtomicDirectorySummarizer.processFoundationWorkItem(
+            childWork,
+            includeHiddenFiles: false,
+            exclusionMatcher: ScanExclusionMatcher(patterns: ["*.tmp"], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            progressVisitedItemCount: 0
+        )
+        let accumulator = AtomicSummaryAccumulator(seed: rootResult.partial)
+        accumulator.merge(childResult.partial)
+        let summary = accumulator.makeSummary()
+        XCTAssertEqual(summary.descendantFileCount, 2)
+        XCTAssertEqual(summary.logicalSize, 31)
+        XCTAssertEqual(summary.visitedItemCount, 4)
+        XCTAssertTrue(summary.isAccessible)
+        XCTAssertTrue(summary.warnings.isEmpty)
+    }
+
+    func testFoundationAtomicWorkResultRejectsPreAndPostEnumerationReplacement() throws {
+        let parentURL = try makeTemporaryDirectory()
+        let foreignURL = try makeTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: parentURL)
+            try? FileManager.default.removeItem(at: foreignURL)
+        }
+        let rootURL = parentURL.appending(path: "ReplaceMe", directoryHint: .isDirectory)
+        let originalURL = parentURL.appending(path: "Original", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data([0x11]).write(to: rootURL.appending(path: "original.bin"))
+        try Data([0x22]).write(to: foreignURL.appending(path: "foreign.bin"))
+
+        let metadataLoader = ScanMetadataLoader()
+        let expectedIdentity = try metadataLoader.fileSystemIdentity(at: rootURL)
+        let (progressReporter, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        let matcher = ScanExclusionMatcher(patterns: [], rootURL: parentURL)
+        let preMismatch = try AtomicDirectorySummarizer.processFoundationWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                expectedIdentity: FileIdentity(device: 0, inode: 0)
+            ),
+            includeHiddenFiles: true,
+            exclusionMatcher: matcher,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            progressVisitedItemCount: 0
+        )
+        XCTAssertEqual(preMismatch.partial.visitedItemCount, 0)
+        XCTAssertEqual(preMismatch.partial.descendantFileCount, 0)
+        XCTAssertTrue(preMismatch.pendingItems.isEmpty)
+        XCTAssertEqual(preMismatch.partial.warnings.count, 1)
+        XCTAssertEqual(preMismatch.partial.warnings.first?.category, .fileSystem)
+
+        let postMismatch = try AtomicDirectorySummarizer.processFoundationWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                expectedIdentity: expectedIdentity
+            ),
+            includeHiddenFiles: true,
+            exclusionMatcher: matcher,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            progressVisitedItemCount: 0,
+            directoryContents: { url, keys, options, cancellationCheck in
+                try cancellationCheck()
+                try FileManager.default.moveItem(at: rootURL, to: originalURL)
+                try FileManager.default.createSymbolicLink(at: rootURL, withDestinationURL: foreignURL)
+                return ScanEngine.DirectoryEnumerationResult(
+                    urls: [foreignURL.appending(path: "foreign.bin")]
+                )
+            }
+        )
+        XCTAssertEqual(postMismatch.partial.visitedItemCount, 1)
+        XCTAssertEqual(postMismatch.partial.descendantFileCount, 0)
+        XCTAssertEqual(postMismatch.partial.logicalSize, 0)
+        XCTAssertTrue(postMismatch.pendingItems.isEmpty)
+        XCTAssertEqual(postMismatch.partial.warnings.count, 1)
+        XCTAssertEqual(postMismatch.partial.warnings.first?.path, rootURL.path)
+        XCTAssertEqual(postMismatch.partial.warnings.first?.category, .fileSystem)
+    }
+
+    func testFoundationAtomicWorkResultSkipsChildWithoutFilesystemIdentity() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let childURL = rootURL.appending(path: "Child", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: childURL, withIntermediateDirectories: true)
+        let metadataLoader = ScanMetadataLoader(fileSystemInfoProvider: { _, _ in (nil, 1) })
+        let (progressReporter, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+
+        let result = try AtomicDirectorySummarizer.processFoundationWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path
+            ),
+            includeHiddenFiles: true,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            progressVisitedItemCount: 0
+        )
+
+        XCTAssertTrue(result.pendingItems.isEmpty)
+        XCTAssertEqual(result.partial.warnings.count, 1)
+        XCTAssertEqual(
+            result.partial.warnings.first.map {
+                URL(filePath: $0.path).resolvingSymlinksInPath().path
+            },
+            childURL.resolvingSymlinksInPath().path
+        )
+        XCTAssertEqual(result.partial.warnings.first?.category, .fileSystem)
+    }
+
+    func testPooledAndNonPooledForcedFoundationSummariesMatch() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let nestedURL = rootURL.appending(path: "Nested", directoryHint: .isDirectory)
+        let packageURL = rootURL.appending(path: "Payload.app/Contents", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: packageURL, withIntermediateDirectories: true)
+        let originalURL = rootURL.appending(path: "original.bin")
+        try Data(repeating: 0x11, count: 64).write(to: originalURL)
+        try FileManager.default.linkItem(at: originalURL, to: nestedURL.appending(path: "linked.bin"))
+        try Data(repeating: 0x22, count: 32).write(to: packageURL.appending(path: "asset.bin"))
+        try Data(repeating: 0x33, count: 16).write(to: rootURL.appending(path: ".hidden.bin"))
+        try Data(repeating: 0x44, count: 8).write(to: nestedURL.appending(path: "ignored.tmp"))
+        try FileManager.default.createSymbolicLink(
+            at: rootURL.appending(path: "alias.bin"),
+            withDestinationURL: originalURL
+        )
+
+        let metadataLoader = ScanMetadataLoader()
+        let rootIdentity = try metadataLoader.fileSystemIdentity(at: rootURL)
+        let matcher = ScanExclusionMatcher(patterns: ["*.tmp"], rootURL: rootURL)
+        let (_, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        let nonPooled = try await AtomicDirectorySummarizer.summarizeInParallel(
+            at: rootURL,
+            includeHiddenFiles: false,
+            treatPackagesAsDirectories: false,
+            workerLimit: 3,
+            ownerNodeID: rootURL.path,
+            exclusionMatcher: matcher,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            metrics: ScanMetrics(),
+            continuation: continuation,
+            forcesFoundationTraversal: true,
+            expectedRootIdentity: rootIdentity
+        )
+
+        let cursor = try BulkDirectoryEnumerator.makeCursor(
+            at: rootURL,
+            includeHiddenFiles: false,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            forcedUnavailableAfterBatchCount: 0
+        )
+        let pool = AtomicDirectorySummaryPool(workerLimit: 3, progressEmissionInterval: 0)
+        let pooled = try await pool.summarize(AtomicSummaryPoolRequest(
+            url: rootURL,
+            expectedRootIdentity: rootIdentity,
+            includeHiddenFiles: false,
+            treatPackagesAsDirectories: false,
+            progressWeight: 1,
+            progressKind: .autoSummary,
+            representedItemCount: 0,
+            ownerNodeID: rootURL.path,
+            exclusionMatcher: matcher,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            metrics: ScanMetrics(),
+            continuation: continuation,
+            resumeState: AtomicDirectoryProbeResumeState(
+                partial: AtomicDirectorySummaryPartial(),
+                workItems: [AtomicSummaryWorkItem(
+                    url: rootURL,
+                    treatPackagesAsDirectories: false,
+                    ownerNodeID: rootURL.path,
+                    expectedIdentity: rootIdentity,
+                    cursor: cursor,
+                    needsCursor: false,
+                    requiresRootRestartOnFallback: true
+                )],
+                visitedItemCount: 0
+            )
+        ))
+        await pool.finish()
+
+        let reference = try XCTUnwrap(nonPooled)
+        let candidate = try XCTUnwrap(pooled)
+        XCTAssertEqual(candidate.allocatedSize, reference.allocatedSize)
+        XCTAssertEqual(candidate.logicalSize, reference.logicalSize)
+        XCTAssertEqual(candidate.descendantFileCount, reference.descendantFileCount)
+        XCTAssertEqual(candidate.visitedItemCount, reference.visitedItemCount)
+        XCTAssertEqual(candidate.isAccessible, reference.isAccessible)
+        XCTAssertEqual(warningSemantics(candidate.warnings), warningSemantics(reference.warnings))
+        XCTAssertEqual(
+            candidate.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
+            reference.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
+        )
+        XCTAssertEqual(
+            candidate.sharedAllocationAccumulator.identityCount,
+            reference.sharedAllocationAccumulator.identityCount
+        )
+    }
+
+    func testLateNativeFallbackPreservesOriginalRootIdentity() async throws {
+        let parentURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: parentURL) }
+        let rootURL = parentURL.appending(path: "Root", directoryHint: .isDirectory)
+        let movedURL = parentURL.appending(path: "Moved", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        for index in 0..<128 {
+            try Data([UInt8(index)]).write(to: rootURL.appending(path: "payload-\(index).bin"))
+        }
+        let metadataLoader = ScanMetadataLoader()
+        let originalIdentity = try metadataLoader.fileSystemIdentity(at: rootURL)
+        let cursor = try BulkDirectoryEnumerator.makeCursor(
+            at: rootURL,
+            includeHiddenFiles: true,
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            forcedUnavailableAfterBatchCount: 1
+        )
+        try FileManager.default.moveItem(at: rootURL, to: movedURL)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data([0xFF]).write(to: rootURL.appending(path: "foreign.bin"))
+
+        let (_, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        let pool = AtomicDirectorySummaryPool(workerLimit: 1, progressEmissionInterval: 0)
+        let summary = try await pool.summarize(AtomicSummaryPoolRequest(
+            url: rootURL,
+            expectedRootIdentity: originalIdentity,
+            includeHiddenFiles: true,
+            treatPackagesAsDirectories: true,
+            progressWeight: 1,
+            progressKind: .autoSummary,
+            representedItemCount: 0,
+            ownerNodeID: rootURL.path,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            metrics: ScanMetrics(),
+            continuation: continuation,
+            resumeState: AtomicDirectoryProbeResumeState(
+                partial: AtomicDirectorySummaryPartial(),
+                workItems: [AtomicSummaryWorkItem(
+                    url: rootURL,
+                    treatPackagesAsDirectories: true,
+                    ownerNodeID: rootURL.path,
+                    expectedIdentity: originalIdentity,
+                    cursor: cursor,
+                    needsCursor: false,
+                    requiresRootRestartOnFallback: true
+                )],
+                visitedItemCount: 0
+            )
+        ))
+        await pool.finish()
+
+        XCTAssertEqual(summary?.descendantFileCount, 0)
+        XCTAssertEqual(summary?.logicalSize, 0)
+        XCTAssertTrue(summary?.warnings.contains {
+            $0.path == rootURL.path && $0.category == .fileSystem
+        } == true)
+    }
+
+    func testFoundationAtomicWorkCancellationDoesNotReturnPartialWork() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let urls = try (0..<4).map { index in
+            let url = rootURL.appending(path: "payload-\(index).bin")
+            try Data([UInt8(index)]).write(to: url)
+            return url
+        }
+        let cancellation = AtomicFoundationCancellation(cancelAfterCheckCount: 3)
+        let (_, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+
+        XCTAssertThrowsError(try AtomicDirectorySummarizer.processFoundationWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path
+            ),
+            includeHiddenFiles: true,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: ScanMetadataLoader(),
+            cancellationCheck: cancellation.check,
+            progressReporter: AtomicSummaryProgressReporter(
+                metrics: ScanMetrics(),
+                continuation: continuation
+            ),
+            progressVisitedItemCount: 0,
+            directoryContents: { _, _, _, _ in
+                ScanEngine.DirectoryEnumerationResult(urls: urls)
+            }
+        )) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+    }
+
     func testPooledReusedEntriesReloadMissingPrefetchedMetadata() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -169,6 +523,7 @@ final class ScanEngineTests: XCTestCase {
 
         let summary = try await pool.summarize(AtomicSummaryPoolRequest(
             url: rootURL,
+            expectedRootIdentity: nil,
             includeHiddenFiles: true,
             treatPackagesAsDirectories: true,
             progressWeight: 1,
@@ -4103,6 +4458,24 @@ private final class BlockingLiveChildOpen: @unchecked Sendable {
     }
 }
 
+private func makeAtomicSummaryProgressReporter() -> (
+    AtomicSummaryProgressReporter,
+    AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
+) {
+    var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+    _ = AsyncThrowingStream<ScanProgressEvent, Error> {
+        continuation = $0
+    }
+    return (
+        AtomicSummaryProgressReporter(metrics: ScanMetrics(), continuation: continuation),
+        continuation
+    )
+}
+
+private func warningSemantics(_ warnings: [ScanWarning]) -> Set<String> {
+    Set(warnings.map { "\($0.path)|\($0.category.rawValue)|\($0.message)" })
+}
+
 private func finishedSnapshot(
     target: ScanTarget,
     options: ScanOptions,
@@ -4197,6 +4570,26 @@ private final class DirectoryEnumerationCancellation: @unchecked Sendable {
     func check() throws {
         lock.lock()
         let isCancelled = isCancelled
+        lock.unlock()
+        if isCancelled {
+            throw CancellationError()
+        }
+    }
+}
+
+private final class AtomicFoundationCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private let cancelAfterCheckCount: Int
+    private var checkCount = 0
+
+    init(cancelAfterCheckCount: Int) {
+        self.cancelAfterCheckCount = cancelAfterCheckCount
+    }
+
+    func check() throws {
+        lock.lock()
+        checkCount += 1
+        let isCancelled = checkCount >= cancelAfterCheckCount
         lock.unlock()
         if isCancelled {
             throw CancellationError()
