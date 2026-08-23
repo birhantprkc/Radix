@@ -55,7 +55,7 @@ created by earlier supported versions.
 - Usage stats showing scans completed, data scanned, scan speeds, chart interactions, and cleanup totals — all stored locally on your Mac
 - Quick Look, Open, Reveal in Finder, Copy Path, and Move to Trash actions
 - Drag and drop a folder into the window to start scanning
-- APFS-aware storage accounting that avoids double-counting full clones and explains shared storage in context
+- APFS-aware storage accounting that avoids double-counting full clones
 - Automatic updates powered by [Sparkle](https://sparkle-project.org/)
 
 ### Privacy & Permissions
