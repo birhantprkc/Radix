@@ -39,8 +39,18 @@ final class FileNodeRecordTests: XCTestCase {
             name: "partial.bin",
             mayShareDataBlocks: true
         )
+        let regularFile = makeTestFileNode(id: "/regular.bin", name: "regular.bin")
 
         XCTAssertEqual(fullClone.secondaryStatusText, "APFS clone · shared storage")
         XCTAssertEqual(partialClone.secondaryStatusText, "May share APFS storage")
+        XCTAssertEqual(
+            fullClone.sharedStorageDescription,
+            "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
+        )
+        XCTAssertEqual(
+            partialClone.sharedStorageDescription,
+            "Parts of this file may share APFS storage. macOS does not expose enough information for Radix to calculate exact shared or reclaimable bytes."
+        )
+        XCTAssertNil(regularFile.sharedStorageDescription)
     }
 }

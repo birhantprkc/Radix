@@ -16,6 +16,15 @@ struct InspectorDetailsSections: View {
             )
         }
 
+        if let sharedStorageDescription = node.sharedStorageDescription {
+            Section("Storage") {
+                Text(sharedStorageDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+
         Section("Metadata") {
             LabeledContent("Kind") {
                 Text(node.itemKind(activeTarget: activeTarget))

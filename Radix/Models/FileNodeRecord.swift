@@ -217,6 +217,22 @@ extension FileNodeRecord {
         return nil
     }
 
+    var sharedStorageDescription: String? {
+        if cloneIdentity != nil {
+            return String(
+                localized: "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount.",
+                comment: "Inspector explanation for a full APFS clone and Radix's shared-storage accounting."
+            )
+        }
+        if mayShareDataBlocks {
+            return String(
+                localized: "Parts of this file may share APFS storage. macOS does not expose enough information for Radix to calculate exact shared or reclaimable bytes.",
+                comment: "Inspector explanation for a file that may still share some APFS data blocks."
+            )
+        }
+        return nil
+    }
+
     var accessDescription: String {
         if isSynthetic {
             return String(localized: "Estimated", comment: "Metadata value indicating that storage is estimated.")
