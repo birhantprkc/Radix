@@ -100,20 +100,28 @@ final class ScanVolumeBoundaryPolicyTests: XCTestCase {
         XCTAssertTrue(policy.shouldStopDescent(childDeviceID: dataVolumeDevice))
     }
 
-    func testMissingDeviceInformationNeverStopsTraversal() {
+    func testMissingChildDeviceStopsWhenRootDeviceIsKnown() throws {
         let policy = ScanEngine.ScanVolumeBoundaryPolicy.resolve(
             rootPath: "/",
             rootDeviceID: systemVolumeDevice,
             mountedFileSystems: makeDefaultMounts()
         )
-        XCTAssertFalse(policy.shouldStopDescent(childDeviceID: nil))
+        XCTAssertTrue(policy.shouldStopDescent(childDeviceID: nil))
+        let url = URL(filePath: "/unverified", directoryHint: .isDirectory)
+        let error = try XCTUnwrap(
+            policy.descentBoundaryError(for: url, childDeviceID: nil)
+        )
+        XCTAssertEqual(ScanWarningFactory.makeWarning(for: url, error: error).category, .fileSystem)
+    }
 
+    func testMissingRootDeviceLeavesBoundaryPolicyUnrestricted() {
         let unresolvedPolicy = ScanEngine.ScanVolumeBoundaryPolicy.resolve(
             rootPath: "/",
             rootDeviceID: nil,
             mountedFileSystems: makeDefaultMounts()
         )
         XCTAssertFalse(unresolvedPolicy.shouldStopDescent(childDeviceID: externalVolumeDevice))
+        XCTAssertFalse(unresolvedPolicy.shouldStopDescent(childDeviceID: nil))
     }
 
     func testNonAPFSMountsWithMatchingDiskPrefixStayBlocked() {

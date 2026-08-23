@@ -215,6 +215,16 @@ extension AtomicDirectorySummarizer {
                     continue
                 }
 
+                if isDirectory, volumeBoundaryPolicy.requiresChildDeviceIdentity {
+                    let childIdentity = try metadataLoader.fileSystemIdentity(at: childURL)
+                    if volumeBoundaryPolicy.shouldStopDescent(
+                        childDeviceID: childIdentity.fileSystemDeviceID
+                    ) {
+                        enumerator.skipDescendants()
+                        continue
+                    }
+                }
+
                 if Self.isNodeDependencyLayoutDirectory(at: childURL) {
                     profile.observedNodeDependencyLayout = true
                 }
@@ -307,6 +317,7 @@ extension AtomicDirectorySummarizer {
                 url: url,
                 treatPackagesAsDirectories: treatPackagesAsDirectories,
                 ownerNodeID: url.path,
+                volumeBoundaryPolicy: volumeBoundaryPolicy,
                 bufferedEntries: rootEntries,
                 needsCursor: false
             ),
@@ -450,6 +461,16 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
+            if metadata.isDirectory,
+               let boundaryError = frames[frameIndex].workItem.volumeBoundaryPolicy
+                   .descentBoundaryError(
+                       for: entry.url,
+                       childDeviceID: metadata.fileIdentity?.fileSystemDeviceID
+                   ) {
+                partial.recordWarning(for: entry.url, error: boundaryError)
+                continue
+            }
+
             if Self.isNodeDependencyLayoutDirectory(at: entry.url) {
                 profile.observedNodeDependencyLayout = true
             }
@@ -483,7 +504,9 @@ extension AtomicDirectorySummarizer {
                             workItem: AtomicSummaryWorkItem(
                                 url: entry.url,
                                 treatPackagesAsDirectories: treatsPackagesAsDirectories,
-                                ownerNodeID: frames[frameIndex].workItem.ownerNodeID
+                                ownerNodeID: frames[frameIndex].workItem.ownerNodeID,
+                                volumeBoundaryPolicy: frames[frameIndex].workItem
+                                    .volumeBoundaryPolicy
                             ),
                             retainsReusableListing: !treatsPackagesAsDirectories
                         )

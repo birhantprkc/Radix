@@ -480,6 +480,13 @@ extension AtomicDirectorySummarizer {
                 partial.recordWarning(for: childURL, error: error)
                 continue
             }
+            if let boundaryError = item.volumeBoundaryPolicy.descentBoundaryError(
+                for: childURL,
+                childDeviceID: childIdentity.fileSystemDeviceID
+            ) {
+                partial.recordWarning(for: childURL, error: boundaryError)
+                continue
+            }
             pendingItems.append(
                 AtomicSummaryWorkItem(
                     url: childURL,
@@ -487,7 +494,8 @@ extension AtomicDirectorySummarizer {
                         ? true
                         : item.treatPackagesAsDirectories,
                     ownerNodeID: item.ownerNodeID,
-                    expectedIdentity: childIdentity
+                    expectedIdentity: childIdentity,
+                    volumeBoundaryPolicy: item.volumeBoundaryPolicy
                 )
             )
         }
@@ -506,6 +514,7 @@ extension AtomicDirectorySummarizer {
         ownerNodeID: String,
         exclusionMatcher: ScanExclusionMatcher,
         metadataLoader: ScanMetadataLoader,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted,
         cancellationCheck: @escaping CancellationCheck,
         metrics: ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
@@ -537,7 +546,8 @@ extension AtomicDirectorySummarizer {
                 url: url,
                 treatPackagesAsDirectories: treatPackagesAsDirectories,
                 ownerNodeID: ownerNodeID,
-                expectedIdentity: expectedRootIdentity
+                expectedIdentity: expectedRootIdentity,
+                volumeBoundaryPolicy: volumeBoundaryPolicy
             )
         ]
         let queue = AtomicSummaryWorkQueue(items: initialItems)
@@ -804,6 +814,14 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
+            if let boundaryError = item.volumeBoundaryPolicy.descentBoundaryError(
+                for: childURL,
+                childDeviceID: childMetadata.fileIdentity?.fileSystemDeviceID
+            ) {
+                partial.recordWarning(for: childURL, error: boundaryError)
+                continue
+            }
+
             pendingItems.append(
                 AtomicSummaryWorkItem(
                     url: childURL,
@@ -811,7 +829,8 @@ extension AtomicDirectorySummarizer {
                     ownerNodeID: item.ownerNodeID,
                     expectedIdentity: childMetadata.fileIdentity?.isFileSystemIdentity == true
                         ? childMetadata.fileIdentity
-                        : nil
+                        : nil,
+                    volumeBoundaryPolicy: item.volumeBoundaryPolicy
                 )
             )
         }

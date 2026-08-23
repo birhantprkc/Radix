@@ -63,6 +63,147 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(summary.warnings.isEmpty)
     }
 
+    func testFoundationAtomicWorkResultStopsAtVolumeBoundary() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let boundaryURL = rootURL.appending(path: "Mounted", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: boundaryURL, withIntermediateDirectories: true)
+        try Data([0x11]).write(to: boundaryURL.appending(path: "foreign.bin"))
+
+        let metadataLoader = ScanMetadataLoader()
+        let rootIdentity = try metadataLoader.fileSystemIdentity(at: rootURL)
+        let policy = try rejectingVolumeBoundaryPolicy(
+            for: rootURL,
+            metadataLoader: metadataLoader
+        )
+        let (progressReporter, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+
+        let result = try AtomicDirectorySummarizer.processFoundationWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                expectedIdentity: rootIdentity,
+                volumeBoundaryPolicy: policy
+            ),
+            includeHiddenFiles: true,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            progressVisitedItemCount: 0
+        )
+
+        XCTAssertTrue(result.pendingItems.isEmpty)
+        XCTAssertEqual(result.partial.descendantFileCount, 0)
+        XCTAssertEqual(result.partial.logicalSize, 0)
+        XCTAssertEqual(result.partial.warnings.count, 1)
+        XCTAssertEqual(
+            result.partial.warnings.first.map {
+                URL(filePath: $0.path).resolvingSymlinksInPath().path
+            },
+            boundaryURL.resolvingSymlinksInPath().path
+        )
+        XCTAssertEqual(result.partial.warnings.first?.category, .fileSystem)
+    }
+
+    func testPooledPackageSummaryStopsAtVolumeBoundary() async throws {
+        let packageURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: packageURL) }
+        let boundaryURL = packageURL.appending(path: "Mounted", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: boundaryURL, withIntermediateDirectories: true)
+        try Data(repeating: 0x11, count: 7).write(to: packageURL.appending(path: "local.bin"))
+        try Data(repeating: 0x22, count: 13).write(to: boundaryURL.appending(path: "foreign.bin"))
+
+        let metadataLoader = ScanMetadataLoader()
+        let rootIdentity = try metadataLoader.fileSystemIdentity(at: packageURL)
+        let policy = try rejectingVolumeBoundaryPolicy(
+            for: packageURL,
+            metadataLoader: metadataLoader
+        )
+        let pool = AtomicDirectorySummaryPool(workerLimit: 2, progressEmissionInterval: 0)
+        let summarizer = AtomicDirectorySummarizer(
+            metadataLoader: metadataLoader,
+            summaryPool: pool,
+            volumeBoundaryPolicy: policy
+        )
+        let (_, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        var metrics = ScanMetrics()
+        var emissionState = ScanEmissionState()
+
+        let summary = try await summarizer.summarize(
+            at: packageURL,
+            treatPackagesAsDirectories: true,
+            workerLimit: 2,
+            progressWeight: 1,
+            progressKind: .package,
+            ownerNodeID: packageURL.path,
+            expectedRootIdentity: rootIdentity,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: packageURL),
+            cancellationCheck: {},
+            metrics: &metrics,
+            continuation: continuation,
+            emissionState: &emissionState
+        )
+        await pool.finish()
+
+        XCTAssertEqual(summary?.descendantFileCount, 1)
+        XCTAssertEqual(summary?.logicalSize, 7)
+        XCTAssertEqual(summary?.warnings.count, 1)
+        XCTAssertEqual(summary?.warnings.first?.path, boundaryURL.path)
+        XCTAssertEqual(summary?.warnings.first?.category, .fileSystem)
+    }
+
+    func testAutoSummaryProbeStopsAtVolumeBoundary() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let boundaryURL = rootURL.appending(path: "Mounted", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: boundaryURL, withIntermediateDirectories: true)
+        try Data([0x11]).write(to: boundaryURL.appending(path: "foreign.bin"))
+
+        let metadataLoader = ScanMetadataLoader()
+        let policy = try rejectingVolumeBoundaryPolicy(
+            for: rootURL,
+            metadataLoader: metadataLoader
+        )
+        let summarizer = AtomicDirectorySummarizer(
+            metadataLoader: metadataLoader,
+            volumeBoundaryPolicy: policy
+        )
+        let rootMetadata = try metadataLoader.metadata(for: rootURL)
+        let boundaryMetadata = try metadataLoader.metadata(for: boundaryURL)
+        let rootEntries = [DirectoryEntry(
+            url: boundaryURL,
+            metadata: boundaryMetadata,
+            isDirectoryHint: true
+        )]
+        let (_, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        var metrics = ScanMetrics()
+        var emissionState = ScanEmissionState()
+
+        let decision = try await summarizer.summaryDecisionIfNeeded(
+            url: rootURL,
+            childEntries: rootEntries,
+            metadata: rootMetadata,
+            includeHiddenFiles: true,
+            treatPackagesAsDirectories: true,
+            isNodeDependencyLayout: false,
+            minFileCount: 1,
+            maxAverageFileSize: 256,
+            workerLimit: 2,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            cancellationCheck: {},
+            metrics: &metrics,
+            continuation: continuation,
+            emissionState: &emissionState
+        )
+
+        XCTAssertNil(decision.summary)
+    }
+
     func testFoundationAtomicWorkResultRejectsPreAndPostEnumerationReplacement() throws {
         let parentURL = try makeTemporaryDirectory()
         let foreignURL = try makeTemporaryDirectory()
@@ -197,6 +338,7 @@ final class ScanEngineTests: XCTestCase {
             ownerNodeID: rootURL.path,
             exclusionMatcher: matcher,
             metadataLoader: metadataLoader,
+            volumeBoundaryPolicy: .unrestricted,
             cancellationCheck: {},
             metrics: ScanMetrics(),
             continuation: continuation,
@@ -223,6 +365,7 @@ final class ScanEngineTests: XCTestCase {
             ownerNodeID: rootURL.path,
             exclusionMatcher: matcher,
             metadataLoader: metadataLoader,
+            volumeBoundaryPolicy: .unrestricted,
             cancellationCheck: {},
             metrics: ScanMetrics(),
             continuation: continuation,
@@ -296,6 +439,7 @@ final class ScanEngineTests: XCTestCase {
             ownerNodeID: rootURL.path,
             exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
             metadataLoader: metadataLoader,
+            volumeBoundaryPolicy: .unrestricted,
             cancellationCheck: {},
             metrics: ScanMetrics(),
             continuation: continuation,
@@ -532,6 +676,7 @@ final class ScanEngineTests: XCTestCase {
             ownerNodeID: rootURL.path,
             exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
             metadataLoader: metadataLoader,
+            volumeBoundaryPolicy: .unrestricted,
             cancellationCheck: {},
             metrics: base,
             continuation: continuation,
@@ -4469,6 +4614,20 @@ private func makeAtomicSummaryProgressReporter() -> (
     return (
         AtomicSummaryProgressReporter(metrics: ScanMetrics(), continuation: continuation),
         continuation
+    )
+}
+
+private func rejectingVolumeBoundaryPolicy(
+    for rootURL: URL,
+    metadataLoader: ScanMetadataLoader
+) throws -> ScanEngine.ScanVolumeBoundaryPolicy {
+    let actualDeviceID = try XCTUnwrap(
+        metadataLoader.fileSystemIdentity(at: rootURL).fileSystemDeviceID
+    )
+    return ScanEngine.ScanVolumeBoundaryPolicy.resolve(
+        rootPath: rootURL.path,
+        rootDeviceID: actualDeviceID ^ 1,
+        mountedFileSystems: []
     )
 }
 

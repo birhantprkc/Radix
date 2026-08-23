@@ -15,6 +15,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     let metadataLoader: ScanMetadataLoader
     let diagnostics: ScanDiagnosticsContext?
     let summaryPool: AtomicDirectorySummaryPool?
+    let volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy
     #if DEBUG
     let profileReporter: ProfileReporter?
     #endif
@@ -22,11 +23,13 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     init(
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
-        summaryPool: AtomicDirectorySummaryPool? = nil
+        summaryPool: AtomicDirectorySummaryPool? = nil,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted
     ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
         self.summaryPool = summaryPool
+        self.volumeBoundaryPolicy = volumeBoundaryPolicy
         #if DEBUG
         self.profileReporter = nil
         #endif
@@ -37,11 +40,13 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
         summaryPool: AtomicDirectorySummaryPool? = nil,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted,
         profileReporter: ProfileReporter?
     ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
         self.summaryPool = summaryPool
+        self.volumeBoundaryPolicy = volumeBoundaryPolicy
         self.profileReporter = profileReporter
     }
     #endif
@@ -239,6 +244,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                         treatPackagesAsDirectories: treatPackagesAsDirectories,
                         ownerNodeID: url.path,
                         expectedIdentity: expectedRootIdentity,
+                        volumeBoundaryPolicy: volumeBoundaryPolicy,
                         bufferedEntries: childEntries,
                         needsCursor: false,
                         reloadsMissingBufferedMetadata: true
@@ -368,6 +374,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
                     cancellationCheck: cancellationCheck,
                     metrics: metrics,
                     continuation: continuation,
@@ -398,6 +405,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
                     cancellationCheck: cancellationCheck,
                     metrics: metrics,
                     continuation: continuation,
@@ -414,6 +422,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
                     cancellationCheck: cancellationCheck,
                     metrics: metrics,
                     continuation: continuation,

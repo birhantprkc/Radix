@@ -176,6 +176,11 @@ actor ScanEngine {
         private let rootDeviceID: UInt64?
         private let containerDeviceIDs: Set<UInt64>
 
+        static let unrestricted = ScanVolumeBoundaryPolicy(
+            rootDeviceID: nil,
+            containerDeviceIDs: []
+        )
+
         static func resolve(
             rootPath: String,
             rootDeviceID: UInt64?,
@@ -212,12 +217,23 @@ actor ScanEngine {
         }
 
         func shouldStopDescent(childDeviceID: UInt64?) -> Bool {
-            guard let childDeviceID,
-                  let rootDeviceID else {
-                return false
-            }
+            guard let rootDeviceID else { return false }
+            guard let childDeviceID else { return true }
             guard childDeviceID != rootDeviceID else { return false }
             return !containerDeviceIDs.contains(childDeviceID)
+        }
+
+        var requiresChildDeviceIdentity: Bool {
+            rootDeviceID != nil
+        }
+
+        func descentBoundaryError(for url: URL, childDeviceID: UInt64?) -> Error? {
+            guard shouldStopDescent(childDeviceID: childDeviceID) else { return nil }
+            return NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(EXDEV),
+                userInfo: [NSURLErrorKey: url]
+            )
         }
 
         private static func normalizedMountPath(_ path: String) -> String {
@@ -1236,13 +1252,15 @@ actor ScanEngine {
             metadataLoader: scanMetadataLoader,
             diagnostics: diagnostics,
             summaryPool: atomicSummaryPool,
+            volumeBoundaryPolicy: volumeBoundaryPolicy,
             profileReporter: autoSummaryProfileReporter
         )
         #else
         let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
             metadataLoader: scanMetadataLoader,
             diagnostics: diagnostics,
-            summaryPool: atomicSummaryPool
+            summaryPool: atomicSummaryPool,
+            volumeBoundaryPolicy: volumeBoundaryPolicy
         )
         #endif
         let directoryTraversalWorkerLimit = ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
@@ -1453,10 +1471,21 @@ actor ScanEngine {
                     }
                     metrics.currentPath = item.url.path
 
-                    if shouldTraverseDirectory(metadata: meta, options: options),
-                       !volumeBoundaryPolicy.shouldStopDescent(
-                           childDeviceID: meta.fileIdentity?.fileSystemDeviceID
-                       ) {
+                    let traversesDirectory = shouldTraverseDirectory(
+                        metadata: meta,
+                        options: options
+                    )
+                    let summarizesPackage = meta.isPackage
+                        && meta.isDirectory
+                        && !options.treatPackagesAsDirectories
+                    let boundaryError = traversesDirectory || summarizesPackage
+                        ? volumeBoundaryPolicy.descentBoundaryError(
+                            for: item.url,
+                            childDeviceID: meta.fileIdentity?.fileSystemDeviceID
+                        )
+                        : nil
+
+                    if traversesDirectory, boundaryError == nil {
                         metrics.directoriesVisited += 1
                         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
@@ -1569,9 +1598,14 @@ actor ScanEngine {
                         // Leaf node (file, symlink, or package-as-directory). Discovery may
                         // have classified it as a pending directory; release that claim.
                         releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
-                        if meta.isPackage,
-                           meta.isDirectory,
-                           !options.treatPackagesAsDirectories {
+                        if let boundaryError {
+                            let warning = ScanWarningFactory.makeWarning(
+                                for: item.url,
+                                error: boundaryError
+                            )
+                            warnings.append(warning)
+                            continuation.yield(.warning(warning))
+                        } else if summarizesPackage {
                             metrics.pendingPackageSummaryCount += 1
                             metrics.recalculateProgress()
                             atomicSummaryPool.updateProgress(
@@ -1588,6 +1622,7 @@ actor ScanEngine {
                             behavior: behavior,
                             exclusionMatcher: exclusionMatcher,
                             atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
+                            summarizesPackageContents: boundaryError == nil,
                             progressWeight: item.weight,
                             cancellationCheck: cancellationCheck,
                             metrics: &metrics,
@@ -3032,6 +3067,7 @@ actor ScanEngine {
         behavior: ScanBehavior,
         exclusionMatcher: ScanExclusionMatcher,
         atomicDirectorySummarizer: AtomicDirectorySummarizer,
+        summarizesPackageContents: Bool = true,
         progressWeight: Double,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
@@ -3039,7 +3075,10 @@ actor ScanEngine {
         emissionState: inout ScanEmissionState
     ) async throws -> LeafNodeResult {
         try cancellationCheck()
-        guard metadata.isPackage, metadata.isDirectory, !options.treatPackagesAsDirectories else {
+        guard summarizesPackageContents,
+              metadata.isPackage,
+              metadata.isDirectory,
+              !options.treatPackagesAsDirectories else {
             let node = makeFileNode(
                 url: url,
                 metadata: metadata

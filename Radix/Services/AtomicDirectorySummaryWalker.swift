@@ -35,6 +35,7 @@ extension AtomicDirectorySummarizer {
                 ownerNodeID: ownerNodeID,
                 exclusionMatcher: exclusionMatcher,
                 metadataLoader: metadataLoader,
+                volumeBoundaryPolicy: volumeBoundaryPolicy,
                 cancellationCheck: cancellationCheck,
                 metrics: metrics,
                 continuation: continuation,
@@ -51,6 +52,7 @@ extension AtomicDirectorySummarizer {
                 ownerNodeID: ownerNodeID,
                 exclusionMatcher: exclusionMatcher,
                 metadataLoader: metadataLoader,
+                volumeBoundaryPolicy: volumeBoundaryPolicy,
                 cancellationCheck: cancellationCheck,
                 metrics: metrics,
                 continuation: continuation,
@@ -176,6 +178,13 @@ extension AtomicDirectorySummarizer {
         updateAtomicAccessibility(metadata.isReadable, in: state)
 
         if metadata.isDirectory {
+            if let boundaryError = volumeBoundaryPolicy.descentBoundaryError(
+                for: url,
+                childDeviceID: metadata.fileIdentity?.fileSystemDeviceID
+            ) {
+                recordAtomicWarning(for: url, error: boundaryError, in: state)
+                return
+            }
             let nestedTreatsPackagesAsDirectories = metadata.isPackage ? true : treatPackagesAsDirectories
             if metadata.isPackage || !metadata.isSymbolicLink {
                 if let nestedSummary = try await summarize(

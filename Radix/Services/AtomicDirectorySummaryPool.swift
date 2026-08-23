@@ -45,6 +45,7 @@ nonisolated struct AtomicSummaryPoolRequest: @unchecked Sendable {
     let ownerNodeID: String
     let exclusionMatcher: ScanExclusionMatcher
     let metadataLoader: ScanMetadataLoader
+    let volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy
     let cancellationCheck: CancellationCheck
     let metrics: ScanMetrics
     let continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
@@ -619,7 +620,8 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
                 url: request.url,
                 treatPackagesAsDirectories: request.treatPackagesAsDirectories,
                 ownerNodeID: request.ownerNodeID,
-                expectedIdentity: request.expectedRootIdentity
+                expectedIdentity: request.expectedRootIdentity,
+                volumeBoundaryPolicy: request.volumeBoundaryPolicy
             )
         ]
 
@@ -820,7 +822,8 @@ nonisolated final class AtomicDirectorySummaryPool: @unchecked Sendable {
                     url: job.request.url,
                     treatPackagesAsDirectories: job.request.treatPackagesAsDirectories,
                     ownerNodeID: job.request.ownerNodeID,
-                    expectedIdentity: job.request.expectedRootIdentity
+                    expectedIdentity: job.request.expectedRootIdentity,
+                    volumeBoundaryPolicy: job.request.volumeBoundaryPolicy
                 )
             )
             makeRunnableLocked(job)
