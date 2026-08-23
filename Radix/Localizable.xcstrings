@@ -15646,43 +15646,207 @@
         }
       }
     },
-    "Shared APFS storage" : {
-      "comment" : "Secondary status for a full APFS clone whose data storage is shared with another file.",
+    "About shared APFS storage" : {
+      "comment" : "Help and accessibility label for a button that explains shared APFS storage.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geteilter APFS-Speicher"
+            "value" : "Über gemeinsam genutzten APFS-Speicher"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Shared APFS storage"
+            "value" : "About shared APFS storage"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Almacenamiento APFS compartido"
+            "value" : "Acerca del almacenamiento APFS compartido"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stockage APFS partagé"
+            "value" : "À propos du stockage APFS partagé"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spazio APFS condiviso"
+            "value" : "Informazioni sullo spazio APFS condiviso"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共享的 APFS 存储空间"
+            "value" : "关于共享 APFS 存储空间"
+          }
+        }
+      }
+    },
+    "APFS clone · shared storage" : {
+      "comment" : "Secondary status for a full APFS clone whose data storage is shared with another file.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS-Klon · geteilter Speicher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "APFS clone · shared storage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clon de APFS · almacenamiento compartido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clone APFS · stockage partagé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clone APFS · spazio condiviso"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS 克隆 · 共享存储空间"
+          }
+        }
+      }
+    },
+    "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount." : {
+      "comment" : "Inspector explanation for a full APFS clone and Radix's shared-storage accounting.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS ermöglicht es Dateien, Speicher gemeinsam zu nutzen. Radix zählt gemeinsam genutzte Bytes nur einmal, sodass eine Datei die zugeordnete Größe trägt und die anderen möglicherweise null anzeigen. Diese Datei ist nur ein Repräsentant für die Speicherzuordnung, nicht das Original. Durch das Löschen eines Klons wird möglicherweise nicht der angezeigte Speicherplatz freigegeben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS permite que los archivos compartan almacenamiento. Radix cuenta los bytes compartidos una sola vez, por lo que un archivo muestra el tamaño asignado y los demás pueden mostrar cero. Ese archivo es solo un representante contable, no el original. Eliminar un clon puede no liberar la cantidad mostrada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS permet aux fichiers de partager de l’espace de stockage. Radix ne compte les octets partagés qu’une seule fois : un fichier porte donc la taille allouée et les autres peuvent afficher zéro. Ce fichier est uniquement un représentant comptable, pas l’original. La suppression d’un clone peut ne pas libérer la quantité affichée."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS consente ai file di condividere spazio di archiviazione. Radix conta i byte condivisi una sola volta, quindi un file riporta la dimensione allocata e gli altri possono mostrare zero. Quel file è solo un riferimento contabile, non l’originale. L’eliminazione di un clone potrebbe non liberare la quantità indicata."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APFS 允许文件共享存储空间。Radix 只计算一次共享字节，因此一个文件会显示已分配大小，而其他文件可能显示为零。该文件只是记账代表，并非原始文件。删除一个克隆文件不一定会释放所显示的空间。"
+          }
+        }
+      }
+    },
+    "Parts of this file may share APFS storage. macOS does not expose enough information for Radix to calculate exact shared or reclaimable bytes." : {
+      "comment" : "Inspector explanation for a file that may still share some APFS data blocks.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teile dieser Datei nutzen möglicherweise APFS-Speicher gemeinsam. macOS stellt Radix nicht genügend Informationen bereit, um die genaue Anzahl gemeinsam genutzter oder freigebbarer Bytes zu berechnen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Parts of this file may share APFS storage. macOS does not expose enough information for Radix to calculate exact shared or reclaimable bytes."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es posible que partes de este archivo compartan almacenamiento APFS. macOS no proporciona a Radix suficiente información para calcular con exactitud los bytes compartidos o recuperables."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certaines parties de ce fichier peuvent partager du stockage APFS. macOS ne fournit pas à Radix suffisamment d’informations pour calculer précisément les octets partagés ou récupérables."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parti di questo file potrebbero condividere spazio APFS. macOS non fornisce a Radix informazioni sufficienti per calcolare con esattezza i byte condivisi o recuperabili."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件的部分内容可能共享 APFS 存储空间。macOS 未向 Radix 提供足够的信息，无法精确计算共享或可释放的字节数。"
+          }
+        }
+      }
+    },
+    "Storage" : {
+      "comment" : "Inspector section containing information about a file's storage behavior.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speicher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Storage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almacenamiento"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stockage"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archiviazione"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储空间"
           }
         }
       }

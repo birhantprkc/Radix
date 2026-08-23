@@ -31,6 +31,7 @@ struct FileBrowserTableView: View {
 
     @StateObject private var model: FileBrowserModel
     @FocusState private var isSearchFieldFocused: Bool
+    @State private var presentedSharedStorageNodeID: FileNodeRecord.ID?
 
     init(
         scanState: ScanCoordinator,
@@ -152,6 +153,7 @@ struct FileBrowserTableView: View {
             updateModelContent()
         }
         .onDisappear {
+            presentedSharedStorageNodeID = nil
             model.cleanup()
         }
         .onChange(of: focusedWorkspaceTarget) { _, target in
@@ -197,7 +199,8 @@ struct FileBrowserTableView: View {
                     node: node,
                     subtitleOverride: subtitle(for: node),
                     isExpanding: isExpanding(node),
-                    expandAction: { expandSummarizedNode(node) }
+                    expandAction: { expandSummarizedNode(node) },
+                    presentedSharedStorageNodeID: $presentedSharedStorageNodeID
                 )
             }
             .width(min: 260, ideal: 360)
