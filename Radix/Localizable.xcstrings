@@ -15646,6 +15646,47 @@
         }
       }
     },
+    "About shared APFS storage" : {
+      "comment" : "Help and accessibility label for a button that explains shared APFS storage.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Über gemeinsam genutzten APFS-Speicher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "About shared APFS storage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acerca del almacenamiento APFS compartido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "À propos du stockage APFS partagé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informazioni sullo spazio APFS condiviso"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于共享 APFS 存储空间"
+          }
+        }
+      }
+    },
     "APFS clone · shared storage" : {
       "comment" : "Secondary status for a full APFS clone whose data storage is shared with another file.",
       "localizations" : {
