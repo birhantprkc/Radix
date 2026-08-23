@@ -15728,43 +15728,43 @@
         }
       }
     },
-    "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount." : {
-      "comment" : "Inspector explanation for a full APFS clone and Radix's shared-storage accounting.",
+    "APFS lets files share storage, but Finder may show the full file size for every clone. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount." : {
+      "comment" : "Inspector explanation for a full APFS clone, Finder's size display, and Radix's shared-storage accounting.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "APFS ermöglicht es Dateien, Speicher gemeinsam zu nutzen. Radix zählt gemeinsam genutzte Bytes nur einmal, sodass eine Datei die zugeordnete Größe trägt und die anderen möglicherweise null anzeigen. Diese Datei ist nur ein Repräsentant für die Speicherzuordnung, nicht das Original. Durch das Löschen eines Klons wird möglicherweise nicht der angezeigte Speicherplatz freigegeben."
+            "value" : "APFS ermöglicht es Dateien, Speicher gemeinsam zu nutzen, aber der Finder zeigt möglicherweise für jeden Klon die vollständige Dateigröße an. Radix zählt gemeinsam genutzte Bytes nur einmal, sodass eine Datei die zugeordnete Größe trägt und die anderen möglicherweise null anzeigen. Diese Datei ist nur ein Repräsentant für die Speicherzuordnung, nicht das Original. Durch das Löschen eines Klons wird möglicherweise nicht der angezeigte Speicherplatz freigegeben."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
+            "value" : "APFS lets files share storage, but Finder may show the full file size for every clone. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "APFS permite que los archivos compartan almacenamiento. Radix cuenta los bytes compartidos una sola vez, por lo que un archivo muestra el tamaño asignado y los demás pueden mostrar cero. Ese archivo es solo un representante contable, no el original. Eliminar un clon puede no liberar la cantidad mostrada."
+            "value" : "APFS permite que los archivos compartan almacenamiento, pero Finder puede mostrar el tamaño completo de cada clon. Radix cuenta los bytes compartidos una sola vez, por lo que un archivo muestra el tamaño asignado y los demás pueden mostrar cero. Ese archivo es solo un representante contable, no el original. Eliminar un clon puede no liberar la cantidad mostrada."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "APFS permet aux fichiers de partager de l’espace de stockage. Radix ne compte les octets partagés qu’une seule fois : un fichier porte donc la taille allouée et les autres peuvent afficher zéro. Ce fichier est uniquement un représentant comptable, pas l’original. La suppression d’un clone peut ne pas libérer la quantité affichée."
+            "value" : "APFS permet aux fichiers de partager de l’espace de stockage, mais le Finder peut afficher la taille complète de chaque clone. Radix ne compte les octets partagés qu’une seule fois : un fichier porte donc la taille allouée et les autres peuvent afficher zéro. Ce fichier est uniquement un représentant comptable, pas l’original. La suppression d’un clone peut ne pas libérer la quantité affichée."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "APFS consente ai file di condividere spazio di archiviazione. Radix conta i byte condivisi una sola volta, quindi un file riporta la dimensione allocata e gli altri possono mostrare zero. Quel file è solo un riferimento contabile, non l’originale. L’eliminazione di un clone potrebbe non liberare la quantità indicata."
+            "value" : "APFS consente ai file di condividere spazio di archiviazione, ma il Finder potrebbe mostrare la dimensione completa di ogni clone. Radix conta i byte condivisi una sola volta, quindi un file riporta la dimensione allocata e gli altri possono mostrare zero. Quel file è solo un riferimento contabile, non l’originale. L’eliminazione di un clone potrebbe non liberare la quantità indicata."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "APFS 允许文件共享存储空间。Radix 只计算一次共享字节，因此一个文件会显示已分配大小，而其他文件可能显示为零。该文件只是记账代表，并非原始文件。删除一个克隆文件不一定会释放所显示的空间。"
+            "value" : "APFS 允许文件共享存储空间，但“访达”可能会显示每个克隆文件的完整大小。Radix 只计算一次共享字节，因此一个文件会显示已分配大小，而其他文件可能显示为零。该文件只是记账代表，并非原始文件。删除一个克隆文件不一定会释放所显示的空间。"
           }
         }
       }

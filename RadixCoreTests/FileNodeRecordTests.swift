@@ -47,7 +47,7 @@ final class FileNodeRecordTests: XCTestCase {
         XCTAssertEqual(partialClone.sharedStorageStatusText, "May share APFS storage")
         XCTAssertEqual(
             fullClone.sharedStorageDescription,
-            "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
+            "APFS lets files share storage, but Finder may show the full file size for every clone. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
         )
         XCTAssertEqual(
             partialClone.sharedStorageDescription,
