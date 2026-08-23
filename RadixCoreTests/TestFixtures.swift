@@ -90,6 +90,7 @@ func makeTestFileNode(
     cloneIdentity: CloneIdentity? = nil,
     mayShareDataBlocks: Bool = false,
     isSymbolicLink: Bool = false,
+    isAccessible: Bool = true,
     isSynthetic: Bool = false
 ) -> FileNodeRecord {
     FileNodeRecord(
@@ -109,8 +110,8 @@ func makeTestFileNode(
         cloneIdentity: cloneIdentity,
         mayShareDataBlocks: mayShareDataBlocks,
         isPackage: false,
-        isAccessible: true,
-        isSelfAccessible: true,
+        isAccessible: isAccessible,
+        isSelfAccessible: isAccessible,
         isSynthetic: isSynthetic,
         isAutoSummarized: false
     )

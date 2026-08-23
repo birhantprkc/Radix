@@ -43,6 +43,8 @@ final class FileNodeRecordTests: XCTestCase {
 
         XCTAssertEqual(fullClone.secondaryStatusText, "APFS clone · shared storage")
         XCTAssertEqual(partialClone.secondaryStatusText, "May share APFS storage")
+        XCTAssertEqual(fullClone.sharedStorageStatusText, "APFS clone · shared storage")
+        XCTAssertEqual(partialClone.sharedStorageStatusText, "May share APFS storage")
         XCTAssertEqual(
             fullClone.sharedStorageDescription,
             "APFS lets files share storage. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount."
@@ -51,6 +53,21 @@ final class FileNodeRecordTests: XCTestCase {
             partialClone.sharedStorageDescription,
             "Parts of this file may share APFS storage. macOS does not expose enough information for Radix to calculate exact shared or reclaimable bytes."
         )
+        XCTAssertNil(regularFile.sharedStorageStatusText)
         XCTAssertNil(regularFile.sharedStorageDescription)
+    }
+
+    func testSharedStorageStatusRemainsAvailableWhenAccessStatusTakesPrecedence() {
+        let inaccessibleClone = makeTestFileNode(
+            id: "/inaccessible-clone.bin",
+            name: "inaccessible-clone.bin",
+            cloneIdentity: CloneIdentity(device: 1, cloneID: 2),
+            mayShareDataBlocks: true,
+            isAccessible: false
+        )
+
+        XCTAssertEqual(inaccessibleClone.secondaryStatusText, "Limited access")
+        XCTAssertEqual(inaccessibleClone.sharedStorageStatusText, "APFS clone · shared storage")
+        XCTAssertNotNil(inaccessibleClone.sharedStorageDescription)
     }
 }

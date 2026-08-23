@@ -208,6 +208,10 @@ extension FileNodeRecord {
         if !isAccessible {
             return String(localized: "Limited access", comment: "Secondary status for a file or folder that could not be fully read.")
         }
+        return sharedStorageStatusText
+    }
+
+    var sharedStorageStatusText: String? {
         if cloneIdentity != nil {
             return String(localized: "APFS clone · shared storage", comment: "Secondary status for a full APFS clone whose data storage is shared with another file.")
         }

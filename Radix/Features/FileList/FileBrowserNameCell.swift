@@ -38,7 +38,7 @@ struct FileBrowserNameCell: View {
             }
             .accessibilityElement(children: .combine)
 
-            if let title = node.secondaryStatusText,
+            if let title = node.sharedStorageStatusText,
                let description = node.sharedStorageDescription {
                 SharedStorageInfoButton(
                     nodeID: node.id,
@@ -98,6 +98,7 @@ private struct SharedStorageInfoButton: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .font(.callout)
+            .lineLimit(nil)
             .padding(16)
             .frame(width: 310, alignment: .leading)
         }
