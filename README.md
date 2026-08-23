@@ -55,6 +55,7 @@ created by earlier supported versions.
 - Usage stats showing scans completed, data scanned, scan speeds, chart interactions, and cleanup totals — all stored locally on your Mac
 - Quick Look, Open, Reveal in Finder, Copy Path, and Move to Trash actions
 - Drag and drop a folder into the window to start scanning
+- APFS-aware storage accounting that avoids double-counting full clones and explains shared storage in context
 - Automatic updates powered by [Sparkle](https://sparkle-project.org/)
 
 ### Privacy & Permissions
@@ -70,17 +71,6 @@ Radix requires **macOS Sonoma 14 or later**.
 ```bash
 brew install --cask radix
 ```
-
-<details>
-<summary>View a quick note from me, the developer behind Radix</summary>
-
-When people began asking me to get Radix on Homebrew, I never imagined we'd get there so quickly. We only had half of the required stars, and I thought it might take a while before the project was ready.
-
-But here we are now. Radix is on Homebrew, and it's because of your incredible support. Thank you for all the stars, comments, and feedback. Moreover, thank you for giving Radix a chance. I am so, so grateful for the positive feedback you all have given me.
-
-I'm excited to continue improving Radix. Please keep the feedback coming, and thank you again!
-
-</details>
 
 ### Manual Installation
 
