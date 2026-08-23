@@ -3,6 +3,40 @@ import XCTest
 @testable import RadixCore
 
 final class ScanMetadataLoaderTests: XCTestCase {
+    func testFileSystemIdentityValidationUsesTheDedicatedProvider() throws {
+        let url = URL(filePath: "/virtual/directory", directoryHint: .isDirectory)
+        let expectedIdentity = FileIdentity(device: 7, inode: 42)
+        let counters = MetadataProbeCounters()
+        let loader = ScanMetadataLoader(fileSystemInfoProvider: { requestedURL, _ in
+            XCTAssertEqual(requestedURL, url)
+            counters.recordLstat()
+            return (expectedIdentity, 1)
+        })
+
+        XCTAssertEqual(try loader.fileSystemIdentity(at: url), expectedIdentity)
+        XCTAssertNoThrow(try loader.validateFileSystemIdentity(expectedIdentity, at: url))
+        XCTAssertEqual(counters.lstatCount, 2)
+    }
+
+    func testFileSystemIdentityValidationFailsClosedForMissingOrChangedIdentity() {
+        let url = URL(filePath: "/virtual/directory", directoryHint: .isDirectory)
+        let expectedIdentity = FileIdentity(device: 7, inode: 42)
+        for currentIdentity in [nil, FileIdentity(device: 7, inode: 43)] {
+            let loader = ScanMetadataLoader(fileSystemInfoProvider: { _, _ in
+                (currentIdentity, 1)
+            })
+
+            XCTAssertThrowsError(
+                try loader.validateFileSystemIdentity(expectedIdentity, at: url)
+            ) { error in
+                let nsError = error as NSError
+                XCTAssertEqual(nsError.domain, NSPOSIXErrorDomain)
+                XCTAssertEqual(nsError.code, Int(ESTALE))
+                XCTAssertEqual(nsError.userInfo[NSURLErrorKey] as? URL, url)
+            }
+        }
+    }
+
     func testCloneProbeRequestsPhysicalDeviceIdentity() {
         XCTAssertNotEqual(
             ScanMetadataLoader.cloneProbeOptions & UInt32(FSOPT_RETURN_REALDEV),

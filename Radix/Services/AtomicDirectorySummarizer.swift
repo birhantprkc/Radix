@@ -15,6 +15,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     let metadataLoader: ScanMetadataLoader
     let diagnostics: ScanDiagnosticsContext?
     let summaryPool: AtomicDirectorySummaryPool?
+    let volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy
     #if DEBUG
     let profileReporter: ProfileReporter?
     #endif
@@ -22,11 +23,13 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     init(
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
-        summaryPool: AtomicDirectorySummaryPool? = nil
+        summaryPool: AtomicDirectorySummaryPool? = nil,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted
     ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
         self.summaryPool = summaryPool
+        self.volumeBoundaryPolicy = volumeBoundaryPolicy
         #if DEBUG
         self.profileReporter = nil
         #endif
@@ -37,11 +40,13 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
         summaryPool: AtomicDirectorySummaryPool? = nil,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted,
         profileReporter: ProfileReporter?
     ) {
         self.metadataLoader = metadataLoader
         self.diagnostics = diagnostics
         self.summaryPool = summaryPool
+        self.volumeBoundaryPolicy = volumeBoundaryPolicy
         self.profileReporter = profileReporter
     }
     #endif
@@ -89,6 +94,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         url: URL,
         childEntries: [DirectoryEntry],
         metadata: NodeMetadata,
+        expectedRootIdentity: FileIdentity? = nil,
         includeHiddenFiles: Bool,
         treatPackagesAsDirectories: Bool,
         isNodeDependencyLayout: Bool,
@@ -106,6 +112,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             url: url,
             childEntries: childEntries,
             metadata: metadata,
+            expectedRootIdentity: expectedRootIdentity,
             includeHiddenFiles: includeHiddenFiles,
             treatPackagesAsDirectories: treatPackagesAsDirectories,
             isNodeDependencyLayout: isNodeDependencyLayout,
@@ -125,6 +132,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         url: URL,
         childEntries: [DirectoryEntry],
         metadata: NodeMetadata,
+        expectedRootIdentity: FileIdentity? = nil,
         includeHiddenFiles: Bool,
         treatPackagesAsDirectories: Bool,
         isNodeDependencyLayout: Bool,
@@ -235,6 +243,8 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                         url: url,
                         treatPackagesAsDirectories: treatPackagesAsDirectories,
                         ownerNodeID: url.path,
+                        expectedIdentity: expectedRootIdentity,
+                        volumeBoundaryPolicy: volumeBoundaryPolicy,
                         bufferedEntries: childEntries,
                         needsCursor: false,
                         reloadsMissingBufferedMetadata: true
@@ -250,6 +260,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     progressKind: .autoSummary,
                     representedItemCount: childEntries.count,
                     ownerNodeID: url.path,
+                    expectedRootIdentity: expectedRootIdentity,
                     exclusionMatcher: exclusionMatcher,
                     cancellationCheck: cancellationCheck,
                     metrics: &metrics,
@@ -292,6 +303,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             progressKind: .autoSummary,
             representedItemCount: childEntries.count,
             ownerNodeID: url.path,
+            expectedRootIdentity: expectedRootIdentity,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
             metrics: &metrics,
@@ -337,6 +349,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         progressKind: AtomicSummaryProgressKind = .autoSummary,
         representedItemCount: Int = 0,
         ownerNodeID: String,
+        expectedRootIdentity: FileIdentity? = nil,
         exclusionMatcher: ScanExclusionMatcher,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
@@ -352,6 +365,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             let summary = try await summaryPool.summarize(
                 AtomicSummaryPoolRequest(
                     url: url,
+                    expectedRootIdentity: expectedRootIdentity,
                     includeHiddenFiles: includeHiddenFiles,
                     treatPackagesAsDirectories: treatPackagesAsDirectories,
                     progressWeight: progressWeight,
@@ -360,6 +374,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
                     cancellationCheck: cancellationCheck,
                     metrics: metrics,
                     continuation: continuation,
@@ -390,10 +405,12 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
                     cancellationCheck: cancellationCheck,
                     metrics: metrics,
                     continuation: continuation,
-                    resumeState: resumeState
+                    resumeState: resumeState,
+                    expectedRootIdentity: expectedRootIdentity
                 )
             } catch is AtomicSummaryRootFallbackRequired {
                 resumeState?.invalidateCursors()
@@ -405,10 +422,12 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
                     ownerNodeID: ownerNodeID,
                     exclusionMatcher: exclusionMatcher,
                     metadataLoader: metadataLoader,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
                     cancellationCheck: cancellationCheck,
                     metrics: metrics,
                     continuation: continuation,
-                    forcesFoundationTraversal: true
+                    forcesFoundationTraversal: true,
+                    expectedRootIdentity: expectedRootIdentity
                 )
             }
             #if DEBUG
@@ -429,6 +448,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             treatPackagesAsDirectories: treatPackagesAsDirectories,
             workerLimit: workerLimit,
             ownerNodeID: ownerNodeID,
+            expectedRootIdentity: expectedRootIdentity,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
             metrics: &metrics,

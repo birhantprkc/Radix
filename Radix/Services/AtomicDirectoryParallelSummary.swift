@@ -13,23 +13,6 @@ nonisolated private struct AtomicSummaryCancellation: Error {
 
 nonisolated struct AtomicSummaryRootFallbackRequired: Error {}
 
-nonisolated private final class AtomicSummaryWarningCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var warnings: [ScanWarning] = []
-
-    func record(for url: URL, error: Error) {
-        lock.lock()
-        warnings.append(ScanWarningFactory.makeWarning(for: url, error: error))
-        lock.unlock()
-    }
-
-    func collectedWarnings() -> [ScanWarning] {
-        lock.lock()
-        defer { lock.unlock() }
-        return warnings
-    }
-}
-
 nonisolated private final class AtomicSummaryWorkQueue: @unchecked Sendable {
     private let condition = NSCondition()
     private var pendingItems: [AtomicSummaryWorkItem]
@@ -223,7 +206,7 @@ extension AtomicDirectorySummarizer {
         includeHiddenFiles: Bool,
         exclusionMatcher: ScanExclusionMatcher,
         metadataLoader: ScanMetadataLoader,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter,
         forcesFoundationTraversal: Bool
     ) throws -> AtomicSummaryWorkResult {
@@ -332,51 +315,112 @@ extension AtomicDirectorySummarizer {
         includeHiddenFiles: Bool,
         exclusionMatcher: ScanExclusionMatcher,
         metadataLoader: ScanMetadataLoader,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter
     ) throws -> AtomicSummaryWorkResult {
+        var visitedItemCount = 0
+        let result = try processFoundationWorkItem(
+            item,
+            includeHiddenFiles: includeHiddenFiles,
+            exclusionMatcher: exclusionMatcher,
+            metadataLoader: metadataLoader,
+            cancellationCheck: cancellationCheck,
+            progressReporter: progressReporter,
+            progressVisitedItemCount: visitedItemCount
+        )
+        visitedItemCount = ScanIntegerMath.addingClamped(
+            visitedItemCount,
+            result.partial.visitedItemCount
+        )
+        progressReporter.finish(currentURL: item.url, visitedItemCount: visitedItemCount)
+        return result
+    }
+
+    /// Shared classification policy for the rare path-based compatibility
+    /// backend. Results remain local until the post-enumeration identity check.
+    nonisolated static func processFoundationWorkItem(
+        _ item: AtomicSummaryWorkItem,
+        includeHiddenFiles: Bool,
+        exclusionMatcher: ScanExclusionMatcher,
+        metadataLoader: ScanMetadataLoader,
+        cancellationCheck: @escaping CancellationCheck,
+        progressReporter: AtomicSummaryProgressReporter,
+        progressVisitedItemCount: Int,
+        directoryContents: ScanEngine.DirectoryContentsProvider = ScanEngine.defaultDirectoryContents
+    ) throws -> AtomicSummaryWorkResult {
         try cancellationCheck()
+        func warningResult(
+            for url: URL,
+            error: Error,
+            visitedItemCount: Int = 0
+        ) -> AtomicSummaryWorkResult {
+            var partial = AtomicDirectorySummaryPartial()
+            partial.visitedItemCount = visitedItemCount
+            partial.recordWarning(for: url, error: error)
+            return AtomicSummaryWorkResult(partial: partial, pendingItems: [])
+        }
+
+        do {
+            try metadataLoader.validateFileSystemIdentity(item.expectedIdentity, at: item.url)
+        } catch {
+            return warningResult(for: item.url, error: error)
+        }
 
         var options: FileManager.DirectoryEnumerationOptions = [.skipsSubdirectoryDescendants]
         if !includeHiddenFiles {
             options.insert(.skipsHiddenFiles)
         }
 
-        let warningCollector = AtomicSummaryWarningCollector()
-        guard let enumerator = FileManager.default.enumerator(
-            at: item.url,
-            includingPropertiesForKeys: ScanMetadataLoader.atomicSummaryResourceKeys,
-            options: options,
-            errorHandler: { childURL, error in
-                warningCollector.record(for: childURL, error: error)
-                return true
-            }
-        ) else {
-            var partial = AtomicDirectorySummaryPartial()
-            partial.recordWarning(
-                for: item.url,
-                error: NSError(
-                    domain: NSCocoaErrorDomain,
-                    code: NSFileReadUnknownError,
-                    userInfo: [NSURLErrorKey: item.url]
-                )
+        let enumerationResult: ScanEngine.DirectoryEnumerationResult
+        do {
+            enumerationResult = try directoryContents(
+                item.url,
+                ScanMetadataLoader.atomicSummaryResourceKeys,
+                options,
+                cancellationCheck
             )
-            progressReporter.finish(currentURL: item.url, visitedItemCount: 0)
-            return AtomicSummaryWorkResult(partial: partial, pendingItems: [])
+        } catch {
+            try cancellationCheck()
+            return warningResult(for: item.url, error: error)
+        }
+
+        do {
+            try metadataLoader.validateFileSystemIdentity(item.expectedIdentity, at: item.url)
+        } catch {
+            let visitedItemCount = enumerationResult.urls.count
+            let currentProgressVisitedItemCount = ScanIntegerMath.addingClamped(
+                progressVisitedItemCount,
+                visitedItemCount
+            )
+            if let currentURL = enumerationResult.urls.last {
+                progressReporter.emit(
+                    currentURL: currentURL,
+                    visitedItemCount: currentProgressVisitedItemCount
+                )
+            }
+            return warningResult(
+                for: item.url,
+                error: error,
+                visitedItemCount: visitedItemCount
+            )
         }
 
         var partial = AtomicDirectorySummaryPartial()
         var pendingItems: [AtomicSummaryWorkItem] = []
-        var visitedItemCount = 0
-        while let nextObject = enumerator.nextObject() {
+        for childURL in enumerationResult.urls {
             try cancellationCheck()
-            guard let childURL = nextObject as? URL else { continue }
-            visitedItemCount += 1
-            partial.visitedItemCount += 1
-            if visitedItemCount == 1 || visitedItemCount.isMultiple(of: 64) {
+            partial.visitedItemCount = ScanIntegerMath.addingClamped(
+                partial.visitedItemCount,
+                1
+            )
+            let currentProgressVisitedItemCount = ScanIntegerMath.addingClamped(
+                progressVisitedItemCount,
+                partial.visitedItemCount
+            )
+            if currentProgressVisitedItemCount == 1 || currentProgressVisitedItemCount.isMultiple(of: 64) {
                 progressReporter.emit(
                     currentURL: childURL,
-                    visitedItemCount: visitedItemCount
+                    visitedItemCount: currentProgressVisitedItemCount
                 )
             }
 
@@ -429,23 +473,36 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
+            let childIdentity: FileIdentity
+            do {
+                childIdentity = try metadataLoader.fileSystemIdentity(at: childURL)
+            } catch {
+                partial.recordWarning(for: childURL, error: error)
+                continue
+            }
+            if let boundaryError = item.volumeBoundaryPolicy.descentBoundaryError(
+                for: childURL,
+                childDeviceID: childIdentity.fileSystemDeviceID
+            ) {
+                partial.recordWarning(for: childURL, error: boundaryError)
+                continue
+            }
             pendingItems.append(
                 AtomicSummaryWorkItem(
                     url: childURL,
                     treatPackagesAsDirectories: childMetadata.isPackage
                         ? true
                         : item.treatPackagesAsDirectories,
-                    ownerNodeID: item.ownerNodeID
+                    ownerNodeID: item.ownerNodeID,
+                    expectedIdentity: childIdentity,
+                    volumeBoundaryPolicy: item.volumeBoundaryPolicy
                 )
             )
         }
 
-        let localizedWarnings = warningCollector.collectedWarnings()
-        if !localizedWarnings.isEmpty {
-            partial.isAccessible = false
-            partial.warnings.append(contentsOf: localizedWarnings)
+        for failure in enumerationResult.localizedFailures {
+            partial.recordWarning(for: failure.url, error: failure.error)
         }
-        progressReporter.finish(currentURL: item.url, visitedItemCount: visitedItemCount)
         return AtomicSummaryWorkResult(partial: partial, pendingItems: pendingItems)
     }
 
@@ -457,11 +514,13 @@ extension AtomicDirectorySummarizer {
         ownerNodeID: String,
         exclusionMatcher: ScanExclusionMatcher,
         metadataLoader: ScanMetadataLoader,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted,
         cancellationCheck: @escaping CancellationCheck,
         metrics: ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
         resumeState: AtomicDirectoryProbeResumeState? = nil,
-        forcesFoundationTraversal: Bool = false
+        forcesFoundationTraversal: Bool = false,
+        expectedRootIdentity: FileIdentity? = nil
     ) async throws -> AtomicDirectorySummary? {
         try cancellationCheck()
         #if DEBUG
@@ -486,7 +545,9 @@ extension AtomicDirectorySummarizer {
             AtomicSummaryWorkItem(
                 url: url,
                 treatPackagesAsDirectories: treatPackagesAsDirectories,
-                ownerNodeID: ownerNodeID
+                ownerNodeID: ownerNodeID,
+                expectedIdentity: expectedRootIdentity,
+                volumeBoundaryPolicy: volumeBoundaryPolicy
             )
         ]
         let queue = AtomicSummaryWorkQueue(items: initialItems)
@@ -554,7 +615,7 @@ extension AtomicDirectorySummarizer {
         accumulator: AtomicSummaryAccumulator,
         queue: AtomicSummaryWorkQueue,
         metadataLoader: ScanMetadataLoader,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter,
         workerVisitedItemCount: inout Int,
         forcesFoundationTraversal: Bool
@@ -753,11 +814,23 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
+            if let boundaryError = item.volumeBoundaryPolicy.descentBoundaryError(
+                for: childURL,
+                childDeviceID: childMetadata.fileIdentity?.fileSystemDeviceID
+            ) {
+                partial.recordWarning(for: childURL, error: boundaryError)
+                continue
+            }
+
             pendingItems.append(
                 AtomicSummaryWorkItem(
                     url: childURL,
                     treatPackagesAsDirectories: childMetadata.isPackage ? true : item.treatPackagesAsDirectories,
-                    ownerNodeID: item.ownerNodeID
+                    ownerNodeID: item.ownerNodeID,
+                    expectedIdentity: childMetadata.fileIdentity?.isFileSystemIdentity == true
+                        ? childMetadata.fileIdentity
+                        : nil,
+                    volumeBoundaryPolicy: item.volumeBoundaryPolicy
                 )
             )
         }
@@ -773,99 +846,26 @@ extension AtomicDirectorySummarizer {
         accumulator: AtomicSummaryAccumulator,
         queue: AtomicSummaryWorkQueue,
         metadataLoader: ScanMetadataLoader,
-        cancellationCheck: CancellationCheck,
+        cancellationCheck: @escaping CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter,
         workerVisitedItemCount: inout Int
     ) throws {
-        try cancellationCheck()
-
-        var options: FileManager.DirectoryEnumerationOptions = [.skipsSubdirectoryDescendants]
-        if !includeHiddenFiles {
-            options.insert(.skipsHiddenFiles)
+        let result = try processFoundationWorkItem(
+            item,
+            includeHiddenFiles: includeHiddenFiles,
+            exclusionMatcher: exclusionMatcher,
+            metadataLoader: metadataLoader,
+            cancellationCheck: cancellationCheck,
+            progressReporter: progressReporter,
+            progressVisitedItemCount: workerVisitedItemCount
+        )
+        workerVisitedItemCount = ScanIntegerMath.addingClamped(
+            workerVisitedItemCount,
+            result.partial.visitedItemCount
+        )
+        accumulator.merge(result.partial)
+        for pendingItem in result.pendingItems {
+            queue.enqueue(pendingItem)
         }
-
-        guard let enumerator = FileManager.default.enumerator(
-            at: item.url,
-            includingPropertiesForKeys: ScanMetadataLoader.atomicSummaryResourceKeys,
-            options: options,
-            errorHandler: { childURL, error in
-                accumulator.recordWarning(for: childURL, error: error)
-                return true
-            }
-        ) else {
-            accumulator.recordWarning(
-                for: item.url,
-                error: NSError(
-                    domain: NSCocoaErrorDomain,
-                    code: NSFileReadUnknownError,
-                    userInfo: [NSURLErrorKey: item.url]
-                )
-            )
-            return
-        }
-
-        var partial = AtomicDirectorySummaryPartial()
-        while let nextObject = enumerator.nextObject() {
-            try cancellationCheck()
-            guard let childURL = nextObject as? URL else { continue }
-            workerVisitedItemCount += 1
-            partial.visitedItemCount += 1
-            if workerVisitedItemCount == 1 || workerVisitedItemCount.isMultiple(of: 64) {
-                progressReporter.emit(
-                    currentURL: childURL,
-                    visitedItemCount: workerVisitedItemCount
-                )
-            }
-
-            let hintedIsDirectory = childURL.hasDirectoryPath
-            let childPath = childURL.path
-            guard !exclusionMatcher.excludesKnownNormalizedPath(
-                childPath,
-                isDirectory: hintedIsDirectory
-            ) else {
-                continue
-            }
-
-            let childMetadata: NodeMetadata
-            do {
-                let values = try childURL.resourceValues(forKeys: ScanMetadataLoader.atomicSummaryResourceKeySet)
-                childMetadata = metadataLoader.atomicSummaryMetadata(for: childURL, prefetchedResourceValues: values)
-            } catch {
-                partial.recordWarning(for: childURL, error: error)
-                continue
-            }
-
-            guard childMetadata.isDirectory == hintedIsDirectory ||
-                    !exclusionMatcher.excludesKnownNormalizedPath(
-                        childPath,
-                        isDirectory: childMetadata.isDirectory
-                    ) else {
-                continue
-            }
-            guard !childMetadata.isDataless else { continue }
-
-            partial.updateAccessibility(childMetadata.isReadable)
-
-            guard childMetadata.isDirectory else {
-                partial.accumulateFile(childMetadata, url: childURL, ownerNodeID: item.ownerNodeID)
-                continue
-            }
-
-            let isTraversablePackageSymlink = childMetadata.isSymbolicLink
-                && childMetadata.isPackage
-                && !item.treatPackagesAsDirectories
-            guard !childMetadata.isSymbolicLink || isTraversablePackageSymlink else {
-                continue
-            }
-
-            queue.enqueue(
-                AtomicSummaryWorkItem(
-                    url: childURL,
-                    treatPackagesAsDirectories: childMetadata.isPackage ? true : item.treatPackagesAsDirectories,
-                    ownerNodeID: item.ownerNodeID
-                )
-            )
-        }
-        accumulator.merge(partial)
     }
 }

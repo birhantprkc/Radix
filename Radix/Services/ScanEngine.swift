@@ -148,6 +148,120 @@ actor ScanEngine {
         static let standard = ScanBehavior(excludesStartupVolumeInternals: false)
     }
 
+    nonisolated struct ScanMountedFileSystem: Sendable {
+        let mountPath: String
+        let deviceName: String
+        let fileSystemType: String
+        let deviceID: UInt64?
+
+        init(
+            mountPath: String,
+            deviceName: String,
+            fileSystemType: String,
+            deviceID: UInt64? = nil
+        ) {
+            self.mountPath = mountPath
+            self.deviceName = deviceName
+            self.fileSystemType = fileSystemType
+            self.deviceID = deviceID
+        }
+    }
+
+    /// Decides whether directory traversal may cross a device boundary. Nested
+    /// mounts from foreign containers (DMGs, network shares, autofs, other disks)
+    /// become leaf nodes so their bytes are not folded into the scanned tree,
+    /// while firmlinked volumes of the scan root's own APFS container remain
+    /// traversable (a startup-scan must reach the Data volume's user data).
+    nonisolated struct ScanVolumeBoundaryPolicy: Sendable {
+        private let rootDeviceID: UInt64?
+        private let containerDeviceIDs: Set<UInt64>
+
+        static let unrestricted = ScanVolumeBoundaryPolicy(
+            rootDeviceID: nil,
+            containerDeviceIDs: []
+        )
+
+        static func resolve(
+            rootPath: String,
+            rootDeviceID: UInt64?,
+            mountedFileSystems: [ScanMountedFileSystem]
+        ) -> ScanVolumeBoundaryPolicy {
+            let normalizedRootPath = normalizedMountPath(rootPath)
+            let rootMount = mountedFileSystems
+                .filter {
+                    isPath(
+                        normalizedRootPath,
+                        within: normalizedMountPath($0.mountPath)
+                    )
+                }
+                .max { $0.mountPath.count < $1.mountPath.count }
+            guard let rootMount,
+                  let rootContainerID = containerIdentifier(of: rootMount) else {
+                return ScanVolumeBoundaryPolicy(
+                    rootDeviceID: rootDeviceID,
+                    containerDeviceIDs: []
+                )
+            }
+
+            let containerDeviceIDs = Set(mountedFileSystems
+                .filter {
+                    $0.fileSystemType == "apfs"
+                        && containerIdentifier(of: $0) == rootContainerID
+                }
+                .compactMap(\.deviceID))
+
+            return ScanVolumeBoundaryPolicy(
+                rootDeviceID: rootDeviceID,
+                containerDeviceIDs: containerDeviceIDs
+            )
+        }
+
+        func shouldStopDescent(childDeviceID: UInt64?) -> Bool {
+            guard let rootDeviceID else { return false }
+            guard let childDeviceID else { return true }
+            guard childDeviceID != rootDeviceID else { return false }
+            return !containerDeviceIDs.contains(childDeviceID)
+        }
+
+        var requiresChildDeviceIdentity: Bool {
+            rootDeviceID != nil
+        }
+
+        func descentBoundaryError(for url: URL, childDeviceID: UInt64?) -> Error? {
+            guard shouldStopDescent(childDeviceID: childDeviceID) else { return nil }
+            return NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(EXDEV),
+                userInfo: [NSURLErrorKey: url]
+            )
+        }
+
+        private static func normalizedMountPath(_ path: String) -> String {
+            var path = path
+            while path.count > 1 && path.hasSuffix("/") {
+                path.removeLast()
+            }
+            return path
+        }
+
+        private static func isPath(_ path: String, within mountPath: String) -> Bool {
+            if mountPath == "/" {
+                return path.hasPrefix("/")
+            }
+            return path == mountPath || path.hasPrefix(mountPath + "/")
+        }
+
+        /// APFS synthesizer names encode the container in the disk number:
+        /// "disk3s5" and "disk3s1s1" both belong to container "disk3".
+        private static func containerIdentifier(of mount: ScanMountedFileSystem) -> String? {
+            let deviceName = (mount.deviceName as NSString).lastPathComponent
+            guard let match = deviceName.firstMatch(of: /^disk(\d+)(s\d+)+$/) else {
+                return deviceName.isEmpty ? nil : deviceName
+            }
+            return "disk\(match.1)"
+        }
+    }
+
     private struct AggregateStatsAccumulator {
         private(set) var fileCount = 0
         private(set) var directoryCount = 0
@@ -557,7 +671,7 @@ actor ScanEngine {
            atomicSummaryProgressEmissionInterval: atomicSummaryProgressEmissionInterval)
     }
 
-    private nonisolated static func defaultDirectoryContents(
+    nonisolated static func defaultDirectoryContents(
         url: URL,
         keys: [URLResourceKey]?,
         options: FileManager.DirectoryEnumerationOptions,
@@ -609,6 +723,45 @@ actor ScanEngine {
             let buffer = rawBuffer.bindMemory(to: CChar.self)
             guard let baseAddress = buffer.baseAddress else { return nil }
             return String(cString: baseAddress)
+        }
+    }
+
+    nonisolated static func defaultMountedFileSystems() -> [ScanMountedFileSystem] {
+        var mountBuffer: UnsafeMutablePointer<statfs>?
+        let mountCount = getmntinfo_r_np(&mountBuffer, MNT_NOWAIT)
+        guard mountCount > 0, let mountBuffer else { return [] }
+        defer { free(mountBuffer) }
+
+        return (0..<Int(mountCount)).compactMap { offset in
+            let entry = mountBuffer[offset]
+            func cString<T>(from field: T) -> String {
+                withUnsafeBytes(of: field) { rawBuffer -> String in
+                    let buffer = rawBuffer.bindMemory(to: CChar.self)
+                    guard let baseAddress = buffer.baseAddress else { return "" }
+                    return String(cString: baseAddress)
+                }
+            }
+            let mountPath = cString(from: entry.f_mntonname)
+            guard !mountPath.isEmpty else { return nil }
+            let fileSystemType = cString(from: entry.f_fstypename)
+            let deviceID: UInt64?
+            if fileSystemType == "apfs" {
+                var mountStatus = stat()
+                let statusResult = mountPath.withCString { path in
+                    lstat(path, &mountStatus)
+                }
+                deviceID = statusResult == 0
+                    ? UInt64(truncatingIfNeeded: mountStatus.st_dev)
+                    : nil
+            } else {
+                deviceID = nil
+            }
+            return ScanMountedFileSystem(
+                mountPath: mountPath,
+                deviceName: cString(from: entry.f_mntfromname),
+                fileSystemType: fileSystemType,
+                deviceID: deviceID
+            )
         }
     }
 
@@ -1075,6 +1228,11 @@ actor ScanEngine {
         guard !rootMetadata.isDataless else {
             throw ScanEngineError.cloudOnlyRoot
         }
+        let volumeBoundaryPolicy = ScanVolumeBoundaryPolicy.resolve(
+            rootPath: target.url.standardizedFileURL.path,
+            rootDeviceID: rootMetadata.fileIdentity?.fileSystemDeviceID,
+            mountedFileSystems: Self.defaultMountedFileSystems()
+        )
         metrics.discoveredItems = 1
         metrics.volumeCapacity = target.kind == .volume ? rootMetadata.volumeCapacity : nil
         metrics.estimatedTotalBytes = estimatedTotalBytes(for: target, metadata: rootMetadata)
@@ -1094,13 +1252,15 @@ actor ScanEngine {
             metadataLoader: scanMetadataLoader,
             diagnostics: diagnostics,
             summaryPool: atomicSummaryPool,
+            volumeBoundaryPolicy: volumeBoundaryPolicy,
             profileReporter: autoSummaryProfileReporter
         )
         #else
         let scanAtomicDirectorySummarizer = AtomicDirectorySummarizer(
             metadataLoader: scanMetadataLoader,
             diagnostics: diagnostics,
-            summaryPool: atomicSummaryPool
+            summaryPool: atomicSummaryPool,
+            volumeBoundaryPolicy: volumeBoundaryPolicy
         )
         #endif
         let directoryTraversalWorkerLimit = ScanConcurrencyPolicy.directoryTraversalWorkerLimit(for: options)
@@ -1136,6 +1296,7 @@ actor ScanEngine {
                 url: target.url,
                 metadata: rootMetadata,
                 options: options,
+                behavior: behavior,
                 exclusionMatcher: exclusionMatcher,
                 atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                 progressWeight: 1,
@@ -1310,7 +1471,21 @@ actor ScanEngine {
                     }
                     metrics.currentPath = item.url.path
 
-                    if shouldTraverseDirectory(metadata: meta, options: options) {
+                    let traversesDirectory = shouldTraverseDirectory(
+                        metadata: meta,
+                        options: options
+                    )
+                    let summarizesPackage = meta.isPackage
+                        && meta.isDirectory
+                        && !options.treatPackagesAsDirectories
+                    let boundaryError = traversesDirectory || summarizesPackage
+                        ? volumeBoundaryPolicy.descentBoundaryError(
+                            for: item.url,
+                            childDeviceID: meta.fileIdentity?.fileSystemDeviceID
+                        )
+                        : nil
+
+                    if traversesDirectory, boundaryError == nil {
                         metrics.directoriesVisited += 1
                         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
@@ -1423,9 +1598,14 @@ actor ScanEngine {
                         // Leaf node (file, symlink, or package-as-directory). Discovery may
                         // have classified it as a pending directory; release that claim.
                         releasePendingDirectoryIfNeeded(for: item, metrics: &metrics)
-                        if meta.isPackage,
-                           meta.isDirectory,
-                           !options.treatPackagesAsDirectories {
+                        if let boundaryError {
+                            let warning = ScanWarningFactory.makeWarning(
+                                for: item.url,
+                                error: boundaryError
+                            )
+                            warnings.append(warning)
+                            continuation.yield(.warning(warning))
+                        } else if summarizesPackage {
                             metrics.pendingPackageSummaryCount += 1
                             metrics.recalculateProgress()
                             atomicSummaryPool.updateProgress(
@@ -1439,8 +1619,10 @@ actor ScanEngine {
                             url: item.url,
                             metadata: meta,
                             options: options,
+                            behavior: behavior,
                             exclusionMatcher: exclusionMatcher,
                             atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
+                            summarizesPackageContents: boundaryError == nil,
                             progressWeight: item.weight,
                             cancellationCheck: cancellationCheck,
                             metrics: &metrics,
@@ -1489,6 +1671,7 @@ actor ScanEngine {
                             url: taskItem.url,
                             metadata: taskMetadata,
                             options: options,
+                            behavior: behavior,
                             exclusionMatcher: exclusionMatcher,
                             atomicDirectorySummarizer: scanAtomicDirectorySummarizer,
                             progressWeight: taskItem.weight,
@@ -1518,6 +1701,10 @@ actor ScanEngine {
                             url: candidate.item.url,
                             childEntries: candidate.contents.entries,
                             metadata: candidate.metadata,
+                            expectedRootIdentity: Self.verifiesDirectoryIdentity(
+                                at: candidate.item.url,
+                                behavior: behavior
+                            ) ? candidate.metadata.fileIdentity : nil,
                             includeHiddenFiles: options.includeHiddenFiles,
                             treatPackagesAsDirectories: options.treatPackagesAsDirectories,
                             isNodeDependencyLayout: candidate.isNodeDependencyLayout,
@@ -2626,6 +2813,11 @@ actor ScanEngine {
             options.insert(.skipsHiddenFiles)
         }
 
+        try metadataLoader.validateFileSystemIdentity(
+            expectedIdentity,
+            at: url
+        )
+
         let prefetchKeys = shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
             ? nil
             : Array(resourceKeys)
@@ -2633,6 +2825,13 @@ actor ScanEngine {
         let enumerationStart = DispatchTime.now().uptimeNanoseconds
         #endif
         let enumerationResult = try directoryContents(url, prefetchKeys, options, cancellationCheck)
+        // FileManager has no descriptor-relative directory API. Bookend its
+        // path-based enumeration so any replacement that persists across the
+        // call is discarded instead of entering the scan.
+        try metadataLoader.validateFileSystemIdentity(
+            expectedIdentity,
+            at: url
+        )
         #if DEBUG
         let enumerationNanoseconds = DispatchTime.now().uptimeNanoseconds - enumerationStart
         #endif
@@ -2865,8 +3064,10 @@ actor ScanEngine {
         url: URL,
         metadata: NodeMetadata,
         options: ScanOptions,
+        behavior: ScanBehavior,
         exclusionMatcher: ScanExclusionMatcher,
         atomicDirectorySummarizer: AtomicDirectorySummarizer,
+        summarizesPackageContents: Bool = true,
         progressWeight: Double,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
@@ -2874,7 +3075,10 @@ actor ScanEngine {
         emissionState: inout ScanEmissionState
     ) async throws -> LeafNodeResult {
         try cancellationCheck()
-        guard metadata.isPackage, metadata.isDirectory, !options.treatPackagesAsDirectories else {
+        guard summarizesPackageContents,
+              metadata.isPackage,
+              metadata.isDirectory,
+              !options.treatPackagesAsDirectories else {
             let node = makeFileNode(
                 url: url,
                 metadata: metadata
@@ -2906,6 +3110,10 @@ actor ScanEngine {
             progressKind: .package,
             representedItemCount: 0,
             ownerNodeID: url.path,
+            expectedRootIdentity: Self.verifiesDirectoryIdentity(
+                at: url,
+                behavior: behavior
+            ) ? metadata.fileIdentity : nil,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
             metrics: &metrics,

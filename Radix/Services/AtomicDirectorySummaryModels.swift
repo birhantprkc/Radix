@@ -91,6 +91,8 @@ nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
     let url: URL
     let treatPackagesAsDirectories: Bool
     let ownerNodeID: String
+    let expectedIdentity: FileIdentity?
+    let volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy
     var bufferedEntries: [DirectoryEntry]
     var nextEntryIndex: Int
     var cursor: BulkDirectoryEnumerator.Cursor?
@@ -106,6 +108,8 @@ nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
         url: URL,
         treatPackagesAsDirectories: Bool,
         ownerNodeID: String,
+        expectedIdentity: FileIdentity? = nil,
+        volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted,
         bufferedEntries: [DirectoryEntry] = [],
         nextEntryIndex: Int = 0,
         cursor: BulkDirectoryEnumerator.Cursor? = nil,
@@ -116,6 +120,8 @@ nonisolated struct AtomicSummaryWorkItem: @unchecked Sendable {
         self.url = url
         self.treatPackagesAsDirectories = treatPackagesAsDirectories
         self.ownerNodeID = ownerNodeID
+        self.expectedIdentity = expectedIdentity
+        self.volumeBoundaryPolicy = volumeBoundaryPolicy
         self.bufferedEntries = bufferedEntries
         self.nextEntryIndex = nextEntryIndex
         self.cursor = cursor
