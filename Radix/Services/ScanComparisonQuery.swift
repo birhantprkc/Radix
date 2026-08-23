@@ -8,10 +8,17 @@ nonisolated struct ScanComparisonSearchIndex: Equatable, Sendable {
 
     private let entryByRowID: [ScanComparisonRow.ID: Entry]
 
-    init(rows: [ScanComparisonRow]) {
+    init(
+        rows: [ScanComparisonRow],
+        cancellationCheck: CancellationCheck
+    ) throws {
+        try cancellationCheck()
         var entryByRowID: [ScanComparisonRow.ID: Entry] = [:]
         entryByRowID.reserveCapacity(rows.count)
-        for row in rows {
+        for (offset, row) in rows.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
             entryByRowID[row.id] = Entry(
                 name: SearchNormalizer.normalize(row.name),
                 relativePath: SearchNormalizer.normalize(row.relativePath)
@@ -118,29 +125,50 @@ nonisolated struct ScanComparisonRowQuery: Equatable, Sendable {
 
     func applying(
         to rows: [ScanComparisonRow],
-        searchIndex: ScanComparisonSearchIndex? = nil
-    ) -> [ScanComparisonRow] {
+        searchIndex: ScanComparisonSearchIndex? = nil,
+        cancellationCheck: CancellationCheck
+    ) throws -> [ScanComparisonRow] {
+        try cancellationCheck()
         let query = SearchNormalizer.normalize(
             searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        let filteredRows = rows.filter { row in
-            guard changeKinds.contains(row.kind) else { return false }
+        var filteredRows: [ScanComparisonRow] = []
+        filteredRows.reserveCapacity(rows.count)
+        for (offset, row) in rows.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            guard changeKinds.contains(row.kind) else { continue }
             if let pathPrefix, !pathPrefix.isEmpty {
                 guard row.relativePath == pathPrefix || row.relativePath.hasPrefix(pathPrefix + "/") else {
-                    return false
+                    continue
                 }
             }
-            guard !query.isEmpty else { return true }
-            if let searchIndex {
-                return searchIndex.row(row, matches: query)
+            guard !query.isEmpty else {
+                filteredRows.append(row)
+                continue
             }
-            return SearchNormalizer.normalize(row.name).contains(query)
-                || SearchNormalizer.normalize(row.relativePath).contains(query)
+            if let searchIndex {
+                if searchIndex.row(row, matches: query) {
+                    filteredRows.append(row)
+                }
+                continue
+            }
+            if SearchNormalizer.normalize(row.name).contains(query)
+                || SearchNormalizer.normalize(row.relativePath).contains(query) {
+                filteredRows.append(row)
+            }
         }
 
+        try cancellationCheck()
         guard !sortOrder.isEmpty else { return filteredRows }
-        return filteredRows.sorted { lhs, rhs in
+        let sortedRows = try CancellableSort.sorted(
+            &filteredRows,
+            cancellationCheck: cancellationCheck
+        ) { lhs, rhs in
             ScanComparisonRowComparator.sortsBefore(lhs, rhs, using: sortOrder)
         }
+        try cancellationCheck()
+        return sortedRows
     }
 }

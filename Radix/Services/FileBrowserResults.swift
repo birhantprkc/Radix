@@ -91,11 +91,12 @@ enum FileBrowserResults {
         )
         try cancellationCheck()
 
-        let sortedNodes = try cancellablySorted(
+        let sortedNodes = try CancellableSort.sorted(
             &preparedNodes,
-            sortOrder: sortOrder,
             cancellationCheck: cancellationCheck
-        )
+        ) { lhs, rhs in
+            lhs.isOrderedBefore(rhs, using: sortOrder)
+        }
         try cancellationCheck()
         var result: [FileNodeRecord] = []
         result.reserveCapacity(sortedNodes.count)
@@ -109,81 +110,6 @@ enum FileBrowserResults {
             try cancellationCheck()
         }
         return result
-    }
-
-    private nonisolated static func cancellablySorted(
-        _ nodes: inout [PreparedSortNode],
-        sortOrder: [FileNodeTableComparator],
-        cancellationCheck: @Sendable () throws -> Void
-    ) rethrows -> [PreparedSortNode] {
-        let chunkSize = 16_384
-        guard nodes.count > chunkSize else {
-            return nodes.sorted { lhs, rhs in
-                lhs.isOrderedBefore(rhs, using: sortOrder)
-            }
-        }
-
-        var source: [PreparedSortNode] = []
-        source.reserveCapacity(nodes.count)
-
-        for start in stride(from: 0, to: nodes.count, by: chunkSize) {
-            try cancellationCheck()
-            let end = min(start + chunkSize, nodes.count)
-            source.append(contentsOf: nodes[start..<end].sorted { lhs, rhs in
-                lhs.isOrderedBefore(rhs, using: sortOrder)
-            })
-        }
-        nodes.removeAll(keepingCapacity: false)
-        try cancellationCheck()
-        var destination = source
-        var runSize = chunkSize
-        while runSize < source.count {
-            let combinedRunSize = runSize * 2
-            for start in stride(from: 0, to: source.count, by: combinedRunSize) {
-                try mergeSortedRuns(
-                    from: source,
-                    into: &destination,
-                    start: start,
-                    middle: min(start + runSize, source.count),
-                    end: min(start + combinedRunSize, source.count),
-                    sortOrder: sortOrder,
-                    cancellationCheck: cancellationCheck
-                )
-            }
-            swap(&source, &destination)
-            runSize = combinedRunSize
-        }
-        return source
-    }
-
-    private nonisolated static func mergeSortedRuns(
-        from source: [PreparedSortNode],
-        into destination: inout [PreparedSortNode],
-        start: Int,
-        middle: Int,
-        end: Int,
-        sortOrder: [FileNodeTableComparator],
-        cancellationCheck: @Sendable () throws -> Void
-    ) rethrows {
-        var lhsIndex = start
-        var rhsIndex = middle
-
-        for writeIndex in start..<end {
-            if (writeIndex - start).isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            if lhsIndex == middle {
-                destination[writeIndex] = source[rhsIndex]
-                rhsIndex += 1
-            } else if rhsIndex == end ||
-                        !source[rhsIndex].isOrderedBefore(source[lhsIndex], using: sortOrder) {
-                destination[writeIndex] = source[lhsIndex]
-                lhsIndex += 1
-            } else {
-                destination[writeIndex] = source[rhsIndex]
-                rhsIndex += 1
-            }
-        }
     }
 
     private nonisolated static func preparedSortNodes(

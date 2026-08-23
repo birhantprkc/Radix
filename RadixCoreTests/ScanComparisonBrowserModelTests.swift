@@ -8,7 +8,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         let model = ScanComparisonBrowserModel(
             searchDebounceNanoseconds: 0,
             processor: { input in
-                await gate.process(input)
+                try await gate.process(input)
             }
         )
         let rows = [makeRow("first.txt"), makeRow("second.txt")]
@@ -52,7 +52,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         let model = ScanComparisonBrowserModel(
             searchDebounceNanoseconds: 0,
             processor: { input in
-                await gate.process(input)
+                try await gate.process(input)
             }
         )
         let rows = [makeRow("first.txt"), makeRow("second.txt")]
@@ -89,7 +89,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         let model = ScanComparisonBrowserModel(
             searchDebounceNanoseconds: 0,
             processor: { input in
-                await gate.process(input)
+                try await gate.process(input)
             }
         )
         let rows = [makeRow("first.txt")]
@@ -199,7 +199,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         let model = ScanComparisonBrowserModel(
             searchDebounceNanoseconds: 1,
             processor: { input in
-                await recorder.process(input)
+                try await recorder.process(input)
             },
             sleeper: { _ in
                 await Task.yield()
@@ -286,14 +286,17 @@ private actor ComparisonProcessorGate {
 
     func process(
         _ input: ScanComparisonBrowserModel.WorkInput
-    ) async -> ScanComparisonBrowserModel.WorkOutput {
+    ) async throws -> ScanComparisonBrowserModel.WorkOutput {
         let index = inputs.count
         inputs.append(input)
         await withCheckedContinuation { continuation in
             continuations[index] = continuation
         }
         return ScanComparisonBrowserModel.WorkOutput(
-            rows: input.query.applying(to: input.rows),
+            rows: try input.query.applying(
+                to: input.rows,
+                cancellationCheck: {}
+            ),
             projection: input.changeTree.significantProjection(changeKinds: input.changeKinds)
         )
     }
@@ -308,10 +311,13 @@ private actor ComparisonProcessorRecorder {
 
     func process(
         _ input: ScanComparisonBrowserModel.WorkInput
-    ) -> ScanComparisonBrowserModel.WorkOutput {
+    ) throws -> ScanComparisonBrowserModel.WorkOutput {
         searchTexts.append(input.query.searchText)
         return ScanComparisonBrowserModel.WorkOutput(
-            rows: input.query.applying(to: input.rows),
+            rows: try input.query.applying(
+                to: input.rows,
+                cancellationCheck: {}
+            ),
             projection: input.changeTree.significantProjection(changeKinds: input.changeKinds)
         )
     }

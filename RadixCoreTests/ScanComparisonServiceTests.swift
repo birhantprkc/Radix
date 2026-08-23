@@ -1065,7 +1065,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(comparison.coverage.scanOptionsMatch, true)
     }
 
-    func testRowQuerySortsDeltaByDisplayedSignedValue() {
+    func testRowQuerySortsDeltaByDisplayedSignedValue() throws {
         let grewBefore = makeTestFileNode(id: "/before/grew.bin", name: "grew.bin", size: 10)
         let grewAfter = makeTestFileNode(id: "/after/grew.bin", name: "grew.bin", size: 20)
         let shrankBefore = makeTestFileNode(id: "/before/shrank.bin", name: "shrank.bin", size: 100)
@@ -1089,12 +1089,12 @@ final class ScanComparisonServiceTests: XCTestCase {
             sortOrder: [ScanComparisonRowComparator(field: .allocatedDelta, order: .reverse)]
         )
 
-        let result = query.applying(to: rows)
+        let result = try query.applying(to: rows, cancellationCheck: {})
 
         XCTAssertEqual(result.map(\.relativePath), ["grew.bin", "shrank.bin"])
     }
 
-    func testRowQueryUsesSecondaryDescriptorBeforeDeterministicFallback() {
+    func testRowQueryUsesSecondaryDescriptorBeforeDeterministicFallback() throws {
         let alpha = makeTestFileNode(id: "/after/alpha.bin", name: "alpha.bin", size: 10)
         let zeta = makeTestFileNode(id: "/after/zeta.bin", name: "zeta.bin", size: 10)
         let rows = [
@@ -1119,7 +1119,10 @@ final class ScanComparisonServiceTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(query.applying(to: rows).map(\.relativePath), ["zeta.bin", "alpha.bin"])
+        XCTAssertEqual(
+            try query.applying(to: rows, cancellationCheck: {}).map(\.relativePath),
+            ["zeta.bin", "alpha.bin"]
+        )
     }
 
     func testComparisonServiceUsesDeterministicFallbackForEqualImpactRows() async throws {
@@ -1177,7 +1180,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         )
     }
 
-    func testRowQueryFiltersKindAndNormalizedPath() {
+    func testRowQueryFiltersKindAndNormalizedPath() throws {
         let addedNode = makeTestFileNode(
             id: "/after/Library/Application Support/cache.bin",
             name: "cache.bin",
@@ -1204,12 +1207,12 @@ final class ScanComparisonServiceTests: XCTestCase {
             sortOrder: []
         )
 
-        let result = query.applying(to: rows)
+        let result = try query.applying(to: rows, cancellationCheck: {})
 
         XCTAssertEqual(result.map(\.relativePath), ["Library/Application Support/cache.bin"])
     }
 
-    func testRowQuerySearchIndexPreservesCaseDiacriticNameAndPathMatching() {
+    func testRowQuerySearchIndexPreservesCaseDiacriticNameAndPathMatching() throws {
         let cafe = makeTestFileNode(
             id: "/after/Library/Café/cache.bin",
             name: "résumé.bin",
@@ -1222,28 +1225,28 @@ final class ScanComparisonServiceTests: XCTestCase {
             afterNode: cafe
         )
         let rows = [row]
-        let index = ScanComparisonSearchIndex(rows: rows)
+        let index = try ScanComparisonSearchIndex(rows: rows, cancellationCheck: {})
 
         XCTAssertEqual(
-            ScanComparisonRowQuery(searchText: "RESUME", sortOrder: [])
-                .applying(to: rows, searchIndex: index)
+            try ScanComparisonRowQuery(searchText: "RESUME", sortOrder: [])
+                .applying(to: rows, searchIndex: index, cancellationCheck: {})
                 .map(\.id),
             [row.id]
         )
         XCTAssertEqual(
-            ScanComparisonRowQuery(searchText: "library/cafe", sortOrder: [])
-                .applying(to: rows, searchIndex: index)
+            try ScanComparisonRowQuery(searchText: "library/cafe", sortOrder: [])
+                .applying(to: rows, searchIndex: index, cancellationCheck: {})
                 .map(\.id),
             [row.id]
         )
         XCTAssertTrue(
-            ScanComparisonRowQuery(searchText: "resume\nlibrary", sortOrder: [])
-                .applying(to: rows, searchIndex: index)
+            try ScanComparisonRowQuery(searchText: "resume\nlibrary", sortOrder: [])
+                .applying(to: rows, searchIndex: index, cancellationCheck: {})
                 .isEmpty
         )
     }
 
-    func testRowQueryFiltersExactLocationPrefix() {
+    func testRowQueryFiltersExactLocationPrefix() throws {
         let libraryNode = makeTestFileNode(
             id: "/after/Library/cache.bin",
             name: "cache.bin",
@@ -1274,7 +1277,10 @@ final class ScanComparisonServiceTests: XCTestCase {
             pathPrefix: "Library"
         )
 
-        XCTAssertEqual(query.applying(to: rows).map(\.relativePath), ["Library/cache.bin"])
+        XCTAssertEqual(
+            try query.applying(to: rows, cancellationCheck: {}).map(\.relativePath),
+            ["Library/cache.bin"]
+        )
     }
 
     func testUnchangedAndRootRowsAreExcluded() async throws {
@@ -1597,7 +1603,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         XCTAssertEqual(location.reclaimedAllocatedSize, Int64.max)
     }
 
-    func testRowQueryCombinesSelectedChangeKinds() {
+    func testRowQueryCombinesSelectedChangeKinds() throws {
         let movedBefore = makeTestFileNode(id: "/before/old.bin", name: "old.bin", size: 100)
         let movedAfter = makeTestFileNode(id: "/after/new.bin", name: "new.bin", size: 150)
         let movedAndGrew = ScanComparisonRow(
@@ -1615,25 +1621,81 @@ final class ScanComparisonServiceTests: XCTestCase {
         )
         let rows = [movedAndGrew, removed]
 
-        let movedAndRemoved = ScanComparisonRowQuery(
+        let movedAndRemoved = try ScanComparisonRowQuery(
             changeKinds: [.moved, .removed],
             searchText: "",
             sortOrder: []
-        ).applying(to: rows)
-        let removedOnly = ScanComparisonRowQuery(
+        ).applying(to: rows, cancellationCheck: {})
+        let removedOnly = try ScanComparisonRowQuery(
             changeKinds: [.removed],
             searchText: "",
             sortOrder: []
-        ).applying(to: rows)
-        let movedOnly = ScanComparisonRowQuery(
+        ).applying(to: rows, cancellationCheck: {})
+        let movedOnly = try ScanComparisonRowQuery(
             changeKinds: [.moved],
             searchText: "",
             sortOrder: []
-        ).applying(to: rows)
+        ).applying(to: rows, cancellationCheck: {})
 
         XCTAssertEqual(movedAndRemoved.map(\.relativePath), ["new.bin", "removed.bin"])
         XCTAssertEqual(removedOnly.map(\.relativePath), ["removed.bin"])
         XCTAssertEqual(movedOnly.map(\.relativePath), ["new.bin"])
+    }
+
+    func testSearchIndexStopsWhenCancellationIsRequested() {
+        let rows = makeComparisonRows(count: 600)
+        let probe = ComparisonCancellationProbe(throwOnCheck: 3)
+
+        XCTAssertThrowsError(
+            try ScanComparisonSearchIndex(
+                rows: rows,
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, 3)
+    }
+
+    func testRowQueryStopsFilteringWhenCancellationIsRequested() {
+        let rows = makeComparisonRows(count: 600)
+        let probe = ComparisonCancellationProbe(throwOnCheck: 3)
+        let query = ScanComparisonRowQuery(searchText: "", sortOrder: [])
+
+        XCTAssertThrowsError(
+            try query.applying(
+                to: rows,
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, 3)
+    }
+
+    func testRowQueryStopsBetweenLargeSortRuns() {
+        let rows = makeComparisonRows(count: 20_000)
+        let filteringCheckCount = (rows.count + 255) / 256
+        // Entry, filtering, post-filter, first sorted run, then cancellation
+        // before the second run starts.
+        let secondSortedRunCheck = 1 + filteringCheckCount + 1 + 2
+        let probe = ComparisonCancellationProbe(throwOnCheck: secondSortedRunCheck)
+        let query = ScanComparisonRowQuery(
+            searchText: "",
+            sortOrder: [
+                ScanComparisonRowComparator(field: .afterAllocatedSize, order: .reverse)
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try query.applying(
+                to: rows,
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, secondSortedRunCheck)
     }
 
     private func resourceIdentity(fileID: UInt64, volumeToken: UInt64) -> FileIdentity {
@@ -1649,5 +1711,49 @@ final class ScanComparisonServiceTests: XCTestCase {
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: files)
         let store = FileTreeStore(root: root, childrenByID: [root.id: files])
         return makeTestSnapshot(root: root, store: store)
+    }
+
+    private func makeComparisonRows(count: Int) -> [ScanComparisonRow] {
+        (0..<count).map { index in
+            let relativePath = "file-\(index).bin"
+            let node = makeTestFileNode(
+                id: "/after/\(relativePath)",
+                name: relativePath,
+                size: Int64(index)
+            )
+            return ScanComparisonRow(
+                relativePath: relativePath,
+                kind: .added,
+                beforeNode: nil,
+                afterNode: node
+            )
+        }
+    }
+}
+
+private final class ComparisonCancellationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let throwOnCheck: Int
+    private var checks = 0
+
+    init(throwOnCheck: Int) {
+        self.throwOnCheck = throwOnCheck
+    }
+
+    var checkCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return checks
+    }
+
+    func check() throws {
+        lock.lock()
+        checks += 1
+        let shouldThrow = checks >= throwOnCheck
+        lock.unlock()
+
+        if shouldThrow {
+            throw CancellationError()
+        }
     }
 }

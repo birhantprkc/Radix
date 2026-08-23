@@ -147,10 +147,25 @@ final class ScanComparisonBrowserModel: ObservableObject {
     nonisolated static func process(_ input: WorkInput) async throws -> WorkOutput {
         let task = Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
-            let searchIndex = input.searchIndex ?? (
-                input.query.hasSearchText ? ScanComparisonSearchIndex(rows: input.rows) : nil
+            let cancellationCheck: CancellationCheck = {
+                try Task.checkCancellation()
+            }
+            let searchIndex: ScanComparisonSearchIndex?
+            if let existingSearchIndex = input.searchIndex {
+                searchIndex = existingSearchIndex
+            } else if input.query.hasSearchText {
+                searchIndex = try ScanComparisonSearchIndex(
+                    rows: input.rows,
+                    cancellationCheck: cancellationCheck
+                )
+            } else {
+                searchIndex = nil
+            }
+            let rows = try input.query.applying(
+                to: input.rows,
+                searchIndex: searchIndex,
+                cancellationCheck: cancellationCheck
             )
-            let rows = input.query.applying(to: input.rows, searchIndex: searchIndex)
             try Task.checkCancellation()
             let projection = input.changeTree.significantProjection(changeKinds: input.changeKinds)
             try Task.checkCancellation()
