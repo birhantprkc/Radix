@@ -712,8 +712,9 @@ actor ScanEngine {
 
     nonisolated static func defaultMountedFileSystems() -> [ScanMountedFileSystem] {
         var mountBuffer: UnsafeMutablePointer<statfs>?
-        let mountCount = getmntinfo(&mountBuffer, MNT_NOWAIT)
+        let mountCount = getmntinfo_r_np(&mountBuffer, MNT_NOWAIT)
         guard mountCount > 0, let mountBuffer else { return [] }
+        defer { free(mountBuffer) }
 
         return (0..<Int(mountCount)).compactMap { offset in
             let entry = mountBuffer[offset]
