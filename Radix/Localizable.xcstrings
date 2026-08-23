@@ -15646,43 +15646,43 @@
         }
       }
     },
-    "Shared APFS storage" : {
+    "APFS clone · shared storage" : {
       "comment" : "Secondary status for a full APFS clone whose data storage is shared with another file.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geteilter APFS-Speicher"
+            "value" : "APFS-Klon · geteilter Speicher"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Shared APFS storage"
+            "value" : "APFS clone · shared storage"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Almacenamiento APFS compartido"
+            "value" : "Clon de APFS · almacenamiento compartido"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stockage APFS partagé"
+            "value" : "Clone APFS · stockage partagé"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spazio APFS condiviso"
+            "value" : "Clone APFS · spazio condiviso"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共享的 APFS 存储空间"
+            "value" : "APFS 克隆 · 共享存储空间"
           }
         }
       }

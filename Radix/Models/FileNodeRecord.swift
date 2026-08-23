@@ -209,7 +209,7 @@ extension FileNodeRecord {
             return String(localized: "Limited access", comment: "Secondary status for a file or folder that could not be fully read.")
         }
         if cloneIdentity != nil {
-            return String(localized: "Shared APFS storage", comment: "Secondary status for a full APFS clone whose data storage is shared with another file.")
+            return String(localized: "APFS clone · shared storage", comment: "Secondary status for a full APFS clone whose data storage is shared with another file.")
         }
         if mayShareDataBlocks {
             return String(localized: "May share APFS storage", comment: "Secondary status for a file that may still share some APFS data blocks with another file.")

@@ -40,7 +40,7 @@ final class FileNodeRecordTests: XCTestCase {
             mayShareDataBlocks: true
         )
 
-        XCTAssertEqual(fullClone.secondaryStatusText, "Shared APFS storage")
+        XCTAssertEqual(fullClone.secondaryStatusText, "APFS clone · shared storage")
         XCTAssertEqual(partialClone.secondaryStatusText, "May share APFS storage")
     }
 }
