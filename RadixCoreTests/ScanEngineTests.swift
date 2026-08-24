@@ -3,6 +3,45 @@ import XCTest
 @testable import RadixCore
 
 final class ScanEngineTests: XCTestCase {
+    func testNativeAtomicWorkResultPreservesExcludedVisitedCount() throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        let nestedURL = rootURL.appending(path: "Nested", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
+        try Data(repeating: 0x11, count: 11).write(to: rootURL.appending(path: "visible.bin"))
+        try Data(repeating: 0x22, count: 7).write(to: rootURL.appending(path: ".hidden.bin"))
+        try Data(repeating: 0x33, count: 13).write(to: rootURL.appending(path: "ignored.tmp"))
+
+        let metadataLoader = ScanMetadataLoader()
+        let expectedIdentity = try metadataLoader.fileSystemIdentity(at: rootURL)
+        let (progressReporter, continuation) = makeAtomicSummaryProgressReporter()
+        defer { continuation.finish() }
+        let result = try AtomicDirectorySummarizer.processPooledWorkItem(
+            AtomicSummaryWorkItem(
+                url: rootURL,
+                treatPackagesAsDirectories: true,
+                ownerNodeID: rootURL.path,
+                expectedIdentity: expectedIdentity
+            ),
+            includeHiddenFiles: false,
+            exclusionMatcher: ScanExclusionMatcher(patterns: ["*.tmp"], rootURL: rootURL),
+            metadataLoader: metadataLoader,
+            cancellationCheck: {},
+            progressReporter: progressReporter,
+            forcesFoundationTraversal: false
+        )
+
+        XCTAssertEqual(result.partial.descendantFileCount, 1)
+        XCTAssertEqual(result.partial.logicalSize, 11)
+        XCTAssertEqual(result.partial.visitedItemCount, 3)
+        XCTAssertTrue(result.partial.warnings.isEmpty)
+        XCTAssertEqual(result.pendingItems.count, 1)
+        XCTAssertEqual(
+            result.pendingItems.first?.url.resolvingSymlinksInPath(),
+            nestedURL.resolvingSymlinksInPath()
+        )
+    }
+
     func testFoundationAtomicWorkResultSeedsProtectedChildrenAndPreservesSemantics() throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }

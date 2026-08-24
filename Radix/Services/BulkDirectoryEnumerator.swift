@@ -117,6 +117,10 @@ nonisolated enum BulkDirectoryEnumerator {
     struct Batch: Sendable {
         let entries: [DirectoryEntry]
         let enumeratedItemCount: Int
+        /// `nil` when no entry-inclusion callback was installed. Otherwise,
+        /// counts only entries rejected by that callback, excluding hidden and
+        /// dataless entries filtered before the callback runs.
+        let entryInclusionExcludedItemCount: Int?
     }
 
     struct Result: Sendable {
@@ -241,6 +245,7 @@ nonisolated enum BulkDirectoryEnumerator {
 
             var entries: [DirectoryEntry] = []
             var enumeratedItemCount = 0
+            var entryInclusionExcludedItemCount = 0
             do {
                 guard try parseBatch(
                     bufferAddress: UnsafeRawPointer(bufferAddress),
@@ -253,6 +258,7 @@ nonisolated enum BulkDirectoryEnumerator {
                     entryInclusion: entryInclusion,
                     entries: &entries,
                     enumeratedItemCount: &enumeratedItemCount,
+                    entryInclusionExcludedItemCount: &entryInclusionExcludedItemCount,
                     nonASCIINativeNameByDecodedName: &nonASCIINativeNameByDecodedName,
                     cancellationCheck: cancellationCheck
                 ) else {
@@ -269,7 +275,10 @@ nonisolated enum BulkDirectoryEnumerator {
             successfulBatchCount += 1
             return Batch(
                 entries: entries,
-                enumeratedItemCount: enumeratedItemCount
+                enumeratedItemCount: enumeratedItemCount,
+                entryInclusionExcludedItemCount: entryInclusion == nil
+                    ? nil
+                    : entryInclusionExcludedItemCount
             )
         }
 
@@ -528,6 +537,7 @@ nonisolated enum BulkDirectoryEnumerator {
         entryInclusion: EntryInclusion?,
         entries: inout [DirectoryEntry],
         enumeratedItemCount: inout Int,
+        entryInclusionExcludedItemCount: inout Int,
         nonASCIINativeNameByDecodedName: inout [String: NativeName],
         cancellationCheck: CancellationCheck
     ) throws -> Bool {
@@ -561,11 +571,13 @@ nonisolated enum BulkDirectoryEnumerator {
                 continue
             }
 
-            let passesHiddenFilter = includeHiddenFiles || !parsed.isHidden
-            let passesEntryInclusion = passesHiddenFilter && (
-                entryInclusion?(parsed.decodedName, parsed.isDirectory) ?? true
-            )
-            guard passesEntryInclusion else {
+            guard includeHiddenFiles || !parsed.isHidden else {
+                entryAddress = entryEnd
+                continue
+            }
+            if let entryInclusion,
+               !entryInclusion(parsed.decodedName, parsed.isDirectory) {
+                entryInclusionExcludedItemCount += 1
                 entryAddress = entryEnd
                 continue
             }

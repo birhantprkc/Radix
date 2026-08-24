@@ -245,11 +245,16 @@ extension AtomicDirectorySummarizer {
         var cursor = item.cursor
         if cursor == nil, item.needsCursor {
             do {
+                let entryInclusion = nativeEntryInclusion(
+                    under: item.url,
+                    exclusionMatcher: exclusionMatcher
+                )
                 cursor = try BulkDirectoryEnumerator.makeCursor(
                     at: item.url,
                     includeHiddenFiles: includeHiddenFiles,
                     loadsPackageMetadata: !item.treatPackagesAsDirectories,
                     metadataLoader: metadataLoader,
+                    entryInclusion: entryInclusion,
                     cancellationCheck: cancellationCheck
                 )
             } catch {
@@ -274,7 +279,8 @@ extension AtomicDirectorySummarizer {
                     pendingItems: &pendingItems,
                     cancellationCheck: cancellationCheck,
                     progressReporter: progressReporter,
-                    workerVisitedItemCount: &visitedItemCount
+                    workerVisitedItemCount: &visitedItemCount,
+                    entryInclusionExcludedItemCount: batch.entryInclusionExcludedItemCount
                 )
             }
         } catch BulkDirectoryEnumerator.StreamError.unavailable {
@@ -662,11 +668,16 @@ extension AtomicDirectorySummarizer {
         var cursor = item.cursor
         if cursor == nil, item.needsCursor {
             do {
+                let entryInclusion = nativeEntryInclusion(
+                    under: item.url,
+                    exclusionMatcher: exclusionMatcher
+                )
                 cursor = try BulkDirectoryEnumerator.makeCursor(
                     at: item.url,
                     includeHiddenFiles: includeHiddenFiles,
                     loadsPackageMetadata: !item.treatPackagesAsDirectories,
                     metadataLoader: metadataLoader,
+                    entryInclusion: entryInclusion,
                     cancellationCheck: {
                         do {
                             try cancellationCheck()
@@ -710,7 +721,8 @@ extension AtomicDirectorySummarizer {
                         }
                     },
                     progressReporter: progressReporter,
-                    workerVisitedItemCount: &workerVisitedItemCount
+                    workerVisitedItemCount: &workerVisitedItemCount,
+                    entryInclusionExcludedItemCount: batch.entryInclusionExcludedItemCount
                 )
             }
         } catch let cancellation as AtomicSummaryCancellation {
@@ -742,6 +754,21 @@ extension AtomicDirectorySummarizer {
         }
     }
 
+    private nonisolated static func nativeEntryInclusion(
+        under directoryURL: URL,
+        exclusionMatcher: ScanExclusionMatcher
+    ) -> BulkDirectoryEnumerator.EntryInclusion? {
+        guard !exclusionMatcher.isEmpty else { return nil }
+        let parentPath = directoryURL.path
+        return { childName, isDirectory in
+            !exclusionMatcher.excludesKnownNormalizedChild(
+                named: childName,
+                under: parentPath,
+                isDirectory: isDirectory
+            )
+        }
+    }
+
     private nonisolated static func stageEntries(
         _ entries: ArraySlice<DirectoryEntry>,
         from item: AtomicSummaryWorkItem,
@@ -751,9 +778,30 @@ extension AtomicDirectorySummarizer {
         pendingItems: inout [AtomicSummaryWorkItem],
         cancellationCheck: CancellationCheck,
         progressReporter: AtomicSummaryProgressReporter,
-        workerVisitedItemCount: inout Int
+        workerVisitedItemCount: inout Int,
+        entryInclusionExcludedItemCount: Int? = nil
     ) throws {
-        let hasActiveExclusions = !exclusionMatcher.isEmpty
+        if let entryInclusionExcludedItemCount,
+           entryInclusionExcludedItemCount > 0 {
+            let previousVisitedItemCount = workerVisitedItemCount
+            workerVisitedItemCount = ScanIntegerMath.addingClamped(
+                workerVisitedItemCount,
+                entryInclusionExcludedItemCount
+            )
+            partial.visitedItemCount = ScanIntegerMath.addingClamped(
+                partial.visitedItemCount,
+                entryInclusionExcludedItemCount
+            )
+            if previousVisitedItemCount == 0
+                || previousVisitedItemCount / 64 != workerVisitedItemCount / 64 {
+                progressReporter.emit(
+                    currentURL: item.url,
+                    visitedItemCount: workerVisitedItemCount
+                )
+            }
+        }
+        let hasActiveExclusions = entryInclusionExcludedItemCount == nil
+            && !exclusionMatcher.isEmpty
         for childEntry in entries {
             try cancellationCheck()
             let childURL = childEntry.url
