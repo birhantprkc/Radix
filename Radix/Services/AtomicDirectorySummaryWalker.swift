@@ -107,6 +107,7 @@ extension AtomicDirectorySummarizer {
         }
         #endif
 
+        let hasActiveExclusions = !exclusionMatcher.isEmpty
         for (index, childEntry) in childEntries.enumerated() {
             try cancellationCheck()
             state.visitedItemCount = ScanIntegerMath.addingClamped(
@@ -134,10 +135,11 @@ extension AtomicDirectorySummarizer {
                 }
             }
 
-            guard !exclusionMatcher.excludesKnownNormalizedPath(
-                childEntry.url.path,
-                isDirectory: childMetadata.isDirectory
-            ) else {
+            if hasActiveExclusions,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   childEntry.url.path,
+                   isDirectory: childMetadata.isDirectory
+               ) {
                 continue
             }
             guard !childMetadata.isDataless else { continue }

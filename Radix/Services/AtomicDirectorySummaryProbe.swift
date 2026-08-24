@@ -124,6 +124,7 @@ extension AtomicDirectorySummarizer {
         let maxVisitedItems = isNodeDependencyLayout
             ? max(5_000, minFileCount * 8)
             : max(1_000, minFileCount)
+        let hasActiveExclusions = !exclusionMatcher.isEmpty
 
         if let bulkResult = try bulkDescendantAtomicProbeProfile(
             at: url,
@@ -185,17 +186,18 @@ extension AtomicDirectorySummarizer {
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
-            let childPath = childURL.path
+            let childPath = hasActiveExclusions ? childURL.path : nil
             if let datalessStatus = metadataLoader.datalessStatus(at: childURL) {
                 if datalessStatus.isDirectory {
                     enumerator.skipDescendants()
                 }
                 continue
             }
-            if exclusionMatcher.excludesKnownNormalizedPath(
-                childPath,
-                isDirectory: hintedIsDirectory
-            ) {
+            if let childPath,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   childPath,
+                   isDirectory: hintedIsDirectory
+               ) {
                 if hintedIsDirectory {
                     enumerator.skipDescendants()
                 }
@@ -208,6 +210,7 @@ extension AtomicDirectorySummarizer {
                 let isSymbolicLink = values.isSymbolicLink ?? false
 
                 if isDirectory != hintedIsDirectory,
+                   let childPath,
                    exclusionMatcher.excludesKnownNormalizedPath(childPath, isDirectory: isDirectory) {
                     if isDirectory {
                         enumerator.skipDescendants()
@@ -310,6 +313,7 @@ extension AtomicDirectorySummarizer {
         partial.updateAccessibility(rootMetadata.isReadable)
         var reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:]
         var fullyEnumerated = true
+        let hasActiveExclusions = !exclusionMatcher.isEmpty
         // The caller already enumerated and classified the root directory.
         // A successful probe hands these frames directly to the summary queue.
         var frames = [BulkAtomicProbeFrame(
@@ -453,11 +457,11 @@ extension AtomicDirectorySummarizer {
                 )
             }
             guard !metadata.isDataless else { continue }
-            let entryPath = entry.url.path
-            guard !exclusionMatcher.excludesKnownNormalizedPath(
-                entryPath,
-                isDirectory: metadata.isDirectory
-            ) else {
+            if hasActiveExclusions,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   entry.url.path,
+                   isDirectory: metadata.isDirectory
+               ) {
                 continue
             }
 

@@ -2689,6 +2689,8 @@ actor ScanEngine {
             let entryInclusion: BulkDirectoryEnumerator.EntryInclusion?
             let canExcludeNativeEntry = !exclusionMatcher.isEmpty
                 || shouldFilterStartupVolumeInternals(under: url, behavior: behavior)
+            let requiresPostEnumerationFiltering = canExcludeNativeEntry
+                && !usesDeferredBulkEntryFiltering
             if usesDeferredBulkEntryFiltering && canExcludeNativeEntry {
                 let parentPath = url.path
                 entryInclusion = { childName, isDirectory in
@@ -2740,9 +2742,7 @@ actor ScanEngine {
                     enumerationNanoseconds += DispatchTime.now().uptimeNanoseconds - batchStart
                     let classificationStart = DispatchTime.now().uptimeNanoseconds
                     #endif
-                    let filteredEntries = if entryInclusion != nil {
-                        batch.entries
-                    } else {
+                    let acceptedEntries = if requiresPostEnumerationFiltering {
                         try ScanDirectoryEntryFilter.filteredEntries(
                             batch.entries,
                             under: url,
@@ -2750,8 +2750,14 @@ actor ScanEngine {
                             exclusionMatcher: exclusionMatcher,
                             cancellationCheck: cancellationCheck
                         )
+                    } else {
+                        batch.entries
                     }
-                    entries.append(contentsOf: filteredEntries)
+                    if entries.isEmpty {
+                        entries = acceptedEntries
+                    } else {
+                        entries.append(contentsOf: acceptedEntries)
+                    }
                     enumeratedItemCount += batch.enumeratedItemCount
                     #if DEBUG
                     classificationNanoseconds += DispatchTime.now().uptimeNanoseconds - classificationStart

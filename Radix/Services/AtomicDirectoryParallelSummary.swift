@@ -407,6 +407,7 @@ extension AtomicDirectorySummarizer {
 
         var partial = AtomicDirectorySummaryPartial()
         var pendingItems: [AtomicSummaryWorkItem] = []
+        let hasActiveExclusions = !exclusionMatcher.isEmpty
         for childURL in enumerationResult.urls {
             try cancellationCheck()
             partial.visitedItemCount = ScanIntegerMath.addingClamped(
@@ -425,11 +426,12 @@ extension AtomicDirectorySummarizer {
             }
 
             let hintedIsDirectory = childURL.hasDirectoryPath
-            let childPath = childURL.path
-            guard !exclusionMatcher.excludesKnownNormalizedPath(
-                childPath,
-                isDirectory: hintedIsDirectory
-            ) else {
+            let childPath = hasActiveExclusions ? childURL.path : nil
+            if let childPath,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   childPath,
+                   isDirectory: hintedIsDirectory
+               ) {
                 continue
             }
 
@@ -447,11 +449,12 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
-            guard childMetadata.isDirectory == hintedIsDirectory ||
-                    !exclusionMatcher.excludesKnownNormalizedPath(
-                        childPath,
-                        isDirectory: childMetadata.isDirectory
-                    ) else {
+            if childMetadata.isDirectory != hintedIsDirectory,
+               let childPath,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   childPath,
+                   isDirectory: childMetadata.isDirectory
+               ) {
                 continue
             }
             guard !childMetadata.isDataless else { continue }
@@ -461,7 +464,8 @@ extension AtomicDirectorySummarizer {
                 partial.accumulateFile(
                     childMetadata,
                     url: childURL,
-                    ownerNodeID: item.ownerNodeID
+                    ownerNodeID: item.ownerNodeID,
+                    knownPath: childPath
                 )
                 continue
             }
@@ -749,6 +753,7 @@ extension AtomicDirectorySummarizer {
         progressReporter: AtomicSummaryProgressReporter,
         workerVisitedItemCount: inout Int
     ) throws {
+        let hasActiveExclusions = !exclusionMatcher.isEmpty
         for childEntry in entries {
             try cancellationCheck()
             let childURL = childEntry.url
@@ -762,11 +767,12 @@ extension AtomicDirectorySummarizer {
             }
 
             let hintedIsDirectory = childEntry.isDirectoryHint ?? childURL.hasDirectoryPath
-            let childPath = childURL.path
-            guard !exclusionMatcher.excludesKnownNormalizedPath(
-                childPath,
-                isDirectory: hintedIsDirectory
-            ) else {
+            let childPath = hasActiveExclusions ? childURL.path : nil
+            if let childPath,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   childPath,
+                   isDirectory: hintedIsDirectory
+               ) {
                 continue
             }
 
@@ -792,18 +798,24 @@ extension AtomicDirectorySummarizer {
                 continue
             }
 
-            guard childMetadata.isDirectory == hintedIsDirectory ||
-                    !exclusionMatcher.excludesKnownNormalizedPath(
-                        childPath,
-                        isDirectory: childMetadata.isDirectory
-                    ) else {
+            if childMetadata.isDirectory != hintedIsDirectory,
+               let childPath,
+               exclusionMatcher.excludesKnownNormalizedPath(
+                   childPath,
+                   isDirectory: childMetadata.isDirectory
+               ) {
                 continue
             }
             guard !childMetadata.isDataless else { continue }
 
             partial.updateAccessibility(childMetadata.isReadable)
             guard childMetadata.isDirectory else {
-                partial.accumulateFile(childMetadata, url: childURL, ownerNodeID: item.ownerNodeID)
+                partial.accumulateFile(
+                    childMetadata,
+                    url: childURL,
+                    ownerNodeID: item.ownerNodeID,
+                    knownPath: childPath
+                )
                 continue
             }
 

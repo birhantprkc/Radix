@@ -66,7 +66,12 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
         warnings.append(ScanWarningFactory.makeWarning(for: url, error: error))
     }
 
-    mutating func accumulateFile(_ metadata: NodeMetadata, url: URL, ownerNodeID: String) {
+    mutating func accumulateFile(
+        _ metadata: NodeMetadata,
+        url: URL,
+        ownerNodeID: String,
+        knownPath: String? = nil
+    ) {
         allocatedSize = ScanIntegerMath.addingClamped(allocatedSize, metadata.allocatedSize)
         logicalSize = ScanIntegerMath.addingClamped(logicalSize, metadata.logicalSize)
         if !metadata.isSymbolicLink {
@@ -75,7 +80,7 @@ nonisolated struct AtomicDirectorySummaryPartial: Sendable {
         if let claim = SharedAllocationDeduplicator.claim(
             for: metadata,
             ownerNodeID: ownerNodeID,
-            path: url.path
+            path: knownPath ?? url.path
         ) {
             sharedAllocationAccumulator.record(claim)
         }

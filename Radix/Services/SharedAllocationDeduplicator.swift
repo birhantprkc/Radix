@@ -11,7 +11,7 @@ nonisolated struct SharedAllocationDeduplicator {
     nonisolated static func claim(
         for metadata: NodeMetadata,
         ownerNodeID: String,
-        path: String
+        path: @autoclosure () -> String
     ) -> SharedAllocationClaim? {
         guard !metadata.isDirectory,
               !metadata.isSymbolicLink else {
@@ -28,7 +28,7 @@ nonisolated struct SharedAllocationDeduplicator {
             hardLinkIdentity: hardLinkIdentity,
             cloneIdentity: metadata.cloneIdentity,
             ownerNodeID: ownerNodeID,
-            path: path,
+            path: path(),
             allocatedSize: metadata.allocatedSize,
             cloneAllocatedSize: metadata.dataAllocatedSize
         )

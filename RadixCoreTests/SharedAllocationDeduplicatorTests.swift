@@ -2,6 +2,55 @@ import XCTest
 @testable import RadixCore
 
 final class SharedAllocationDeduplicatorTests: XCTestCase {
+    func testClaimEvaluatesPathOnlyForSharedAllocationCandidates() throws {
+        let identity = FileIdentity(device: 1, inode: 42)
+        var pathEvaluationCount = 0
+        func evaluatedPath() -> String {
+            pathEvaluationCount += 1
+            return "/root/file.bin"
+        }
+        let ordinaryMetadata = NodeMetadata(
+            isDirectory: false,
+            isPackage: false,
+            isSymbolicLink: false,
+            logicalSize: 100,
+            allocatedSize: 100,
+            lastModified: nil,
+            isReadable: true,
+            volumeCapacity: nil,
+            fileIdentity: identity,
+            linkCount: 1
+        )
+
+        XCTAssertNil(SharedAllocationDeduplicator.claim(
+            for: ordinaryMetadata,
+            ownerNodeID: "/root",
+            path: evaluatedPath()
+        ))
+        XCTAssertEqual(pathEvaluationCount, 0)
+
+        let hardLinkMetadata = NodeMetadata(
+            isDirectory: false,
+            isPackage: false,
+            isSymbolicLink: false,
+            logicalSize: 100,
+            allocatedSize: 100,
+            lastModified: nil,
+            isReadable: true,
+            volumeCapacity: nil,
+            fileIdentity: identity,
+            linkCount: 2
+        )
+        let claim = try XCTUnwrap(SharedAllocationDeduplicator.claim(
+            for: hardLinkMetadata,
+            ownerNodeID: "/root",
+            path: evaluatedPath()
+        ))
+
+        XCTAssertEqual(pathEvaluationCount, 1)
+        XCTAssertEqual(claim.path, "/root/file.bin")
+    }
+
     func testHardLinkDedupRebuildsOnlyAffectedAncestorChains() {
         let rootID = "/root"
         let affectedID = "/root/Affected"
