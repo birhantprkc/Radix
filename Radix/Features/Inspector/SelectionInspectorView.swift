@@ -7,6 +7,7 @@ struct SelectionInspectorActions {
     let zoomIntoSelection: () -> Void
     let selectedFileActions: SelectedFileActions
     let addPrimarySelectionToDiscardPile: () -> Void
+    let bulkFileActions: BulkFileActions
     let openFullDiskAccessSettings: () -> Void
 }
 
@@ -18,9 +19,26 @@ struct SelectionInspectorView: View {
 
     var body: some View {
         let largestChildren = largestSelectedChildren
+        let selectedNodes = navigation.selectedNodes
 
         Group {
-            if let node = navigation.selectedNode {
+            if selectedNodes.count > 1 {
+                let summary = InspectorSelectionSummary(
+                    selectedNodes: selectedNodes,
+                    fileTreeStore: scanState.fileTreeStore
+                )
+                InspectorMultiSelectionView(
+                    summary: summary,
+                    percentOfScan: selectionPercentOfScanText(summary) ?? "—",
+                    availability: FileNodeActionAvailability(
+                        nodes: selectedNodes,
+                        activeTarget: scanState.selectedTarget,
+                        trashSafetyPolicy: scanState.trashSafetyPolicy,
+                        snapshotSource: scanState.snapshotSource
+                    ),
+                    actions: actions.bulkFileActions
+                )
+            } else if let node = navigation.selectedNode {
                 Form {
                     InspectorSummarySection(node: node)
 
@@ -98,6 +116,11 @@ struct SelectionInspectorView: View {
         guard let selectedNode = navigation.selectedNode,
               let root = scanState.snapshot?.root else { return nil }
         return RadixFormatters.percentage(part: selectedNode.allocatedSize, total: root.allocatedSize)
+    }
+
+    private func selectionPercentOfScanText(_ summary: InspectorSelectionSummary) -> String? {
+        guard let root = scanState.snapshot?.root else { return nil }
+        return RadixFormatters.percentage(part: summary.allocatedSize, total: root.allocatedSize)
     }
 
     private var selectedActionAvailability: FileNodeActionAvailability {

@@ -9,11 +9,23 @@ struct InspectorDetailsSections: View {
 
     var body: some View {
         Section("Key Stats") {
-            InspectorKeyStats(
-                allocatedSize: RadixFormatters.size(node.allocatedSize),
-                percentOfParent: percentOfParent,
-                percentOfScan: percentOfScan
-            )
+            InspectorKeyStats(stats: [
+                InspectorStat(
+                    id: "allocated",
+                    title: String(localized: "Allocated", comment: "Inspector storage statistic title."),
+                    value: RadixFormatters.size(node.allocatedSize)
+                ),
+                InspectorStat(
+                    id: "parent",
+                    title: String(localized: "Of Parent", comment: "Inspector statistic for a selected item's share of its parent folder."),
+                    value: percentOfParent
+                ),
+                InspectorStat(
+                    id: "scan",
+                    title: String(localized: "Of Scan", comment: "Inspector statistic for a selection's share of the entire scan."),
+                    value: percentOfScan
+                )
+            ])
         }
 
         if let sharedStorageDescription = node.sharedStorageDescription {
@@ -51,23 +63,27 @@ struct InspectorDetailsSections: View {
     }
 }
 
-private struct InspectorKeyStats: View {
-    let allocatedSize: String
-    let percentOfParent: String
-    let percentOfScan: String
+struct InspectorStat: Identifiable {
+    let id: String
+    let title: String
+    let value: String
+}
+
+struct InspectorKeyStats: View {
+    let stats: [InspectorStat]
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
-                InspectorStatCard(title: "Allocated", value: allocatedSize)
-                InspectorStatCard(title: "% Parent", value: percentOfParent)
-                InspectorStatCard(title: "% Scan", value: percentOfScan)
+                ForEach(stats) { stat in
+                    InspectorStatCard(title: stat.title, value: stat.value)
+                }
             }
 
             VStack(spacing: 8) {
-                InspectorStatCard(title: "Allocated", value: allocatedSize)
-                InspectorStatCard(title: "% Parent", value: percentOfParent)
-                InspectorStatCard(title: "% Scan", value: percentOfScan)
+                ForEach(stats) { stat in
+                    InspectorStatCard(title: stat.title, value: stat.value)
+                }
             }
         }
     }
@@ -91,5 +107,6 @@ private struct InspectorStatCard: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
