@@ -1047,7 +1047,6 @@ actor ScanEngine {
         let minimumDepth = options.autoSummarizeMinDepthForSummarization
             ?? AtomicDirectoryThresholds.minDepthForSummarization
         return canProbeForAutoSummary(
-            at: directoryURL,
             depth: depth,
             minimumDepth: minimumDepth,
             isNodeDependencyLayout: AtomicDirectorySummarizer.isNodeDependencyLayoutDirectory(
@@ -1090,14 +1089,12 @@ actor ScanEngine {
     }
 
     private nonisolated static func canProbeForAutoSummary(
-        at directoryURL: URL,
         depth: Int,
         minimumDepth: Int,
         isNodeDependencyLayout: Bool
     ) -> Bool {
         depth >= minimumDepth
             || (depth >= 1 && isNodeDependencyLayout)
-            || AtomicDirectorySummarizer.isKnownGeneratedDirectory(at: directoryURL)
     }
 
     // The scan path (`performScan` and the helpers it calls) is `nonisolated` on
@@ -1543,7 +1540,6 @@ actor ScanEngine {
                                 let isNodeDependencyLayout = AtomicDirectorySummarizer
                                     .isNodeDependencyLayoutDirectory(at: taskItem.url)
                                 let canProbeForAutoSummary = Self.canProbeForAutoSummary(
-                                    at: taskItem.url,
                                     depth: taskItem.depth,
                                     minimumDepth: autoSummarizeMinDepth,
                                     isNodeDependencyLayout: isNodeDependencyLayout

@@ -73,9 +73,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
            ) {
             return true
         }
-        if Self.isKnownGeneratedDirectory(at: url) {
-            return true
-        }
         guard allowsDescendantProbe else { return false }
         return shouldRunDescendantAtomicProbe(
             childEntries: childEntries,
@@ -171,8 +168,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         var reusableDirectoryListings: [String: AtomicDirectoryProbeListing] = [:]
         var descendantProbeFullyExhausted = false
         if immediateCandidate {
-            deepCandidate = true
-        } else if Self.isKnownGeneratedDirectory(at: url) {
             deepCandidate = true
         } else {
             guard shouldRunDescendantAtomicProbe(

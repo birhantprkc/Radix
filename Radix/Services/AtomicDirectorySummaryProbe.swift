@@ -23,13 +23,6 @@ extension AtomicDirectorySummarizer {
         min(max(64, minFileCount / 4), 512)
     }
 
-    nonisolated static func isKnownGeneratedDirectory(at url: URL) -> Bool {
-        let components = url.standardizedFileURL.pathComponents
-        guard components.count >= 3 else { return false }
-
-        return Array(components.suffix(3)) == ["Library", "Developer", "CoreSimulator"]
-    }
-
     nonisolated static func isNodeDependencyLayoutDirectory(at url: URL) -> Bool {
         let name = url.lastPathComponent
         if name == "node_modules" || name == ".pnpm" {
