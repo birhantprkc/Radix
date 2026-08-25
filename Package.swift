@@ -105,6 +105,7 @@ let package = Package(
                 "ViewModels/AppModel.swift",
                 "ViewModels/AppPresentationCoordinator.swift",
                 "ViewModels/ComparisonFlowController.swift",
+                "ViewModels/InspectorSelectionSummary.swift",
                 "ViewModels/ScanComparisonBrowserModel.swift",
                 "ViewModels/ScanComparisonSetup.swift",
                 "ViewModels/SidebarScanCacheController.swift",

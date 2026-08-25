@@ -16,6 +16,13 @@ nonisolated enum FullDiskAccessStatus: Equatable, Sendable {
     case unknown
 }
 
+nonisolated enum FullDiskAccessAdvice: Equatable, Sendable {
+    case none
+    case openSettings
+    case rescanMayBeNeeded
+    case savedScanIsHistorical
+}
+
 protocol SystemWorkspace {
     func activateFileViewerSelecting(_ fileURLs: [URL])
     func open(_ url: URL) -> Bool
@@ -815,30 +822,110 @@ private struct ProtectedPathProbe {
 }
 
 nonisolated enum PermissionAdvisor {
-    // Fragments whose contents Full Disk Access actually unlocks. Note that the
+    // Locations whose contents Full Disk Access actually unlocks. Note that the
     // TCC directory itself (/Library/Application Support/com.apple.TCC) is
     // root-owned/SIP-protected and stays unreadable even with FDA, so it must
-    // not be listed here — matching it would suggest FDA for a grant that can
-    // never resolve the warning.
-    private static let fullDiskAccessProtectedPathFragments = [
-        "/Library/Mail",
-        "/Library/Messages",
-        "/Library/Safari",
-        "/Library/HomeKit",
+    // not be listed here. These paths are resolved under the current user's
+    // home directory so similarly named folders and other users do not prompt.
+    private static let fullDiskAccessProtectedRelativePaths = [
+        "Library/Mail",
+        "Library/Messages",
+        "Library/Safari",
+        "Library/HomeKit",
+    ]
+
+    // Keep this deliberately conservative. These are locations Radix has
+    // verified remain protected by macOS rather than arbitrary EACCES/EPERM
+    // failures, which can also come from ownership or custom ACLs.
+    private static let expectedMacOSProtectedPaths = [
+        "/Library/Application Support/com.apple.TCC",
+        "/Library/Caches/com.apple.iconservices.store",
+        "/System/Volumes/Data/Library/Application Support/com.apple.TCC",
+        "/System/Volumes/Data/Library/Caches/com.apple.iconservices.store",
     ]
 
     static func shouldSuggestFullDiskAccess(
         for snapshot: ScanSnapshot?,
-        fullDiskAccessStatus: FullDiskAccessStatus
+        fullDiskAccessStatus: FullDiskAccessStatus,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> Bool {
-        // Don't nag for access that is already granted. Many system paths
-        // (e.g. /Library/Caches/com.apple.iconservices.store) stay unreadable
-        // regardless of FDA, so warning presence alone must not drive the prompt.
-        guard fullDiskAccessStatus != .granted else { return false }
-        guard let snapshot else { return false }
-        return snapshot.scanWarnings.contains(where: { warning in
-            warning.category == .permissionDenied &&
-                fullDiskAccessProtectedPathFragments.contains(where: { warning.path.contains($0) })
-        })
+        shouldSuggestFullDiskAccess(
+            for: snapshot?.scanWarnings ?? [],
+            fullDiskAccessStatus: fullDiskAccessStatus,
+            homeDirectory: homeDirectory
+        )
+    }
+
+    static func shouldSuggestFullDiskAccess(
+        for warnings: [ScanWarning],
+        fullDiskAccessStatus: FullDiskAccessStatus,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> Bool {
+        // Only recommend a settings change after the probe has positively
+        // established that access is missing. An unknown status must not flash
+        // an FDA prompt for a user who has already granted it.
+        guard fullDiskAccessStatus == .notGranted else { return false }
+        return containsFullDiskAccessRelevantWarning(
+            warnings,
+            homeDirectory: homeDirectory
+        )
+    }
+
+    static func fullDiskAccessAdvice(
+        for warnings: [ScanWarning],
+        fullDiskAccessStatus: FullDiskAccessStatus,
+        snapshotSource: ScanSnapshotSource,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> FullDiskAccessAdvice {
+        guard containsFullDiskAccessRelevantWarning(
+            warnings,
+            homeDirectory: homeDirectory
+        ) else {
+            return .none
+        }
+        if snapshotSource.isImported {
+            return .savedScanIsHistorical
+        }
+        switch fullDiskAccessStatus {
+        case .notGranted:
+            return .openSettings
+        case .granted:
+            return .rescanMayBeNeeded
+        case .unknown:
+            return .none
+        }
+    }
+
+    static func isExpectedMacOSProtection(_ warning: ScanWarning) -> Bool {
+        guard warning.category == .permissionDenied else { return false }
+        let warningPath = URL(filePath: warning.path).standardizedFileURL.path
+        return expectedMacOSProtectedPaths.contains { protectedPath in
+            warningPath == protectedPath || warningPath.hasPrefix(protectedPath + "/")
+        }
+    }
+
+    private static func containsFullDiskAccessRelevantWarning(
+        _ warnings: [ScanWarning],
+        homeDirectory: URL
+    ) -> Bool {
+        let protectedPaths = fullDiskAccessProtectedPaths(homeDirectory: homeDirectory)
+        return warnings.contains { warning in
+            guard warning.category == .permissionDenied else { return false }
+            let warningPath = URL(filePath: warning.path).standardizedFileURL.path
+            return protectedPaths.contains { protectedPath in
+                warningPath == protectedPath || warningPath.hasPrefix(protectedPath + "/")
+            }
+        }
+    }
+
+    private static func fullDiskAccessProtectedPaths(homeDirectory: URL) -> [String] {
+        let homePath = homeDirectory.standardizedFileURL.path
+        let protectedPaths = fullDiskAccessProtectedRelativePaths.map { relativePath in
+            URL(filePath: homePath).appending(path: relativePath).standardizedFileURL.path
+        }
+        guard homePath != "/", !homePath.hasPrefix("/System/Volumes/Data/") else {
+            return protectedPaths
+        }
+        return protectedPaths + protectedPaths.map { "/System/Volumes/Data" + $0 }
     }
 }

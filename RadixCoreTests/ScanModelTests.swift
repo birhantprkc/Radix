@@ -259,18 +259,15 @@ final class ScanModelTests: XCTestCase {
         }
     }
 
-    func testAccessPresentationReflectsAccessibilityAndSyntheticState() {
+    func testSecondaryStatusTextReflectsAccessibilityAndSyntheticState() {
         let readableNode = makeNode(id: "/Users/example/file.txt", isDirectory: false, isSynthetic: false, isAccessible: true)
         let limitedNode = makeNode(id: "/Users/example/private", isDirectory: true, isSynthetic: false, isAccessible: false)
         let syntheticNode = makeNode(id: "/System & Unattributed", isDirectory: true, isSynthetic: true, isAccessible: true)
 
-        XCTAssertEqual(readableNode.accessDescription, "Readable")
         XCTAssertNil(readableNode.secondaryStatusText)
 
-        XCTAssertEqual(limitedNode.accessDescription, "Limited")
         XCTAssertEqual(limitedNode.secondaryStatusText, "Limited access")
 
-        XCTAssertEqual(syntheticNode.accessDescription, "Estimated")
         XCTAssertEqual(syntheticNode.secondaryStatusText, "Estimated from volume usage")
     }
 
@@ -800,6 +797,7 @@ final class ScanModelTests: XCTestCase {
     }
 
     func testPermissionAdvisorSuppressesSuggestionWhenFullDiskAccessGranted() {
+        let exampleHome = URL(filePath: "/Users/example", directoryHint: .isDirectory)
         let root = makeNode(id: "/", isDirectory: true, isSynthetic: false, isAccessible: true)
         let snapshot = makeSnapshot(
             root: root,
@@ -815,10 +813,25 @@ final class ScanModelTests: XCTestCase {
 
         // FDA-unlockable warning present, but access is already granted: no nag.
         XCTAssertFalse(
-            PermissionAdvisor.shouldSuggestFullDiskAccess(for: snapshot, fullDiskAccessStatus: .granted)
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: snapshot,
+                fullDiskAccessStatus: .granted,
+                homeDirectory: exampleHome
+            )
         )
         XCTAssertTrue(
-            PermissionAdvisor.shouldSuggestFullDiskAccess(for: snapshot, fullDiskAccessStatus: .notGranted)
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: snapshot,
+                fullDiskAccessStatus: .notGranted,
+                homeDirectory: exampleHome
+            )
+        )
+        XCTAssertFalse(
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: snapshot,
+                fullDiskAccessStatus: .unknown,
+                homeDirectory: exampleHome
+            )
         )
     }
 
@@ -849,6 +862,170 @@ final class ScanModelTests: XCTestCase {
         XCTAssertFalse(
             PermissionAdvisor.shouldSuggestFullDiskAccess(for: snapshot, fullDiskAccessStatus: .unknown)
         )
+    }
+
+    func testPermissionAdvisorCanEvaluateSelectionScopedWarnings() {
+        let exampleHome = URL(filePath: "/Users/example", directoryHint: .isDirectory)
+        let unlockableWarning = ScanWarning(
+            path: "/Users/example/Library/Mail",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let permanentlyProtectedWarning = ScanWarning(
+            path: "/Library/Application Support/com.apple.TCC",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+
+        XCTAssertTrue(
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: [unlockableWarning],
+                fullDiskAccessStatus: .notGranted,
+                homeDirectory: exampleHome
+            )
+        )
+        XCTAssertFalse(
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: [permanentlyProtectedWarning],
+                fullDiskAccessStatus: .notGranted,
+                homeDirectory: exampleHome
+            )
+        )
+        XCTAssertFalse(
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: [unlockableWarning],
+                fullDiskAccessStatus: .granted,
+                homeDirectory: exampleHome
+            )
+        )
+        XCTAssertFalse(
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: [
+                    ScanWarning(
+                        path: "/Users/example/Library/MailBackup",
+                        message: "Permission denied",
+                        category: .permissionDenied
+                    )
+                ],
+                fullDiskAccessStatus: .notGranted,
+                homeDirectory: exampleHome
+            )
+        )
+        for unrelatedPath in [
+            "/tmp/Library/Mail",
+            "/Users/other/Library/Mail",
+        ] {
+            XCTAssertFalse(
+                PermissionAdvisor.shouldSuggestFullDiskAccess(
+                    for: [
+                        ScanWarning(
+                            path: unrelatedPath,
+                            message: "Permission denied",
+                            category: .permissionDenied
+                        )
+                    ],
+                    fullDiskAccessStatus: .notGranted,
+                    homeDirectory: exampleHome
+                )
+            )
+        }
+        XCTAssertTrue(
+            PermissionAdvisor.shouldSuggestFullDiskAccess(
+                for: [
+                    ScanWarning(
+                        path: "/System/Volumes/Data/Users/example/Library/Mail/V10",
+                        message: "Permission denied",
+                        category: .permissionDenied
+                    )
+                ],
+                fullDiskAccessStatus: .notGranted,
+                homeDirectory: exampleHome
+            )
+        )
+    }
+
+    func testPermissionAdvisorPreservesAdviceForLiveAndSavedScans() {
+        let exampleHome = URL(filePath: "/Users/example", directoryHint: .isDirectory)
+        let warnings = [
+            ScanWarning(
+                path: "/Users/example/Library/Mail",
+                message: "Permission denied",
+                category: .permissionDenied
+            )
+        ]
+        let importedSource = ScanSnapshotSource.imported(
+            ImportedSnapshotContext(
+                sourceURL: URL(filePath: "/tmp/example.radixscan"),
+                pathMode: .absolute,
+                liveActionCapability: .pathValidation
+            )
+        )
+
+        XCTAssertEqual(
+            PermissionAdvisor.fullDiskAccessAdvice(
+                for: warnings,
+                fullDiskAccessStatus: .notGranted,
+                snapshotSource: .live,
+                homeDirectory: exampleHome
+            ),
+            .openSettings
+        )
+        XCTAssertEqual(
+            PermissionAdvisor.fullDiskAccessAdvice(
+                for: warnings,
+                fullDiskAccessStatus: .granted,
+                snapshotSource: .live,
+                homeDirectory: exampleHome
+            ),
+            .rescanMayBeNeeded
+        )
+        XCTAssertEqual(
+            PermissionAdvisor.fullDiskAccessAdvice(
+                for: warnings,
+                fullDiskAccessStatus: .unknown,
+                snapshotSource: .live,
+                homeDirectory: exampleHome
+            ),
+            .none
+        )
+        XCTAssertEqual(
+            PermissionAdvisor.fullDiskAccessAdvice(
+                for: warnings,
+                fullDiskAccessStatus: .notGranted,
+                snapshotSource: importedSource,
+                homeDirectory: exampleHome
+            ),
+            .savedScanIsHistorical
+        )
+    }
+
+    func testPermissionAdvisorClassifiesOnlyVerifiedExpectedMacOSProtection() {
+        let expectedWarnings = [
+            ScanWarning(
+                path: "/Library/Application Support/com.apple.TCC",
+                message: "Permission denied",
+                category: .permissionDenied
+            ),
+            ScanWarning(
+                path: "/Library/Caches/com.apple.iconservices.store",
+                message: "Permission denied",
+                category: .permissionDenied
+            ),
+        ]
+        let arbitraryPermissionFailure = ScanWarning(
+            path: "/Users/example/Private",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let historicalFullDiskAccessPath = ScanWarning(
+            path: "/Users/example/Library/Mail",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+
+        XCTAssertTrue(expectedWarnings.allSatisfy(PermissionAdvisor.isExpectedMacOSProtection))
+        XCTAssertFalse(PermissionAdvisor.isExpectedMacOSProtection(arbitraryPermissionFailure))
+        XCTAssertFalse(PermissionAdvisor.isExpectedMacOSProtection(historicalFullDiskAccessPath))
     }
 
     private func makeSnapshot(

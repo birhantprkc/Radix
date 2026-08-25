@@ -237,13 +237,4 @@ extension FileNodeRecord {
         return nil
     }
 
-    var accessDescription: String {
-        if isSynthetic {
-            return String(localized: "Estimated", comment: "Metadata value indicating that storage is estimated.")
-        }
-        return isAccessible
-            ? String(localized: "Readable", comment: "Metadata value indicating that a file or folder is readable.")
-            : String(localized: "Limited", comment: "Metadata value indicating that access to a file or folder is limited.")
-    }
-
 }

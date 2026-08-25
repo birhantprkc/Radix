@@ -1,7 +1,2658 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Scans run" : {
+    "View All %lld Items…": {
+      "comment": "Action that opens the complete selected-items list in a popover.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Element anzeigen…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Alle %lld Elemente anzeigen…"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "View All %lld Item…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "View All %lld Items…"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ver %lld elemento…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ver los %lld elementos…"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Afficher %lld élément…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Afficher les %lld éléments…"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Visualizza %lld elemento…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Visualizza tutti i %lld elementi…"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "查看全部 %lld 个项目…"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "1 file": {
+      "comment": "Tooltip metadata for a directory containing one file.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Datei"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 archivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 fichier"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 file"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个文件"
+          }
+        }
+      }
+    },
+"%lld files": {
+      "comment": "Inspector multiple-selection file count.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Datei"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Dateien"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld archivo"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld archivos"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fichier"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fichiers"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld protected locations were skipped, so %@’s total may be incomplete.": {
+      "comment": "Inspector warning popover summary for protected locations.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld geschützter Ort wurde übersprungen, daher ist die Summe von %@ möglicherweise unvollständig."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld geschützte Orte wurden übersprungen, daher ist die Summe von %@ möglicherweise unvollständig."
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld protected location was skipped, so %@’s total may be incomplete."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld protected locations were skipped, so %@’s total may be incomplete."
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Se omitió %lld ubicación protegida, por lo que el total de %@ puede estar incompleto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Se omitieron %lld ubicaciones protegidas, por lo que el total de %@ puede estar incompleto."
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacement protégé a été ignoré ; le total de %@ peut donc être incomplet."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacements protégés ont été ignorés ; le total de %@ peut donc être incomplet."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizione protetta è stata ignorata, quindi il totale di %@ potrebbe essere incompleto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizioni protette sono state ignorate, quindi il totale di %@ potrebbe essere incompleto."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已跳过 %1$lld 个受保护位置，因此 %2$@ 的总计可能不完整。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld locations were skipped, so %@’s allocated size and contents may be incomplete.": {
+      "comment": "Inspector warning popover summary for skipped locations.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Ort wurde übersprungen, daher sind die zugewiesene Größe und der Inhalt von %@ möglicherweise unvollständig."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Orte wurden übersprungen, daher sind die zugewiesene Größe und der Inhalt von %@ möglicherweise unvollständig."
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld location was skipped, so %@’s allocated size and contents may be incomplete."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld locations were skipped, so %@’s allocated size and contents may be incomplete."
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Se omitió %lld ubicación, por lo que el tamaño asignado y el contenido de %@ pueden estar incompletos."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Se omitieron %lld ubicaciones, por lo que el tamaño asignado y el contenido de %@ pueden estar incompletos."
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacement a été ignoré ; la taille allouée et le contenu de %@ peuvent donc être incomplets."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacements ont été ignorés ; la taille allouée et le contenu de %@ peuvent donc être incomplets."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizione è stata ignorata, quindi la dimensione allocata e i contenuti di %@ potrebbero essere incompleti."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizioni sono state ignorate, quindi la dimensione allocata e i contenuti di %@ potrebbero essere incompleti."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已跳过 %1$lld 个位置，因此 %2$@ 的已分配大小和内容可能不完整。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Items inside another selected folder are included with that folder.": {
+      "comment": "Inspector note explaining how overlapping parent and child selections are treated.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elemente in einem anderen ausgewählten Ordner sind in diesem Ordner enthalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los elementos dentro de otra carpeta seleccionada se incluyen con esa carpeta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les éléments contenus dans un autre dossier sélectionné sont inclus avec ce dossier."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gli elementi all’interno di un’altra cartella selezionata sono inclusi con tale cartella."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位于另一个已选文件夹中的项目会随该文件夹一并处理。"
+          }
+        }
+      }
+    },
+    "Some selected items are no longer available in this scan and are excluded from totals.": {
+      "comment": "Inspector note explaining that stale selected items are excluded from storage totals.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einige ausgewählte Objekte sind in diesem Scan nicht mehr verfügbar und werden von den Summen ausgeschlossen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algunos elementos seleccionados ya no están disponibles en este análisis y se excluyen de los totales."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certains éléments sélectionnés ne sont plus disponibles dans cette analyse et sont exclus des totaux."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alcuni elementi selezionati non sono più disponibili in questa scansione e sono esclusi dai totali."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分所选项目在此扫描中已不再可用，因此不会计入总计。"
+          }
+        }
+      }
+    },
+    "If you enabled it after this scan, rescan to update these results.": {
+      "comment": "Inspector guidance shown when Full Disk Access is enabled but the current live scan still contains relevant access warnings.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn Sie ihn nach diesem Scan aktiviert haben, scannen Sie erneut, um diese Ergebnisse zu aktualisieren."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si lo activaste después de este análisis, vuelve a analizar para actualizar estos resultados."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si vous l’avez activé après cette analyse, relancez l’analyse pour actualiser ces résultats."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se lo hai abilitato dopo questa scansione, esegui una nuova scansione per aggiornare i risultati."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果你是在本次扫描后启用的，请重新扫描以更新这些结果。"
+          }
+        }
+      }
+    },
+    "This warning reflects the access available when this saved scan was created.": {
+      "comment": "Inspector explanation that a warning in an imported saved scan is historical.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Warnung spiegelt den Zugriff wider, der beim Erstellen dieses gespeicherten Scans verfügbar war."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta advertencia refleja el acceso disponible cuando se creó este análisis guardado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet avertissement reflète l’accès disponible lors de la création de cette analyse enregistrée."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo avviso riflette l’accesso disponibile quando è stata creata la scansione salvata."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此警告反映创建该已存扫描时可用的访问权限。"
+          }
+        }
+      }
+    },
+"%lld storage categories": {
+      "comment": "Inspector multiple-selection synthetic storage category count.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Speicherkategorie"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Speicherkategorien"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld storage category"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld storage categories"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld categoría de almacenamiento"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld categorías de almacenamiento"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld catégorie de stockage"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld catégories de stockage"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld categoria di archiviazione"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld categorie di archiviazione"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个存储类别"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+"Some selected files may share APFS storage. Allocated totals reflect Radix’s storage attribution and may differ from the space reclaimed by deletion.": {
+        "comment": "Inspector explanation for a multiple selection containing files with shared APFS storage.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Einige ausgewählte Dateien nutzen möglicherweise gemeinsam APFS-Speicher. Die Summen für „Belegt“ basieren auf der Speicherzuordnung von Radix und können vom durch Löschen freigegebenen Speicherplatz abweichen."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Es posible que algunos archivos seleccionados compartan almacenamiento APFS. Los totales asignados reflejan la atribución de almacenamiento de Radix y pueden diferir del espacio recuperado al eliminarlos."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Certains fichiers sélectionnés peuvent partager du stockage APFS. Les totaux alloués reflètent l’attribution du stockage par Radix et peuvent différer de l’espace récupéré après suppression."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Alcuni file selezionati potrebbero condividere spazio APFS. I totali allocati riflettono l’attribuzione dello spazio di Radix e potrebbero differire dallo spazio recuperato con l’eliminazione."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "部分所选文件可能共享 APFS 存储空间。“已分配”总计反映 Radix 的存储归属计算，可能与删除后释放的空间不同。"
+            }
+          }
+        }
+      },
+      "This is expected on macOS.": {
+        "comment": "Inspector guidance that a protected system location is normal macOS behavior.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Dies ist unter macOS zu erwarten."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Esto es normal en macOS."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "C’est normal sous macOS."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "È normale su macOS."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "这是 macOS 的正常行为。"
+            }
+          }
+        }
+      },
+    "Enable Full Disk Access for Radix, then rescan to include these locations.": {
+      "comment": "Inspector warning popover instructions when Full Disk Access may help.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktivieren Sie den Festplattenvollzugriff für Radix und scannen Sie anschließend erneut, um diese Orte einzubeziehen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activa el acceso total al disco para Radix y vuelve a analizar para incluir estas ubicaciones."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activez l’accès complet au disque pour Radix, puis relancez l’analyse pour inclure ces emplacements."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abilita Accesso completo al disco per Radix, quindi esegui nuovamente la scansione per includere queste posizioni."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为 Radix 启用完全磁盘访问权限，然后重新扫描以包含这些位置。"
+          }
+        }
+      }
+      },
+      "No Full Disk Access change is required.": {
+        "comment": "Inspector warning popover confirmation when protected locations are expected.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Der Festplattenvollzugriff muss nicht geändert werden."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "No es necesario cambiar el acceso total al disco."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Aucune modification de l’accès complet au disque n’est nécessaire."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Non è necessario modificare Accesso completo al disco."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "无需更改完全磁盘访问权限。"
+            }
+          }
+        }
+      },
+    "%lld system locations are protected by macOS, so this selection’s total may be incomplete.": {
+      "comment": "Inspector warning summary for protected locations that Full Disk Access cannot unlock.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Systemort ist durch macOS geschützt, daher ist die Summe dieser Auswahl möglicherweise unvollständig."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Systemorte sind durch macOS geschützt, daher ist die Summe dieser Auswahl möglicherweise unvollständig."
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld system location is protected by macOS, so this selection’s total may be incomplete."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld system locations are protected by macOS, so this selection’s total may be incomplete."
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ubicación del sistema está protegida por macOS, por lo que el total de esta selección puede estar incompleto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ubicaciones del sistema están protegidas por macOS, por lo que el total de esta selección puede estar incompleto."
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacement système est protégé par macOS ; le total de cette sélection peut donc être incomplet."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacements système sont protégés par macOS ; le total de cette sélection peut donc être incomplet."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizione di sistema è protetta da macOS, quindi il totale della selezione potrebbe essere incompleto."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizioni di sistema sono protette da macOS, quindi il totale della selezione potrebbe essere incompleto."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个系统位置受 macOS 保护，因此此选择的总计可能不完整。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld locations in this selection couldn’t be read. Its allocated size and contents may be incomplete.": {
+      "comment": "Inspector warning summary for unreadable locations within the current selection.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Ort in dieser Auswahl konnte nicht gelesen werden. Die zugewiesene Größe und der Inhalt sind möglicherweise unvollständig."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Orte in dieser Auswahl konnten nicht gelesen werden. Die zugewiesene Größe und der Inhalt sind möglicherweise unvollständig."
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld location in this selection couldn’t be read. Its allocated size and contents may be incomplete."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld locations in this selection couldn’t be read. Its allocated size and contents may be incomplete."
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "No se pudo leer %lld ubicación de esta selección. Su tamaño asignado y contenido pueden estar incompletos."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "No se pudieron leer %lld ubicaciones de esta selección. Su tamaño asignado y contenido pueden estar incompletos."
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacement de cette sélection n’a pas pu être lu. Sa taille allouée et son contenu peuvent être incomplets."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacements de cette sélection n’ont pas pu être lus. Sa taille allouée et son contenu peuvent être incomplets."
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Impossibile leggere %lld posizione in questa selezione. La dimensione allocata e i contenuti potrebbero essere incompleti."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Impossibile leggere %lld posizioni in questa selezione. La dimensione allocata e i contenuti potrebbero essere incompleti."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "无法读取此选择中的 %lld 个位置。其已分配大小和内容可能不完整。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Protected Locations in %@": {
+      "comment": "Inspector warning popover title for protected locations.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld geschützter Ort in %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld geschützte Orte in %@"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Protected Location in %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Protected Locations in %@"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ubicación protegida en %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld ubicaciones protegidas en %@"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacement protégé dans %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld emplacements protégés dans %@"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizione protetta in %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld posizioni protette in %@"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%2$@ 中有 %1$lld 个受保护位置"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Warnings in %@": {
+      "comment": "Inspector warning popover title.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Warnung in %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Warnungen in %@"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Warning in %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Warnings in %@"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld advertencia en %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld advertencias en %@"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld avertissement dans %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld avertissements dans %@"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld avviso in %@"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld avvisi in %@"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%2$@ 中有 %1$lld 条警告"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+"%lld folders": {
+      "comment": "Inspector multiple-selection folder count.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Ordner"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Ordner"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld folder"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld folders"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld carpeta"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld carpetas"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld dossier"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld dossiers"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cartella"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld cartelle"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个文件夹"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld packages": {
+      "comment": "Inspector multiple-selection package count.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Paket"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Pakete"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld package"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld packages"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld paquete"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld paquetes"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld paquet"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld paquets"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld pacchetto"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld pacchetti"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个软件包"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+"Show Less": {
+        "comment": "Action that collapses the Inspector selected-items list.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Weniger anzeigen"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Mostrar menos"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Afficher moins"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Mostra meno"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "收起"
+            }
+          }
+        }
+      },
+      "Show %lld More": {
+        "comment": "Action that expands the Inspector selected-items list.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%lld weitere anzeigen"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Mostrar %lld más"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Afficher %lld de plus"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Mostra altri %lld"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "再显示 %lld 项"
+            }
+          }
+        }
+      },
+      "Nothing Selected": {
+        "comment": "Inspector empty-state title.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Nichts ausgewählt"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Nada seleccionado"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Aucune sélection"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Nessuna selezione"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "未选择任何项目"
+            }
+          }
+        }
+      },
+      "Select an item in the disk map or file browser to inspect it.": {
+        "comment": "Inspector empty-state guidance.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Wähle ein Element in der Speicherkarte oder im Dateibrowser aus, um es zu prüfen."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Selecciona un elemento en el mapa de disco o en el explorador de archivos para inspeccionarlo."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Sélectionnez un élément dans la carte du disque ou le navigateur de fichiers pour l’inspecter."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Seleziona un elemento nella mappa del disco o nel browser dei file per esaminarlo."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "在磁盘图或文件浏览器中选择一个项目以查看其信息。"
+            }
+          }
+        }
+      },
+      "Protected by macOS": {
+        "comment": "Inspector warning title for locations macOS intentionally protects.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Von macOS geschützt"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Protegido por macOS"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Protégé par macOS"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Protetto da macOS"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "受 macOS 保护"
+            }
+          }
+        }
+      },
+      "Incomplete contents": {
+        "comment": "Inspector warning title for unreadable selected contents.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Unvollständige Inhalte"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contenido incompleto"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contenu incomplet"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contenuti incompleti"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "内容不完整"
+            }
+          }
+        }
+      },
+    "Show %lld Warnings": {
+      "comment": "Action that opens the Inspector warning details popover.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Warnung anzeigen"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Warnungen anzeigen"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Show %lld Warning"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Show %lld Warnings"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mostrar %lld advertencia"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mostrar %lld advertencias"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Afficher %lld avertissement"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Afficher %lld avertissements"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mostra %lld avviso"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mostra %lld avvisi"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "显示 %lld 条警告"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+"This selection comes from a saved scan. Removal actions are unavailable.": {
+        "comment": "Inspector notice explaining saved-scan action limits.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Diese Auswahl stammt aus einem gespeicherten Scan. Aktionen zum Entfernen sind nicht verfügbar."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Esta selección procede de un análisis guardado. Las acciones de eliminación no están disponibles."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Cette sélection provient d’une analyse enregistrée. Les actions de suppression ne sont pas disponibles."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Questa selezione proviene da una scansione salvata. Le azioni di rimozione non sono disponibili."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "此选择来自已保存的扫描。移除操作不可用。"
+            }
+          }
+        }
+      },
+      "The scanned volume itself cannot be added to the Discard Pile or moved to Trash.": {
+        "comment": "Inspector notice explaining scan-root action limits.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Das gescannte Volume selbst kann weder dem Ablagestapel hinzugefügt noch in den Papierkorb bewegt werden."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "El volumen analizado no se puede añadir a la pila de descarte ni mover a la papelera."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Le volume analysé lui-même ne peut pas être ajouté à la pile de suppression ni placé dans la corbeille."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Il volume scansionato non può essere aggiunto alla pila degli scarti né spostato nel Cestino."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "无法将扫描的宗卷本身添加到丢弃堆或移到废纸篓。"
+            }
+          }
+        }
+      },
+      "This location is protected from removal. You can still open it or reveal it in Finder.": {
+        "comment": "Inspector notice explaining protected-location action limits.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Dieser Ort ist vor dem Entfernen geschützt. Er kann weiterhin geöffnet oder im Finder angezeigt werden."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Esta ubicación está protegida contra la eliminación. Aún puedes abrirla o mostrarla en el Finder."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Cet emplacement est protégé contre la suppression. Vous pouvez toujours l’ouvrir ou l’afficher dans le Finder."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Questa posizione è protetta dalla rimozione. Puoi comunque aprirla o mostrarla nel Finder."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "此位置受保护，无法移除。你仍可打开它或在“访达”中显示它。"
+            }
+          }
+        }
+      },
+      "Some selected items are protected from removal. You can still reveal them in Finder.": {
+        "comment": "Inspector notice explaining protected multiple-selection action limits.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Einige ausgewählte Elemente sind vor dem Entfernen geschützt. Sie können weiterhin im Finder angezeigt werden."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Algunos elementos seleccionados están protegidos contra la eliminación. Aún puedes mostrarlos en el Finder."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Certains éléments sélectionnés sont protégés contre la suppression. Vous pouvez toujours les afficher dans le Finder."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Alcuni elementi selezionati sono protetti dalla rimozione. Puoi comunque mostrarli nel Finder."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "某些所选项目受保护，无法移除。你仍可在“访达”中显示它们。"
+            }
+          }
+        }
+      },
+      "Some selected items do not represent regular file paths, so file actions are unavailable.": {
+        "comment": "Inspector notice explaining why file actions are unavailable.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Einige ausgewählte Elemente stellen keine regulären Dateipfade dar, daher sind Dateiaktionen nicht verfügbar."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Algunos elementos seleccionados no representan rutas de archivo normales, por lo que las acciones de archivo no están disponibles."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Certains éléments sélectionnés ne correspondent pas à des chemins de fichier ordinaires ; les actions de fichier ne sont donc pas disponibles."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Alcuni elementi selezionati non rappresentano normali percorsi di file, quindi le azioni sui file non sono disponibili."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "某些所选项目并非常规文件路径，因此文件操作不可用。"
+            }
+          }
+        }
+      },
+      "Contents summarized": {
+        "comment": "Inspector notice title for a folder summarized during scanning.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Inhalte zusammengefasst"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contenido resumido"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contenu résumé"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Contenuti riepilogati"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "内容已汇总"
+            }
+          }
+        }
+      },
+      "Radix grouped this folder during the scan. Expand it to inspect individual items.": {
+        "comment": "Inspector explanation for a summarized folder.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Radix hat diesen Ordner beim Scan gruppiert. Erweitere ihn, um einzelne Elemente zu prüfen."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Radix agrupó esta carpeta durante el análisis. Expándela para inspeccionar los elementos individuales."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Radix a regroupé ce dossier pendant l’analyse. Développez-le pour inspecter les éléments individuellement."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Radix ha raggruppato questa cartella durante la scansione. Espandila per esaminare i singoli elementi."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Radix 在扫描期间汇总了此文件夹。展开它即可检查各个项目。"
+            }
+          }
+        }
+      },
+      "Details": {
+        "comment": "Inspector section title for file metadata.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Details"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Detalles"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Détails"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Dettagli"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "详细信息"
+            }
+          }
+        }
+      },
+      "More Actions": {
+        "comment": "Accessibility label and help text for the Inspector action menu.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Weitere Aktionen"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Más acciones"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Plus d’actions"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Altre azioni"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "更多操作"
+            }
+          }
+        }
+      },
+      "Selected Items": {
+        "comment": "Inspector section title listing a multiple selection.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Ausgewählte Elemente"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Elementos seleccionados"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Éléments sélectionnés"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Elementi selezionati"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "所选项目"
+            }
+          }
+        }
+      },
+      "Allocated size %@": {
+        "comment": "Accessibility label for the allocated storage value in the Inspector.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Zugewiesene Größe: %@"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Tamaño asignado: %@"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Taille allouée : %@"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Dimensione allocata: %@"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "已分配大小：%@"
+            }
+          }
+        }
+      },
+      "of parent": {
+        "comment": "Inspector statistic for a selected item's share of its parent folder.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "des übergeordneten Ordners"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "de la carpeta superior"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "du dossier parent"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "della cartella superiore"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "占父文件夹"
+            }
+          }
+        }
+      },
+      "of scan": {
+        "comment": "Inspector statistic for a selection's share of the entire scan.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "des Scans"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "del análisis"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "de l’analyse"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "della scansione"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "占扫描"
+            }
+          }
+        }
+      },
+      "Shared APFS storage": {
+        "comment": "Inspector title for a file known to share APFS storage.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Gemeinsam genutzter APFS-Speicher"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Almacenamiento APFS compartido"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Stockage APFS partagé"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Spazio APFS condiviso"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "共享的 APFS 存储空间"
+            }
+          }
+        }
+      },
+      "%@ logical size. Radix counts shared bytes once across clones, so deleting this file may free less than its apparent size.": {
+        "comment": "Inspector explanation for an APFS clone's logical size and attributed allocated storage.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ logische Größe. Radix zählt gemeinsam genutzte Bytes klonübergreifend nur einmal, daher gibt das Löschen dieser Datei möglicherweise weniger als ihre scheinbare Größe frei."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ de tamaño lógico. Radix cuenta los bytes compartidos una sola vez entre los clones, por lo que eliminar este archivo puede liberar menos que su tamaño aparente."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ de taille logique. Radix ne compte qu’une fois les octets partagés entre les clones ; supprimer ce fichier peut donc libérer moins que sa taille apparente."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ di dimensione logica. Radix conta una sola volta i byte condivisi tra i cloni, quindi eliminare questo file potrebbe liberare meno della sua dimensione apparente."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "逻辑大小为 %@。Radix 对克隆间共享的字节只计算一次，因此删除此文件释放的空间可能小于其显示大小。"
+            }
+          }
+        }
+      },
+      "%@ logical size. Parts of this file may share storage; exact shared and reclaimable bytes aren’t available from macOS.": {
+        "comment": "Inspector explanation for a file that may share APFS storage.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ logische Größe. Teile dieser Datei nutzen möglicherweise gemeinsamen Speicher; macOS stellt die genaue Anzahl gemeinsam genutzter und freigebbarer Bytes nicht bereit."
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ de tamaño lógico. Algunas partes de este archivo pueden compartir almacenamiento; macOS no proporciona la cantidad exacta de bytes compartidos y recuperables."
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ de taille logique. Certaines parties de ce fichier peuvent partager du stockage ; macOS ne fournit pas le nombre exact d’octets partagés et récupérables."
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%@ di dimensione logica. Alcune parti di questo file potrebbero condividere lo spazio; macOS non rende disponibili i byte condivisi e recuperabili esatti."
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "逻辑大小为 %@。此文件的部分内容可能共享存储空间；macOS 不提供共享和可回收字节的确切数量。"
+            }
+          }
+        }
+      },
+      "Saved scan": {
+        "comment": "Inspector notice title for a selection loaded from a saved scan.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Gespeicherter Scan"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Análisis guardado"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Analyse enregistrée"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Scansione salvata"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "已保存的扫描"
+            }
+          }
+        }
+      },
+      "Scan root": {
+        "comment": "Inspector notice title for the root of a scanned volume.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Scan-Wurzel"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Raíz del análisis"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Racine de l’analyse"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Radice della scansione"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "扫描根目录"
+            }
+          }
+        }
+      },
+      "Protected location": {
+        "comment": "Inspector notice title for a location protected from removal.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Geschützter Ort"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Ubicación protegida"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Emplacement protégé"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Posizione protetta"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "受保护的位置"
+            }
+          }
+        }
+      },
+      "Protected selection": {
+        "comment": "Inspector notice title for a multiple selection containing protected items.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Geschützte Auswahl"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Selección protegida"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Sélection protégée"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Selezione protetta"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "受保护的选择"
+            }
+          }
+        }
+      },
+      "Limited actions": {
+        "comment": "Inspector notice title when file actions are limited.",
+        "localizations": {
+          "de": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Eingeschränkte Aktionen"
+            }
+          },
+          "es": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Acciones limitadas"
+            }
+          },
+          "fr": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Actions limitées"
+            }
+          },
+          "it": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Azioni limitate"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "操作受限"
+            }
+          }
+        }
+      },
+    "%lld Items Selected": {
+      "comment": "Inspector heading for a selection containing one or more items.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Element ausgewählt"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Elemente ausgewählt"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Item Selected"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Items Selected"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld elemento seleccionado"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld elementos seleccionados"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld élément sélectionné"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld éléments sélectionnés"
+                }
+              }
+            }
+          }
+        },
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld elemento selezionato"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld elementi selezionati"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已选择 %lld 个项目"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+"Scans run" : {
       "comment" : "Stats pane label for the total number of scans run.",
       "localizations" : {
         "de" : {
@@ -1780,41 +4431,6 @@
         }
       }
     },
-    "1 file" : {
-      "comment" : "Tooltip metadata for a directory containing one file.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 Datei"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 archivo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 fichier"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 file"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 个文件"
-          }
-        }
-      }
-    },
     "1 grouped item" : {
       "comment" : "Tooltip metadata for one item represented by an aggregate segment.",
       "localizations" : {
@@ -1987,40 +4603,6 @@
         }
       }
     },
-    "Access" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zugriff"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acceso"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accès"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accesso"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "访问权限"
-          }
-        }
-      }
-    },
     "Action Failed" : {
       "comment" : "Fallback alert title shown when a file action fails.",
       "localizations" : {
@@ -2052,40 +4634,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "操作失败"
-          }
-        }
-      }
-    },
-    "Actions" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktionen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acciones"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actions"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Azioni"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "操作"
           }
         }
       }
@@ -2124,42 +4672,114 @@
         }
       }
     },
-    "Add %lld Items to Discard Pile" : {
-      "comment" : "Action for marking multiple selected items for possible deletion.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Elemente zur Löschliste hinzufügen"
+    "Add %lld Items to Discard Pile": {
+      "comment": "Action for marking one or more effective top-level selected items for possible deletion.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Element zur Löschliste hinzufügen"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Elemente zur Löschliste hinzufügen"
+                }
+              }
+            }
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añadir %lld elementos a la pila de descarte"
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Add %lld Item to Discard Pile"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Add %lld Items to Discard Pile"
+                }
+              }
+            }
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter %lld éléments à la pile de suppression"
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Añadir %lld elemento a la pila de descarte"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Añadir %lld elementos a la pila de descarte"
+                }
+              }
+            }
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi %lld elementi all'elenco di eliminazione"
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ajouter %lld élément à la pile de suppression"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ajouter %lld éléments à la pile de suppression"
+                }
+              }
+            }
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 %lld 个项目加入待处理列表"
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Aggiungi %lld elemento all'elenco di eliminazione"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Aggiungi %lld elementi all'elenco di eliminazione"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "将 %lld 个项目加入待处理列表"
+                }
+              }
+            }
           }
         }
       }
     },
-    "Add Cloud Item to Discard Pile?" : {
+"Add Cloud Item to Discard Pile?" : {
       "comment" : "Confirmation title before adding one cloud-stored item to the Discard Pile.",
       "localizations" : {
         "de" : {
@@ -6226,41 +8846,6 @@
         }
       }
     },
-    "Estimated" : {
-      "comment" : "Metadata value indicating that storage is estimated.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geschätzt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Estimado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Estimé"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stimato"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "估计"
-          }
-        }
-      }
-    },
     "Estimated from volume usage" : {
       "comment" : "Secondary status shown for system storage estimated from volume usage.",
       "localizations" : {
@@ -8719,40 +11304,6 @@
         }
       }
     },
-    "Key Stats" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wichtige Statistiken"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Estadísticas clave"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Statistiques clés"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Statistiche chiave"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关键统计信息"
-          }
-        }
-      }
-    },
     "Kind" : {
       "localizations" : {
         "de" : {
@@ -8990,41 +11541,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "资源库"
-          }
-        }
-      }
-    },
-    "Limited" : {
-      "comment" : "Metadata value indicating that access to a file or folder is limited.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eingeschränkt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Limitado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Limité"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Limitato"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "受限"
           }
         }
       }
@@ -9306,40 +11822,6 @@
         }
       }
     },
-    "Logical Size" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Logische Größe"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tamaño lógico"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Taille logique"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dimensione logica"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "逻辑大小"
-          }
-        }
-      }
-    },
     "macOS could not copy the path for %@." : {
       "comment" : "Error shown when copying a selected file path fails.",
       "localizations" : {
@@ -9589,40 +12071,6 @@
         }
       }
     },
-    "Metadata" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metadaten"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metadatos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Métadonnées"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metadati"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "元数据"
-          }
-        }
-      }
-    },
     "Modification date unavailable" : {
       "comment" : "Tooltip metadata shown when a file's modification date is unavailable.",
       "localizations" : {
@@ -9798,41 +12246,114 @@
         }
       }
     },
-    "Move %lld Items to Trash" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Elemente in den Papierkorb bewegen"
+    "Move %lld Items to Trash": {
+      "comment": "Destructive action for moving one or more effective top-level selected items to the Trash.",
+      "localizations": {
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Element in den Papierkorb bewegen"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Elemente in den Papierkorb bewegen"
+                }
+              }
+            }
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mover %lld elementos a la papelera"
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Item to Trash"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Items to Trash"
+                }
+              }
+            }
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer %lld éléments dans la corbeille"
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mover %lld elemento a la papelera"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mover %lld elementos a la papelera"
+                }
+              }
+            }
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sposta %lld elementi nel Cestino"
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Placer %lld élément dans la corbeille"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Placer %lld éléments dans la corbeille"
+                }
+              }
+            }
           }
         },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 %lld 个项目移到废纸篓"
+        "it": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Sposta %lld elemento nel Cestino"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Sposta %lld elementi nel Cestino"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "将 %lld 个项目移到废纸篓"
+                }
+              }
+            }
           }
         }
       }
     },
-    "Move Cloud Item to Trash?" : {
+"Move Cloud Item to Trash?" : {
       "comment" : "Second confirmation title before moving one cloud-stored item to the Trash.",
       "localizations" : {
         "de" : {
@@ -10595,40 +13116,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "当前扫描没有活动的受保护文件夹警告。"
-          }
-        }
-      }
-    },
-    "No Selection" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Auswahl"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sin selección"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucune sélection"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nessuna selezione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未选择"
           }
         }
       }
@@ -11978,40 +14465,6 @@
         }
       }
     },
-    "Parent" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Übergeordnet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Superior"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Parent"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Superiore"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上级"
-          }
-        }
-      }
-    },
     "parent %@ is missing from node order" : {
       "localizations" : {
         "de" : {
@@ -13271,41 +15724,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Radix 不会将 %@ 处的受保护位置移到废纸篓。"
-          }
-        }
-      }
-    },
-    "Readable" : {
-      "comment" : "Metadata value indicating that a file or folder is readable.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lesbar"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Legible"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lisible"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Leggibile"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可读取"
           }
         }
       }
@@ -15509,40 +17927,6 @@
         }
       }
     },
-    "Select a chart segment or table row to inspect metadata and file actions." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wählen Sie ein Diagrammsegment oder eine Tabellenzeile aus, um Metadaten und Dateiaktionen zu untersuchen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selecciona un segmento del gráfico o una fila de la tabla para inspeccionar los metadatos y las acciones de archivo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sélectionnez un segment du graphique ou une ligne du tableau pour inspecter les métadonnées et les actions sur les fichiers."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seleziona un segmento del grafico o una riga della tabella per esaminare i metadati e le azioni sui file."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择图表分区或表格行以查看元数据和文件操作。"
-          }
-        }
-      }
-    },
     "Select a row to inspect it. Double-click a folder to zoom in, or a summarized folder to expand it. Press Space for Quick Look." : {
       "localizations" : {
         "de" : {
@@ -15806,47 +18190,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此文件的部分内容可能共享 APFS 存储空间。macOS 未向 Radix 提供足够的信息，无法精确计算共享或可释放的字节数。"
-          }
-        }
-      }
-    },
-    "Storage" : {
-      "comment" : "Inspector section containing information about a file's storage behavior.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speicher"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Storage"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Almacenamiento"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stockage"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archiviazione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "存储空间"
           }
         }
       }
@@ -19660,40 +22003,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放大查看包含内容的目录以填充此表格。"
-          }
-        }
-      }
-    },
-    "Zoom Into Folder" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ordner vergrößern"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acercar a la carpeta"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zoomer sur le dossier"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ingrandisci cartella"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缩放到文件夹"
           }
         }
       }

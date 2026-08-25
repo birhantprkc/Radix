@@ -815,9 +815,9 @@ private extension ContentView {
             selectNodeAfterViewUpdate: { appModel.selectAfterViewUpdate(nodeID: $0) },
             selectAndFocusNodeAfterViewUpdate: { appModel.selectAndFocusAfterViewUpdate(nodeID: $0) },
             expandSummarizedNode: { appModel.expandSummarizedNode($0) {} },
-            zoomIntoSelection: { appModel.zoomIntoSelection() },
             selectedFileActions: primarySelectedFileActions,
             addPrimarySelectionToDiscardPile: { appModel.addPrimarySelectionToDiscardPileAfterViewUpdate() },
+            bulkFileActions: bulkFileActions,
             openFullDiskAccessSettings: { appModel.prepareAndOpenFullDiskAccessSettings() }
         )
     }

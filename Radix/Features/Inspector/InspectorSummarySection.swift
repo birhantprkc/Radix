@@ -2,41 +2,85 @@ import SwiftUI
 
 struct InspectorSummarySection: View {
     let node: FileNodeRecord
+    let availability: FileNodeActionAvailability
+    let actions: SelectedFileActions
 
     var body: some View {
         Section {
-            InspectorHeader(node: node)
-        }
-    }
-}
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: node.systemImageName)
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28, height: 28)
 
-private struct InspectorHeader: View {
-    let node: FileNodeRecord
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(node.name)
+                        .font(.headline)
+                        .lineLimit(2)
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: node.systemImageName)
-                .font(.title2)
-                .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
-                .frame(width: 28, height: 28)
+                    if node.isSynthetic {
+                        Text("Estimated storage that macOS reports as used but that Radix could not attribute to a regular file path.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(node.url.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(node.url.path)
+                    }
+                }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(node.name)
-                    .font(.headline)
-                    .lineLimit(3)
+                Spacer(minLength: 4)
 
-                if node.isSynthetic {
-                    Text("Estimated storage that macOS reports as used but that Radix could not attribute to a regular file path.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(node.url.path)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                if showsMoreMenu {
+                    Menu {
+                        if availability.canOpen {
+                            Button(
+                                FileNodeAction.open.title,
+                                systemImage: FileNodeAction.open.systemImageName
+                            ) {
+                                actions.perform(.open)
+                            }
+                        }
+
+                        if availability.canCopyPath {
+                            Button(
+                                FileNodeAction.copyPath.title,
+                                systemImage: FileNodeAction.copyPath.systemImageName
+                            ) {
+                                actions.perform(.copyPath)
+                            }
+                        }
+
+                        if availability.canMoveToTrash {
+                            Divider()
+
+                            Button(
+                                FileNodeAction.moveToTrash.title,
+                                systemImage: FileNodeAction.moveToTrash.systemImageName,
+                                role: .destructive
+                            ) {
+                                actions.perform(.moveToTrash)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                            .frame(width: 28, height: 28)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("More Actions")
+                    .accessibilityLabel("More Actions")
                 }
             }
         }
+    }
+
+    private var showsMoreMenu: Bool {
+        availability.canOpen || availability.canCopyPath || availability.canMoveToTrash
     }
 }
