@@ -259,18 +259,15 @@ final class ScanModelTests: XCTestCase {
         }
     }
 
-    func testAccessPresentationReflectsAccessibilityAndSyntheticState() {
+    func testSecondaryStatusTextReflectsAccessibilityAndSyntheticState() {
         let readableNode = makeNode(id: "/Users/example/file.txt", isDirectory: false, isSynthetic: false, isAccessible: true)
         let limitedNode = makeNode(id: "/Users/example/private", isDirectory: true, isSynthetic: false, isAccessible: false)
         let syntheticNode = makeNode(id: "/System & Unattributed", isDirectory: true, isSynthetic: true, isAccessible: true)
 
-        XCTAssertEqual(readableNode.accessDescription, "Readable")
         XCTAssertNil(readableNode.secondaryStatusText)
 
-        XCTAssertEqual(limitedNode.accessDescription, "Limited")
         XCTAssertEqual(limitedNode.secondaryStatusText, "Limited access")
 
-        XCTAssertEqual(syntheticNode.accessDescription, "Estimated")
         XCTAssertEqual(syntheticNode.secondaryStatusText, "Estimated from volume usage")
     }
 
