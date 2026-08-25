@@ -7,39 +7,49 @@ struct InspectorLargestChildrenSection: View {
     var body: some View {
         Section("Largest Children") {
             ForEach(children) { child in
-                Button {
+                InspectorLargestChildButton(node: child) {
                     selectChild(child)
-                } label: {
-                    LargestChildRow(node: child)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
 }
 
-private struct LargestChildRow: View {
+private struct InspectorLargestChildButton: View {
     let node: FileNodeRecord
+    let select: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: node.systemImageName)
-                .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
+        Button {
+            select()
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: node.systemImageName)
+                    .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
+                    .frame(width: 18)
 
-            VStack(alignment: .leading, spacing: 2) {
                 Text(node.name)
                     .lineLimit(1)
-                Text(node.itemKind)
-                    .font(.caption)
+
+                Spacer()
+
+                Text(RadixFormatters.size(node.allocatedSize))
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-
-            Spacer()
-
-            Text(RadixFormatters.size(node.allocatedSize))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background {
+                if isHovering {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.08))
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }

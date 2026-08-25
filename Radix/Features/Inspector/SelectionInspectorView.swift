@@ -4,7 +4,6 @@ struct SelectionInspectorActions {
     let selectNodeAfterViewUpdate: (String?) -> Void
     let selectAndFocusNodeAfterViewUpdate: (String) -> Void
     let expandSummarizedNode: (FileNodeRecord) -> Void
-    let zoomIntoSelection: () -> Void
     let selectedFileActions: SelectedFileActions
     let addPrimarySelectionToDiscardPile: () -> Void
     let bulkFileActions: BulkFileActions
@@ -18,92 +17,166 @@ struct SelectionInspectorView: View {
     let actions: SelectionInspectorActions
 
     var body: some View {
-        let largestChildren = largestSelectedChildren
         let selectedNodes = navigation.selectedNodes
 
         Group {
             if selectedNodes.count > 1 {
-                let summary = InspectorSelectionSummary(
-                    selectedNodes: selectedNodes,
-                    fileTreeStore: scanState.fileTreeStore
-                )
-                InspectorMultiSelectionView(
-                    summary: summary,
-                    percentOfScan: selectionPercentOfScanText(summary) ?? "—",
-                    availability: FileNodeActionAvailability(
-                        nodes: selectedNodes,
-                        activeTarget: scanState.selectedTarget,
-                        trashSafetyPolicy: scanState.trashSafetyPolicy,
-                        snapshotSource: scanState.snapshotSource
-                    ),
-                    actions: actions.bulkFileActions
-                )
+                multiSelectionView(selectedNodes)
             } else if let node = navigation.selectedNode {
-                Form {
-                    InspectorSummarySection(node: node)
-
-                    InspectorDetailsSections(
-                        node: node,
-                        parentName: navigation.selectedNodeParent?.name,
-                        percentOfParent: selectedNodePercentOfParentText ?? "—",
-                        percentOfScan: selectedNodePercentOfScanText ?? "—",
-                        activeTarget: scanState.selectedTarget
-                    )
-
-                    InspectorActionsSection(
-                        availability: selectedActionAvailability,
-                        canExpandSummarizedSelection: canExpandSummarizedSelection,
-                        canZoomIntoSelection: canZoomIntoSelection,
-                        fileActions: actions.selectedFileActions,
-                        addToDiscardPile: actions.addPrimarySelectionToDiscardPile,
-                        expandAction: { expandSummarizedSelection() },
-                        zoomAction: actions.zoomIntoSelection
-                    )
-
-                    if !largestChildren.isEmpty {
-                        InspectorLargestChildrenSection(children: largestChildren) { child in
-                            selectLargestChild(child)
-                        }
-                    }
-
-                    if !scanWarningsPreview.isEmpty {
-                        InspectorWarningsSection(
-                            warnings: scanWarningsPreview,
-                            shouldSuggestFullDiskAccess: shouldSuggestFullDiskAccess
-                        ) {
-                            actions.openFullDiskAccessSettings()
-                        }
-                    }
-                }
-                .formStyle(.grouped)
+                singleSelectionView(node)
             } else {
-                InspectorNoSelectionView(
-                    scanWarningsPreview: scanWarningsPreview,
-                    shouldSuggestFullDiskAccess: shouldSuggestFullDiskAccess
-                ) {
-                    actions.openFullDiskAccessSettings()
-                }
+                InspectorNoSelectionView()
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private var scanWarningsPreview: [ScanWarning] {
-        Array((scanState.snapshot?.scanWarnings ?? []).prefix(5))
-    }
+    private func multiSelectionView(_ selectedNodes: [FileNodeRecord]) -> some View {
+        let summary = InspectorSelectionSummary(
+            selectedNodes: selectedNodes,
+            fileTreeStore: scanState.fileTreeStore
+        )
+        let availability = FileNodeActionAvailability(
+            nodes: selectedNodes,
+            activeTarget: scanState.selectedTarget,
+            trashSafetyPolicy: scanState.trashSafetyPolicy,
+            snapshotSource: scanState.snapshotSource
+        )
+        let removalAvailability = FileNodeActionAvailability(
+            nodes: summary.topLevelSelectedNodes,
+            activeTarget: scanState.selectedTarget,
+            trashSafetyPolicy: scanState.trashSafetyPolicy,
+            snapshotSource: scanState.snapshotSource
+        )
+        let canMoveSelectionToTrash = summary.missingSelectedNodeCount == 0
+            && removalAvailability.canMoveToTrash
+        let warnings = relevantWarnings(for: summary.topLevelSelectedNodes)
 
-    private var shouldSuggestFullDiskAccess: Bool {
-        PermissionAdvisor.shouldSuggestFullDiskAccess(
-            for: scanState.snapshot,
-            fullDiskAccessStatus: fullDiskAccessStatus
+        return InspectorMultiSelectionView(
+            summary: summary,
+            percentOfScan: selectionPercentOfScanText(summary) ?? "—",
+            availability: availability,
+            canMoveSelectionToTrash: canMoveSelectionToTrash,
+            availabilityNotice: multiSelectionAvailabilityNotice(
+                summary: summary,
+                canMoveSelectionToTrash: canMoveSelectionToTrash
+            ),
+            warnings: warnings,
+            fullDiskAccessAdvice: fullDiskAccessAdvice(for: warnings),
+            actions: actions.bulkFileActions,
+            openFullDiskAccessSettings: actions.openFullDiskAccessSettings
         )
     }
 
-    private var largestSelectedChildren: [FileNodeRecord] {
-        guard let fileTreeStore = scanState.fileTreeStore,
-              let selectedNode = navigation.selectedNode,
-              selectedNode.isDirectory else { return [] }
-        return fileTreeStore.childrenPrefix(of: selectedNode.id, maxCount: 8)
+    private func singleSelectionView(_ node: FileNodeRecord) -> some View {
+        let availability = FileNodeActionAvailability(
+            node: node,
+            activeTarget: scanState.selectedTarget,
+            trashSafetyPolicy: scanState.trashSafetyPolicy,
+            snapshotSource: scanState.snapshotSource
+        )
+        let warnings = relevantWarnings(for: [node])
+        let largestChildren = largestChildren(of: node)
+
+        return VStack(spacing: 0) {
+            Form {
+                InspectorSummarySection(
+                    node: node,
+                    availability: availability,
+                    actions: actions.selectedFileActions
+                )
+
+                InspectorStorageSection(
+                    allocatedSize: node.allocatedSize,
+                    percentOfParent: selectedNodePercentOfParentText,
+                    percentOfScan: selectedNodePercentOfScanText ?? "—"
+                )
+
+                if node.cloneIdentity != nil || node.mayShareDataBlocks {
+                    InspectorSharedStorageSection(node: node)
+                }
+
+                if !warnings.isEmpty {
+                    InspectorWarningsSection(
+                        selectionName: node.name,
+                        warnings: warnings,
+                        fullDiskAccessAdvice: fullDiskAccessAdvice(for: warnings),
+                        openFullDiskAccessSettings: actions.openFullDiskAccessSettings
+                    )
+                }
+
+                if let notice = singleSelectionAvailabilityNotice(for: node) {
+                    InspectorAvailabilityNotice(kind: notice)
+                }
+
+                if canExpandSummarizedSelection(node) {
+                    InspectorSummarizedSection {
+                        actions.expandSummarizedNode(node)
+                    }
+                }
+
+                if !largestChildren.isEmpty {
+                    InspectorLargestChildrenSection(children: largestChildren) { child in
+                        selectLargestChild(child)
+                    }
+                }
+
+                if !node.isSynthetic {
+                    InspectorDetailsSection(
+                        node: node,
+                        activeTarget: scanState.selectedTarget
+                    )
+                }
+            }
+            .formStyle(.grouped)
+
+            if availability.canRevealInFinder || availability.canMoveToTrash {
+                InspectorActionBar(
+                    revealAction: availability.canRevealInFinder
+                        ? { actions.selectedFileActions.perform(.revealInFinder) }
+                        : nil,
+                    addToDiscardPileAction: availability.canMoveToTrash
+                        ? actions.addPrimarySelectionToDiscardPile
+                        : nil,
+                    addToDiscardPileTitle: String(
+                        localized: "Add to Discard Pile",
+                        comment: "Action for marking the selected item for possible deletion."
+                    )
+                )
+            }
+        }
+    }
+
+    private func relevantWarnings(for nodes: [FileNodeRecord]) -> [ScanWarning] {
+        guard let warnings = scanState.snapshot?.scanWarnings, !warnings.isEmpty else {
+            return []
+        }
+        let rootPaths = nodes
+            .filter { !$0.isSynthetic }
+            .map { $0.url.standardizedFileURL.path }
+        guard !rootPaths.isEmpty else { return [] }
+
+        return warnings.filter { warning in
+            let warningPath = URL(filePath: warning.path).standardizedFileURL.path
+            return rootPaths.contains { rootPath in
+                warningPath == rootPath || warningPath.hasPrefix(rootPath == "/" ? "/" : rootPath + "/")
+            }
+        }
+    }
+
+    private func fullDiskAccessAdvice(for warnings: [ScanWarning]) -> FullDiskAccessAdvice {
+        PermissionAdvisor.fullDiskAccessAdvice(
+            for: warnings,
+            fullDiskAccessStatus: fullDiskAccessStatus,
+            snapshotSource: scanState.snapshotSource
+        )
+    }
+
+    private func largestChildren(of node: FileNodeRecord) -> [FileNodeRecord] {
+        guard node.isDirectory, let fileTreeStore = scanState.fileTreeStore else {
+            return []
+        }
+        return fileTreeStore.childrenPrefix(of: node.id, maxCount: 3)
     }
 
     private var selectedNodePercentOfParentText: String? {
@@ -123,26 +196,40 @@ struct SelectionInspectorView: View {
         return RadixFormatters.percentage(part: summary.allocatedSize, total: root.allocatedSize)
     }
 
-    private var selectedActionAvailability: FileNodeActionAvailability {
-        FileNodeActionAvailability(
-            node: navigation.selectedNode,
-            activeTarget: scanState.selectedTarget,
-            trashSafetyPolicy: scanState.trashSafetyPolicy,
-            snapshotSource: scanState.snapshotSource
-        )
+    private func singleSelectionAvailabilityNotice(
+        for node: FileNodeRecord
+    ) -> InspectorAvailabilityNoticeKind? {
+        if scanState.snapshotSource.isImported {
+            return .savedScan
+        }
+        if scanState.selectedTarget?.kind == .volume,
+           scanState.selectedTarget?.id == node.id {
+            return .scanRoot
+        }
+        if scanState.trashSafetyPolicy.blockReason(for: node.url) != nil {
+            return .protectedLocation
+        }
+        return nil
     }
 
-    private var canExpandSummarizedSelection: Bool {
-        navigation.selectedNode?.isAutoSummarized == true
+    private func multiSelectionAvailabilityNotice(
+        summary: InspectorSelectionSummary,
+        canMoveSelectionToTrash: Bool
+    ) -> InspectorAvailabilityNoticeKind? {
+        if scanState.snapshotSource.isImported {
+            return .savedScan
+        }
+        if summary.selectedNodes.contains(where: { !$0.supportsFileActions }) {
+            return .limitedSelection
+        }
+        if summary.missingSelectedNodeCount == 0, !canMoveSelectionToTrash {
+            return .protectedSelection
+        }
+        return nil
     }
 
-    private var canZoomIntoSelection: Bool {
-        navigation.canZoomIntoSelection
-    }
-
-    private func expandSummarizedSelection() {
-        guard let node = navigation.selectedNode else { return }
-        actions.expandSummarizedNode(node)
+    private func canExpandSummarizedSelection(_ node: FileNodeRecord) -> Bool {
+        node.isAutoSummarized && !scanState.snapshotSource.isImported
     }
 
     private func selectLargestChild(_ child: FileNodeRecord) {

@@ -14,10 +14,11 @@ final class InspectorSelectionSummaryTests: XCTestCase {
         )
 
         XCTAssertEqual(summary.selectedCount, 2)
-        XCTAssertEqual(summary.countedNodes.map(\.id), [first.id, second.id])
+        XCTAssertEqual(summary.topLevelSelectedNodes.map(\.id), [first.id, second.id])
+        XCTAssertEqual(summary.topLevelSelectedCount, 2)
         XCTAssertEqual(summary.allocatedSize, 17)
-        XCTAssertEqual(summary.logicalSize, 17)
         XCTAssertFalse(summary.containsOverlappingSelections)
+        XCTAssertEqual(summary.missingSelectedNodeCount, 0)
     }
 
     func testNestedSelectionIsCountedOnce() {
@@ -44,9 +45,89 @@ final class InspectorSelectionSummaryTests: XCTestCase {
         )
 
         XCTAssertEqual(summary.selectedCount, 3)
-        XCTAssertEqual(summary.countedNodes.map(\.id), [folder.id, sibling.id])
+        XCTAssertEqual(summary.topLevelSelectedNodes.map(\.id), [folder.id, sibling.id])
+        XCTAssertEqual(summary.topLevelSelectedCount, 2)
         XCTAssertEqual(summary.allocatedSize, 25)
-        XCTAssertEqual(summary.logicalSize, 25)
         XCTAssertTrue(summary.containsOverlappingSelections)
+        XCTAssertEqual(summary.missingSelectedNodeCount, 0)
+    }
+
+    func testMissingSelectionIsNotReportedAsOverlap() {
+        let present = makeTestFileNode(id: "/root/present.txt", name: "present.txt", size: 12)
+        let stale = makeTestFileNode(id: "/root/stale.txt", name: "stale.txt", size: 30)
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: [present])
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [present]])
+
+        let summary = InspectorSelectionSummary(
+            selectedNodes: [present, stale],
+            fileTreeStore: store
+        )
+
+        XCTAssertEqual(summary.selectedCount, 2)
+        XCTAssertEqual(summary.topLevelSelectedNodes.map(\.id), [present.id])
+        XCTAssertEqual(summary.topLevelSelectedCount, 1)
+        XCTAssertEqual(summary.allocatedSize, present.allocatedSize)
+        XCTAssertFalse(summary.containsOverlappingSelections)
+        XCTAssertEqual(summary.missingSelectedNodeCount, 1)
+    }
+
+    func testSelectionPresentationCountsKindsAndOrdersLargestItemsFirst() {
+        let file = makeTestFileNode(id: "/root/file.txt", name: "file.txt", size: 8)
+        let folderChild = makeTestFileNode(id: "/root/folder/child.txt", name: "child.txt", size: 20)
+        let folder = makeTestDirectoryNode(
+            id: "/root/folder",
+            name: "folder",
+            children: [folderChild]
+        )
+        let packageChild = makeTestFileNode(id: "/root/App.app/item", name: "item", size: 12)
+        let package = makeTestDirectoryNode(
+            id: "/root/App.app",
+            name: "App.app",
+            children: [packageChild],
+            isPackage: true
+        )
+
+        let summary = InspectorSelectionSummary(
+            selectedNodes: [file, package, folder],
+            fileTreeStore: nil
+        )
+
+        XCTAssertEqual(summary.selectedFolderCount, 1)
+        XCTAssertEqual(summary.selectedFileCount, 1)
+        XCTAssertEqual(summary.selectedPackageCount, 1)
+        XCTAssertEqual(summary.selectedStorageCategoryCount, 0)
+        XCTAssertEqual(
+            summary.selectedNodesByAllocatedSize.map(\.id),
+            [folder.id, package.id, file.id]
+        )
+        XCTAssertEqual(
+            summary.largestSelectedNodes(limit: 2).map(\.id),
+            [folder.id, package.id]
+        )
+    }
+
+    func testSyntheticStorageAndSharedFilesHaveDistinctPresentationState() {
+        let synthetic = makeTestFileNode(
+            id: "/root/unattributed",
+            name: "Unattributed",
+            size: 30,
+            isSynthetic: true
+        )
+        let clone = makeTestFileNode(
+            id: "/root/clone.dat",
+            name: "clone.dat",
+            size: 12,
+            cloneIdentity: CloneIdentity(device: 1, cloneID: 7)
+        )
+
+        let summary = InspectorSelectionSummary(
+            selectedNodes: [synthetic, clone],
+            fileTreeStore: nil
+        )
+
+        XCTAssertEqual(summary.selectedFileCount, 1)
+        XCTAssertEqual(summary.selectedStorageCategoryCount, 1)
+        XCTAssertTrue(summary.containsSharedStorageItems)
+        XCTAssertTrue(summary.containsKnownClones)
     }
 }
