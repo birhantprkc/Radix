@@ -2,7 +2,7 @@
   "sourceLanguage" : "en",
   "strings" : {
     "View All %lld Items…": {
-      "comment": "Action that opens the complete Inspector selected-items list in a sheet.",
+      "comment": "Action that opens the complete selected-items list in a popover.",
       "localizations": {
         "de": {
           "variations": {
@@ -464,41 +464,6 @@
         }
       }
     },
-    "Allocated totals reflect Radix’s storage attribution, not guaranteed space reclaimed.": {
-      "comment": "Inspector disclaimer that attributed allocated storage is not guaranteed reclaimable space.",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zugewiesene Summen spiegeln die Speicherzuordnung von Radix wider, nicht den garantiert freigegebenen Speicherplatz."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Los totales asignados reflejan la atribución de almacenamiento de Radix, no el espacio cuya liberación esté garantizada."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les totaux alloués reflètent l’attribution du stockage par Radix, pas l’espace dont la libération est garantie."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "I totali allocati riflettono l’attribuzione dello spazio di Radix, non lo spazio che verrà liberato con certezza."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已分配总量反映 Radix 的存储归属，并不保证可释放相同空间。"
-          }
-        }
-      }
-    },
     "Items inside another selected folder are included with that folder.": {
       "comment": "Inspector note explaining how overlapping parent and child selections are treated.",
       "localizations": {
@@ -530,6 +495,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "位于另一个已选文件夹中的项目会随该文件夹一并处理。"
+          }
+        }
+      }
+    },
+    "Some selected items are no longer available in this scan and are excluded from totals.": {
+      "comment": "Inspector note explaining that stale selected items are excluded from storage totals.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einige ausgewählte Objekte sind in diesem Scan nicht mehr verfügbar und werden von den Summen ausgeschlossen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algunos elementos seleccionados ya no están disponibles en este análisis y se excluyen de los totales."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certains éléments sélectionnés ne sont plus disponibles dans cette analyse et sont exclus des totaux."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alcuni elementi selezionati non sono più disponibili in questa scansione e sono esclusi dai totali."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分所选项目在此扫描中已不再可用，因此不会计入总计。"
           }
         }
       }
@@ -746,41 +746,6 @@
           }
         }
       },
-      "Some selected items are no longer available in this scan and are excluded from totals.": {
-        "comment": "Inspector note explaining that stale selected items are excluded from storage totals.",
-        "localizations": {
-          "de": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Einige ausgewählte Objekte sind in diesem Scan nicht mehr verfügbar und werden von den Summen ausgeschlossen."
-            }
-          },
-          "es": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Algunos elementos seleccionados ya no están disponibles en este análisis y se excluyen de los totales."
-            }
-          },
-          "fr": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Certains éléments sélectionnés ne sont plus disponibles dans cette analyse et sont exclus des totaux."
-            }
-          },
-          "it": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Alcuni elementi selezionati non sono più disponibili in questa scansione e sono esclusi dai totali."
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "部分所选项目在此扫描中已不再可用，因此不会计入总计。"
-            }
-          }
-        }
-      },
       "This is expected on macOS.": {
         "comment": "Inspector guidance that a protected system location is normal macOS behavior.",
         "localizations": {
@@ -816,40 +781,40 @@
           }
         }
       },
-      "Full Disk Access may allow Radix to scan some of these locations.": {
-        "comment": "Inspector warning popover guidance when Full Disk Access may help.",
-        "localizations": {
-          "de": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Mit Festplattenvollzugriff kann Radix möglicherweise einige dieser Orte scannen."
-            }
-          },
-          "es": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "El acceso total al disco puede permitir que Radix analice algunas de estas ubicaciones."
-            }
-          },
-          "fr": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "L’accès complet au disque peut permettre à Radix d’analyser certains de ces emplacements."
-            }
-          },
-          "it": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Accesso completo al disco potrebbe consentire a Radix di scansionare alcune di queste posizioni."
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "完全磁盘访问权限可能允许 Radix 扫描其中部分位置。"
-            }
+    "Enable Full Disk Access for Radix, then rescan to include these locations.": {
+      "comment": "Inspector warning popover instructions when Full Disk Access may help.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktivieren Sie den Festplattenvollzugriff für Radix und scannen Sie anschließend erneut, um diese Orte einzubeziehen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activa el acceso total al disco para Radix y vuelve a analizar para incluir estas ubicaciones."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activez l’accès complet au disque pour Radix, puis relancez l’analyse pour inclure ces emplacements."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abilita Accesso completo al disco per Radix, quindi esegui nuovamente la scansione per includere queste posizioni."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为 Radix 启用完全磁盘访问权限，然后重新扫描以包含这些位置。"
           }
         }
+      }
       },
       "No Full Disk Access change is required.": {
         "comment": "Inspector warning popover confirmation when protected locations are expected.",

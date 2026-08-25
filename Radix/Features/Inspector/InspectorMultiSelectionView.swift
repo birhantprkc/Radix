@@ -145,7 +145,6 @@ struct InspectorMultiSelectionView: View {
         if summary.missingSelectedNodeCount > 0 {
             notes.append(String(localized: "Some selected items are no longer available in this scan and are excluded from totals."))
         }
-        notes.append(String(localized: "Allocated totals reflect Radix’s storage attribution, not guaranteed space reclaimed."))
         return notes
     }
 
@@ -196,10 +195,11 @@ private struct InspectorSelectedItemsSection: View {
     let summary: InspectorSelectionSummary
 
     @State private var showsAllItems = false
-    @State private var showsAllItemsSheet = false
+    @State private var isPresentingAllItems = false
+    @State private var selectedItemOrder: [String] = []
 
     private let defaultVisibleCount = 3
-    private let maximumInlineCount = 100
+    private let maximumInlineCount = 12
 
     var body: some View {
         Section("Selected Items") {
@@ -209,8 +209,9 @@ private struct InspectorSelectedItemsSection: View {
 
             if summary.selectedCount > defaultVisibleCount {
                 Button {
-                    if presentsAllItemsInSheet {
-                        showsAllItemsSheet = true
+                    if usesPopover {
+                        selectedItemOrder = summary.selectedNodesByAllocatedSize.map(\.id)
+                        isPresentingAllItems = true
                     } else {
                         showsAllItems.toggle()
                     }
@@ -218,39 +219,45 @@ private struct InspectorSelectedItemsSection: View {
                     HStack {
                         Text(disclosureTitle)
                         Spacer()
-                        Image(systemName: showsAllItems ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.semibold))
+                        if let disclosureSystemImage {
+                            Image(systemName: disclosureSystemImage)
+                                .font(.caption.weight(.semibold))
+                        }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
+                .popover(isPresented: $isPresentingAllItems, arrowEdge: .trailing) {
+                    InspectorSelectedItemsPopover(
+                        selectionTitle: selectionTitle,
+                        nodes: selectedNodesForPopover
+                    )
+                }
             }
         }
         .onChange(of: summary.selectedNodes.map(\.id)) { _, _ in
             showsAllItems = false
-            showsAllItemsSheet = false
-        }
-        .sheet(isPresented: $showsAllItemsSheet) {
-            InspectorAllSelectedItemsView(nodes: summary.selectedNodesByAllocatedSize)
+            isPresentingAllItems = false
+            selectedItemOrder = []
         }
     }
 
     private var visibleNodes: [FileNodeRecord] {
-        showsAllItems && !presentsAllItemsInSheet
+        showsAllItems
             ? summary.selectedNodesByAllocatedSize
             : summary.largestSelectedNodes(limit: defaultVisibleCount)
     }
 
-    private var presentsAllItemsInSheet: Bool {
+    private var usesPopover: Bool {
         summary.selectedCount > maximumInlineCount
     }
 
     private var disclosureTitle: String {
-        if presentsAllItemsInSheet {
+        if usesPopover {
             return String(
                 localized: "View All \(summary.selectedCount) Items…",
-                comment: "Action that opens the complete Inspector selected-items list in a sheet."
+                comment: "Action that opens the complete selected-items list in a popover."
             )
         }
         if showsAllItems {
@@ -261,35 +268,59 @@ private struct InspectorSelectedItemsSection: View {
             comment: "Action that expands the Inspector selected-items list."
         )
     }
+
+    private var disclosureSystemImage: String? {
+        if usesPopover {
+            return nil
+        }
+        return showsAllItems ? "chevron.up" : "chevron.down"
+    }
+
+    private var selectionTitle: String {
+        String(
+            localized: "\(summary.selectedCount) Items Selected",
+            comment: "Inspector heading for a selection containing multiple items."
+        )
+    }
+
+    private var selectedNodesForPopover: [FileNodeRecord] {
+        let nodesByID = Dictionary(
+            uniqueKeysWithValues: summary.selectedNodes.map { ($0.id, $0) }
+        )
+        return selectedItemOrder.compactMap { nodesByID[$0] }
+    }
 }
 
-private struct InspectorAllSelectedItemsView: View {
-    @Environment(\.dismiss) private var dismiss
-
+private struct InspectorSelectedItemsPopover: View {
+    let selectionTitle: String
     let nodes: [FileNodeRecord]
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Selected Items")
-                    .font(.title2.weight(.semibold))
+                    .font(.headline)
 
-                Spacer()
-
-                Button("Done") {
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
+                Text(selectionTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
 
             Divider()
 
             List(nodes) { node in
                 InspectorSelectedItemRow(node: node)
             }
+            .listStyle(.inset)
         }
-        .frame(minWidth: 460, minHeight: 420)
+        .frame(width: 360, height: popoverHeight)
+    }
+
+    private var popoverHeight: CGFloat {
+        min(max(CGFloat(nodes.count) * 28 + 58, 220), 420)
     }
 }
 

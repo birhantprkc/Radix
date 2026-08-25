@@ -162,32 +162,22 @@ private struct InspectorWarningReviewPopover: View {
 
             Divider()
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(presentation.warnings.enumerated()), id: \.element.id) { index, warning in
-                        InspectorWarningReviewRow(warning: warning)
-
-                        if index < presentation.warnings.count - 1 {
-                            Divider()
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(height: min(CGFloat(presentation.warnings.count) * 76, 304))
+            warningList
 
             if presentation.suggestsFullDiskAccess {
                 Divider()
 
-                Button("Open Full Disk Access Settings", systemImage: "gear") {
-                    openFullDiskAccessSettings()
-                }
-                .buttonStyle(.borderedProminent)
+                VStack(alignment: .leading, spacing: 10) {
+                    Button("Open Full Disk Access Settings", systemImage: "gear") {
+                        openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
 
-                Text("Full Disk Access may allow Radix to scan some of these locations.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Enable Full Disk Access for Radix, then rescan to include these locations.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else if presentation.confirmsExpectedProtection {
                 Divider()
 
@@ -220,6 +210,31 @@ private struct InspectorWarningReviewPopover: View {
         }
         .padding(16)
         .frame(width: 360, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var warningList: some View {
+        if presentation.warnings.count > 3 {
+            ScrollView {
+                warningRows
+            }
+            .frame(height: 304)
+        } else {
+            warningRows
+        }
+    }
+
+    private var warningRows: some View {
+        LazyVStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(presentation.warnings.enumerated()), id: \.element.id) { index, warning in
+                InspectorWarningReviewRow(warning: warning)
+
+                if index < presentation.warnings.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
