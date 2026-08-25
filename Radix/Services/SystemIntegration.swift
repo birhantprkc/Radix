@@ -904,6 +904,12 @@ nonisolated enum PermissionAdvisor {
         }
     }
 
+    static func warningsRequiringUserAttention(_ warnings: [ScanWarning]) -> [ScanWarning] {
+        // Keep known, unavoidable protections available in scan details without
+        // turning them into a persistent workspace alert.
+        warnings.filter { !isExpectedMacOSProtection($0) }
+    }
+
     private static func containsFullDiskAccessRelevantWarning(
         _ warnings: [ScanWarning],
         homeDirectory: URL

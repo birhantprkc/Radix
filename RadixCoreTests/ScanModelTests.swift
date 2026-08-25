@@ -1028,6 +1028,35 @@ final class ScanModelTests: XCTestCase {
         XCTAssertFalse(PermissionAdvisor.isExpectedMacOSProtection(historicalFullDiskAccessPath))
     }
 
+    func testPermissionAdvisorExcludesExpectedProtectionFromWarningsRequiringAttention() {
+        let expectedProtection = ScanWarning(
+            path: "/Library/Application Support/com.apple.TCC",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let arbitraryPermissionFailure = ScanWarning(
+            path: "/Users/example/Private",
+            message: "Permission denied",
+            category: .permissionDenied
+        )
+        let fileSystemFailure = ScanWarning(
+            path: "/Users/example/Damaged",
+            message: "Input/output error",
+            category: .fileSystem
+        )
+
+        let warnings = PermissionAdvisor.warningsRequiringUserAttention([
+            expectedProtection,
+            arbitraryPermissionFailure,
+            fileSystemFailure,
+        ])
+
+        XCTAssertEqual(
+            warnings.map(\.path),
+            [arbitraryPermissionFailure.path, fileSystemFailure.path]
+        )
+    }
+
     private func makeSnapshot(
         root: FileNodeRecord,
         treeStore: FileTreeStore,

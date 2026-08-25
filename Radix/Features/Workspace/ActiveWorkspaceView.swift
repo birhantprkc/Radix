@@ -143,8 +143,7 @@ struct ActiveWorkspaceView: View {
             if showsWarningFooter {
                 Divider()
                 WarningFooter(
-                    warnings: snapshot.scanWarnings,
-                    fullDiskAccessStatus: fullDiskAccessStatus,
+                    warnings: warningFooterWarnings,
                     shouldSuggestFullDiskAccess: shouldSuggestFullDiskAccess,
                     actions: actions,
                     onDismiss: { dismissedWarningsScanScope = warningDismissalScope }
@@ -154,7 +153,11 @@ struct ActiveWorkspaceView: View {
     }
 
     private var showsWarningFooter: Bool {
-        !snapshot.scanWarnings.isEmpty && dismissedWarningsScanScope != warningDismissalScope
+        !warningFooterWarnings.isEmpty && dismissedWarningsScanScope != warningDismissalScope
+    }
+
+    private var warningFooterWarnings: [ScanWarning] {
+        PermissionAdvisor.warningsRequiringUserAttention(snapshot.scanWarnings)
     }
 
     private var warningDismissalScope: WarningDismissalScope {

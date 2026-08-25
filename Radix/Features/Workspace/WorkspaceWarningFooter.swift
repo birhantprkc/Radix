@@ -3,7 +3,6 @@ import SwiftUI
 
 struct WarningFooter: View {
     let warnings: [ScanWarning]
-    let fullDiskAccessStatus: FullDiskAccessStatus
     let shouldSuggestFullDiskAccess: Bool
     let actions: WorkspaceActions
     let onDismiss: () -> Void
@@ -63,12 +62,6 @@ struct WarningFooter: View {
     }
 
     private var summary: String {
-        // When access is already granted, the remaining warnings are system
-        // locations macOS protects regardless of Full Disk Access, so avoid
-        // implying the user can resolve them.
-        if fullDiskAccessStatus == .granted {
-            return String(localized: "\(warnings.count) system locations are protected by macOS and were skipped.", comment: "Warning summary for macOS-protected locations skipped despite Full Disk Access. The location count controls pluralization.")
-        }
-        return String(localized: "\(warnings.count) locations had limited access or scan warnings.", comment: "Warning summary for locations with limited access or scan warnings. The location count controls pluralization.")
+        String(localized: "\(warnings.count) locations had limited access or scan warnings.", comment: "Warning summary for locations with limited access or scan warnings. The location count controls pluralization.")
     }
 }
