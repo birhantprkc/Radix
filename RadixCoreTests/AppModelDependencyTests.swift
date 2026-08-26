@@ -1750,7 +1750,7 @@ final class AppModelDependencyTests: XCTestCase {
         let snapshot = makeTestSnapshot(root: root, store: store)
         model.scanState.replaceCurrentSnapshot(snapshot)
         model.navigation.reconcileAfterSnapshotApplied(snapshot)
-        model.navigation.setFocusedNodeID(folder.id)
+        model.focus(nodeID: folder.id)
         model.select(nodeID: child.id)
 
         model.addNodesToDiscardPile([folder])
@@ -1758,6 +1758,80 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.navigation.focusedNodeID, root.id)
         XCTAssertNil(model.navigation.selectedNodeID)
         XCTAssertTrue(model.navigation.selectedNodeIDs.isEmpty)
+        XCTAssertFalse(model.navigation.canNavigateBack)
+    }
+
+    @MainActor
+    func testDiscardPileAddPrunesQueuedFolderFromBackHistory() {
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let queued = makeTestDirectoryNode(
+            id: "/selection/queued",
+            name: "queued",
+            children: []
+        )
+        let visible = makeTestDirectoryNode(
+            id: "/selection/visible",
+            name: "visible",
+            children: []
+        )
+        let root = makeTestDirectoryNode(
+            id: "/selection",
+            name: "selection",
+            children: [queued, visible]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [queued, visible]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+        model.focus(nodeID: queued.id)
+        model.focus(nodeID: visible.id)
+
+        model.addNodesToDiscardPile([queued])
+        model.navigateBack()
+
+        XCTAssertEqual(model.navigation.focusedNodeID, root.id)
+        XCTAssertFalse(model.navigation.canNavigateBack)
+        XCTAssertTrue(model.navigation.canNavigateForward)
+    }
+
+    @MainActor
+    func testDiscardPileAddPrunesQueuedDescendantFromForwardHistory() {
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let descendant = makeTestDirectoryNode(
+            id: "/selection/queued/descendant",
+            name: "descendant",
+            children: []
+        )
+        let queued = makeTestDirectoryNode(
+            id: "/selection/queued",
+            name: "queued",
+            children: [descendant]
+        )
+        let root = makeTestDirectoryNode(
+            id: "/selection",
+            name: "selection",
+            children: [queued]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [
+            root.id: [queued],
+            queued.id: [descendant],
+        ])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+        model.focus(nodeID: descendant.id)
+        model.navigateBack()
+
+        model.addNodesToDiscardPile([queued])
+
+        XCTAssertEqual(model.navigation.focusedNodeID, root.id)
+        XCTAssertFalse(model.navigation.canNavigateForward)
+        model.navigateForward()
+        XCTAssertEqual(model.navigation.focusedNodeID, root.id)
     }
 
     @MainActor

@@ -53,19 +53,16 @@ struct ChartLayoutPresentationState: Equatable, Sendable {
 
     init(
         readiness: ChartLayoutReadiness,
-        layoutID: String,
-        isInputPending: Bool
+        layoutID: String
     ) {
         let hasCurrentRenderedLayout = readiness.renderedLayoutID == layoutID
         let hasCurrentFailure = readiness.failedLayoutID == layoutID
 
         // A normalized render remains valid during same-semantic resize work.
-        isAwaitingLayout = isInputPending
-            || (!hasCurrentRenderedLayout
-                && (readiness.isPending || !hasCurrentFailure))
-        canUseRenderedLayout = !isInputPending && hasCurrentRenderedLayout
-        showsFailure = !isInputPending
-            && !readiness.isPending
+        isAwaitingLayout = !hasCurrentRenderedLayout
+            && (readiness.isPending || !hasCurrentFailure)
+        canUseRenderedLayout = hasCurrentRenderedLayout
+        showsFailure = !readiness.isPending
             && hasCurrentFailure
             && readiness.failure != nil
     }

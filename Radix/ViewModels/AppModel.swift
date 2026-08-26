@@ -2766,6 +2766,8 @@ final class AppModel: ObservableObject {
         }) {
             navigationModel.clearSelection()
         }
+
+        navigationModel.reconcileFocusHistory(excluding: hiddenNodeIDs)
     }
 
     private func discardPileFocusFallbackID(

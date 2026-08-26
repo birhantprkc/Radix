@@ -167,6 +167,61 @@ struct TreemapSelectionOverlay: View, Equatable {
     }
 }
 
+struct TreemapDiscardPileOverlay: View, Equatable {
+    let segments: [TreemapSegment]
+    let renderVersion: Int
+    let overlay: DiscardPileVisualizationOverlay
+    let contentFrame: CGRect
+
+    static func == (lhs: TreemapDiscardPileOverlay, rhs: TreemapDiscardPileOverlay) -> Bool {
+        lhs.renderVersion == rhs.renderVersion
+            && lhs.overlay == rhs.overlay
+            && lhs.contentFrame == rhs.contentFrame
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let viewportBounds = CGRect(origin: .zero, size: size)
+            context.clip(to: Path(viewportBounds))
+
+            for segment in segments {
+                let aggregateContainerNodeID = segment.isAggregate
+                    ? segment.containerNodeID
+                    : nil
+                guard let role = overlay.role(
+                    for: segment.nodeID,
+                    aggregateContainerNodeID: aggregateContainerNodeID
+                ) else { continue }
+                let displayRect = TreemapRenderer.displayRect(for: segment, in: contentFrame)
+                guard displayRect.intersects(viewportBounds) else { continue }
+                let path = tilePath(in: displayRect)
+
+                switch role {
+                case .queuedRoot:
+                    context.fill(
+                        path,
+                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                    )
+                    context.stroke(
+                        path,
+                        with: .color(Color.accentColor.opacity(0.9)),
+                        style: StrokeStyle(lineWidth: 2, dash: [5, 3])
+                    )
+                case .queuedDescendant:
+                    // The queued root tile already covers nested treemap content.
+                    break
+                case .containsQueuedItem:
+                    context.stroke(
+                        path,
+                        with: .color(Color.accentColor.opacity(0.72)),
+                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                    )
+                }
+            }
+        }
+    }
+}
+
 struct TreemapHoverOverlay: View, Equatable {
     let segment: TreemapSegment?
     let colorScheme: ColorScheme

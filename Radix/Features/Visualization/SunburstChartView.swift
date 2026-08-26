@@ -17,7 +17,7 @@ struct SunburstChartView: View {
     let selectedAncestorIDs: Set<String>
     let depthLimit: Int
     let layoutID: String
-    let isInputPending: Bool
+    let discardPileNodeIDs: Set<FileNodeRecord.ID>
     let onSelect: (String?) -> Void
     let onZoom: (String) -> Void
     let onSegmentClick: () -> Void
@@ -45,7 +45,7 @@ struct SunburstChartView: View {
         selectedAncestorIDs: Set<String>,
         depthLimit: Int,
         layoutID: String,
-        isInputPending: Bool,
+        discardPileNodeIDs: Set<FileNodeRecord.ID>,
         onSelect: @escaping (String?) -> Void,
         onZoom: @escaping (String) -> Void,
         onSegmentClick: @escaping () -> Void,
@@ -65,7 +65,7 @@ struct SunburstChartView: View {
         self.selectedAncestorIDs = selectedAncestorIDs
         self.depthLimit = depthLimit
         self.layoutID = layoutID
-        self.isInputPending = isInputPending
+        self.discardPileNodeIDs = discardPileNodeIDs
         self.onSelect = onSelect
         self.onZoom = onZoom
         self.onSegmentClick = onSegmentClick
@@ -118,8 +118,7 @@ struct SunburstChartView: View {
     private var layoutPresentationState: ChartLayoutPresentationState {
         ChartLayoutPresentationState(
             readiness: chartModel.layoutReadiness,
-            layoutID: layoutRequestID,
-            isInputPending: isInputPending
+            layoutID: layoutRequestID
         )
     }
 
@@ -137,6 +136,10 @@ struct SunburstChartView: View {
             let chartFrame = viewportTransform.frame(for: baseChartFrame)
             let layoutPresentation = layoutPresentationState
             let canAdjustViewport = self.canAdjustViewport
+            let discardPileOverlay = chartModel.discardPileOverlay(
+                queuedRootNodeIDs: discardPileNodeIDs,
+                treeStore: treeStore
+            )
 
             ZStack {
                 SunburstRenderedChartLayer(
@@ -146,6 +149,7 @@ struct SunburstChartView: View {
                         selectedNodeID: selectedNodeID,
                         selectedAncestorIDs: selectedAncestorIDs
                     ),
+                    discardPileOverlay: discardPileOverlay,
                     chartFrame: chartFrame
                 )
                 .id(chartModel.renderedLayoutVersion)
@@ -203,11 +207,20 @@ struct SunburstChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard layoutPresentation.canUseRenderedLayout else { return }
-                        handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
+                        handleClick(
+                            at: location,
+                            in: baseChartFrame,
+                            clickCount: clickCount,
+                            discardPileOverlay: discardPileOverlay
+                        )
                     },
                     onMove: { direction in
                         guard layoutPresentation.canUseRenderedLayout else { return false }
-                        return handleSpatialMove(direction, in: baseChartFrame)
+                        return handleSpatialMove(
+                            direction,
+                            in: baseChartFrame,
+                            discardPileOverlay: discardPileOverlay
+                        )
                     },
                     onKeyboardFocus: {
                         focusedWorkspaceTarget = .chart
@@ -241,7 +254,11 @@ struct SunburstChartView: View {
                         canStartPan(at: location, in: baseChartFrame)
                     },
                     discardPileDragItem: { location in
-                        discardPileDragItem(at: location, in: baseChartFrame)
+                        discardPileDragItem(
+                            at: location,
+                            in: baseChartFrame,
+                            discardPileOverlay: discardPileOverlay
+                        )
                     },
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange,
                     help: { location in
@@ -320,9 +337,6 @@ struct SunburstChartView: View {
             .onChange(of: layoutID, initial: true) { _, _ in
                 updateViewportForSettledLayout()
             }
-            .onChange(of: isInputPending) { _, _ in
-                updateViewportForSettledLayout()
-            }
             .focusedSceneValue(\.chartViewportAction) { action in
                 handleViewportAction(action, in: baseChartFrame)
             }
@@ -331,10 +345,8 @@ struct SunburstChartView: View {
             }
             .task(id: SunburstLayoutTaskID(
                 layoutID: layoutID,
-                isInputPending: isInputPending,
                 retryGeneration: layoutRetryGeneration
             )) {
-                guard !isInputPending else { return }
                 await chartModel.loadLayout(
                     treeStore: treeStore,
                     rootID: rootNode.id,
@@ -347,12 +359,14 @@ struct SunburstChartView: View {
 
     private func handleSpatialMove(
         _ direction: ChartSpatialSelectionDirection,
-        in baseChartFrame: CGRect
+        in baseChartFrame: CGRect,
+        discardPileOverlay: DiscardPileVisualizationOverlay
     ) -> Bool {
         guard layoutPresentationState.canUseRenderedLayout,
               let segment = chartModel.keyboardSelection(
             from: selectedNodeID,
-            moving: direction
+            moving: direction,
+            excluding: discardPileOverlay.queuedNodeIDs
         ), let nodeID = segment.nodeID else {
             return false
         }
@@ -419,7 +433,12 @@ struct SunburstChartView: View {
         chartModel.setHoveredSegmentID(nextSegment?.id)
     }
 
-    private func handleClick(at location: CGPoint, in frame: CGRect, clickCount: Int) {
+    private func handleClick(
+        at location: CGPoint,
+        in frame: CGRect,
+        clickCount: Int,
+        discardPileOverlay: DiscardPileVisualizationOverlay
+    ) {
         if isCenterHit(at: location, in: frame) {
             if clickCount == 1, parentNode != nil {
                 onNavigateToParent()
@@ -434,6 +453,7 @@ struct SunburstChartView: View {
             }
             return
         }
+        guard discardPileOverlay.allowsChartNodeAction(for: nodeID) else { return }
 
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
             if clickCount == 1 {
@@ -504,9 +524,14 @@ struct SunburstChartView: View {
         !isCenterHit(at: location, in: frame) && hitTest(at: location, in: frame) == nil
     }
 
-    private func discardPileDragItem(at location: CGPoint, in frame: CGRect) -> SunburstDiscardPileDragItem? {
+    private func discardPileDragItem(
+        at location: CGPoint,
+        in frame: CGRect,
+        discardPileOverlay: DiscardPileVisualizationOverlay
+    ) -> SunburstDiscardPileDragItem? {
         guard let segment = hitTest(at: location, in: frame),
               let nodeID = segment.nodeID,
+              discardPileOverlay.allowsChartNodeAction(for: nodeID),
               !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID),
               let node = treeStore.node(id: nodeID),
               canDragToDiscardPile(node) else {
@@ -620,8 +645,7 @@ struct SunburstChartView: View {
     }
 
     private func updateViewportForSettledLayout() {
-        guard !isInputPending,
-              settledViewportLayoutID != layoutID else { return }
+        guard settledViewportLayoutID != layoutID else { return }
         let shouldReset = settledViewportLayoutID != nil
         settledViewportLayoutID = layoutID
         if shouldReset {
@@ -700,7 +724,6 @@ private struct SunburstCenterAffordance: View, Equatable {
 
 private struct SunburstLayoutTaskID: Hashable {
     let layoutID: String
-    let isInputPending: Bool
     let retryGeneration: Int
 }
 
@@ -708,6 +731,7 @@ private struct SunburstRenderedChartLayer: View {
     let segments: [SunburstSegment]
     let renderVersion: Int
     let selectionSegments: [SunburstSelectionOverlaySegment]
+    let discardPileOverlay: DiscardPileVisualizationOverlay
     let chartFrame: CGRect
 
     var body: some View {
@@ -717,6 +741,14 @@ private struct SunburstRenderedChartLayer: View {
                 renderVersion: renderVersion
             )
             .equatable()
+
+            SunburstDiscardPileOverlay(
+                segments: segments,
+                renderVersion: renderVersion,
+                overlay: discardPileOverlay
+            )
+            .equatable()
+            .allowsHitTesting(false)
 
             SunburstSelectionOverlay(segments: selectionSegments)
                 .equatable()

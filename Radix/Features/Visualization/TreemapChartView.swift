@@ -18,7 +18,7 @@ struct TreemapChartView: View {
     let selectedNodeID: String?
     let depthLimit: Int
     let layoutID: String
-    let isInputPending: Bool
+    let discardPileNodeIDs: Set<FileNodeRecord.ID>
     let onSelect: (String?) -> Void
     let onZoom: (String) -> Void
     let onDiscardPileDragActiveChange: (Bool) -> Void
@@ -42,7 +42,7 @@ struct TreemapChartView: View {
         selectedNodeID: String?,
         depthLimit: Int,
         layoutID: String,
-        isInputPending: Bool,
+        discardPileNodeIDs: Set<FileNodeRecord.ID>,
         onSelect: @escaping (String?) -> Void,
         onZoom: @escaping (String) -> Void,
         onDiscardPileDragActiveChange: @escaping (Bool) -> Void,
@@ -58,7 +58,7 @@ struct TreemapChartView: View {
         self.selectedNodeID = selectedNodeID
         self.depthLimit = depthLimit
         self.layoutID = layoutID
-        self.isInputPending = isInputPending
+        self.discardPileNodeIDs = discardPileNodeIDs
         self.onSelect = onSelect
         self.onZoom = onZoom
         self.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
@@ -93,12 +93,15 @@ struct TreemapChartView: View {
             let layoutTaskID = TreemapLayoutTaskID(
                 layoutID: layoutID,
                 size: baseChartFrame.size,
-                isInputPending: isInputPending,
                 retryGeneration: layoutRetryGeneration
             )
             let layoutPresentation = layoutPresentationState
             let canAdjustViewport = layoutPresentation.canUseRenderedLayout
                 && !chartModel.renderedSegments.isEmpty
+            let discardPileOverlay = chartModel.discardPileOverlay(
+                queuedRootNodeIDs: discardPileNodeIDs,
+                treeStore: treeStore
+            )
 
             ZStack {
                 TreemapRenderedChartLayer(
@@ -108,6 +111,7 @@ struct TreemapChartView: View {
                     hoveredSegment: layoutPresentation.canUseRenderedLayout
                         ? chartModel.hoveredSegment
                         : nil,
+                    discardPileOverlay: discardPileOverlay,
                     chartFrame: baseChartFrame,
                     contentFrame: viewportContentFrame
                 )
@@ -141,11 +145,20 @@ struct TreemapChartView: View {
                     },
                     onClick: { location, clickCount in
                         guard layoutPresentation.canUseRenderedLayout else { return }
-                        handleClick(at: location, in: baseChartFrame, clickCount: clickCount)
+                        handleClick(
+                            at: location,
+                            in: baseChartFrame,
+                            clickCount: clickCount,
+                            discardPileOverlay: discardPileOverlay
+                        )
                     },
                     onMove: { direction in
                         guard layoutPresentation.canUseRenderedLayout else { return false }
-                        return handleSpatialMove(direction, in: baseChartFrame.size)
+                        return handleSpatialMove(
+                            direction,
+                            in: baseChartFrame.size,
+                            discardPileOverlay: discardPileOverlay
+                        )
                     },
                     onKeyboardFocus: {
                         focusedWorkspaceTarget = .chart
@@ -169,11 +182,16 @@ struct TreemapChartView: View {
                     canStartPan: { location in
                         discardPileDragItem(
                             at: location,
-                            in: baseChartFrame
+                            in: baseChartFrame,
+                            discardPileOverlay: discardPileOverlay
                         ) == nil
                     },
                     discardPileDragItem: { location in
-                        discardPileDragItem(at: location, in: baseChartFrame)
+                        discardPileDragItem(
+                            at: location,
+                            in: baseChartFrame,
+                            discardPileOverlay: discardPileOverlay
+                        )
                     },
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange,
                     isPanEnabled: canAdjustViewport && viewportTransform.isZoomed
@@ -281,9 +299,6 @@ struct TreemapChartView: View {
             .onChange(of: layoutID, initial: true) { _, _ in
                 updateViewportForSettledLayout()
             }
-            .onChange(of: isInputPending) { _, _ in
-                updateViewportForSettledLayout()
-            }
             .focusedSceneValue(\.chartViewportAction) { action in
                 handleViewportAction(action, in: baseChartFrame)
             }
@@ -297,7 +312,6 @@ struct TreemapChartView: View {
                 )
             }
             .task(id: layoutTaskID) {
-                guard !isInputPending else { return }
                 await chartModel.loadLayout(
                     treeStore: treeStore,
                     rootID: rootNode.id,
@@ -311,13 +325,15 @@ struct TreemapChartView: View {
 
     private func handleSpatialMove(
         _ direction: ChartSpatialSelectionDirection,
-        in size: CGSize
+        in size: CGSize,
+        discardPileOverlay: DiscardPileVisualizationOverlay
     ) -> Bool {
         guard layoutPresentationState.canUseRenderedLayout,
               let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
             moving: direction,
-            in: size
+            in: size,
+            excluding: discardPileOverlay.queuedNodeIDs
         ) else {
             return false
         }
@@ -372,8 +388,7 @@ struct TreemapChartView: View {
     private var layoutPresentationState: ChartLayoutPresentationState {
         ChartLayoutPresentationState(
             readiness: chartModel.layoutReadiness,
-            layoutID: layoutRequestID,
-            isInputPending: isInputPending
+            layoutID: layoutRequestID
         )
     }
 
@@ -463,12 +478,18 @@ struct TreemapChartView: View {
         return CGSize(width: origin.x, height: origin.y)
     }
 
-    private func handleClick(at location: CGPoint, in frame: CGRect, clickCount: Int) {
+    private func handleClick(
+        at location: CGPoint,
+        in frame: CGRect,
+        clickCount: Int,
+        discardPileOverlay: DiscardPileVisualizationOverlay
+    ) {
         guard let segment = hitTest(at: location, in: frame),
               let nodeID = segment.nodeID else {
             if clickCount == 1 { onSelect(nil) }
             return
         }
+        guard discardPileOverlay.allowsChartNodeAction(for: nodeID) else { return }
 
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
             if clickCount == 1 { onSelect(nil) }
@@ -501,10 +522,12 @@ struct TreemapChartView: View {
 
     private func discardPileDragItem(
         at location: CGPoint,
-        in frame: CGRect
+        in frame: CGRect,
+        discardPileOverlay: DiscardPileVisualizationOverlay
     ) -> TreemapDiscardPileDragItem? {
         guard let segment = hitTest(at: location, in: frame),
               let nodeID = segment.nodeID,
+              discardPileOverlay.allowsChartNodeAction(for: nodeID),
               !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID),
               let node = treeStore.node(id: nodeID),
               canDragToDiscardPile(node) else {
@@ -593,8 +616,7 @@ struct TreemapChartView: View {
     }
 
     private func updateViewportForSettledLayout() {
-        guard !isInputPending,
-              settledViewportLayoutID != layoutID else { return }
+        guard settledViewportLayoutID != layoutID else { return }
         let shouldReset = settledViewportLayoutID != nil
         settledViewportLayoutID = layoutID
         if shouldReset {
@@ -662,8 +684,7 @@ struct TreemapChartView: View {
         } catch {
             return
         }
-        guard isInputPending
-            || chartModel.layoutReadiness.isRenderingPending(layoutID: requestID) else { return }
+        guard chartModel.layoutReadiness.isRenderingPending(layoutID: requestID) else { return }
         showsLoadingDiskMapProgress = true
     }
 }
@@ -735,19 +756,16 @@ private struct TreemapLayoutTaskID: Hashable {
     let layoutID: String
     let widthBucket: Int
     let heightBucket: Int
-    let isInputPending: Bool
     let retryGeneration: Int
 
     init(
         layoutID: String,
         size: CGSize,
-        isInputPending: Bool,
         retryGeneration: Int
     ) {
         self.layoutID = layoutID
         widthBucket = Int((size.width / Self.sizeBucket).rounded())
         heightBucket = Int((size.height / Self.sizeBucket).rounded())
-        self.isInputPending = isInputPending
         self.retryGeneration = retryGeneration
     }
 }
@@ -762,6 +780,7 @@ private struct TreemapRenderedChartLayer: View {
     let renderVersion: Int
     let selectedSegment: TreemapSegment?
     let hoveredSegment: TreemapSegment?
+    let discardPileOverlay: DiscardPileVisualizationOverlay
     let chartFrame: CGRect
     let contentFrame: CGRect
 
@@ -796,6 +815,15 @@ private struct TreemapRenderedChartLayer: View {
                 segments: segments,
                 renderVersion: renderVersion,
                 colorScheme: colorScheme,
+                contentFrame: contentFrame
+            )
+                .equatable()
+                .allowsHitTesting(false)
+
+            TreemapDiscardPileOverlay(
+                segments: segments,
+                renderVersion: renderVersion,
+                overlay: discardPileOverlay,
                 contentFrame: contentFrame
             )
                 .equatable()

@@ -41,6 +41,55 @@ struct SunburstSelectionOverlay: View, Equatable {
     }
 }
 
+struct SunburstDiscardPileOverlay: View, Equatable {
+    let segments: [SunburstSegment]
+    let renderVersion: Int
+    let overlay: DiscardPileVisualizationOverlay
+
+    static func == (lhs: SunburstDiscardPileOverlay, rhs: SunburstDiscardPileOverlay) -> Bool {
+        lhs.renderVersion == rhs.renderVersion
+            && lhs.overlay == rhs.overlay
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            for segment in segments {
+                let aggregateContainerNodeID = segment.isAggregate
+                    ? segment.containerNodeID
+                    : nil
+                guard let role = overlay.role(
+                    for: segment.nodeID,
+                    aggregateContainerNodeID: aggregateContainerNodeID
+                ) else { continue }
+                let path = SunburstRenderer.path(for: segment, in: size)
+                switch role {
+                case .queuedRoot:
+                    context.fill(
+                        path,
+                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                    )
+                    context.stroke(
+                        path,
+                        with: .color(Color.accentColor.opacity(0.9)),
+                        style: StrokeStyle(lineWidth: 2, dash: [5, 3])
+                    )
+                case .queuedDescendant:
+                    context.fill(
+                        path,
+                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                    )
+                case .containsQueuedItem:
+                    context.stroke(
+                        path,
+                        with: .color(Color.accentColor.opacity(0.72)),
+                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                    )
+                }
+            }
+        }
+    }
+}
+
 struct SunburstHoverOverlay: View, Equatable {
     let segment: SunburstSegment?
 

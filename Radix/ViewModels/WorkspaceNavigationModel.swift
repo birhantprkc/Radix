@@ -249,6 +249,25 @@ private extension WorkspaceNavigationState {
         return next.refreshedDerivedState()
     }
 
+    func reconcilingFocusHistory(
+        excluding excludedNodeIDs: Set<FileNodeRecord.ID>
+    ) -> WorkspaceNavigationState {
+        guard let fileTreeStore else { return self }
+
+        let excludedNodes = fileTreeStore.preparedNodeSet(for: excludedNodeIDs)
+        let currentFocusID = focusedNodeID
+        var next = self
+        next.focusBackStack = focusBackStack.filter { nodeID in
+            nodeID != currentFocusID
+                && !fileTreeStore.isNodeOrDescendant(nodeID, of: excludedNodes)
+        }
+        next.focusForwardStack = focusForwardStack.filter { nodeID in
+            nodeID != currentFocusID
+                && !fileTreeStore.isNodeOrDescendant(nodeID, of: excludedNodes)
+        }
+        return next
+    }
+
     func navigatingToParent() -> WorkspaceNavigationState {
         guard let focusNode = resolvedFocusNode,
               let parent = fileTreeStore?.parent(of: focusNode.id) else {
@@ -534,6 +553,10 @@ final class WorkspaceNavigationModel: ObservableObject {
 
     func navigateForward() {
         publish(state.navigatingForward())
+    }
+
+    func reconcileFocusHistory(excluding excludedNodeIDs: Set<FileNodeRecord.ID>) {
+        publish(state.reconcilingFocusHistory(excluding: excludedNodeIDs))
     }
 
     func navigateToParent() {

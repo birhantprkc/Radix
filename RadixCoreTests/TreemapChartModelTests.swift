@@ -37,6 +37,39 @@ final class TreemapChartModelTests: XCTestCase {
         )
     }
 
+    func testSpatialSelectionSkipsDiscardPileTiles() async {
+        let queued = makeTreemapSegment(
+            id: "queued",
+            rect: CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        )
+        let available = makeTreemapSegment(
+            id: "available",
+            rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
+        )
+        let model = TreemapChartModel(
+            layoutService: ImmediateTreemapLayoutService(segments: [queued, available])
+        )
+        let store = makeTreemapStore()
+
+        _ = await model.loadLayout(
+            treeStore: store,
+            rootID: store.rootID,
+            depthLimit: 1,
+            size: CGSize(width: 600, height: 300),
+            layoutID: "layout"
+        )
+
+        XCTAssertEqual(
+            model.spatialSelectionNodeID(
+                from: nil,
+                moving: .right,
+                in: CGSize(width: 600, height: 300),
+                excluding: [queued.id]
+            ),
+            available.id
+        )
+    }
+
     func testSpatialSelectionDoesNotTreatNestedTileAsSidewaysFromContainerHeader() async {
         let container = makeTreemapSegment(
             id: "container",

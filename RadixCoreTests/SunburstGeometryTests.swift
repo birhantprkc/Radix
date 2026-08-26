@@ -338,6 +338,7 @@ private func makeSegment(
     SunburstSegment(
         id: id,
         nodeID: id,
+        containerNodeID: "/root",
         label: id,
         startAngle: .radians(startAngle),
         endAngle: .radians(endAngle),

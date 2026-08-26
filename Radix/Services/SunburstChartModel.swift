@@ -42,6 +42,7 @@ final class SunburstChartModel: ObservableObject {
         segmentIndex: SunburstSegmentIndex(segments: [])
     )
     private var selectionOverlayCache: SunburstSelectionOverlayCacheEntry?
+    private var discardPileOverlayCache = DiscardPileVisualizationOverlayCache()
 
     init(layoutService: any SunburstLayouting = SunburstLayoutService()) {
         self.layoutService = layoutService
@@ -76,11 +77,29 @@ final class SunburstChartModel: ObservableObject {
 
     func keyboardSelection(
         from selectedNodeID: String?,
-        moving direction: ChartSpatialSelectionDirection
+        moving direction: ChartSpatialSelectionDirection,
+        excluding excludedNodeIDs: Set<FileNodeRecord.ID> = []
     ) -> SunburstSegment? {
         selectionIndex.keyboardSelection(
             from: selectedNodeID,
-            moving: direction
+            moving: direction,
+            excluding: excludedNodeIDs
+        )
+    }
+
+    func discardPileOverlay(
+        queuedRootNodeIDs: Set<FileNodeRecord.ID>,
+        treeStore: DiskMapTreeStore
+    ) -> DiscardPileVisualizationOverlay {
+        let renderedSegments = renderState.segments
+        return discardPileOverlayCache.overlay(
+            renderedLayoutVersion: renderState.version,
+            queuedRootNodeIDs: queuedRootNodeIDs,
+            treeStore: treeStore,
+            renderedNodeIDs: { Set(renderedSegments.compactMap(\.nodeID)) },
+            renderedAggregateContainerNodeIDs: {
+                Set(renderedSegments.lazy.filter(\.isAggregate).map(\.containerNodeID))
+            }
         )
     }
 
@@ -298,29 +317,51 @@ private struct SunburstSelectionIndex {
 
     func keyboardSelection(
         from selectedNodeID: String?,
-        moving direction: ChartSpatialSelectionDirection
+        moving direction: ChartSpatialSelectionDirection,
+        excluding excludedNodeIDs: Set<FileNodeRecord.ID>
     ) -> SunburstSegment? {
         guard let selectedNodeID,
+              !excludedNodeIDs.contains(selectedNodeID),
               let location = locationByNodeID[selectedNodeID],
               let ring = ringsByDepth[location.depth],
               ring.indices.contains(location.index) else {
-            return entrySegment
+            return firstAvailableSegment(excluding: excludedNodeIDs)
         }
         let current = ring[location.index]
 
         switch direction {
         case .left:
             guard ring.count > 1 else { return nil }
-            let index = (location.index - 1 + ring.count) % ring.count
-            return ring[index]
+            for offset in 1..<ring.count {
+                let index = (location.index - offset + ring.count) % ring.count
+                guard let nodeID = ring[index].nodeID else { continue }
+                if !excludedNodeIDs.contains(nodeID) {
+                    return ring[index]
+                }
+            }
+            return nil
         case .right:
             guard ring.count > 1 else { return nil }
-            let index = (location.index + 1) % ring.count
-            return ring[index]
+            for offset in 1..<ring.count {
+                let index = (location.index + offset) % ring.count
+                guard let nodeID = ring[index].nodeID else { continue }
+                if !excludedNodeIDs.contains(nodeID) {
+                    return ring[index]
+                }
+            }
+            return nil
         case .up:
-            return segment(atSameAngleAs: current, depthOffset: -1)
+            return segment(
+                atSameAngleAs: current,
+                depthOffset: -1,
+                excluding: excludedNodeIDs
+            )
         case .down:
-            return segment(atSameAngleAs: current, depthOffset: 1)
+            return segment(
+                atSameAngleAs: current,
+                depthOffset: 1,
+                excluding: excludedNodeIDs
+            )
         }
     }
 
@@ -361,7 +402,8 @@ private struct SunburstSelectionIndex {
 
     private func segment(
         atSameAngleAs current: SunburstSegment,
-        depthOffset: Int
+        depthOffset: Int,
+        excluding excludedNodeIDs: Set<FileNodeRecord.ID>
     ) -> SunburstSegment? {
         let targetDepth = current.depth + depthOffset
         guard targetDepth >= 0,
@@ -370,10 +412,31 @@ private struct SunburstSelectionIndex {
         }
         let midpoint = (current.startAngle.radians + current.endAngle.radians) / 2
         return targetRing.first { segment in
+            guard let nodeID = segment.nodeID,
+                  !excludedNodeIDs.contains(nodeID) else {
+                return false
+            }
             let tolerance = 0.000_000_001
             return midpoint >= segment.startAngle.radians - tolerance
                 && midpoint <= segment.endAngle.radians + tolerance
         }
+    }
+
+    private func firstAvailableSegment(
+        excluding excludedNodeIDs: Set<FileNodeRecord.ID>
+    ) -> SunburstSegment? {
+        if excludedNodeIDs.isEmpty {
+            return entrySegment
+        }
+        for depth in ringsByDepth.keys.sorted() {
+            if let segment = ringsByDepth[depth]?.first(where: { segment in
+                guard let nodeID = segment.nodeID else { return false }
+                return !excludedNodeIDs.contains(nodeID)
+            }) {
+                return segment
+            }
+        }
+        return nil
     }
 
     private static func precedes(

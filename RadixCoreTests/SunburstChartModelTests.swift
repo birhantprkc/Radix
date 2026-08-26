@@ -32,6 +32,30 @@ final class SunburstChartModelTests: XCTestCase {
         )
     }
 
+    func testKeyboardSelectionSkipsDiscardPileSegments() async {
+        let first = makeSegment(id: "first", startAngle: 0, endAngle: 1)
+        let queued = makeSegment(id: "queued", startAngle: 1, endAngle: 2)
+        let last = makeSegment(id: "last", startAngle: 2, endAngle: 3)
+        let model = await loadedModel(with: [first, queued, last])
+
+        XCTAssertEqual(
+            model.keyboardSelection(
+                from: first.id,
+                moving: .right,
+                excluding: [queued.id]
+            )?.nodeID,
+            last.id
+        )
+        XCTAssertEqual(
+            model.keyboardSelection(
+                from: nil,
+                moving: .right,
+                excluding: [first.id, queued.id]
+            )?.nodeID,
+            last.id
+        )
+    }
+
     func testKeyboardSelectionMovesOneRingInAndOut() async {
         let parent = makeSegment(
             id: "parent",
@@ -737,6 +761,7 @@ private func makeSegment(
     SunburstSegment(
         id: id,
         nodeID: isSelectable ? id : nil,
+        containerNodeID: "/root",
         label: id,
         startAngle: .radians(startAngle),
         endAngle: .radians(endAngle),

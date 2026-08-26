@@ -41,6 +41,7 @@ final class TreemapChartModel: ObservableObject {
     private let layoutService: any TreemapLayouting
     private let layoutRequests = ChartLayoutRequestCoordinator<[TreemapSegment]>()
     private var spatialSelectionCache = TreemapSpatialSelectionCache()
+    private var discardPileOverlayCache = DiscardPileVisualizationOverlayCache()
 
     init(layoutService: any TreemapLayouting = TreemapLayoutService()) {
         self.layoutService = layoutService
@@ -77,19 +78,40 @@ final class TreemapChartModel: ObservableObject {
         renderState.segment(nodeID: nodeID)
     }
 
+    func discardPileOverlay(
+        queuedRootNodeIDs: Set<FileNodeRecord.ID>,
+        treeStore: DiskMapTreeStore
+    ) -> DiscardPileVisualizationOverlay {
+        let renderedSegments = renderState.segments
+        return discardPileOverlayCache.overlay(
+            renderedLayoutVersion: renderState.version,
+            queuedRootNodeIDs: queuedRootNodeIDs,
+            treeStore: treeStore,
+            renderedNodeIDs: { Set(renderedSegments.compactMap(\.nodeID)) },
+            renderedAggregateContainerNodeIDs: {
+                Set(renderedSegments.lazy.filter(\.isAggregate).map(\.containerNodeID))
+            }
+        )
+    }
+
     func spatialSelectionNodeID(
         from selectedNodeID: String?,
         moving direction: ChartSpatialSelectionDirection,
-        in size: CGSize
+        in size: CGSize,
+        excluding excludedNodeIDs: Set<FileNodeRecord.ID> = []
     ) -> String? {
         prepareSpatialSelectionCache(for: size)
         let hasRenderedSelection = selectedNodeID.map {
             !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0)
+                && !excludedNodeIDs.contains($0)
                 && renderState.segment(nodeID: $0) != nil
         } ?? false
-        let candidates = hasRenderedSelection
+        let baseCandidates = hasRenderedSelection
             ? spatialSelectionCache.candidates
             : spatialSelectionCache.entryCandidates
+        let candidates = excludedNodeIDs.isEmpty
+            ? baseCandidates
+            : baseCandidates.filter { !excludedNodeIDs.contains($0.nodeID) }
         return ChartRectangleSpatialSelection.nextNodeID(
             from: selectedNodeID,
             moving: direction,

@@ -88,8 +88,7 @@ final class ChartLayoutPresentationStateTests: XCTestCase {
     ) -> ChartLayoutPresentationState {
         ChartLayoutPresentationState(
             readiness: readiness,
-            layoutID: "current",
-            isInputPending: false
+            layoutID: "current"
         )
     }
 }

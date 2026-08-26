@@ -10,6 +10,7 @@ import SwiftUI
 nonisolated struct SunburstSegment: Identifiable, Hashable, Sendable {
     let id: String
     let nodeID: String?
+    let containerNodeID: String
     let label: String
     let startAngle: Angle
     let endAngle: Angle
@@ -63,6 +64,7 @@ nonisolated enum SunburstLayout {
         try appendSegments(
             in: treeStore,
             children: visibleChildren,
+            parentID: root.id,
             parentDenominator: denominator,
             startAngle: 0,
             endAngle: .pi * 2,
@@ -82,6 +84,7 @@ nonisolated enum SunburstLayout {
     private nonisolated static func appendSegments(
         in treeStore: some DiskMapTreeReading,
         children: [FileNodeRecord],
+        parentID: FileNodeRecord.ID,
         parentDenominator: Double,
         startAngle: Double,
         endAngle: Double,
@@ -139,6 +142,7 @@ nonisolated enum SunburstLayout {
             let segment = SunburstSegment(
                 id: entry.id,
                 nodeID: entry.nodeID,
+                containerNodeID: parentID,
                 label: entry.label,
                 startAngle: .radians(cursor),
                 endAngle: .radians(segmentEnd),
@@ -164,6 +168,7 @@ nonisolated enum SunburstLayout {
                 try appendSegments(
                     in: treeStore,
                     children: childNodes,
+                    parentID: node.id,
                     parentDenominator: Double(node.allocatedSize),
                     startAngle: cursor,
                     endAngle: segmentEnd,

@@ -17,7 +17,6 @@ struct ActiveWorkspaceView: View {
 
     // Dismissal is scoped to a single target scan: transformed snapshots keep it hidden.
     @State private var dismissedWarningsScanScope: WarningDismissalScope?
-    @StateObject private var visualizationFilter = DiskMapVisualizationFilterModel()
 
     private var shouldSuggestFullDiskAccess: Bool {
         PermissionAdvisor.shouldSuggestFullDiskAccess(
@@ -56,28 +55,15 @@ struct ActiveWorkspaceView: View {
 
     @ViewBuilder
     private var chartContent: some View {
-        let baseVisualizationInput = diskMapVisualizationInput
-        let filterRequest = DiskMapVisualizationFilterRequest(
-            baseInput: baseVisualizationInput,
-            snapshotID: snapshot.id,
-            focusNodeID: focusNode.id,
-            hiddenNodeIDs: discardPileHiddenNodeIDs
+        let visualizationPresentation = DiscardPileVisualizationPresentation(
+            snapshot: snapshot,
+            focusNode: focusNode,
+            showFreeSpace: showFreeSpaceInDiskMaps,
+            availableCapacity: freeSpaceAvailableCapacity(snapshot, focusNode),
+            maxRenderedDepth: maxRenderedDepth,
+            queuedNodeIDs: discardPileHiddenNodeIDs
         )
-        let visualizationInput = visualizationFilter.input(
-            baseInput: baseVisualizationInput,
-            request: filterRequest
-        )
-        let isVisualizationInputPending = visualizationFilter.isFiltering
-            || visualizationFilter.isInputPending(for: filterRequest)
-
-        let layoutID = [
-            snapshot.id.uuidString,
-            focusNode.id,
-            visualizationInput.rootNode.id,
-            visualizationInput.treeContentID.uuidString,
-            String(maxRenderedDepth),
-            visualizationInput.layoutIDComponent
-        ].joined(separator: "|")
+        let visualizationInput = visualizationPresentation.visualizationInput
 
         Group {
             switch visualizationMode {
@@ -94,8 +80,8 @@ struct ActiveWorkspaceView: View {
                     selectedNodeID: navigation.selectedNodeID,
                     selectedAncestorIDs: navigation.selectedAncestorIDs,
                     depthLimit: maxRenderedDepth,
-                    layoutID: layoutID,
-                    isInputPending: isVisualizationInputPending,
+                    layoutID: visualizationPresentation.layoutID,
+                    discardPileNodeIDs: visualizationPresentation.queuedNodeIDs,
                     onSelect: actions.selectNode,
                     onZoom: actions.selectAndFocusNode,
                     onSegmentClick: actions.recordSunburstSegmentClick,
@@ -113,8 +99,8 @@ struct ActiveWorkspaceView: View {
                     focusedWorkspaceTarget: $focusedWorkspaceTarget,
                     selectedNodeID: navigation.selectedNodeID,
                     depthLimit: maxRenderedDepth,
-                    layoutID: layoutID,
-                    isInputPending: isVisualizationInputPending,
+                    layoutID: visualizationPresentation.layoutID,
+                    discardPileNodeIDs: visualizationPresentation.queuedNodeIDs,
                     onSelect: actions.selectNode,
                     onZoom: actions.selectAndFocusNode,
                     onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
@@ -122,12 +108,6 @@ struct ActiveWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: filterRequest, initial: true) { _, request in
-            visualizationFilter.update(
-                baseInput: baseVisualizationInput,
-                request: request
-            )
-        }
     }
 
     private var contentsPane: some View {
@@ -162,15 +142,6 @@ struct ActiveWorkspaceView: View {
 
     private var warningDismissalScope: WarningDismissalScope {
         WarningDismissalScope(targetID: snapshot.target.id, startedAt: snapshot.startedAt)
-    }
-
-    private var diskMapVisualizationInput: DiskMapVisualizationInput {
-        DiskMapFreeSpaceVisualization.input(
-            snapshot: snapshot,
-            focusNode: focusNode,
-            showFreeSpace: showFreeSpaceInDiskMaps,
-            availableCapacity: freeSpaceAvailableCapacity(snapshot, focusNode)
-        )
     }
 
     private func visualizationParentNode(for input: DiskMapVisualizationInput) -> FileNodeRecord? {
