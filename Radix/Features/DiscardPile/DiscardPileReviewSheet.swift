@@ -1,90 +1,50 @@
 import SwiftUI
 
 struct DiscardPileReviewActions {
-    let removeNode: (FileNodeRecord.ID) -> Void
+    let removeNodes: (Set<FileNodeRecord.ID>) -> Void
     let clear: () -> Void
-    let cancel: () -> Void
+    let dismiss: () -> Void
     let moveToTrash: () -> Void
 }
 
 struct DiscardPileReviewSheet: View {
     private let rows: [DiscardPileReviewRow]
+    private let rowIDs: Set<FileNodeRecord.ID>
     private let summary: DiscardPileSummary
     private let actions: DiscardPileReviewActions
 
+    @State private var selection: Set<FileNodeRecord.ID> = []
     @State private var isConfirmingClear = false
 
-    init(nodes: [FileNodeRecord], actions: DiscardPileReviewActions) {
-        self.rows = nodes.map(DiscardPileReviewRow.init)
-        self.summary = DiscardPileSummary(nodes: nodes)
+    init(snapshot: DiscardPileSnapshot, actions: DiscardPileReviewActions) {
+        let rows = snapshot.nodes.map(DiscardPileReviewRow.init)
+        self.rows = rows
+        self.rowIDs = Set(rows.map(\.id))
+        self.summary = snapshot.summary
         self.actions = actions
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Discard Pile")
                     .font(.title3.weight(.semibold))
 
-                Text(summaryText)
+                Text("Review items before moving them to Trash.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-
-                Spacer()
             }
 
-            if rows.isEmpty {
-                emptyState
-            } else {
-                Table(rows) {
-                    TableColumn("Name") { row in
-                        Label(row.name, systemImage: row.systemImageName)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .width(min: 160, ideal: 220)
+            listAndStatusBar
 
-                    TableColumn("Path") { row in
-                        Text(row.path)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(row.path)
-                    }
-                    .width(min: 240, ideal: 360)
-
-                    TableColumn("Size") { row in
-                        Text(row.sizeText)
-                            .monospacedDigit()
-                    }
-                    .width(min: 90, ideal: 110)
-
-                    TableColumn("Kind") { row in
-                        Text(row.itemKind)
-                    }
-                    .width(min: 90, ideal: 110)
-
-                    TableColumn("") { row in
-                        Button {
-                            actions.removeNode(row.id)
-                        } label: {
-                            Label("Remove", systemImage: "minus.circle")
-                        }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .help("Remove")
-                    }
-                    .width(36)
-                }
-
-                Text("Sizes show attributed allocated storage, not guaranteed space reclaimed.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Sizes show attributed allocated storage, not guaranteed space reclaimed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Divider()
 
             HStack {
-                Button("Clear All", role: .destructive) {
+                Button("Clear All…") {
                     isConfirmingClear = true
                 }
                 .disabled(rows.isEmpty)
@@ -92,7 +52,7 @@ struct DiscardPileReviewSheet: View {
                 Spacer()
 
                 Button("Done", role: .cancel) {
-                    actions.cancel()
+                    actions.dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
 
@@ -104,13 +64,14 @@ struct DiscardPileReviewSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 720, height: sheetHeight)
+        .frame(width: 720, height: 420)
         .confirmationDialog(
             "Clear Discard Pile?",
             isPresented: $isConfirmingClear,
             titleVisibility: .visible
         ) {
             Button("Clear All", role: .destructive) {
+                selection.removeAll()
                 actions.clear()
             }
 
@@ -118,36 +79,123 @@ struct DiscardPileReviewSheet: View {
         } message: {
             Text("This removes all marked items from the Discard Pile. Files on disk are unchanged.")
         }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "checklist")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-
-            Text("No Items Marked")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+        .onChange(of: rowIDs) { _, currentRowIDs in
+            selection.formIntersection(currentRowIDs)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var sheetHeight: CGFloat {
-        rows.isEmpty ? 240 : 420
+    private var listAndStatusBar: some View {
+        VStack(spacing: 0) {
+            List(selection: $selection) {
+                ForEach(rows) { row in
+                    reviewRow(row)
+                        .tag(row.id)
+                }
+            }
+            .listStyle(.inset)
+            .contextMenu(forSelectionType: FileNodeRecord.ID.self) { selectedIDs in
+                if !selectedIDs.isEmpty {
+                    Button("Remove from Discard Pile", systemImage: "minus.circle") {
+                        remove(selectedIDs)
+                    }
+                }
+            }
+            .onDeleteCommand {
+                remove(selection)
+            }
+            .overlay {
+                if rows.isEmpty {
+                    ContentUnavailableView("No Items Marked", systemImage: "checklist")
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 4) {
+                Text(summaryText)
+
+                if selectedRowCount > 0 {
+                    Text(verbatim: "•")
+                    Text(selectedText)
+                }
+
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.bar)
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(.separator, lineWidth: 1)
+        }
+    }
+
+    private func reviewRow(_ row: DiscardPileReviewRow) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: row.systemImageName)
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(row.path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(row.path)
+            }
+
+            Spacer(minLength: 12)
+
+            Text(row.sizeText)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .trailing)
+
+            Button {
+                remove([row.id])
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.borderless)
+            .help(removeButtonLabel(for: row))
+            .accessibilityLabel(Text(removeButtonLabel(for: row)))
+        }
+        .padding(.vertical, 4)
     }
 
     private var summaryText: String {
-        guard !summary.isEmpty else {
-            return String(localized: "No items marked", comment: "Discard Pile summary when no items are marked.")
-        }
-
-        let count = summary.itemCount.formatted()
         let size = RadixFormatters.size(summary.totalAllocatedSize)
-        if summary.itemCount == 1 {
-            return String(localized: "\(count) item • \(size)", comment: "Discard Pile summary showing one marked item and its total allocated size.")
-        }
-        return String(localized: "\(count) items • \(size)", comment: "Discard Pile summary showing multiple marked items and their total allocated size.")
+        return String(localized: "\(summary.itemCount) items • \(size)", comment: "Discard Pile status showing the marked item count and total allocated size. The item count controls pluralization.")
+    }
+
+    private var selectedText: String {
+        String(localized: "\(selectedRowCount) selected", comment: "Discard Pile status showing the number of selected review rows. The count controls pluralization.")
+    }
+
+    private var selectedRowCount: Int {
+        selection.intersection(rowIDs).count
+    }
+
+    private func removeButtonLabel(for row: DiscardPileReviewRow) -> String {
+        String(localized: "Remove \(row.name) from Discard Pile", comment: "Accessible label and help text for removing an item from the Discard Pile review list.")
+    }
+
+    private func remove(_ selectedIDs: Set<FileNodeRecord.ID>) {
+        let removedIDs = rowIDs.intersection(selectedIDs)
+        guard !removedIDs.isEmpty else { return }
+
+        selection.subtract(removedIDs)
+        actions.removeNodes(removedIDs)
     }
 
     private var moveButtonTitle: String {
@@ -165,7 +213,6 @@ private struct DiscardPileReviewRow: Identifiable {
     let systemImageName: String
     let path: String
     let sizeText: String
-    let itemKind: String
 
     init(node: FileNodeRecord) {
         self.id = node.id
@@ -173,6 +220,5 @@ private struct DiscardPileReviewRow: Identifiable {
         self.systemImageName = node.systemImageName
         self.path = node.url.path
         self.sizeText = RadixFormatters.size(node.allocatedSize)
-        self.itemKind = node.itemKind
     }
 }

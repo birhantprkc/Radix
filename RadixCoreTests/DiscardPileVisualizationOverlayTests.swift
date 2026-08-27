@@ -12,7 +12,7 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
 
         XCTAssertEqual(overlay.queuedNodeIDs, [fixture.folder.id, fixture.child.id])
         XCTAssertEqual(overlay.queuedRootNodeIDs, [fixture.folder.id])
-        XCTAssertTrue(overlay.containingNodeIDs.isEmpty)
+        XCTAssertTrue(overlay.containingQueuedNodeIDs.isEmpty)
         XCTAssertEqual(overlay.role(for: fixture.folder.id), .queuedRoot)
         XCTAssertEqual(overlay.role(for: fixture.child.id), .queuedDescendant)
         XCTAssertNil(overlay.role(for: fixture.sibling.id))
@@ -32,7 +32,7 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
         )
 
         XCTAssertTrue(overlay.queuedNodeIDs.isEmpty)
-        XCTAssertEqual(overlay.containingNodeIDs, [fixture.folder.id])
+        XCTAssertEqual(overlay.containingQueuedNodeIDs, [fixture.folder.id])
         XCTAssertEqual(overlay.role(for: fixture.folder.id), .containsQueuedItem)
         XCTAssertNil(overlay.role(for: fixture.root.id))
     }
@@ -131,7 +131,39 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
         )
 
         XCTAssertEqual(overlay.role(for: fixture.folder.id), .queuedRoot)
-        XCTAssertTrue(overlay.containingNodeIDs.isEmpty)
+        XCTAssertTrue(overlay.containingQueuedNodeIDs.isEmpty)
+    }
+
+    func testMovingToTrashStateRemainsDistinctFromDiscardPileState() {
+        let fixture = makeFixture()
+        let overlay = DiscardPileVisualizationOverlay(
+            renderedNodeIDs: [fixture.folder.id, fixture.child.id, fixture.sibling.id],
+            queuedRootNodeIDs: [fixture.sibling.id],
+            movingToTrashRootNodeIDs: [fixture.folder.id],
+            treeStore: fixture.store
+        )
+
+        XCTAssertEqual(overlay.role(for: fixture.folder.id), .movingToTrashRoot)
+        XCTAssertEqual(overlay.role(for: fixture.child.id), .movingToTrashDescendant)
+        XCTAssertEqual(overlay.role(for: fixture.sibling.id), .queuedRoot)
+        XCTAssertEqual(overlay.role(for: fixture.folder.id)?.statusText, "Moving to Trash")
+        XCTAssertEqual(overlay.role(for: fixture.sibling.id)?.statusText, "In Discard Pile")
+        XCTAssertTrue(overlay.isMovingToTrash(fixture.child.id))
+        XCTAssertFalse(overlay.isQueued(fixture.child.id))
+        XCTAssertFalse(overlay.allowsChartNodeAction(for: fixture.child.id))
+    }
+
+    func testUnrenderedMovingItemMarksNearestRenderedContainer() {
+        let fixture = makeFixture()
+        let overlay = DiscardPileVisualizationOverlay(
+            renderedNodeIDs: [fixture.root.id, fixture.folder.id, fixture.sibling.id],
+            movingToTrashRootNodeIDs: [fixture.child.id],
+            treeStore: fixture.store
+        )
+
+        XCTAssertTrue(overlay.movingToTrashNodeIDs.isEmpty)
+        XCTAssertEqual(overlay.containingMovingToTrashNodeIDs, [fixture.folder.id])
+        XCTAssertEqual(overlay.role(for: fixture.folder.id), .containsMovingToTrashItem)
     }
 
     func testCacheAvoidsRebuildingOverlayUntilLayoutOrQueueChanges() {
@@ -147,24 +179,55 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
         let first = cache.overlay(
             renderedLayoutVersion: 1,
             queuedRootNodeIDs: [fixture.folder.id],
+            movingToTrashRootNodeIDs: [],
             treeStore: treeStore,
             renderedNodeIDs: renderedNodeIDs
         )
         let cached = cache.overlay(
             renderedLayoutVersion: 1,
             queuedRootNodeIDs: [fixture.folder.id],
+            movingToTrashRootNodeIDs: [],
             treeStore: treeStore,
             renderedNodeIDs: renderedNodeIDs
         )
         let updated = cache.overlay(
             renderedLayoutVersion: 1,
             queuedRootNodeIDs: [fixture.child.id],
+            movingToTrashRootNodeIDs: [],
             treeStore: treeStore,
             renderedNodeIDs: renderedNodeIDs
         )
 
         XCTAssertEqual(first, cached)
         XCTAssertNotEqual(updated, first)
+        XCTAssertEqual(renderedNodeIDBuildCount, 2)
+    }
+
+    func testCacheRebuildsWhenMovingToTrashRootsChange() {
+        let fixture = makeFixture()
+        let treeStore = DiskMapTreeStore(fixture.store)
+        var cache = DiscardPileVisualizationOverlayCache()
+        var renderedNodeIDBuildCount = 0
+        let renderedNodeIDs = {
+            renderedNodeIDBuildCount += 1
+            return Set([fixture.folder.id, fixture.child.id, fixture.sibling.id])
+        }
+
+        _ = cache.overlay(
+            renderedLayoutVersion: 1,
+            queuedRootNodeIDs: [],
+            movingToTrashRootNodeIDs: [fixture.folder.id],
+            treeStore: treeStore,
+            renderedNodeIDs: renderedNodeIDs
+        )
+        _ = cache.overlay(
+            renderedLayoutVersion: 1,
+            queuedRootNodeIDs: [],
+            movingToTrashRootNodeIDs: [fixture.sibling.id],
+            treeStore: treeStore,
+            renderedNodeIDs: renderedNodeIDs
+        )
+
         XCTAssertEqual(renderedNodeIDBuildCount, 2)
     }
 
@@ -188,7 +251,7 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
                 showFreeSpace: false,
                 availableCapacity: nil,
                 maxRenderedDepth: 6,
-                queuedNodeIDs: queuedNodeIDs
+                discardPileRootNodeIDs: queuedNodeIDs
             )
         }
         let changedDepthPresentation = DiscardPileVisualizationPresentation(
@@ -197,7 +260,16 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
             showFreeSpace: false,
             availableCapacity: nil,
             maxRenderedDepth: 7,
-            queuedNodeIDs: queuedNodeIDSets.last ?? []
+            discardPileRootNodeIDs: queuedNodeIDSets.last ?? []
+        )
+        let movingPresentation = DiscardPileVisualizationPresentation(
+            snapshot: snapshot,
+            focusNode: fixture.root,
+            showFreeSpace: false,
+            availableCapacity: nil,
+            maxRenderedDepth: 6,
+            discardPileRootNodeIDs: queuedNodeIDSets.last ?? [],
+            movingToTrashRootNodeIDs: [fixture.folder.id]
         )
 
         var lastRequestedLayoutID: String?
@@ -210,11 +282,13 @@ final class DiscardPileVisualizationOverlayTests: XCTestCase {
         }
 
         XCTAssertEqual(layoutRequestCount, 1)
-        XCTAssertEqual(presentations.map(\.queuedNodeIDs), queuedNodeIDSets)
+        XCTAssertEqual(presentations.map(\.discardPileRootNodeIDs), queuedNodeIDSets)
         XCTAssertTrue(presentations.allSatisfy {
             $0.visualizationInput.treeContentID == fixture.store.contentID
         })
         XCTAssertNotEqual(changedDepthPresentation.layoutID, presentations.last?.layoutID)
+        XCTAssertEqual(movingPresentation.layoutID, presentations.last?.layoutID)
+        XCTAssertEqual(movingPresentation.movingToTrashRootNodeIDs, [fixture.folder.id])
     }
 
     private func makeFixture() -> (

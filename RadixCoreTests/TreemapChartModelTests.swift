@@ -37,9 +37,9 @@ final class TreemapChartModelTests: XCTestCase {
         )
     }
 
-    func testSpatialSelectionSkipsDiscardPileTiles() async {
-        let queued = makeTreemapSegment(
-            id: "queued",
+    func testSpatialSelectionSkipsItemsMovingToTrash() async {
+        let moving = makeTreemapSegment(
+            id: "moving",
             rect: CGRect(x: 0, y: 0, width: 0.5, height: 1)
         )
         let available = makeTreemapSegment(
@@ -47,7 +47,7 @@ final class TreemapChartModelTests: XCTestCase {
             rect: CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
         )
         let model = TreemapChartModel(
-            layoutService: ImmediateTreemapLayoutService(segments: [queued, available])
+            layoutService: ImmediateTreemapLayoutService(segments: [moving, available])
         )
         let store = makeTreemapStore()
 
@@ -64,7 +64,7 @@ final class TreemapChartModelTests: XCTestCase {
                 from: nil,
                 moving: .right,
                 in: CGSize(width: 600, height: 300),
-                excluding: [queued.id]
+                excludingMovingToTrashNodeIDs: [moving.id]
             ),
             available.id
         )

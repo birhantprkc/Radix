@@ -157,9 +157,10 @@ final class TrashFlowController {
         )
     }
 
-    func removeDiscardPileNode(id nodeID: FileNodeRecord.ID) {
-        guard discardPile.nodeIDs.contains(nodeID) else { return }
-        let remainingIDs = discardPile.nodeIDs.filter { $0 != nodeID }
+    func removeDiscardPileNodes(ids nodeIDs: Set<FileNodeRecord.ID>) {
+        guard !nodeIDs.isEmpty else { return }
+        let remainingIDs = discardPile.nodeIDs.filter { !nodeIDs.contains($0) }
+        guard remainingIDs.count != discardPile.nodeIDs.count else { return }
         discardPile = DiscardPileState(
             nodeIDs: remainingIDs,
             snapshotID: discardPile.snapshotID

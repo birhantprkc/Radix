@@ -6,6 +6,8 @@ struct SelectionInspectorActions {
     let expandSummarizedNode: (FileNodeRecord) -> Void
     let selectedFileActions: SelectedFileActions
     let addPrimarySelectionToDiscardPile: () -> Void
+    let removeDiscardPileNode: (FileNodeRecord.ID) -> Void
+    let presentDiscardPileReview: () -> Void
     let bulkFileActions: BulkFileActions
     let openFullDiskAccessSettings: () -> Void
 }
@@ -14,6 +16,7 @@ struct SelectionInspectorView: View {
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
     let fullDiskAccessStatus: FullDiskAccessStatus
+    let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
     let actions: SelectionInspectorActions
 
     var body: some View {
@@ -77,12 +80,14 @@ struct SelectionInspectorView: View {
         )
         let warnings = relevantWarnings(for: [node])
         let largestChildren = largestChildren(of: node)
+        let discardPileMembership = discardPileMembership(for: node)
 
         return VStack(spacing: 0) {
             Form {
                 InspectorSummarySection(
                     node: node,
                     availability: availability,
+                    allowsMoveToTrash: discardPileMembership == nil,
                     actions: actions.selectedFileActions
                 )
 
@@ -105,11 +110,19 @@ struct SelectionInspectorView: View {
                     )
                 }
 
+                if let discardPileMembership {
+                    InspectorDiscardPileSection(
+                        queuedRootName: discardPileMembership.isRoot
+                            ? nil
+                            : discardPileMembership.rootNode.name
+                    )
+                }
+
                 if let notice = singleSelectionAvailabilityNotice(for: node) {
                     InspectorAvailabilityNotice(kind: notice)
                 }
 
-                if canExpandSummarizedSelection(node) {
+                if discardPileMembership == nil, canExpandSummarizedSelection(node) {
                     InspectorSummarizedSection {
                         actions.expandSummarizedNode(node)
                     }
@@ -130,21 +143,82 @@ struct SelectionInspectorView: View {
             }
             .formStyle(.grouped)
 
-            if availability.canRevealInFinder || availability.canMoveToTrash {
+            if availability.canRevealInFinder
+                || availability.canMoveToTrash
+                || discardPileMembership != nil {
                 InspectorActionBar(
                     revealAction: availability.canRevealInFinder
                         ? { actions.selectedFileActions.perform(.revealInFinder) }
                         : nil,
-                    addToDiscardPileAction: availability.canMoveToTrash
-                        ? actions.addPrimarySelectionToDiscardPile
-                        : nil,
-                    addToDiscardPileTitle: String(
-                        localized: "Add to Discard Pile",
-                        comment: "Action for marking the selected item for possible deletion."
-                    )
+                    discardPileAction: discardPileAction(
+                        for: node,
+                        membership: discardPileMembership,
+                        availability: availability
+                    ),
+                    discardPileTitle: discardPileActionTitle(
+                        membership: discardPileMembership
+                    ),
+                    discardPileSystemImageName: discardPileMembership?.isRoot == true
+                        ? "minus.circle"
+                        : "checklist"
                 )
             }
         }
+    }
+
+    private func discardPileMembership(
+        for node: FileNodeRecord
+    ) -> InspectorDiscardPileMembership? {
+        guard !discardPileRootNodeIDs.isEmpty,
+              let fileTreeStore = scanState.fileTreeStore,
+              let rootNode = fileTreeStore.path(to: node.id).reversed().first(where: {
+                  discardPileRootNodeIDs.contains($0.id)
+              }) else {
+            return nil
+        }
+
+        return InspectorDiscardPileMembership(
+            rootNode: rootNode,
+            isRoot: rootNode.id == node.id
+        )
+    }
+
+    private func discardPileAction(
+        for node: FileNodeRecord,
+        membership: InspectorDiscardPileMembership?,
+        availability: FileNodeActionAvailability
+    ) -> (() -> Void)? {
+        if let membership {
+            if membership.isRoot {
+                return { actions.removeDiscardPileNode(node.id) }
+            }
+            return actions.presentDiscardPileReview
+        }
+
+        return availability.canMoveToTrash
+            ? actions.addPrimarySelectionToDiscardPile
+            : nil
+    }
+
+    private func discardPileActionTitle(
+        membership: InspectorDiscardPileMembership?
+    ) -> String {
+        guard let membership else {
+            return String(
+                localized: "Add to Discard Pile",
+                comment: "Action for marking the selected item for possible deletion."
+            )
+        }
+        if membership.isRoot {
+            return String(
+                localized: "Remove from Discard Pile",
+                comment: "Inspector action for removing the selected item from the Discard Pile."
+            )
+        }
+        return String(
+            localized: "Review Discard Pile",
+            comment: "Inspector action for reviewing the queued ancestor of the selected item."
+        )
     }
 
     private func relevantWarnings(for nodes: [FileNodeRecord]) -> [ScanWarning] {
@@ -233,7 +307,8 @@ struct SelectionInspectorView: View {
     }
 
     private func selectLargestChild(_ child: FileNodeRecord) {
-        guard child.isDirectory,
+        guard discardPileMembership(for: child) == nil,
+              child.isDirectory,
               scanState.fileTreeStore?.containsChildren(id: child.id) == true else {
             actions.selectNodeAfterViewUpdate(child.id)
             return
@@ -241,4 +316,9 @@ struct SelectionInspectorView: View {
 
         actions.selectAndFocusNodeAfterViewUpdate(child.id)
     }
+}
+
+private struct InspectorDiscardPileMembership {
+    let rootNode: FileNodeRecord
+    let isRoot: Bool
 }

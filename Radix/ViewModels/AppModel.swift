@@ -443,14 +443,6 @@ final class AppModel: ObservableObject {
         sidebarModel
     }
 
-    var discardPileNodes: [FileNodeRecord] {
-        discardPileSnapshot.nodes
-    }
-
-    var discardPileSummary: DiscardPileSummary {
-        discardPileSnapshot.summary
-    }
-
     var discardPileSnapshot: DiscardPileSnapshot {
         let nodes = resolvedDiscardPileNodes()
         return DiscardPileSnapshot(
@@ -459,8 +451,29 @@ final class AppModel: ObservableObject {
         )
     }
 
-    var discardPileHiddenNodeIDs: Set<FileNodeRecord.ID> {
+    var workspaceHiddenNodeIDs: Set<FileNodeRecord.ID> {
         hiddenNodeIDs(for: scanCoordinator.snapshot?.id)
+    }
+
+    var discardPileRootNodeIDs: Set<FileNodeRecord.ID> {
+        guard discardPile.snapshotID == scanCoordinator.snapshot?.id else { return [] }
+        return Set(discardPile.nodeIDs)
+    }
+
+    var movingToTrashRootNodeIDs: Set<FileNodeRecord.ID> {
+        guard optimisticTrashVisibility.snapshotID == scanCoordinator.snapshot?.id else { return [] }
+        return optimisticTrashVisibility.nodeIDs
+    }
+
+    var canZoomIntoSelection: Bool {
+        guard let selectedNodeID = navigationModel.selectedNodeID else { return false }
+        return navigationModel.canZoomIntoSelection && isVisibleNavigationNode(selectedNodeID)
+    }
+
+    var selectionIncludesHiddenNodes: Bool {
+        let selectedNodeIDs = navigationModel.selectedNodeIDs
+        return !selectedNodeIDs.isEmpty
+            && visibleNavigationNodeIDs(from: selectedNodeIDs) != selectedNodeIDs
     }
 
     var startupDiskTarget: ScanTarget? {
@@ -1813,7 +1826,6 @@ final class AppModel: ObservableObject {
                 navigationModel.select(nodeID: nil)
                 return
             }
-            guard isVisibleNavigationNode(nodeID) else { return }
             navigationModel.select(nodeID: nodeID)
         case .selectMultiple(let nodeIDs, let primary):
             let visibleNodeIDs = visibleNavigationNodeIDs(from: nodeIDs)
@@ -2162,7 +2174,11 @@ final class AppModel: ObservableObject {
     }
 
     func removeDiscardPileNode(id nodeID: FileNodeRecord.ID) {
-        trashFlow.removeDiscardPileNode(id: nodeID)
+        removeDiscardPileNodes(ids: [nodeID])
+    }
+
+    func removeDiscardPileNodes(ids nodeIDs: Set<FileNodeRecord.ID>) {
+        trashFlow.removeDiscardPileNodes(ids: nodeIDs)
     }
 
     func clearDiscardPile() {
@@ -2293,7 +2309,7 @@ final class AppModel: ObservableObject {
                             activeFileTreeStore: activeFileTreeStore
                         )
                         if didHide, let activeFileTreeStore {
-                            self.reconcileNavigationForDiscardPileHiddenNodes(
+                            self.reconcileNavigationForHiddenNodes(
                                 hiddenNodeIDs: self.hiddenNodeIDs(for: snapshotID),
                                 fileTreeStore: activeFileTreeStore
                             )
@@ -2326,7 +2342,7 @@ final class AppModel: ObservableObject {
                         activeFileTreeStore: activeFileTreeStore
                     )
                     if didHide, let activeFileTreeStore {
-                        reconcileNavigationForDiscardPileHiddenNodes(
+                        reconcileNavigationForHiddenNodes(
                             hiddenNodeIDs: hiddenNodeIDs(for: snapshotID),
                             fileTreeStore: activeFileTreeStore
                         )
@@ -2539,10 +2555,6 @@ final class AppModel: ObservableObject {
         guard let selectedNode = navigationModel.selectedNode else {
             throw FileActionError.noSelection
         }
-        guard isVisibleNavigationNode(selectedNode.id) else {
-            clearSelection()
-            throw FileActionError.noSelection
-        }
         guard selectedNode.supportsFileActions else {
             throw FileActionError.unsupported
         }
@@ -2556,11 +2568,10 @@ final class AppModel: ObservableObject {
     }
 
     private func validatedSelectedNodes(requiresLivePath: Bool) throws -> [FileNodeRecord] {
-        let visibleNodes = navigationModel.selectedNodes.filter { isVisibleNavigationNode($0.id) }
-        if visibleNodes.isEmpty, !navigationModel.selectedNodes.isEmpty {
-            clearSelection()
-        }
-        return try validatedNodes(visibleNodes, requiresLivePath: requiresLivePath)
+        try validatedNodes(
+            navigationModel.selectedNodes,
+            requiresLivePath: requiresLivePath
+        )
     }
 
     private func validatedNodes(
@@ -2619,9 +2630,10 @@ final class AppModel: ObservableObject {
 
     private func validatedSelectedNodesForMutation() throws -> [FileNodeRecord] {
         try validateSnapshotAllowsMutation()
-        let nodes = try validatedSelectedNodes(requiresLivePath: true)
-        try validateMutationDoesNotIncludeHiddenNodes(nodes)
-        return nodes
+        let visibleNodes = navigationModel.selectedNodes.filter {
+            isVisibleNavigationNode($0.id)
+        }
+        return try validatedNodes(visibleNodes, requiresLivePath: true)
     }
 
     private func validatedNodesForDiscardPile(_ nodes: [FileNodeRecord]) throws -> [FileNodeRecord] {
@@ -2724,9 +2736,10 @@ final class AppModel: ObservableObject {
 
         let queuedIDs = (discardPile.snapshotID == snapshot.id ? discardPile.nodeIDs : []) + nodes.map(\.id)
         let deduplicatedIDs = deduplicatedDiscardPileIDs(queuedIDs, fileTreeStore: fileTreeStore)
-        reconcileNavigationForDiscardPileHiddenNodes(
+        reconcileNavigationForHiddenNodes(
             hiddenNodeIDs: hiddenNodeIDs(for: snapshot.id).union(deduplicatedIDs),
-            fileTreeStore: fileTreeStore
+            fileTreeStore: fileTreeStore,
+            preservingSelection: navigationModel.selectedNodeIDs.count == 1
         )
         discardPile = DiscardPileState(nodeIDs: deduplicatedIDs, snapshotID: snapshot.id)
     }
@@ -2743,9 +2756,10 @@ final class AppModel: ObservableObject {
         return discardPile.nodeIDs.compactMap { fileTreeStore.node(id: $0) }
     }
 
-    private func reconcileNavigationForDiscardPileHiddenNodes(
+    private func reconcileNavigationForHiddenNodes(
         hiddenNodeIDs: Set<FileNodeRecord.ID>,
-        fileTreeStore: FileTreeStore
+        fileTreeStore: FileTreeStore,
+        preservingSelection: Bool = false
     ) {
         guard !hiddenNodeIDs.isEmpty else { return }
         let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenNodeIDs)
@@ -2753,7 +2767,7 @@ final class AppModel: ObservableObject {
         if let focusedNodeID = navigationModel.focusedNodeID,
            fileTreeStore.isNodeOrDescendant(focusedNodeID, of: hiddenNodes) {
             navigationModel.setFocusedNodeID(
-                discardPileFocusFallbackID(
+                hiddenNodeFocusFallbackID(
                     for: focusedNodeID,
                     hiddenNodes: hiddenNodes,
                     fileTreeStore: fileTreeStore
@@ -2761,16 +2775,17 @@ final class AppModel: ObservableObject {
             )
         }
 
-        if navigationModel.selectedNodeIDs.contains(where: { selectedNodeID in
-            fileTreeStore.isNodeOrDescendant(selectedNodeID, of: hiddenNodes)
-        }) {
+        if !preservingSelection,
+           navigationModel.selectedNodeIDs.contains(where: { selectedNodeID in
+               fileTreeStore.isNodeOrDescendant(selectedNodeID, of: hiddenNodes)
+           }) {
             navigationModel.clearSelection()
         }
 
         navigationModel.reconcileFocusHistory(excluding: hiddenNodeIDs)
     }
 
-    private func discardPileFocusFallbackID(
+    private func hiddenNodeFocusFallbackID(
         for nodeID: FileNodeRecord.ID,
         hiddenNodes: PreparedFileTreeNodeSet,
         fileTreeStore: FileTreeStore

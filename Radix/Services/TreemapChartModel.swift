@@ -80,12 +80,14 @@ final class TreemapChartModel: ObservableObject {
 
     func discardPileOverlay(
         queuedRootNodeIDs: Set<FileNodeRecord.ID>,
+        movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>,
         treeStore: DiskMapTreeStore
     ) -> DiscardPileVisualizationOverlay {
         let renderedSegments = renderState.segments
         return discardPileOverlayCache.overlay(
             renderedLayoutVersion: renderState.version,
             queuedRootNodeIDs: queuedRootNodeIDs,
+            movingToTrashRootNodeIDs: movingToTrashRootNodeIDs,
             treeStore: treeStore,
             renderedNodeIDs: { Set(renderedSegments.compactMap(\.nodeID)) },
             renderedAggregateContainerNodeIDs: {
@@ -98,20 +100,20 @@ final class TreemapChartModel: ObservableObject {
         from selectedNodeID: String?,
         moving direction: ChartSpatialSelectionDirection,
         in size: CGSize,
-        excluding excludedNodeIDs: Set<FileNodeRecord.ID> = []
+        excludingMovingToTrashNodeIDs: Set<FileNodeRecord.ID> = []
     ) -> String? {
         prepareSpatialSelectionCache(for: size)
         let hasRenderedSelection = selectedNodeID.map {
             !DiskMapFreeSpaceVisualization.isFreeSpaceNodeID($0)
-                && !excludedNodeIDs.contains($0)
+                && !excludingMovingToTrashNodeIDs.contains($0)
                 && renderState.segment(nodeID: $0) != nil
         } ?? false
         let baseCandidates = hasRenderedSelection
             ? spatialSelectionCache.candidates
             : spatialSelectionCache.entryCandidates
-        let candidates = excludedNodeIDs.isEmpty
+        let candidates = excludingMovingToTrashNodeIDs.isEmpty
             ? baseCandidates
-            : baseCandidates.filter { !excludedNodeIDs.contains($0.nodeID) }
+            : baseCandidates.filter { !excludingMovingToTrashNodeIDs.contains($0.nodeID) }
         return ChartRectangleSpatialSelection.nextNodeID(
             from: selectedNodeID,
             moving: direction,

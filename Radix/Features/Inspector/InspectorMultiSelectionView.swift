@@ -53,10 +53,11 @@ struct InspectorMultiSelectionView: View {
                     revealAction: availability.canRevealInFinder
                         ? { actions.revealInFinder(summary.selectedNodes) }
                         : nil,
-                    addToDiscardPileAction: canMoveSelectionToTrash
+                    discardPileAction: canMoveSelectionToTrash
                         ? { actions.addToDiscardPile(summary.topLevelSelectedNodes) }
                         : nil,
-                    addToDiscardPileTitle: addToDiscardPileTitle
+                    discardPileTitle: addToDiscardPileTitle,
+                    discardPileSystemImageName: "checklist"
                 )
             }
         }

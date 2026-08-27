@@ -860,7 +860,9 @@ final class AppModelDependencyTests: XCTestCase {
         let movedURLs = await probe.movedURLs()
         XCTAssertEqual(movedURLs, [file.url])
         XCTAssertNotNil(model.scanState.snapshot?.treeStore.node(id: file.id))
-        XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(file.id))
+        XCTAssertEqual(model.movingToTrashRootNodeIDs, [file.id])
+        XCTAssertTrue(model.discardPileRootNodeIDs.isEmpty)
+        XCTAssertTrue(model.workspaceHiddenNodeIDs.contains(file.id))
 
         await probe.finish()
 
@@ -892,7 +894,8 @@ final class AppModelDependencyTests: XCTestCase {
         model.confirmMovePendingSelectionToTrash()
 
         try await probe.waitUntilStarted()
-        XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(file.id))
+        XCTAssertEqual(model.movingToTrashRootNodeIDs, [file.id])
+        XCTAssertTrue(model.workspaceHiddenNodeIDs.contains(file.id))
 
         await probe.finish()
 
@@ -900,7 +903,8 @@ final class AppModelDependencyTests: XCTestCase {
             model.lastErrorMessage != nil
         }
         XCTAssertNotNil(model.scanState.snapshot?.treeStore.node(id: file.id))
-        XCTAssertFalse(model.discardPileHiddenNodeIDs.contains(file.id))
+        XCTAssertFalse(model.workspaceHiddenNodeIDs.contains(file.id))
+        XCTAssertTrue(model.movingToTrashRootNodeIDs.isEmpty)
     }
 
     @MainActor
@@ -966,7 +970,7 @@ final class AppModelDependencyTests: XCTestCase {
         }
         XCTAssertEqual(model.discardPile.snapshotID, newSnapshot.id)
         XCTAssertEqual(model.discardPile.nodeIDs, [newFile.id])
-        XCTAssertEqual(model.discardPileSummary.totalAllocatedSize, newFile.allocatedSize)
+        XCTAssertEqual(model.discardPileSnapshot.summary.totalAllocatedSize, newFile.allocatedSize)
     }
 
     @MainActor
@@ -997,8 +1001,10 @@ final class AppModelDependencyTests: XCTestCase {
         try await probe.waitUntilStarted()
         let startedURLs = await probe.movedURLs()
         XCTAssertEqual(startedURLs, [second.url])
-        XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(first.id))
-        XCTAssertTrue(model.discardPileHiddenNodeIDs.contains(second.id))
+        XCTAssertTrue(model.workspaceHiddenNodeIDs.contains(first.id))
+        XCTAssertTrue(model.workspaceHiddenNodeIDs.contains(second.id))
+        XCTAssertEqual(model.movingToTrashRootNodeIDs, [first.id, second.id])
+        XCTAssertEqual(model.discardPileRootNodeIDs, [first.id, second.id])
 
         model.suspendMainWindowActivity()
         await probe.finish()
@@ -1160,7 +1166,7 @@ final class AppModelDependencyTests: XCTestCase {
             model.scanState.snapshot?.treeStore.node(id: first.id) == nil
         }
         XCTAssertNotNil(model.scanState.snapshot?.treeStore.node(id: second.id))
-        XCTAssertFalse(model.discardPileHiddenNodeIDs.contains(second.id))
+        XCTAssertFalse(model.workspaceHiddenNodeIDs.contains(second.id))
     }
 
     @MainActor
@@ -1462,7 +1468,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertNil(model.pendingTrashNode)
         XCTAssertNil(model.pendingTrashSelection)
-        XCTAssertTrue(model.navigation.selectedNodeIDs.isEmpty)
+        XCTAssertEqual(model.navigation.selectedNodeIDs, [queued.id])
         XCTAssertTrue(recorder.movedToTrashURLs.isEmpty)
         XCTAssertEqual(model.discardPile.nodeIDs, [queued.id])
     }
@@ -1501,9 +1507,39 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertTrue(didAdd)
         XCTAssertEqual(model.discardPile.nodeIDs, [file.id])
-        XCTAssertEqual(model.discardPileNodes.map(\.id), [file.id])
-        XCTAssertEqual(model.discardPileSummary.itemCount, 1)
-        XCTAssertEqual(model.discardPileSummary.totalAllocatedSize, file.allocatedSize)
+        XCTAssertEqual(model.discardPileSnapshot.nodes.map(\.id), [file.id])
+        XCTAssertEqual(model.discardPileSnapshot.summary.itemCount, 1)
+        XCTAssertEqual(model.discardPileSnapshot.summary.totalAllocatedSize, file.allocatedSize)
+    }
+
+    @MainActor
+    func testDiscardPileBulkRemovalPublishesOnceAndPreservesRemainingOrder() {
+        let model = AppModel(dependencies: makeDependencies())
+        let first = makeTestFileNode(id: "/selection/first.txt", name: "first.txt")
+        let second = makeTestFileNode(id: "/selection/second.txt", name: "second.txt")
+        let third = makeTestFileNode(id: "/selection/third.txt", name: "third.txt")
+        let root = makeTestDirectoryNode(
+            id: "/selection",
+            name: "selection",
+            children: [first, second, third]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second, third]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+        XCTAssertTrue(model.addNodesToDiscardPile([first, second, third]))
+
+        var publicationCount = 0
+        let cancellable = model.trashFlow.$discardPile.dropFirst().sink { _ in
+            publicationCount += 1
+        }
+        defer { cancellable.cancel() }
+
+        model.removeDiscardPileNodes(ids: [first.id, third.id])
+
+        XCTAssertEqual(model.discardPile.nodeIDs, [second.id])
+        XCTAssertEqual(model.discardPile.snapshotID, snapshot.id)
+        XCTAssertEqual(publicationCount, 1)
     }
 
     @MainActor
@@ -1520,7 +1556,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         try await waitUntil("deferred discard pile add") {
             model.discardPile.nodeIDs == [file.id] &&
-                model.navigation.selectedNodeID == nil
+                model.navigation.selectedNodeID == file.id
         }
     }
 
@@ -1703,7 +1739,7 @@ final class AppModelDependencyTests: XCTestCase {
     }
 
     @MainActor
-    func testDiscardPileHiddenNodeIDsTrackCurrentSnapshot() {
+    func testWorkspaceHiddenNodeIDsTrackCurrentSnapshot() {
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
@@ -1711,18 +1747,18 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.addNodesToDiscardPile([file])
 
-        XCTAssertEqual(model.discardPileHiddenNodeIDs, [file.id])
+        XCTAssertEqual(model.workspaceHiddenNodeIDs, [file.id])
 
         let nextFile = makeTestFileNode(id: "/next/file.txt", name: "file.txt")
         let nextRoot = makeTestDirectoryNode(id: "/next", name: "next", children: [nextFile])
         let nextStore = FileTreeStore(root: nextRoot, childrenByID: [nextRoot.id: [nextFile]])
         model.scanState.replaceCurrentSnapshot(makeTestSnapshot(root: nextRoot, store: nextStore))
 
-        XCTAssertTrue(model.discardPileHiddenNodeIDs.isEmpty)
+        XCTAssertTrue(model.workspaceHiddenNodeIDs.isEmpty)
     }
 
     @MainActor
-    func testDiscardPileAddClearsSelectionHiddenByQueuedNode() {
+    func testDiscardPileAddPreservesSelectionForInspection() {
         var actions = AppSystemActions.inert
         actions.fileExists = { _ in true }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
@@ -1731,8 +1767,55 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.addNodesToDiscardPile([file])
 
-        XCTAssertNil(model.navigation.selectedNodeID)
+        XCTAssertEqual(model.navigation.selectedNodeID, file.id)
+        XCTAssertEqual(model.navigation.selectedNodeIDs, [file.id])
+    }
+
+    @MainActor
+    func testDiscardPileAddClearsQueuedMultiSelection() {
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let first = makeTestFileNode(id: "/selection/first.txt", name: "first.txt")
+        let second = makeTestFileNode(id: "/selection/second.txt", name: "second.txt")
+        let root = makeTestDirectoryNode(
+            id: "/selection",
+            name: "selection",
+            children: [first, second]
+        )
+        let store = FileTreeStore(root: root, childrenByID: [root.id: [first, second]])
+        let snapshot = makeTestSnapshot(root: root, store: store)
+        model.scanState.replaceCurrentSnapshot(snapshot)
+        model.navigation.reconcileAfterSnapshotApplied(snapshot)
+        model.select(nodeIDs: [first.id, second.id], primaryNodeID: first.id)
+
+        model.addSelectedNodesToDiscardPile()
+
         XCTAssertTrue(model.navigation.selectedNodeIDs.isEmpty)
+        XCTAssertNil(model.navigation.selectedNodeID)
+    }
+
+    @MainActor
+    func testDiscardPileNodeCanBeSelectedButNotFocused() throws {
+        let recorder = AppModelActionRecorder()
+        var actions = AppSystemActions.inert
+        actions.fileExists = { _ in true }
+        actions.reveal = { recorder.revealedURLs.append($0) }
+        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
+        let file = installSelection(on: model)
+        let rootID = try XCTUnwrap(model.scanState.snapshot?.root.id)
+
+        model.addNodesToDiscardPile([file])
+        model.clearSelection()
+        model.select(nodeID: file.id)
+        model.focus(nodeID: file.id)
+        model.revealPrimarySelectionInFinder()
+
+        XCTAssertEqual(model.navigation.selectedNodeID, file.id)
+        XCTAssertEqual(model.navigation.focusedNodeID, rootID)
+        XCTAssertFalse(model.canZoomIntoSelection)
+        XCTAssertTrue(model.selectionIncludesHiddenNodes)
+        XCTAssertEqual(recorder.revealedURLs, [file.url])
     }
 
     @MainActor
@@ -1756,8 +1839,8 @@ final class AppModelDependencyTests: XCTestCase {
         model.addNodesToDiscardPile([folder])
 
         XCTAssertEqual(model.navigation.focusedNodeID, root.id)
-        XCTAssertNil(model.navigation.selectedNodeID)
-        XCTAssertTrue(model.navigation.selectedNodeIDs.isEmpty)
+        XCTAssertEqual(model.navigation.selectedNodeID, child.id)
+        XCTAssertEqual(model.navigation.selectedNodeIDs, [child.id])
         XCTAssertFalse(model.navigation.canNavigateBack)
     }
 
@@ -1887,7 +1970,7 @@ final class AppModelDependencyTests: XCTestCase {
         try await waitUntil("deferred focused discard pile add") {
             model.discardPile.nodeIDs == [folder.id] &&
                 model.navigation.focusedNodeID == root.id &&
-                model.navigation.selectedNodeID == nil
+                model.navigation.selectedNodeID == folder.id
         }
     }
 

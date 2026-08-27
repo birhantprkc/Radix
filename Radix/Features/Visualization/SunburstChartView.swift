@@ -17,7 +17,8 @@ struct SunburstChartView: View {
     let selectedAncestorIDs: Set<String>
     let depthLimit: Int
     let layoutID: String
-    let discardPileNodeIDs: Set<FileNodeRecord.ID>
+    let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
+    let movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>
     let onSelect: (String?) -> Void
     let onZoom: (String) -> Void
     let onSegmentClick: () -> Void
@@ -45,7 +46,8 @@ struct SunburstChartView: View {
         selectedAncestorIDs: Set<String>,
         depthLimit: Int,
         layoutID: String,
-        discardPileNodeIDs: Set<FileNodeRecord.ID>,
+        discardPileRootNodeIDs: Set<FileNodeRecord.ID>,
+        movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>,
         onSelect: @escaping (String?) -> Void,
         onZoom: @escaping (String) -> Void,
         onSegmentClick: @escaping () -> Void,
@@ -65,7 +67,8 @@ struct SunburstChartView: View {
         self.selectedAncestorIDs = selectedAncestorIDs
         self.depthLimit = depthLimit
         self.layoutID = layoutID
-        self.discardPileNodeIDs = discardPileNodeIDs
+        self.discardPileRootNodeIDs = discardPileRootNodeIDs
+        self.movingToTrashRootNodeIDs = movingToTrashRootNodeIDs
         self.onSelect = onSelect
         self.onZoom = onZoom
         self.onSegmentClick = onSegmentClick
@@ -95,14 +98,31 @@ struct SunburstChartView: View {
 
         if let hoveredNodeID = hoveredSegment.nodeID,
            let hoveredNode = treeStore.node(id: hoveredNodeID) {
-            return summary(for: hoveredNode)
+            return summary(
+                for: hoveredNode,
+                status: discardPileOverlay.role(for: hoveredNodeID)?.statusText
+            )
         }
 
         return ChartSummary(
-            status: String(localized: "Grouped Items", comment: "Chart status for several small items grouped into one segment."),
+            status: discardPileOverlay.role(
+                for: nil,
+                aggregateContainerNodeID: hoveredSegment.containerNodeID
+            )?.statusText ?? String(
+                localized: "Grouped Items",
+                comment: "Chart status for several small items grouped into one segment."
+            ),
             title: hoveredSegment.label,
             value: RadixFormatters.size(hoveredSegment.totalSize),
             detail: String(localized: "Too small to show individually", comment: "Chart detail explaining why grouped items are combined.")
+        )
+    }
+
+    private var discardPileOverlay: DiscardPileVisualizationOverlay {
+        chartModel.discardPileOverlay(
+            queuedRootNodeIDs: discardPileRootNodeIDs,
+            movingToTrashRootNodeIDs: movingToTrashRootNodeIDs,
+            treeStore: treeStore
         )
     }
 
@@ -136,11 +156,6 @@ struct SunburstChartView: View {
             let chartFrame = viewportTransform.frame(for: baseChartFrame)
             let layoutPresentation = layoutPresentationState
             let canAdjustViewport = self.canAdjustViewport
-            let discardPileOverlay = chartModel.discardPileOverlay(
-                queuedRootNodeIDs: discardPileNodeIDs,
-                treeStore: treeStore
-            )
-
             ZStack {
                 SunburstRenderedChartLayer(
                     segments: chartModel.renderedSegments,
@@ -158,6 +173,9 @@ struct SunburstChartView: View {
 
                 SunburstHoverOverlay(
                     segment: layoutPresentation.canUseRenderedLayout
+                        && discardPileOverlay.allowsChartNodeAction(
+                            for: chartModel.hoveredSegment?.nodeID
+                        )
                         ? chartModel.hoveredSegment
                         : nil
                 )
@@ -218,8 +236,7 @@ struct SunburstChartView: View {
                         guard layoutPresentation.canUseRenderedLayout else { return false }
                         return handleSpatialMove(
                             direction,
-                            in: baseChartFrame,
-                            discardPileOverlay: discardPileOverlay
+                            in: baseChartFrame
                         )
                     },
                     onKeyboardFocus: {
@@ -359,14 +376,13 @@ struct SunburstChartView: View {
 
     private func handleSpatialMove(
         _ direction: ChartSpatialSelectionDirection,
-        in baseChartFrame: CGRect,
-        discardPileOverlay: DiscardPileVisualizationOverlay
+        in baseChartFrame: CGRect
     ) -> Bool {
         guard layoutPresentationState.canUseRenderedLayout,
               let segment = chartModel.keyboardSelection(
             from: selectedNodeID,
             moving: direction,
-            excluding: discardPileOverlay.queuedNodeIDs
+            excludingMovingToTrashNodeIDs: discardPileOverlay.movingToTrashNodeIDs
         ), let nodeID = segment.nodeID else {
             return false
         }
@@ -453,12 +469,21 @@ struct SunburstChartView: View {
             }
             return
         }
-        guard discardPileOverlay.allowsChartNodeAction(for: nodeID) else { return }
 
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
             if clickCount == 1 {
                 onSelect(nil)
             }
+            return
+        }
+
+        if discardPileOverlay.isMovingToTrash(nodeID) {
+            return
+        }
+
+        if discardPileOverlay.isQueued(nodeID) {
+            onSegmentClick()
+            onSelect(nodeID)
             return
         }
 
@@ -478,7 +503,9 @@ struct SunburstChartView: View {
         }
 
         let node = displayedNode ?? rootNode
-        return String(localized: "\(node.name), \(RadixFormatters.size(node.allocatedSize)), \(summaryStatus(for: node))", comment: "Accessibility value describing the selected sunburst segment.")
+        let status = discardPileOverlay.role(for: node.id)?.statusText
+            ?? summaryStatus(for: node)
+        return String(localized: "\(node.name), \(RadixFormatters.size(node.allocatedSize)), \(status)", comment: "Accessibility value describing the selected sunburst segment.")
     }
 
     private var accessibilityHint: String {
@@ -577,7 +604,7 @@ struct SunburstChartView: View {
         return String(localized: "Go up to \(parentNode.name)", comment: "Tooltip for the sunburst chart center navigation affordance.")
     }
 
-    private func summary(for node: FileNodeRecord) -> ChartSummary {
+    private func summary(for node: FileNodeRecord, status: String? = nil) -> ChartSummary {
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(node.id) {
             return ChartSummary(
                 status: summaryStatus(for: node),
@@ -596,7 +623,7 @@ struct SunburstChartView: View {
         }
 
         return ChartSummary(
-            status: node.itemKind(activeTarget: activeTarget),
+            status: status ?? node.itemKind(activeTarget: activeTarget),
             title: node.name,
             value: RadixFormatters.size(node.allocatedSize),
             detail: detail

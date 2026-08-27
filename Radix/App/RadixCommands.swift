@@ -175,7 +175,7 @@ struct RadixCommands: Commands {
                 appModel.zoomIntoSelection()
             }
             .keyboardShortcut(.downArrow, modifiers: [.command])
-            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canZoomIntoSelection)
+            .disabled(!appModel.canUseWorkspaceCommands || !appModel.canZoomIntoSelection)
 
             Button("Back to Scan Root", systemImage: "arrowshape.turn.up.backward") {
                 appModel.resetFocusToRoot()
@@ -215,12 +215,17 @@ struct RadixCommands: Commands {
             Divider()
 
             Button(addSelectionToDiscardPileTitle, systemImage: "checklist") {
-                appModel.addSelectedNodesToDiscardPile()
+                if appModel.selectionIncludesHiddenNodes {
+                    appModel.presentDiscardPileReview()
+                } else {
+                    appModel.addSelectedNodesToDiscardPile()
+                }
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
             .disabled(
                 !appModel.canUseWorkspaceCommands ||
-                    !selectedActionAvailability.canMoveToTrash
+                    (!appModel.selectionIncludesHiddenNodes
+                        && !selectedActionAvailability.canMoveToTrash)
             )
 
             selectedFileActionCommand(.moveToTrash, shortcut: .delete, modifiers: [])
@@ -244,6 +249,12 @@ struct RadixCommands: Commands {
     }
 
     private var addSelectionToDiscardPileTitle: String {
+        if appModel.selectionIncludesHiddenNodes {
+            return String(
+                localized: "Review Discard Pile",
+                comment: "Command for reviewing the Discard Pile when the selection is already included."
+            )
+        }
         let count = navigation.selectedNodeIDs.count
         guard count > 1 else {
             return String(localized: "Add to Discard Pile", comment: "Action for marking one selected item for possible deletion.")
@@ -273,7 +284,8 @@ struct RadixCommands: Commands {
         .keyboardShortcut(shortcut, modifiers: modifiers)
         .disabled(
             !appModel.canUseWorkspaceCommands ||
-                !action.isEnabled(in: selectedActionAvailability)
+                !action.isEnabled(in: selectedActionAvailability) ||
+                (action == .moveToTrash && appModel.selectionIncludesHiddenNodes)
         )
     }
 }

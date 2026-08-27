@@ -18,7 +18,8 @@ struct TreemapChartView: View {
     let selectedNodeID: String?
     let depthLimit: Int
     let layoutID: String
-    let discardPileNodeIDs: Set<FileNodeRecord.ID>
+    let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
+    let movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>
     let onSelect: (String?) -> Void
     let onZoom: (String) -> Void
     let onDiscardPileDragActiveChange: (Bool) -> Void
@@ -42,7 +43,8 @@ struct TreemapChartView: View {
         selectedNodeID: String?,
         depthLimit: Int,
         layoutID: String,
-        discardPileNodeIDs: Set<FileNodeRecord.ID>,
+        discardPileRootNodeIDs: Set<FileNodeRecord.ID>,
+        movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>,
         onSelect: @escaping (String?) -> Void,
         onZoom: @escaping (String) -> Void,
         onDiscardPileDragActiveChange: @escaping (Bool) -> Void,
@@ -58,7 +60,8 @@ struct TreemapChartView: View {
         self.selectedNodeID = selectedNodeID
         self.depthLimit = depthLimit
         self.layoutID = layoutID
-        self.discardPileNodeIDs = discardPileNodeIDs
+        self.discardPileRootNodeIDs = discardPileRootNodeIDs
+        self.movingToTrashRootNodeIDs = movingToTrashRootNodeIDs
         self.onSelect = onSelect
         self.onZoom = onZoom
         self.onDiscardPileDragActiveChange = onDiscardPileDragActiveChange
@@ -82,6 +85,20 @@ struct TreemapChartView: View {
         return TreemapTooltipContent.content(
             for: hoveredSegment,
             rootNode: rootNode,
+            treeStore: treeStore,
+            discardPileRole: discardPileOverlay.role(
+                for: hoveredSegment.nodeID,
+                aggregateContainerNodeID: hoveredSegment.isAggregate
+                    ? hoveredSegment.containerNodeID
+                    : nil
+            )
+        )
+    }
+
+    private var discardPileOverlay: DiscardPileVisualizationOverlay {
+        chartModel.discardPileOverlay(
+            queuedRootNodeIDs: discardPileRootNodeIDs,
+            movingToTrashRootNodeIDs: movingToTrashRootNodeIDs,
             treeStore: treeStore
         )
     }
@@ -98,11 +115,6 @@ struct TreemapChartView: View {
             let layoutPresentation = layoutPresentationState
             let canAdjustViewport = layoutPresentation.canUseRenderedLayout
                 && !chartModel.renderedSegments.isEmpty
-            let discardPileOverlay = chartModel.discardPileOverlay(
-                queuedRootNodeIDs: discardPileNodeIDs,
-                treeStore: treeStore
-            )
-
             ZStack {
                 TreemapRenderedChartLayer(
                     segments: chartModel.renderedSegments,
@@ -156,8 +168,7 @@ struct TreemapChartView: View {
                         guard layoutPresentation.canUseRenderedLayout else { return false }
                         return handleSpatialMove(
                             direction,
-                            in: baseChartFrame.size,
-                            discardPileOverlay: discardPileOverlay
+                            in: baseChartFrame.size
                         )
                     },
                     onKeyboardFocus: {
@@ -325,15 +336,14 @@ struct TreemapChartView: View {
 
     private func handleSpatialMove(
         _ direction: ChartSpatialSelectionDirection,
-        in size: CGSize,
-        discardPileOverlay: DiscardPileVisualizationOverlay
+        in size: CGSize
     ) -> Bool {
         guard layoutPresentationState.canUseRenderedLayout,
               let nodeID = chartModel.spatialSelectionNodeID(
             from: selectedNodeID,
             moving: direction,
             in: size,
-            excluding: discardPileOverlay.queuedNodeIDs
+            excludingMovingToTrashNodeIDs: discardPileOverlay.movingToTrashNodeIDs
         ) else {
             return false
         }
@@ -401,7 +411,9 @@ struct TreemapChartView: View {
             return tooltipContent.accessibilityDescription
         }
 
-        return String(localized: "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(summaryStatus(for: displayedNode))", comment: "Accessibility value describing the selected treemap tile.")
+        let status = discardPileOverlay.role(for: displayedNode.id)?.statusText
+            ?? summaryStatus(for: displayedNode)
+        return String(localized: "\(displayedNode.name), \(RadixFormatters.size(displayedNode.allocatedSize)), \(status)", comment: "Accessibility value describing the selected treemap tile.")
     }
 
     private func chartFrame(in size: CGSize) -> CGRect {
@@ -489,10 +501,17 @@ struct TreemapChartView: View {
             if clickCount == 1 { onSelect(nil) }
             return
         }
-        guard discardPileOverlay.allowsChartNodeAction(for: nodeID) else { return }
-
         if DiskMapFreeSpaceVisualization.isFreeSpaceNodeID(nodeID) {
             if clickCount == 1 { onSelect(nil) }
+            return
+        }
+
+        if discardPileOverlay.isMovingToTrash(nodeID) {
+            return
+        }
+
+        if discardPileOverlay.isQueued(nodeID) {
+            onSelect(nodeID)
             return
         }
 
@@ -696,6 +715,12 @@ private struct TreemapHoverTooltip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
+            if let status = content.status {
+                Text(status)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: content.systemImageName)
                     .font(.subheadline.weight(.semibold))
@@ -804,13 +829,6 @@ private struct TreemapRenderedChartLayer: View {
                 .equatable()
                 .allowsHitTesting(false)
 
-            TreemapSelectionOverlay(
-                segment: selectedSegment,
-                contentFrame: contentFrame
-            )
-                .equatable()
-                .allowsHitTesting(false)
-
             TreemapLabelCanvas(
                 segments: segments,
                 renderVersion: renderVersion,
@@ -824,6 +842,13 @@ private struct TreemapRenderedChartLayer: View {
                 segments: segments,
                 renderVersion: renderVersion,
                 overlay: discardPileOverlay,
+                contentFrame: contentFrame
+            )
+                .equatable()
+                .allowsHitTesting(false)
+
+            TreemapSelectionOverlay(
+                segment: selectedSegment,
                 contentFrame: contentFrame
             )
                 .equatable()

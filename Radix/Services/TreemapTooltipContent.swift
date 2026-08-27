@@ -6,19 +6,28 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
     let sizeAndSignificance: String
     let location: String
     let metadata: String
+    let status: String?
 
     var accessibilityDescription: String {
-        [title, sizeAndSignificance, location, metadata].joined(separator: ", ")
+        [title, status, sizeAndSignificance, location, metadata]
+            .compactMap { $0 }
+            .joined(separator: ", ")
     }
 
     static func content(
         for segment: TreemapSegment,
         rootNode: FileNodeRecord,
-        treeStore: some DiskMapTreeReading
+        treeStore: some DiskMapTreeReading,
+        discardPileRole: DiscardPileVisualizationOverlayRole? = nil
     ) -> TreemapTooltipContent {
         guard let nodeID = segment.nodeID,
               let node = treeStore.node(id: nodeID) else {
-            return aggregateContent(for: segment, rootNode: rootNode, treeStore: treeStore)
+            return aggregateContent(
+                for: segment,
+                rootNode: rootNode,
+                treeStore: treeStore,
+                discardPileRole: discardPileRole
+            )
         }
 
         let metadata: String
@@ -44,14 +53,16 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
                 relativeTo: rootNode,
                 treeStore: treeStore
             ),
-            metadata: metadata
+            metadata: metadata,
+            status: discardPileRole?.statusText
         )
     }
 
     private static func aggregateContent(
         for segment: TreemapSegment,
         rootNode: FileNodeRecord,
-        treeStore: some DiskMapTreeReading
+        treeStore: some DiskMapTreeReading,
+        discardPileRole: DiscardPileVisualizationOverlayRole?
     ) -> TreemapTooltipContent {
         let itemCount = segment.groupedItemCount ?? 0
         return TreemapTooltipContent(
@@ -68,7 +79,8 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
             ),
             metadata: itemCount == 1
                 ? String(localized: "1 grouped item", comment: "Tooltip metadata for one item represented by an aggregate segment.")
-                : String(localized: "\(itemCount.formatted(.number)) grouped items", comment: "Tooltip metadata for multiple items represented by an aggregate segment.")
+                : String(localized: "\(itemCount.formatted(.number)) grouped items", comment: "Tooltip metadata for multiple items represented by an aggregate segment."),
+            status: discardPileRole?.statusText
         )
     }
 

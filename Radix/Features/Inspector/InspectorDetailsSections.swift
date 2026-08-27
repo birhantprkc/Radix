@@ -122,6 +122,39 @@ struct InspectorMultiSharedStorageSection: View {
     }
 }
 
+struct InspectorDiscardPileSection: View {
+    let queuedRootName: String?
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("In Discard Pile", systemImage: "checklist")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var message: String {
+        if let queuedRootName {
+            return String(
+                localized: "\(queuedRootName) is in the Discard Pile, so this item is included with it.",
+                comment: "Inspector explanation for an item included because its ancestor is in the Discard Pile."
+            )
+        }
+
+        return String(
+            localized: "This item is marked for review. It remains on disk until you move the Discard Pile to Trash.",
+            comment: "Inspector explanation for an item directly added to the Discard Pile."
+        )
+    }
+}
+
 enum InspectorAvailabilityNoticeKind {
     case savedScan
     case scanRoot

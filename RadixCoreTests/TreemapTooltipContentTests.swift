@@ -37,6 +37,16 @@ final class TreemapTooltipContentTests: XCTestCase {
         XCTAssertTrue(content.sizeAndSignificance.contains("40.0% of Macintosh HD"))
         XCTAssertEqual(content.location, "Macintosh HD")
         XCTAssertEqual(content.metadata, "2 files")
+        XCTAssertNil(content.status)
+
+        let queuedContent = TreemapTooltipContent.content(
+            for: segment,
+            rootNode: root,
+            treeStore: store,
+            discardPileRole: .queuedRoot
+        )
+        XCTAssertEqual(queuedContent.status, "In Discard Pile")
+        XCTAssertTrue(queuedContent.accessibilityDescription.contains("In Discard Pile"))
     }
 
     func testFileContentIncludesParentPathAndModificationDate() throws {
@@ -113,6 +123,14 @@ final class TreemapTooltipContentTests: XCTestCase {
         XCTAssertEqual(content.title, "Smaller Items")
         XCTAssertEqual(content.location, "Macintosh HD › Library")
         XCTAssertEqual(content.metadata, "4 grouped items")
+
+        let containingContent = TreemapTooltipContent.content(
+            for: segment,
+            rootNode: root,
+            treeStore: store,
+            discardPileRole: .containsQueuedItem
+        )
+        XCTAssertEqual(containingContent.status, "Contains Items in Discard Pile")
     }
 
     private func segments(

@@ -55,10 +55,16 @@ struct FileBrowserTableView: View {
                 navigation.selectedNodeIDs.filter { model.displayedNode(id: $0) != nil }
             },
             set: { newValue in
+                let currentVisibleSelection = navigation.selectedNodeIDs.filter {
+                    model.displayedNode(id: $0) != nil
+                }
                 let selectedIDs = newValue.filter { model.displayedNode(id: $0) != nil }
                 let primaryID = primarySelectionID(in: selectedIDs)
+                let currentVisiblePrimary = navigation.selectedNodeID.flatMap {
+                    currentVisibleSelection.contains($0) ? $0 : nil
+                }
 
-                if navigation.selectedNodeIDs != selectedIDs || navigation.selectedNodeID != primaryID {
+                if currentVisibleSelection != selectedIDs || currentVisiblePrimary != primaryID {
                     actions.selectNodesAfterViewUpdate(selectedIDs, primaryID)
                 }
             }

@@ -32,17 +32,17 @@ final class SunburstChartModelTests: XCTestCase {
         )
     }
 
-    func testKeyboardSelectionSkipsDiscardPileSegments() async {
+    func testKeyboardSelectionSkipsItemsMovingToTrash() async {
         let first = makeSegment(id: "first", startAngle: 0, endAngle: 1)
-        let queued = makeSegment(id: "queued", startAngle: 1, endAngle: 2)
+        let moving = makeSegment(id: "moving", startAngle: 1, endAngle: 2)
         let last = makeSegment(id: "last", startAngle: 2, endAngle: 3)
-        let model = await loadedModel(with: [first, queued, last])
+        let model = await loadedModel(with: [first, moving, last])
 
         XCTAssertEqual(
             model.keyboardSelection(
                 from: first.id,
                 moving: .right,
-                excluding: [queued.id]
+                excludingMovingToTrashNodeIDs: [moving.id]
             )?.nodeID,
             last.id
         )
@@ -50,7 +50,7 @@ final class SunburstChartModelTests: XCTestCase {
             model.keyboardSelection(
                 from: nil,
                 moving: .right,
-                excluding: [first.id, queued.id]
+                excludingMovingToTrashNodeIDs: [first.id, moving.id]
             )?.nodeID,
             last.id
         )

@@ -78,23 +78,25 @@ final class SunburstChartModel: ObservableObject {
     func keyboardSelection(
         from selectedNodeID: String?,
         moving direction: ChartSpatialSelectionDirection,
-        excluding excludedNodeIDs: Set<FileNodeRecord.ID> = []
+        excludingMovingToTrashNodeIDs: Set<FileNodeRecord.ID> = []
     ) -> SunburstSegment? {
         selectionIndex.keyboardSelection(
             from: selectedNodeID,
             moving: direction,
-            excluding: excludedNodeIDs
+            excluding: excludingMovingToTrashNodeIDs
         )
     }
 
     func discardPileOverlay(
         queuedRootNodeIDs: Set<FileNodeRecord.ID>,
+        movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>,
         treeStore: DiskMapTreeStore
     ) -> DiscardPileVisualizationOverlay {
         let renderedSegments = renderState.segments
         return discardPileOverlayCache.overlay(
             renderedLayoutVersion: renderState.version,
             queuedRootNodeIDs: queuedRootNodeIDs,
+            movingToTrashRootNodeIDs: movingToTrashRootNodeIDs,
             treeStore: treeStore,
             renderedNodeIDs: { Set(renderedSegments.compactMap(\.nodeID)) },
             renderedAggregateContainerNodeIDs: {

@@ -86,7 +86,9 @@ struct WorkspaceView: View {
 
     let maxRenderedDepth: Int
     let showFreeSpaceInDiskMaps: Bool
-    let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
+    let workspaceHiddenNodeIDs: Set<FileNodeRecord.ID>
+    let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
+    let movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>
     let startupDiskTarget: ScanTarget?
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
@@ -105,7 +107,9 @@ struct WorkspaceView: View {
                     visualizationMode: visualizationMode,
                     maxRenderedDepth: maxRenderedDepth,
                     showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
-                    discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
+                    workspaceHiddenNodeIDs: workspaceHiddenNodeIDs,
+                    discardPileRootNodeIDs: discardPileRootNodeIDs,
+                    movingToTrashRootNodeIDs: movingToTrashRootNodeIDs,
                     fullDiskAccessStatus: fullDiskAccessStatus,
                     freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
                     actions: actions

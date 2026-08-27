@@ -84,6 +84,27 @@ struct SunburstDiscardPileOverlay: View, Equatable {
                         with: .color(Color.accentColor.opacity(0.72)),
                         style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
                     )
+                case .movingToTrashRoot:
+                    context.fill(
+                        path,
+                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                    )
+                    context.stroke(
+                        path,
+                        with: .color(Color.secondary.opacity(0.8)),
+                        lineWidth: 1.5
+                    )
+                case .movingToTrashDescendant:
+                    context.fill(
+                        path,
+                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                    )
+                case .containsMovingToTrashItem:
+                    context.stroke(
+                        path,
+                        with: .color(Color.secondary.opacity(0.72)),
+                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                    )
                 }
             }
         }

@@ -10,7 +10,9 @@ struct ActiveWorkspaceView: View {
     let visualizationMode: ScanVisualizationMode
     let maxRenderedDepth: Int
     let showFreeSpaceInDiskMaps: Bool
-    let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
+    let workspaceHiddenNodeIDs: Set<FileNodeRecord.ID>
+    let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
+    let movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
     let actions: WorkspaceActions
@@ -61,7 +63,8 @@ struct ActiveWorkspaceView: View {
             showFreeSpace: showFreeSpaceInDiskMaps,
             availableCapacity: freeSpaceAvailableCapacity(snapshot, focusNode),
             maxRenderedDepth: maxRenderedDepth,
-            queuedNodeIDs: discardPileHiddenNodeIDs
+            discardPileRootNodeIDs: discardPileRootNodeIDs,
+            movingToTrashRootNodeIDs: movingToTrashRootNodeIDs
         )
         let visualizationInput = visualizationPresentation.visualizationInput
 
@@ -81,7 +84,8 @@ struct ActiveWorkspaceView: View {
                     selectedAncestorIDs: navigation.selectedAncestorIDs,
                     depthLimit: maxRenderedDepth,
                     layoutID: visualizationPresentation.layoutID,
-                    discardPileNodeIDs: visualizationPresentation.queuedNodeIDs,
+                    discardPileRootNodeIDs: visualizationPresentation.discardPileRootNodeIDs,
+                    movingToTrashRootNodeIDs: visualizationPresentation.movingToTrashRootNodeIDs,
                     onSelect: actions.selectNode,
                     onZoom: actions.selectAndFocusNode,
                     onSegmentClick: actions.recordSunburstSegmentClick,
@@ -100,7 +104,8 @@ struct ActiveWorkspaceView: View {
                     selectedNodeID: navigation.selectedNodeID,
                     depthLimit: maxRenderedDepth,
                     layoutID: visualizationPresentation.layoutID,
-                    discardPileNodeIDs: visualizationPresentation.queuedNodeIDs,
+                    discardPileRootNodeIDs: visualizationPresentation.discardPileRootNodeIDs,
+                    movingToTrashRootNodeIDs: visualizationPresentation.movingToTrashRootNodeIDs,
                     onSelect: actions.selectNode,
                     onZoom: actions.selectAndFocusNode,
                     onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
@@ -116,7 +121,7 @@ struct ActiveWorkspaceView: View {
                 scanState: scanState,
                 navigation: navigation,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
-                hiddenNodeIDs: discardPileHiddenNodeIDs,
+                hiddenNodeIDs: workspaceHiddenNodeIDs,
                 actions: fileBrowserActions
             )
 

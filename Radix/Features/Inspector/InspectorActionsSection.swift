@@ -2,8 +2,9 @@ import SwiftUI
 
 struct InspectorActionBar: View {
     let revealAction: (() -> Void)?
-    let addToDiscardPileAction: (() -> Void)?
-    let addToDiscardPileTitle: String
+    let discardPileAction: (() -> Void)?
+    let discardPileTitle: String
+    let discardPileSystemImageName: String
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,11 +24,11 @@ struct InspectorActionBar: View {
                     .buttonStyle(.bordered)
                 }
 
-                if let addToDiscardPileAction {
+                if let discardPileAction {
                     Button {
-                        addToDiscardPileAction()
+                        discardPileAction()
                     } label: {
-                        Label(addToDiscardPileTitle, systemImage: "checklist")
+                        Label(discardPileTitle, systemImage: discardPileSystemImageName)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)

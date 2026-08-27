@@ -48,7 +48,9 @@ struct ContentView: View {
                 ),
                 maxRenderedDepth: appModel.maxRenderedDepth,
                 showFreeSpaceInDiskMaps: appModel.showFreeSpaceInDiskMaps,
-                discardPileHiddenNodeIDs: appModel.discardPileHiddenNodeIDs,
+                workspaceHiddenNodeIDs: appModel.workspaceHiddenNodeIDs,
+                discardPileRootNodeIDs: appModel.discardPileRootNodeIDs,
+                movingToTrashRootNodeIDs: appModel.movingToTrashRootNodeIDs,
                 startupDiskTarget: appModel.startupDiskTarget,
                 fullDiskAccessStatus: appModel.fullDiskAccessStatus,
                 freeSpaceAvailableCapacity: { snapshot, focusNode in
@@ -77,6 +79,7 @@ struct ContentView: View {
                 scanState: appModel.scanState,
                 navigation: appModel.navigation,
                 fullDiskAccessStatus: appModel.fullDiskAccessStatus,
+                discardPileRootNodeIDs: appModel.discardPileRootNodeIDs,
                 actions: selectionInspectorActions
             )
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
@@ -133,15 +136,15 @@ struct ContentView: View {
                 OnboardingView()
             case .discardPileReview:
                 DiscardPileReviewSheet(
-                    nodes: discardPileSnapshot.nodes,
+                    snapshot: discardPileSnapshot,
                     actions: DiscardPileReviewActions(
-                        removeNode: { nodeID in
-                            appModel.removeDiscardPileNode(id: nodeID)
+                        removeNodes: { nodeIDs in
+                            appModel.removeDiscardPileNodes(ids: nodeIDs)
                         },
                         clear: {
                             appModel.clearDiscardPile()
                         },
-                        cancel: {
+                        dismiss: {
                             appModel.dismissDiscardPileReview()
                         },
                         moveToTrash: {
@@ -674,7 +677,9 @@ private struct WorkspaceDetailView: View {
 
     let maxRenderedDepth: Int
     let showFreeSpaceInDiskMaps: Bool
-    let discardPileHiddenNodeIDs: Set<FileNodeRecord.ID>
+    let workspaceHiddenNodeIDs: Set<FileNodeRecord.ID>
+    let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
+    let movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>
     let startupDiskTarget: ScanTarget?
     let fullDiskAccessStatus: FullDiskAccessStatus
     let freeSpaceAvailableCapacity: (ScanSnapshot, FileNodeRecord) -> Int64?
@@ -698,7 +703,9 @@ private struct WorkspaceDetailView: View {
                 visualizationMode: $visualizationMode,
                 maxRenderedDepth: maxRenderedDepth,
                 showFreeSpaceInDiskMaps: showFreeSpaceInDiskMaps,
-                discardPileHiddenNodeIDs: discardPileHiddenNodeIDs,
+                workspaceHiddenNodeIDs: workspaceHiddenNodeIDs,
+                discardPileRootNodeIDs: discardPileRootNodeIDs,
+                movingToTrashRootNodeIDs: movingToTrashRootNodeIDs,
                 startupDiskTarget: startupDiskTarget,
                 fullDiskAccessStatus: fullDiskAccessStatus,
                 freeSpaceAvailableCapacity: freeSpaceAvailableCapacity,
@@ -817,6 +824,8 @@ private extension ContentView {
             expandSummarizedNode: { appModel.expandSummarizedNode($0) {} },
             selectedFileActions: primarySelectedFileActions,
             addPrimarySelectionToDiscardPile: { appModel.addPrimarySelectionToDiscardPileAfterViewUpdate() },
+            removeDiscardPileNode: { appModel.removeDiscardPileNode(id: $0) },
+            presentDiscardPileReview: { appModel.presentDiscardPileReview() },
             bulkFileActions: bulkFileActions,
             openFullDiskAccessSettings: { appModel.prepareAndOpenFullDiskAccessSettings() }
         )

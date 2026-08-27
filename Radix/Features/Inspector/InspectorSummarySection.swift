@@ -3,6 +3,7 @@ import SwiftUI
 struct InspectorSummarySection: View {
     let node: FileNodeRecord
     let availability: FileNodeActionAvailability
+    let allowsMoveToTrash: Bool
     let actions: SelectedFileActions
 
     var body: some View {
@@ -55,7 +56,7 @@ struct InspectorSummarySection: View {
                             }
                         }
 
-                        if availability.canMoveToTrash {
+                        if availability.canMoveToTrash && allowsMoveToTrash {
                             Divider()
 
                             Button(
@@ -81,6 +82,8 @@ struct InspectorSummarySection: View {
     }
 
     private var showsMoreMenu: Bool {
-        availability.canOpen || availability.canCopyPath || availability.canMoveToTrash
+        availability.canOpen
+            || availability.canCopyPath
+            || (availability.canMoveToTrash && allowsMoveToTrash)
     }
 }
