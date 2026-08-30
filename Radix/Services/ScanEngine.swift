@@ -459,8 +459,6 @@ actor ScanEngine {
     }
 
     private struct PreparedOrdinaryLeafItem: Sendable {
-        let url: URL
-        let metadata: NodeMetadata
         let weight: Double
         let node: FileNodeRecord
         let sharedAllocationClaim: SharedAllocationClaim?
@@ -472,9 +470,8 @@ actor ScanEngine {
     }
 
     private struct PackageSummaryResult: Sendable {
-        let item: ScanWorkItem
         let itemKey: Int
-        let metadata: NodeMetadata
+        let weight: Double
         let leaf: LeafNodeResult
     }
 
@@ -1670,9 +1667,8 @@ actor ScanEngine {
                             emissionState: &localEmissionState
                         )
                         return .package(PackageSummaryResult(
-                            item: taskItem,
                             itemKey: taskItemKey,
-                            metadata: taskMetadata,
+                            weight: taskItem.weight,
                             leaf: leaf
                         ))
                     }
@@ -1841,7 +1837,6 @@ actor ScanEngine {
                     completedByKey[itemKey] = .leaf(inaccessibleNode)
                 case .package(let packageResult):
                     activePackageTasks -= 1
-                    let item = packageResult.item
                     let leafResult = packageResult.leaf
                     metrics.pendingPackageSummaryCount = max(
                         metrics.pendingPackageSummaryCount - 1,
@@ -1853,7 +1848,7 @@ actor ScanEngine {
                     }
                     applyLeafMetrics(
                         leafResult.node,
-                        weight: item.weight,
+                        weight: packageResult.weight,
                         summaryVisitedItemCount: leafResult.summaryVisitedItemCount,
                         metrics: &metrics
                     )
@@ -2032,8 +2027,6 @@ actor ScanEngine {
                             metadata: childMetadata
                         )
                         let preparedItem = PreparedOrdinaryLeafItem(
-                            url: childEntry.url,
-                            metadata: childMetadata,
                             weight: item.weight / totalWeightUnits,
                             node: childNode,
                             sharedAllocationClaim: SharedAllocationDeduplicator.claim(
@@ -2332,8 +2325,6 @@ actor ScanEngine {
             }
             let node = makeFileNode(url: entry.url, metadata: metadata)
             items.append(PreparedOrdinaryLeafItem(
-                url: entry.url,
-                metadata: metadata,
                 weight: request.parentWeight / request.totalWeightUnits,
                 node: node,
                 sharedAllocationClaim: SharedAllocationDeduplicator.claim(
@@ -2366,7 +2357,7 @@ actor ScanEngine {
         if let previousKey = scanKeyByNodeID.updateValue(nextKey, forKey: childPath) {
             scanKeyByNodeID[childPath] = previousKey
             recordDuplicateNode(
-                at: item.url,
+                at: childNode.url,
                 weight: item.weight,
                 metrics: &metrics,
                 warnings: &warnings,
