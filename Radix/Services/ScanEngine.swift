@@ -503,11 +503,9 @@ actor ScanEngine {
     }
 
     /// A completed directory scan awaiting parent assembly.
-    private struct CompletedDirScan {
-        let node: FileNodeRecord?     // Leaves carry a node; traversable dirs are resolved in phase 2.
-        let metadata: NodeMetadata
-        let url: URL
-        let isTraversable: Bool     // True if this was a directory we intended to traverse.
+    private enum CompletedDirScan {
+        case leaf(FileNodeRecord)
+        case traversableDirectory(metadata: NodeMetadata, url: URL)
     }
 
     typealias DirectoryContentsProvider = @Sendable (
@@ -1643,12 +1641,7 @@ actor ScanEngine {
                         }
                         maybeEmitProgress(metrics: &metrics, continuation: continuation, emissionState: &emissionState, summaryPool: atomicSummaryPool)
 
-                        completedByKey[itemKey] = CompletedDirScan(
-                            node: leafResult.node,
-                            metadata: meta,
-                            url: item.url,
-                            isTraversable: false
-                        )
+                        completedByKey[itemKey] = .leaf(leafResult.node)
                     }
                 }
 
@@ -1845,12 +1838,7 @@ actor ScanEngine {
                         isSynthetic: false,
                         isAutoSummarized: false
                     )
-                    completedByKey[itemKey] = CompletedDirScan(
-                        node: inaccessibleNode,
-                        metadata: meta,
-                        url: item.url,
-                        isTraversable: false
-                    )
+                    completedByKey[itemKey] = .leaf(inaccessibleNode)
                 case .package(let packageResult):
                     activePackageTasks -= 1
                     let item = packageResult.item
@@ -1879,12 +1867,7 @@ actor ScanEngine {
                     // when `maybeEmitProgress`'s item-count gate would skip the update.
                     metrics.recalculateProgress()
                     atomicSummaryPool.updateProgress(metrics, continuation: continuation)
-                    completedByKey[packageResult.itemKey] = CompletedDirScan(
-                        node: leafResult.node,
-                        metadata: packageResult.metadata,
-                        url: item.url,
-                        isTraversable: false
-                    )
+                    completedByKey[packageResult.itemKey] = .leaf(leafResult.node)
 
                 case .atomicDirectory(let atomicResult):
                     activePackageTasks -= 1
@@ -1980,12 +1963,7 @@ actor ScanEngine {
                     metrics.recalculateProgress()
                     atomicSummaryPool.updateProgress(metrics, continuation: continuation)
 
-                    completedByKey[candidate.itemKey] = CompletedDirScan(
-                        node: atomicNode,
-                        metadata: meta,
-                        url: item.url,
-                        isTraversable: false
-                    )
+                    completedByKey[candidate.itemKey] = .leaf(atomicNode)
                 case .ordinaryLeaves(let batch):
                     activeOrdinaryLeafTasks -= 1
                     for item in batch.items {
@@ -2101,11 +2079,9 @@ actor ScanEngine {
                     )
                 }
                 // Register this directory so phase 2 can assemble it.
-                completedByKey[itemKey] = CompletedDirScan(
-                    node: nil,
+                completedByKey[itemKey] = .traversableDirectory(
                     metadata: candidate.metadata,
-                    url: item.url,
-                    isTraversable: true
+                    url: item.url
                 )
             }
         }
@@ -2174,7 +2150,8 @@ actor ScanEngine {
             let nodeOffset = nodes.count
             assert(nodeOffset == nextKey - key - 1)
 
-            if completed.isTraversable {
+            switch completed {
+            case .traversableDirectory(let metadata, let url):
                 // Traversable directories must still be materialized when empty.
                 var sortedChildKeys = childrenKeysByKey[key] ?? []
                 childrenKeysByKey[key] = nil
@@ -2189,7 +2166,7 @@ actor ScanEngine {
                     return lhs.allocatedSize > rhs.allocatedSize
                 }
                 try Task.checkCancellation()
-                let directoryID = completed.url.path
+                let directoryID = url.path
                 var allocatedSize: Int64 = 0
                 var logicalSize: Int64 = 0
                 var descendantFileCount = 0
@@ -2219,19 +2196,19 @@ actor ScanEngine {
 
                 let assembled = FileNodeRecord(
                     id: directoryID,
-                    url: completed.url,
-                    name: ScanTarget.displayName(for: completed.url),
+                    url: url,
+                    name: ScanTarget.displayName(for: url),
                     isDirectory: true,
                     isSymbolicLink: false,
                     allocatedSize: allocatedSize,
                     logicalSize: logicalSize,
                     descendantFileCount: descendantFileCount,
-                    lastModified: completed.metadata.lastModified,
-                    fileIdentity: completed.metadata.fileIdentity,
-                    linkCount: completed.metadata.linkCount,
-                    isPackage: completed.metadata.isPackage,
-                    isAccessible: completed.metadata.isReadable && childrenAreAccessible,
-                    isSelfAccessible: completed.metadata.isReadable,
+                    lastModified: metadata.lastModified,
+                    fileIdentity: metadata.fileIdentity,
+                    linkCount: metadata.linkCount,
+                    isPackage: metadata.isPackage,
+                    isAccessible: metadata.isReadable && childrenAreAccessible,
+                    isSelfAccessible: metadata.isReadable,
                     isSynthetic: false,
                     isAutoSummarized: false
                 )
@@ -2244,7 +2221,7 @@ actor ScanEngine {
                 aggregateStats.include(assembled, hasChildren: childIndices.count > childSpanStart)
 
                 metrics.completedItems = min(metrics.discoveredItems, metrics.completedItems + 1)
-            } else if let onlyChild = completed.node {
+            case .leaf(let onlyChild):
                 // Leaf node or inaccessible directory: use the child directly.
                 let correctedChild = SharedAllocationDeduplicator.deduplicatedNode(
                     onlyChild,
@@ -2255,9 +2232,6 @@ actor ScanEngine {
                 parentRawIndices.append(UInt32.max)
                 childSpans.append(FileTreeChildSpan())
                 aggregateStats.include(correctedChild, hasChildren: false)
-            } else {
-                assertionFailure("Missing finalized node for scan key \(key).")
-                throw ScanEngineError.missingRootNode
             }
 
             if finalizedItems.isMultiple(of: finalizationProgressInterval) || finalizedItems == finalizationTotal {
@@ -2423,12 +2397,7 @@ actor ScanEngine {
             emissionState: &emissionState,
             summaryPool: summaryPool
         )
-        completedByKey[childKey] = CompletedDirScan(
-            node: childNode,
-            metadata: item.metadata,
-            url: item.url,
-            isTraversable: false
-        )
+        completedByKey[childKey] = .leaf(childNode)
     }
 
     private nonisolated func applyLeafMetrics(
@@ -2561,22 +2530,8 @@ actor ScanEngine {
             summaryPool: summaryPool
         )
 
-        completedByKey[itemKey] = CompletedDirScan(
-            node: makeUnavailableNode(for: item.url, isDirectory: isDirectory),
-            metadata: NodeMetadata(
-                isDirectory: isDirectory,
-                isPackage: false,
-                isSymbolicLink: false,
-                logicalSize: 0,
-                allocatedSize: 0,
-                lastModified: nil,
-                isReadable: false,
-                volumeCapacity: nil,
-                fileIdentity: nil,
-                linkCount: 0
-            ),
-            url: item.url,
-            isTraversable: false
+        completedByKey[itemKey] = .leaf(
+            makeUnavailableNode(for: item.url, isDirectory: isDirectory)
         )
     }
 
