@@ -61,6 +61,10 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
                   claim.cloneAllocatedSize > 0 else {
                 continue
             }
+            if hardLinkCloneWinnerByIdentity[cloneIdentity] == nil,
+               let standaloneWinner = standaloneCloneWinnerByIdentity[cloneIdentity] {
+                hardLinkCloneWinnerByIdentity[cloneIdentity] = standaloneWinner
+            }
             Self.recordCloneCorrection(
                 identity: cloneIdentity,
                 winner: CloneWinner(
@@ -71,19 +75,6 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
                 winnerByIdentity: &hardLinkCloneWinnerByIdentity,
                 corrections: &corrections
             )
-        }
-        for (offset, entry) in hardLinkCloneWinnerByIdentity.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
-            }
-            let (identity, hardLinkWinner) = entry
-            guard let standaloneWinner = standaloneCloneWinnerByIdentity[identity] else {
-                continue
-            }
-            let loser = Self.precedes(hardLinkWinner, standaloneWinner)
-                ? standaloneWinner
-                : hardLinkWinner
-            corrections[loser.ownerNodeID, default: 0] += loser.cloneAllocatedSize
         }
         return corrections
     }

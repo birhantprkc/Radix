@@ -158,8 +158,8 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
         XCTAssertEqual(checkCount, 2)
     }
 
-    func testMixedCloneCorrectionChecksCancellationAfterHardLinkReduction() {
-        let claims = (0..<512).flatMap { index in
+    func testMixedCloneCorrectionChecksCancellationDuringHardLinkReduction() {
+        let claims = (0..<768).flatMap { index in
             let device = UInt64(8)
             let cloneIdentity = CloneIdentity(device: device, cloneID: UInt64(index))
             let hardLinkIdentity = FileIdentity(device: device, inode: UInt64(index * 2))
