@@ -1,108 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ""
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ""
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ""
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ""
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ""
-          }
-        }
-      }
-    },
-    " files, " : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Dateien, "
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " archivos, "
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " fichiers, "
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " file, "
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " 个文件，"
-          }
-        }
-      }
-    },
-    " folders" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " Ordner"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " carpetas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " dossiers"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " cartelle"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " 个文件夹"
-          }
-        }
-      }
-    },
     "-" : {
       "localizations" : {
         "de" : {
@@ -167,40 +65,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "·"
-          }
-        }
-      }
-    },
-    "%" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%"
           }
         }
       }
@@ -706,6 +570,47 @@
         }
       }
     },
+    "%@, %@" : {
+      "comment" : "Scan progress summary containing localized file and folder counts.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$@"
+          }
+        }
+      }
+    },
     "%@, %@, %@" : {
       "comment" : "Accessibility value describing the selected sunburst segment.\nAccessibility value describing the selected treemap tile.",
       "localizations" : {
@@ -748,7 +653,7 @@
       }
     },
     "%lld files" : {
-      "comment" : "Inspector multiple-selection file count.",
+      "comment" : "File count used in the Inspector and scan progress.",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -855,7 +760,7 @@
       }
     },
     "%lld folders" : {
-      "comment" : "Inspector multiple-selection folder count.",
+      "comment" : "Folder count used in the Inspector and scan progress.",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -8638,36 +8543,37 @@
         }
       }
     },
-    "Finishing " : {
+    "Finishing %@" : {
+      "comment" : "Progress percentage shown while a scan is finalizing.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wird abgeschlossen "
+            "value" : "Wird abgeschlossen: %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Finalizando "
+            "value" : "Finalizando %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Finalisation "
+            "value" : "Finalisation : %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Completamento "
+            "value" : "Completamento: %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在完成 "
+            "value" : "正在完成 %@"
           }
         }
       }

@@ -21,6 +21,14 @@ final class LocalizationCatalogTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(strings.count, 400)
         XCTAssertEqual(catalogs["Interface"]?.count, 8)
+        XCTAssertNil(strings[""], "The localization catalogs must not contain an empty key.")
+        let fragmentKeys = strings.keys.filter {
+            $0 != $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        XCTAssertTrue(
+            fragmentKeys.isEmpty,
+            "Localize complete phrases instead of whitespace-dependent fragments: \(fragmentKeys.sorted())"
+        )
 
         let supportedLocaleSet = Set(supportedLocales)
         for (key, value) in strings {

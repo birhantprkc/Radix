@@ -60,18 +60,16 @@ struct ScanningWorkspaceState: View {
                     ProgressView(value: scanProgressFraction, total: 1)
                         .frame(width: 260)
 
-                    HStack(spacing: 0) {
-                        if isFinalizingScan {
-                            Text("Finishing ")
-                        }
-
-                        ScanProgressNumberText(value: progress.metrics.progressPercentage)
-
-                        Text("%")
-                    }
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
+                    Text(progressPercentageText)
+                        .contentTransition(
+                            .numericText(value: Double(progress.metrics.progressPercentage))
+                        )
+                        .animation(
+                            .easeOut(duration: 0.2),
+                            value: progress.metrics.progressPercentage
+                        )
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -110,15 +108,11 @@ struct ScanningWorkspaceState: View {
                     isFinalizing: isFinalizingScan
                 )
 
-                HStack(spacing: 0) {
-                    ScanProgressNumberText(value: throttledItemCounts.counts.filesVisited)
-                    Text(" files, ")
-                    ScanProgressNumberText(value: throttledItemCounts.counts.directoriesVisited)
-                    Text(" folders")
-                }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
+                Text(itemCountText)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.2), value: throttledItemCounts.counts)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
 
             Button("Stop Scan") {
@@ -146,6 +140,33 @@ struct ScanningWorkspaceState: View {
 
     private var scanProgressFraction: Double {
         progress.metrics.progressFraction
+    }
+
+    private var progressPercentageText: String {
+        let fraction = Double(progress.metrics.progressPercentage) / 100
+        let percentage = fraction.formatted(
+            .percent.precision(.fractionLength(0))
+        )
+        guard isFinalizingScan else { return percentage }
+        return String(
+            localized: "Finishing \(percentage)",
+            comment: "Progress percentage shown while a scan is finalizing."
+        )
+    }
+
+    private var itemCountText: String {
+        let files = String(
+            localized: "\(throttledItemCounts.counts.filesVisited) files",
+            comment: "File count shown while scanning."
+        )
+        let folders = String(
+            localized: "\(throttledItemCounts.counts.directoriesVisited) folders",
+            comment: "Folder count shown while scanning."
+        )
+        return String(
+            localized: "\(files), \(folders)",
+            comment: "Scan progress summary containing localized file and folder counts."
+        )
     }
 
     private var scanTitle: String {
@@ -392,15 +413,5 @@ private final class ThrottledScanItemCounts: ObservableObject {
     func cancel() {
         cancellable?.cancel()
         cancellable = nil
-    }
-}
-
-private struct ScanProgressNumberText: View {
-    let value: Int
-
-    var body: some View {
-        Text(value.formatted(.number))
-            .contentTransition(.numericText(value: Double(value)))
-            .animation(.easeOut(duration: 0.2), value: value)
     }
 }
