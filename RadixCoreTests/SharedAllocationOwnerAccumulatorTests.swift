@@ -122,6 +122,42 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
         XCTAssertEqual(checkCount, 2)
     }
 
+    func testStandaloneCloneCorrectionMaterializationChecksCancellationDuringTraversal() {
+        let claims = (0..<512).flatMap { index in
+            let cloneIdentity = CloneIdentity(device: 7, cloneID: UInt64(index))
+            return [
+                cloneClaim(
+                    fileIdentity: FileIdentity(device: 7, inode: UInt64(index * 2)),
+                    cloneIdentity: cloneIdentity,
+                    owner: "/winner-\(index)",
+                    path: "/a-\(index)",
+                    totalSize: 1,
+                    dataSize: 1
+                ),
+                cloneClaim(
+                    fileIdentity: FileIdentity(device: 7, inode: UInt64(index * 2 + 1)),
+                    cloneIdentity: cloneIdentity,
+                    owner: "/loser-\(index)",
+                    path: "/z-\(index)",
+                    totalSize: 1,
+                    dataSize: 1
+                ),
+            ]
+        }
+        let accumulator = SharedAllocationOwnerAccumulator(claims)
+        var checkCount = 0
+
+        XCTAssertThrowsError(try accumulator.duplicateAllocatedSizeByOwner {
+            checkCount += 1
+            if checkCount == 2 {
+                throw CancellationError()
+            }
+        }) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(checkCount, 2)
+    }
+
     func testHardLinkedCloneEntersCloneAccountingOnlyOnce() {
         let fileIdentity = FileIdentity(device: 1, inode: 10)
         let cloneIdentity = CloneIdentity(device: 1, cloneID: 99)

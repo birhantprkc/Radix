@@ -40,7 +40,11 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
         cancellationCheck: () throws -> Void
     ) rethrows -> [String: Int64] {
         var corrections = hardLinkDuplicateAllocatedSizeByOwner
-        for (ownerNodeID, allocatedSize) in standaloneCloneDuplicateAllocatedSizeByOwner {
+        for (offset, correction) in standaloneCloneDuplicateAllocatedSizeByOwner.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let (ownerNodeID, allocatedSize) = correction
             corrections[ownerNodeID, default: 0] += allocatedSize
         }
         var cloneWinnerByIdentity = standaloneCloneWinnerByIdentity
