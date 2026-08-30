@@ -157,6 +157,75 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
         ])
     }
 
+    func testStandaloneCloneGroupRetainsOneIdentityAndAccumulatesLosers() {
+        let cloneIdentity = CloneIdentity(device: 1, cloneID: 99)
+        let claims = (0..<10_000).map { index in
+            cloneClaim(
+                fileIdentity: FileIdentity(device: 1, inode: UInt64(index)),
+                cloneIdentity: cloneIdentity,
+                owner: "/summary",
+                path: String(format: "/file-%05d", index),
+                totalSize: 130,
+                dataSize: 80
+            )
+        }
+
+        let accumulator = SharedAllocationOwnerAccumulator(claims.reversed())
+
+        XCTAssertEqual(accumulator.identityCount, 1)
+        XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [
+            "/summary": 9_999 * 80,
+        ])
+    }
+
+    func testStandaloneCloneMergeMatchesDirectAccumulationInEitherOrder() {
+        let cloneIdentity = CloneIdentity(device: 2, cloneID: 7)
+        let firstClaims = [
+            cloneClaim(
+                fileIdentity: FileIdentity(device: 2, inode: 1),
+                cloneIdentity: cloneIdentity,
+                owner: "/summary-a",
+                path: "/z",
+                totalSize: 100,
+                dataSize: 80
+            ),
+            cloneClaim(
+                fileIdentity: FileIdentity(device: 2, inode: 2),
+                cloneIdentity: cloneIdentity,
+                owner: "/summary-a",
+                path: "/y",
+                totalSize: 100,
+                dataSize: 80
+            ),
+        ]
+        let secondClaims = [
+            cloneClaim(
+                fileIdentity: FileIdentity(device: 2, inode: 3),
+                cloneIdentity: cloneIdentity,
+                owner: "/summary-b",
+                path: "/a",
+                totalSize: 100,
+                dataSize: 80
+            ),
+        ]
+        let first = SharedAllocationOwnerAccumulator(firstClaims)
+        let second = SharedAllocationOwnerAccumulator(secondClaims)
+
+        var forward = first
+        forward.merge(second)
+        var reverse = second
+        reverse.merge(first)
+        let direct = SharedAllocationOwnerAccumulator(firstClaims + secondClaims)
+
+        XCTAssertEqual(forward.duplicateAllocatedSizeByOwner, direct.duplicateAllocatedSizeByOwner)
+        XCTAssertEqual(reverse.duplicateAllocatedSizeByOwner, direct.duplicateAllocatedSizeByOwner)
+        XCTAssertEqual(forward.duplicateAllocatedSizeByOwner, [
+            "/summary-a": 160,
+        ])
+        XCTAssertEqual(forward.identityCount, 1)
+        XCTAssertEqual(reverse.identityCount, 1)
+    }
+
     private func claim(
         _ identity: FileIdentity,
         owner: String,
@@ -176,6 +245,7 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
         hardLinkIdentity: FileIdentity? = nil,
         cloneIdentity: CloneIdentity,
         owner: String,
+        path: String? = nil,
         totalSize: Int64,
         dataSize: Int64
     ) -> SharedAllocationClaim {
@@ -184,7 +254,7 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
             hardLinkIdentity: hardLinkIdentity,
             cloneIdentity: cloneIdentity,
             ownerNodeID: owner,
-            path: owner,
+            path: path ?? owner,
             allocatedSize: totalSize,
             cloneAllocatedSize: dataSize
         )
