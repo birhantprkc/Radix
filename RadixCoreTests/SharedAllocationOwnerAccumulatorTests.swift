@@ -158,6 +158,77 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
         XCTAssertEqual(checkCount, 2)
     }
 
+    func testMixedCloneCorrectionChecksCancellationAfterHardLinkReduction() {
+        let claims = (0..<512).flatMap { index in
+            let device = UInt64(8)
+            let cloneIdentity = CloneIdentity(device: device, cloneID: UInt64(index))
+            let hardLinkIdentity = FileIdentity(device: device, inode: UInt64(index * 2))
+            return [
+                cloneClaim(
+                    fileIdentity: FileIdentity(device: device, inode: UInt64(index * 2 + 1)),
+                    cloneIdentity: cloneIdentity,
+                    owner: "/standalone-\(index)",
+                    path: "/a-\(index)",
+                    totalSize: 1,
+                    dataSize: 1
+                ),
+                cloneClaim(
+                    fileIdentity: hardLinkIdentity,
+                    hardLinkIdentity: hardLinkIdentity,
+                    cloneIdentity: cloneIdentity,
+                    owner: "/hard-link-\(index)",
+                    path: "/z-\(index)",
+                    totalSize: 1,
+                    dataSize: 1
+                ),
+            ]
+        }
+        let accumulator = SharedAllocationOwnerAccumulator(claims)
+        var checkCount = 0
+
+        XCTAssertThrowsError(try accumulator.duplicateAllocatedSizeByOwner {
+            checkCount += 1
+            if checkCount == 3 {
+                throw CancellationError()
+            }
+        }) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(checkCount, 3)
+    }
+
+    func testZeroDataCloneDoesNotCreateCloneAccountingState() {
+        let device = UInt64(9)
+        let cloneIdentity = CloneIdentity(device: device, cloneID: 1)
+        let standalone = SharedAllocationOwnerAccumulator([
+            cloneClaim(
+                fileIdentity: FileIdentity(device: device, inode: 1),
+                cloneIdentity: cloneIdentity,
+                owner: "/standalone",
+                totalSize: 32,
+                dataSize: 0
+            ),
+        ])
+        let hardLinkIdentity = FileIdentity(device: device, inode: 2)
+        let hardLinked = SharedAllocationOwnerAccumulator([
+            cloneClaim(
+                fileIdentity: hardLinkIdentity,
+                hardLinkIdentity: hardLinkIdentity,
+                cloneIdentity: cloneIdentity,
+                owner: "/hard-link",
+                totalSize: 32,
+                dataSize: 0
+            ),
+        ])
+
+        XCTAssertTrue(standalone.isEmpty)
+        XCTAssertEqual(standalone.identityCount, 0)
+        XCTAssertTrue(standalone.duplicateAllocatedSizeByOwner.isEmpty)
+        XCTAssertFalse(hardLinked.isEmpty)
+        XCTAssertEqual(hardLinked.identityCount, 1)
+        XCTAssertTrue(hardLinked.duplicateAllocatedSizeByOwner.isEmpty)
+    }
+
     func testHardLinkedCloneEntersCloneAccountingOnlyOnce() {
         let fileIdentity = FileIdentity(device: 1, inode: 10)
         let cloneIdentity = CloneIdentity(device: 1, cloneID: 99)
@@ -190,6 +261,57 @@ final class SharedAllocationOwnerAccumulatorTests: XCTestCase {
         XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [
             "/b-hard-link": 100,
             "/z-clone": 80,
+        ])
+    }
+
+    func testStandaloneCloneWinsAcrossMultipleHardLinkedInodes() {
+        let cloneIdentity = CloneIdentity(device: 1, cloneID: 100)
+        let firstHardLinkIdentity = FileIdentity(device: 1, inode: 20)
+        let secondHardLinkIdentity = FileIdentity(device: 1, inode: 21)
+        let claims = [
+            cloneClaim(
+                fileIdentity: firstHardLinkIdentity,
+                hardLinkIdentity: firstHardLinkIdentity,
+                cloneIdentity: cloneIdentity,
+                owner: "/hard-link-b",
+                path: "/b",
+                totalSize: 100,
+                dataSize: 80
+            ),
+            cloneClaim(
+                fileIdentity: secondHardLinkIdentity,
+                hardLinkIdentity: secondHardLinkIdentity,
+                cloneIdentity: cloneIdentity,
+                owner: "/hard-link-c",
+                path: "/c",
+                totalSize: 130,
+                dataSize: 80
+            ),
+            cloneClaim(
+                fileIdentity: secondHardLinkIdentity,
+                hardLinkIdentity: secondHardLinkIdentity,
+                cloneIdentity: cloneIdentity,
+                owner: "/hard-link-d",
+                path: "/d",
+                totalSize: 130,
+                dataSize: 80
+            ),
+            cloneClaim(
+                fileIdentity: FileIdentity(device: 1, inode: 22),
+                cloneIdentity: cloneIdentity,
+                owner: "/standalone-a",
+                path: "/a",
+                totalSize: 110,
+                dataSize: 80
+            ),
+        ]
+
+        let accumulator = SharedAllocationOwnerAccumulator(claims)
+
+        XCTAssertEqual(accumulator.duplicateAllocatedSizeByOwner, [
+            "/hard-link-b": 80,
+            "/hard-link-c": 80,
+            "/hard-link-d": 130,
         ])
     }
 

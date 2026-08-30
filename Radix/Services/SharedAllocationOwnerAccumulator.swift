@@ -14,6 +14,10 @@ import Foundation
 /// Keeping those stages separate preserves allocation that belongs only to a
 /// clone's resource fork and prevents hard-linked paths from entering clone
 /// accounting more than once.
+///
+/// Standalone clone claims are reduced without retaining per-file identities.
+/// Callers must therefore record each standalone filesystem entry once and
+/// merge only accumulators whose standalone entries are disjoint.
 nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
     private struct CloneWinner: Sendable {
         let ownerNodeID: String
@@ -47,7 +51,7 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
             let (ownerNodeID, allocatedSize) = correction
             corrections[ownerNodeID, default: 0] += allocatedSize
         }
-        var cloneWinnerByIdentity = standaloneCloneWinnerByIdentity
+        var hardLinkCloneWinnerByIdentity: [CloneIdentity: CloneWinner] = [:]
 
         for (offset, claim) in hardLinkWinnerByIdentity.values.enumerated() {
             if offset.isMultiple(of: 256) {
@@ -64,9 +68,22 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
                     path: claim.path,
                     cloneAllocatedSize: claim.cloneAllocatedSize
                 ),
-                winnerByIdentity: &cloneWinnerByIdentity,
+                winnerByIdentity: &hardLinkCloneWinnerByIdentity,
                 corrections: &corrections
             )
+        }
+        for (offset, entry) in hardLinkCloneWinnerByIdentity.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let (identity, hardLinkWinner) = entry
+            guard let standaloneWinner = standaloneCloneWinnerByIdentity[identity] else {
+                continue
+            }
+            let loser = Self.precedes(hardLinkWinner, standaloneWinner)
+                ? standaloneWinner
+                : hardLinkWinner
+            corrections[loser.ownerNodeID, default: 0] += loser.cloneAllocatedSize
         }
         return corrections
     }
@@ -74,7 +91,8 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
     nonisolated var identityCount: Int {
         var cloneIdentities = Set<CloneIdentity>()
         for claim in hardLinkWinnerByIdentity.values {
-            if let cloneIdentity = claim.cloneIdentity {
+            if let cloneIdentity = claim.cloneIdentity,
+               claim.cloneAllocatedSize > 0 {
                 cloneIdentities.insert(cloneIdentity)
             }
         }
@@ -116,7 +134,7 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
         }
     }
 
-    /// Merges package-local state without reconstructing discarded duplicate claims.
+    /// Merges disjoint package-local state without reconstructing discarded claims.
     nonisolated mutating func merge(_ other: Self) {
         for (ownerNodeID, allocatedSize) in other.hardLinkDuplicateAllocatedSizeByOwner {
             hardLinkDuplicateAllocatedSizeByOwner[ownerNodeID, default: 0] += allocatedSize
