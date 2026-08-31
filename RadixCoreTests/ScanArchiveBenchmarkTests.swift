@@ -651,7 +651,6 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1_700_000_000),
             finishedAt: Date(timeIntervalSince1970: 1_700_000_005),
             scanWarnings: warnings,
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             scanOptions: ScanOptions()
         )

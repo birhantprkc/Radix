@@ -268,7 +268,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(),
             finishedAt: Date(),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             volumeCapacity: VolumeCapacitySnapshot(totalCapacity: 1_000, availableCapacity: 321)
         )
@@ -302,7 +301,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(),
             finishedAt: Date(),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             volumeCapacity: VolumeCapacitySnapshot(
                 totalCapacity: 500 * 1_024 * 1_024,
@@ -449,7 +447,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 20),
             finishedAt: Date(timeIntervalSince1970: 23),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         )
 
@@ -2053,7 +2050,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: snapshot.startedAt,
             finishedAt: snapshot.finishedAt,
             scanWarnings: snapshot.scanWarnings,
-            aggregateStats: updatedStore.aggregateStats,
             isComplete: snapshot.isComplete,
             scanOptions: snapshot.scanOptions,
             source: snapshot.source
@@ -2200,7 +2196,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             source: .imported(ImportedSnapshotContext(
                 sourceURL: archiveURL,
@@ -2283,7 +2278,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             source: .imported(ImportedSnapshotContext(
                 sourceURL: archiveURL,
@@ -2348,7 +2342,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             source: .imported(ImportedSnapshotContext(
                 sourceURL: archiveURL,
@@ -2455,7 +2448,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         )
         model.scanState.restoreCompletedSnapshot(snapshot)
@@ -2510,7 +2502,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         ))
 
@@ -2552,7 +2543,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         )
         model.scanState.restoreCompletedSnapshot(snapshot)
@@ -2584,7 +2574,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         )
         model.scanState.restoreCompletedSnapshot(snapshot)
@@ -2626,7 +2615,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         )
         model.scanState.restoreCompletedSnapshot(snapshot)
@@ -2708,7 +2696,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             source: .imported(ImportedSnapshotContext(
                 sourceURL: archiveURL,
@@ -2782,7 +2769,6 @@ final class AppModelDependencyTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1),
             finishedAt: Date(timeIntervalSince1970: 2),
             scanWarnings: [],
-            aggregateStats: importedStore.aggregateStats,
             isComplete: true,
             source: .imported(ImportedSnapshotContext(
                 sourceURL: archiveURL,

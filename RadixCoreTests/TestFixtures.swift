@@ -183,7 +183,6 @@ func makeTestSnapshot(
         startedAt: Date(),
         finishedAt: Date(),
         scanWarnings: warnings,
-        aggregateStats: store.aggregateStats,
         isComplete: true,
         scanOptions: scanOptions,
         incrementalCheckpoint: incrementalCheckpoint
@@ -223,7 +222,6 @@ func makeComparisonSnapshot(
         startedAt: startedAt,
         finishedAt: finishedAt,
         scanWarnings: [],
-        aggregateStats: store.aggregateStats,
         isComplete: true,
         scanOptions: scanOptions,
         source: source

@@ -3111,7 +3111,6 @@ actor ScanEngine {
             startedAt: startedAt,
             finishedAt: finishedAt,
             scanWarnings: warnings,
-            aggregateStats: reconciledStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: volumeCapacity

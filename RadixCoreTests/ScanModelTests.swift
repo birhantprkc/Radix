@@ -420,7 +420,6 @@ final class ScanModelTests: XCTestCase {
             startedAt: .now,
             finishedAt: .now,
             scanWarnings: [],
-            aggregateStats: treeStore.aggregateStats,
             isComplete: true,
             scanOptions: ScanOptions(),
             volumeCapacity: nil
@@ -1068,7 +1067,6 @@ final class ScanModelTests: XCTestCase {
             startedAt: .distantPast,
             finishedAt: .now,
             scanWarnings: warnings,
-            aggregateStats: treeStore.aggregateStats,
             isComplete: true
         )
     }

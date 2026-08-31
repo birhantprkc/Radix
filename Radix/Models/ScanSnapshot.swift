@@ -118,7 +118,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
     let startedAt: Date
     let finishedAt: Date?
     let scanWarnings: [ScanWarning]
-    let aggregateStats: ScanAggregateStats
     let isComplete: Bool
     let scanOptions: ScanOptions?
     let volumeCapacity: VolumeCapacitySnapshot?
@@ -132,7 +131,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         startedAt: Date,
         finishedAt: Date?,
         scanWarnings: [ScanWarning],
-        aggregateStats: ScanAggregateStats,
         isComplete: Bool,
         scanOptions: ScanOptions? = nil,
         volumeCapacity: VolumeCapacitySnapshot? = nil,
@@ -145,7 +143,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
         self.startedAt = startedAt
         self.finishedAt = finishedAt
         self.scanWarnings = scanWarnings
-        self.aggregateStats = aggregateStats
         self.isComplete = isComplete
         self.scanOptions = scanOptions
         self.volumeCapacity = volumeCapacity
@@ -155,6 +152,10 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
 
     nonisolated var root: FileNodeRecord {
         treeStore.root
+    }
+
+    nonisolated var aggregateStats: ScanAggregateStats {
+        treeStore.aggregateStats
     }
 
     nonisolated var overlappingAllocatedBytes: Int64? {
@@ -221,7 +222,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             startedAt: startedAt,
             finishedAt: finishedAt,
             scanWarnings: retainedWarnings,
-            aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: volumeCapacity,
@@ -290,7 +290,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             startedAt: startedAt,
             finishedAt: finishedAt,
             scanWarnings: Self.mergedWarnings(existing: retainedWarnings, additional: additionalWarnings),
-            aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: volumeCapacity,
@@ -343,7 +342,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             startedAt: startedAt,
             finishedAt: finishedAt,
             scanWarnings: scanWarnings,
-            aggregateStats: updatedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: updatedCapacity,
@@ -381,7 +379,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             startedAt: startedAt,
             finishedAt: finishedAt,
             scanWarnings: scopedWarnings,
-            aggregateStats: scopedStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: volumeCapacity,
@@ -435,7 +432,6 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             startedAt: startedAt,
             finishedAt: finishedAt,
             scanWarnings: scanWarnings,
-            aggregateStats: reconciledStore.aggregateStats,
             isComplete: isComplete,
             scanOptions: scanOptions,
             volumeCapacity: volumeCapacity,

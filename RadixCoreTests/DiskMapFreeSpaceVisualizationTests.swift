@@ -128,7 +128,6 @@ final class DiskMapFreeSpaceVisualizationTests: XCTestCase {
             startedAt: snapshot.startedAt,
             finishedAt: snapshot.finishedAt,
             scanWarnings: snapshot.scanWarnings,
-            aggregateStats: updatedStore.aggregateStats,
             isComplete: snapshot.isComplete,
             scanOptions: snapshot.scanOptions,
             source: snapshot.source

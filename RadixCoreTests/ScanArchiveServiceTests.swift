@@ -2078,7 +2078,6 @@ final class ScanArchiveServiceTests: XCTestCase {
                     category: .permissionDenied
                 )
             ],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             scanOptions: scanOptions,
             volumeCapacity: VolumeCapacitySnapshot(totalCapacity: 1_000, availableCapacity: 400)

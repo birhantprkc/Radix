@@ -376,7 +376,6 @@ final class WorkspaceNavigationModelTests: XCTestCase {
             startedAt: fixture.snapshot.startedAt,
             finishedAt: fixture.snapshot.finishedAt,
             scanWarnings: fixture.snapshot.scanWarnings,
-            aggregateStats: updatedStore.aggregateStats,
             isComplete: fixture.snapshot.isComplete,
             scanOptions: fixture.snapshot.scanOptions,
             source: fixture.snapshot.source

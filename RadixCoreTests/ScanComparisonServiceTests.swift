@@ -1042,7 +1042,6 @@ final class ScanComparisonServiceTests: XCTestCase {
             startedAt: Date(),
             finishedAt: Date(),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             scanOptions: options
         )
@@ -1052,7 +1051,6 @@ final class ScanComparisonServiceTests: XCTestCase {
             startedAt: Date(),
             finishedAt: Date(),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true,
             scanOptions: options
         )

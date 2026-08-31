@@ -608,7 +608,6 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             startedAt: manifest.snapshot.startedAt,
             finishedAt: manifest.snapshot.finishedAt,
             scanWarnings: importedWarnings,
-            aggregateStats: computedStats,
             isComplete: manifest.snapshot.isComplete,
             scanOptions: manifest.snapshot.scanOptions,
             volumeCapacity: manifest.snapshot.volumeCapacity,

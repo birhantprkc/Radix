@@ -301,7 +301,6 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             startedAt: Date(timeIntervalSinceReferenceDate: 0),
             finishedAt: Date(timeIntervalSinceReferenceDate: 1),
             scanWarnings: [],
-            aggregateStats: fixture.store.aggregateStats,
             isComplete: true
         )
         let model = FileBrowserModel(

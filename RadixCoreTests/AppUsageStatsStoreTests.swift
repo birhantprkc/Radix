@@ -20,7 +20,6 @@ final class AppUsageStatsStoreTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 10),
             finishedAt: Date(timeIntervalSince1970: 14),
             scanWarnings: [],
-            aggregateStats: store.aggregateStats,
             isComplete: true
         )
 

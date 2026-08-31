@@ -553,7 +553,6 @@ final class ScanCoordinatorTests: XCTestCase {
             startedAt: .now,
             finishedAt: .now,
             scanWarnings: [],
-            aggregateStats: baselineStore.aggregateStats,
             isComplete: true,
             scanOptions: ScanOptions(),
             volumeCapacity: VolumeCapacitySnapshot(
@@ -2631,7 +2630,6 @@ private func copyCoordinatorSnapshot(
         startedAt: snapshot.startedAt,
         finishedAt: snapshot.finishedAt,
         scanWarnings: snapshot.scanWarnings,
-        aggregateStats: treeStore.aggregateStats,
         isComplete: snapshot.isComplete,
         scanOptions: snapshot.scanOptions,
         volumeCapacity: snapshot.volumeCapacity,

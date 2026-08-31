@@ -124,7 +124,6 @@ final class SidebarScanCacheControllerTests: XCTestCase {
             startedAt: cachedSnapshot.startedAt,
             finishedAt: .now,
             scanWarnings: [],
-            aggregateStats: refreshedStore.aggregateStats,
             isComplete: true,
             scanOptions: cachedSnapshot.scanOptions
         )
