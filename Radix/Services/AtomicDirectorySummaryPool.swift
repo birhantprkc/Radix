@@ -111,8 +111,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
         baseMetrics = canonical
         hasBaseMetrics = true
         self.continuation = continuation
-        let snapshot = makeSnapshotLocked(currentPath: currentPath)
-        let event = progressEventIfDueLocked(snapshot: snapshot, force: force)
+        let event = progressEventIfDueLocked(currentPath: currentPath, force: force)
         let enqueuedEmission = enqueueLocked(event, continuation: continuation)
         lock.unlock()
         if enqueuedEmission {
@@ -274,8 +273,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
 
     @discardableResult
     private func emitIfDueLocked(currentPath: String?, force: Bool) -> Bool {
-        let snapshot = makeSnapshotLocked(currentPath: currentPath)
-        guard let event = progressEventIfDueLocked(snapshot: snapshot, force: force),
+        guard let event = progressEventIfDueLocked(currentPath: currentPath, force: force),
               let continuation else {
             return false
         }
@@ -294,7 +292,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
     }
 
     private func progressEventIfDueLocked(
-        snapshot: ScanMetrics,
+        currentPath: String?,
         force: Bool
     ) -> ScanMetrics? {
         let timestamp = now()
@@ -302,7 +300,7 @@ nonisolated private final class AtomicSummaryProgressCoordinator: @unchecked Sen
             return nil
         }
         lastEmission = timestamp
-        return snapshot
+        return makeSnapshotLocked(currentPath: currentPath)
     }
 
     private func makeSnapshotLocked(currentPath: String?) -> ScanMetrics {

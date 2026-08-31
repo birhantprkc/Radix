@@ -621,6 +621,145 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(summary.descendantFileCount, Int.max)
     }
 
+    func testSummaryProgressThrottlePublishesOnlyWhenDueOrForced() async throws {
+        let clock = AtomicSummaryProgressClock(
+            Date(timeIntervalSinceReferenceDate: 1_000)
+        )
+        let pool = AtomicDirectorySummaryPool(
+            workerLimit: 1,
+            progressEmissionInterval: 1,
+            progressNow: clock.now
+        )
+        var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let stream = AsyncThrowingStream<ScanProgressEvent, Error> {
+            continuation = $0
+        }
+        var firstMetrics = ScanMetrics()
+        firstMetrics.progressFraction = 0.6
+        firstMetrics.completedPackageSummaryCount = 1
+        var throttledMetrics = ScanMetrics()
+        throttledMetrics.progressFraction = 0.2
+        throttledMetrics.completedPackageSummaryCount = 2
+        var forcedMetrics = ScanMetrics()
+        forcedMetrics.progressFraction = 0.1
+        forcedMetrics.completedPackageSummaryCount = 3
+
+        pool.updateProgress(firstMetrics, continuation: continuation, currentPath: "/first")
+        pool.updateProgress(
+            throttledMetrics,
+            continuation: continuation,
+            currentPath: "/throttled"
+        )
+        clock.advance(by: 1)
+        pool.reportCurrentPath("/due", continuation: continuation)
+        pool.reportCurrentPath("/throttled-again", continuation: continuation)
+        pool.updateProgress(
+            forcedMetrics,
+            continuation: continuation,
+            currentPath: "/forced",
+            force: true
+        )
+        continuation.finish()
+
+        var publications: [ScanMetrics] = []
+        for try await event in stream {
+            if case .progress(let publishedMetrics) = event {
+                publications.append(publishedMetrics)
+            }
+        }
+
+        XCTAssertEqual(publications.map(\.currentPath), ["/first", "/due", "/forced"])
+        XCTAssertEqual(publications.map(\.completedPackageSummaryCount), [1, 2, 3])
+        XCTAssertTrue(zip(publications, publications.dropFirst()).allSatisfy {
+            $0.progressFraction <= $1.progressFraction
+        })
+    }
+
+    func testSummaryCompletionPublishesBeforeCommittedBaseWithinThrottleInterval() async throws {
+        let rootURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+        try Data([0x11]).write(to: rootURL.appending(path: "payload.bin"))
+
+        let clock = AtomicSummaryProgressClock(
+            Date(timeIntervalSinceReferenceDate: 2_000)
+        )
+        let pool = AtomicDirectorySummaryPool(
+            workerLimit: 1,
+            progressEmissionInterval: 60,
+            progressNow: clock.now
+        )
+        var continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation!
+        let stream = AsyncThrowingStream<ScanProgressEvent, Error> {
+            continuation = $0
+        }
+        var queuedMetrics = ScanMetrics()
+        queuedMetrics.discoveredItems = 1
+        queuedMetrics.pendingPackageSummaryCount = 1
+        queuedMetrics.recalculateProgress()
+        pool.updateProgress(
+            queuedMetrics,
+            continuation: continuation,
+            currentPath: "/queued"
+        )
+
+        let summary = try await pool.summarize(AtomicSummaryPoolRequest(
+            url: rootURL,
+            expectedRootIdentity: nil,
+            includeHiddenFiles: true,
+            treatPackagesAsDirectories: true,
+            progressWeight: 1,
+            progressKind: .package,
+            representedItemCount: 0,
+            ownerNodeID: rootURL.path,
+            exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+            metadataLoader: ScanMetadataLoader(),
+            volumeBoundaryPolicy: .unrestricted,
+            cancellationCheck: {},
+            metrics: queuedMetrics,
+            continuation: continuation,
+            resumeState: nil
+        ))
+
+        var committedMetrics = queuedMetrics
+        committedMetrics.pendingPackageSummaryCount = 0
+        committedMetrics.completedPackageSummaryCount = 1
+        committedMetrics.completedPackageSummaryVisitedItemCount = summary?.visitedItemCount ?? 0
+        committedMetrics.completedSummaryAdditionalVisitedItemCount = summary?.visitedItemCount ?? 0
+        committedMetrics.completedItems = 1
+        committedMetrics.completedTraversalWeight = 1
+        committedMetrics.recalculateProgress()
+        pool.updateProgress(
+            committedMetrics,
+            continuation: continuation,
+            currentPath: "/committed",
+            force: true
+        )
+        await pool.finish()
+        continuation.finish()
+
+        var publications: [ScanMetrics] = []
+        for try await event in stream {
+            if case .progress(let metrics) = event {
+                publications.append(metrics)
+            }
+        }
+
+        let completedSummary = try XCTUnwrap(summary)
+        XCTAssertEqual(completedSummary.descendantFileCount, 1)
+        XCTAssertEqual(publications.count, 3)
+        XCTAssertEqual(publications[0].currentPath, "/queued")
+        XCTAssertEqual(publications[1].activeAtomicSummaryCount, 1)
+        XCTAssertEqual(publications[1].atomicSummaryCompletedTraversalWeight, 1)
+        XCTAssertEqual(publications[1].atomicSummaryVisitedItems, completedSummary.visitedItemCount)
+        XCTAssertEqual(publications[2].currentPath, "/committed")
+        XCTAssertEqual(publications[2].activeAtomicSummaryCount, 0)
+        XCTAssertEqual(publications[2].atomicSummaryVisitedItems, 0)
+        XCTAssertEqual(publications[2].completedPackageSummaryCount, 1)
+        XCTAssertTrue(zip(publications, publications.dropFirst()).allSatisfy {
+            $0.progressFraction <= $1.progressFraction
+        })
+    }
+
     func testSummaryPathReportingPreservesCanonicalBaseMetrics() async throws {
         let pool = AtomicDirectorySummaryPool(
             workerLimit: 1,
@@ -4926,6 +5065,25 @@ private final class CancellationAfterChecks: @unchecked Sendable {
         lock.unlock()
         if shouldCancel {
             throw CancellationError()
+        }
+    }
+}
+
+private final class AtomicSummaryProgressClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(_ value: Date) {
+        self.value = value
+    }
+
+    func now() -> Date {
+        lock.withLock { value }
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.withLock {
+            value = value.addingTimeInterval(interval)
         }
     }
 }
