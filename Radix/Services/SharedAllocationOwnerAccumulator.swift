@@ -14,15 +14,21 @@ import Foundation
 /// Keeping those stages separate preserves allocation that belongs only to a
 /// clone's resource fork and prevents hard-linked paths from entering clone
 /// accounting more than once.
+///
+/// Standalone clone claims are reduced without retaining per-file identities.
+/// Callers must therefore record each standalone filesystem entry once and
+/// merge only accumulators whose standalone entries are disjoint.
 nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
-    private enum CloneFileKey: Hashable, Sendable {
-        case identity(FileIdentity)
-        case path(String)
+    private struct CloneWinner: Sendable {
+        let ownerNodeID: String
+        let path: String
+        let cloneAllocatedSize: Int64
     }
 
     private var hardLinkWinnerByIdentity: [FileIdentity: SharedAllocationClaim] = [:]
-    private var standaloneCloneWinnerByFile: [CloneFileKey: SharedAllocationClaim] = [:]
+    private var standaloneCloneWinnerByIdentity: [CloneIdentity: CloneWinner] = [:]
     private var hardLinkDuplicateAllocatedSizeByOwner: [String: Int64] = [:]
+    private var standaloneCloneDuplicateAllocatedSizeByOwner: [String: Int64] = [:]
 
     nonisolated init() {}
 
@@ -38,25 +44,35 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
         cancellationCheck: () throws -> Void
     ) rethrows -> [String: Int64] {
         var corrections = hardLinkDuplicateAllocatedSizeByOwner
-        var cloneWinnerByIdentity: [CloneIdentity: SharedAllocationClaim] = [:]
+        for (offset, correction) in standaloneCloneDuplicateAllocatedSizeByOwner.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let (ownerNodeID, allocatedSize) = correction
+            corrections[ownerNodeID, default: 0] += allocatedSize
+        }
+        var hardLinkCloneWinnerByIdentity: [CloneIdentity: CloneWinner] = [:]
 
         for (offset, claim) in hardLinkWinnerByIdentity.values.enumerated() {
             if offset.isMultiple(of: 256) {
                 try cancellationCheck()
             }
-            Self.recordCloneCorrection(
-                for: claim,
-                winnerByIdentity: &cloneWinnerByIdentity,
-                corrections: &corrections
-            )
-        }
-        for (offset, claim) in standaloneCloneWinnerByFile.values.enumerated() {
-            if offset.isMultiple(of: 256) {
-                try cancellationCheck()
+            guard let cloneIdentity = claim.cloneIdentity,
+                  claim.cloneAllocatedSize > 0 else {
+                continue
+            }
+            if hardLinkCloneWinnerByIdentity[cloneIdentity] == nil,
+               let standaloneWinner = standaloneCloneWinnerByIdentity[cloneIdentity] {
+                hardLinkCloneWinnerByIdentity[cloneIdentity] = standaloneWinner
             }
             Self.recordCloneCorrection(
-                for: claim,
-                winnerByIdentity: &cloneWinnerByIdentity,
+                identity: cloneIdentity,
+                winner: CloneWinner(
+                    ownerNodeID: claim.ownerNodeID,
+                    path: claim.path,
+                    cloneAllocatedSize: claim.cloneAllocatedSize
+                ),
+                winnerByIdentity: &hardLinkCloneWinnerByIdentity,
                 corrections: &corrections
             )
         }
@@ -66,20 +82,17 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
     nonisolated var identityCount: Int {
         var cloneIdentities = Set<CloneIdentity>()
         for claim in hardLinkWinnerByIdentity.values {
-            if let cloneIdentity = claim.cloneIdentity {
+            if let cloneIdentity = claim.cloneIdentity,
+               claim.cloneAllocatedSize > 0 {
                 cloneIdentities.insert(cloneIdentity)
             }
         }
-        for claim in standaloneCloneWinnerByFile.values {
-            if let cloneIdentity = claim.cloneIdentity {
-                cloneIdentities.insert(cloneIdentity)
-            }
-        }
+        cloneIdentities.formUnion(standaloneCloneWinnerByIdentity.keys)
         return hardLinkWinnerByIdentity.count + cloneIdentities.count
     }
 
     nonisolated var isEmpty: Bool {
-        hardLinkWinnerByIdentity.isEmpty && standaloneCloneWinnerByFile.isEmpty
+        hardLinkWinnerByIdentity.isEmpty && standaloneCloneWinnerByIdentity.isEmpty
     }
 
     nonisolated func winner(for identity: FileIdentity) -> SharedAllocationClaim? {
@@ -91,15 +104,18 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
 
         if let hardLinkIdentity = claim.hardLinkIdentity {
             recordHardLink(claim, identity: hardLinkIdentity)
-        } else if claim.cloneIdentity != nil {
-            let key = claim.fileIdentity.map(CloneFileKey.identity) ?? .path(claim.path)
-            if let currentWinner = standaloneCloneWinnerByFile[key] {
-                if Self.precedes(claim, currentWinner) {
-                    standaloneCloneWinnerByFile[key] = claim
-                }
-            } else {
-                standaloneCloneWinnerByFile[key] = claim
-            }
+        } else if let cloneIdentity = claim.cloneIdentity,
+                  claim.cloneAllocatedSize > 0 {
+            Self.recordCloneCorrection(
+                identity: cloneIdentity,
+                winner: CloneWinner(
+                    ownerNodeID: claim.ownerNodeID,
+                    path: claim.path,
+                    cloneAllocatedSize: claim.cloneAllocatedSize
+                ),
+                winnerByIdentity: &standaloneCloneWinnerByIdentity,
+                corrections: &standaloneCloneDuplicateAllocatedSizeByOwner
+            )
         }
     }
 
@@ -109,16 +125,24 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
         }
     }
 
-    /// Merges package-local state without reconstructing discarded duplicate claims.
+    /// Merges disjoint package-local state without reconstructing discarded claims.
     nonisolated mutating func merge(_ other: Self) {
         for (ownerNodeID, allocatedSize) in other.hardLinkDuplicateAllocatedSizeByOwner {
             hardLinkDuplicateAllocatedSizeByOwner[ownerNodeID, default: 0] += allocatedSize
         }
+        for (ownerNodeID, allocatedSize) in other.standaloneCloneDuplicateAllocatedSizeByOwner {
+            standaloneCloneDuplicateAllocatedSizeByOwner[ownerNodeID, default: 0] += allocatedSize
+        }
         for winner in other.hardLinkWinnerByIdentity.values {
             record(winner)
         }
-        for winner in other.standaloneCloneWinnerByFile.values {
-            record(winner)
+        for (identity, winner) in other.standaloneCloneWinnerByIdentity {
+            Self.recordCloneCorrection(
+                identity: identity,
+                winner: winner,
+                winnerByIdentity: &standaloneCloneWinnerByIdentity,
+                corrections: &standaloneCloneDuplicateAllocatedSizeByOwner
+            )
         }
     }
 
@@ -137,25 +161,29 @@ nonisolated struct SharedAllocationOwnerAccumulator: Sendable {
     }
 
     private nonisolated static func recordCloneCorrection(
-        for claim: SharedAllocationClaim,
-        winnerByIdentity: inout [CloneIdentity: SharedAllocationClaim],
+        identity: CloneIdentity,
+        winner: CloneWinner,
+        winnerByIdentity: inout [CloneIdentity: CloneWinner],
         corrections: inout [String: Int64]
     ) {
-        guard let cloneIdentity = claim.cloneIdentity,
-              claim.cloneAllocatedSize > 0 else {
-            return
-        }
-        guard let currentWinner = winnerByIdentity[cloneIdentity] else {
-            winnerByIdentity[cloneIdentity] = claim
+        guard let currentWinner = winnerByIdentity[identity] else {
+            winnerByIdentity[identity] = winner
             return
         }
 
-        if precedes(claim, currentWinner) {
+        if precedes(winner, currentWinner) {
             corrections[currentWinner.ownerNodeID, default: 0] += currentWinner.cloneAllocatedSize
-            winnerByIdentity[cloneIdentity] = claim
+            winnerByIdentity[identity] = winner
         } else {
-            corrections[claim.ownerNodeID, default: 0] += claim.cloneAllocatedSize
+            corrections[winner.ownerNodeID, default: 0] += winner.cloneAllocatedSize
         }
+    }
+
+    private nonisolated static func precedes(_ lhs: CloneWinner, _ rhs: CloneWinner) -> Bool {
+        if lhs.path == rhs.path {
+            return lhs.ownerNodeID < rhs.ownerNodeID
+        }
+        return lhs.path < rhs.path
     }
 
     private nonisolated static func precedes(_ lhs: SharedAllocationClaim, _ rhs: SharedAllocationClaim) -> Bool {
