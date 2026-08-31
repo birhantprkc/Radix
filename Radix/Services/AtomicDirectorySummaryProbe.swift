@@ -320,6 +320,7 @@ extension AtomicDirectorySummarizer {
             ),
             retainsReusableListing: false
         )]
+        var activeCursorCount = 0
 
         while !frames.isEmpty {
             try cancellationCheck()
@@ -329,7 +330,7 @@ extension AtomicDirectorySummarizer {
                 if frames[frameIndex].workItem.cursor == nil,
                    frames[frameIndex].workItem.needsCursor {
                     do {
-                        if frames.lazy.filter({ $0.workItem.cursor != nil }).count >= 64 {
+                        if activeCursorCount >= 64 {
                             guard let childResult = try BulkDirectoryEnumerator.directoryEntries(
                                 at: frames[frameIndex].workItem.url,
                                 includeHiddenFiles: includeHiddenFiles,
@@ -367,6 +368,7 @@ extension AtomicDirectorySummarizer {
                                 }
                             }
                         )
+                        activeCursorCount += 1
                         frames[frameIndex].workItem.needsCursor = false
                     } catch let cancellation as AtomicProbeCancellation {
                         throw cancellation.underlyingError
@@ -404,6 +406,10 @@ extension AtomicDirectorySummarizer {
                     }
                 }
                 let completedFrame = frames.removeLast()
+                if completedFrame.workItem.cursor != nil {
+                    assert(activeCursorCount > 0)
+                    activeCursorCount -= 1
+                }
                 if completedFrame.retainsReusableListing {
                     reusableDirectoryListings[completedFrame.workItem.url.path] = AtomicDirectoryProbeListing(
                         entries: completedFrame.reusableEntries,

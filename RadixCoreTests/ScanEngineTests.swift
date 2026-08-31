@@ -4154,6 +4154,69 @@ final class ScanEngineTests: XCTestCase {
     }
     #endif
 
+    func testAtomicProbeCursorCapAcrossDepths() throws {
+        let temporaryURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        let metadataLoader = ScanMetadataLoader()
+        let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
+
+        for depth in [32, 64, 128, 256] {
+            let rootURL = temporaryURL.appending(
+                path: "depth-\(depth)",
+                directoryHint: .isDirectory
+            )
+            var deepestURL = rootURL
+            for _ in 0..<depth {
+                deepestURL.append(path: "d", directoryHint: .isDirectory)
+            }
+            try FileManager.default.createDirectory(
+                at: deepestURL,
+                withIntermediateDirectories: true
+            )
+            try Data([0x11]).write(to: deepestURL.appending(path: "payload.bin"))
+
+            let rootMetadata = try metadataLoader.metadata(for: rootURL)
+            let rootEntries = try XCTUnwrap(BulkDirectoryEnumerator.directoryEntries(
+                at: rootURL,
+                includeHiddenFiles: true,
+                metadataLoader: metadataLoader,
+                cancellationCheck: {}
+            )).entries
+            let (_, continuation) = makeAtomicSummaryProgressReporter()
+            defer { continuation.finish() }
+            var metrics = ScanMetrics()
+            var emissionState = ScanEmissionState()
+
+            let outcome = try summarizer.descendantAtomicProbeProfile(
+                at: rootURL,
+                rootEntries: rootEntries,
+                rootMetadata: rootMetadata,
+                includeHiddenFiles: true,
+                treatPackagesAsDirectories: true,
+                isNodeDependencyLayout: true,
+                minFileCount: 1,
+                maxAverageFileSize: 256,
+                exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
+                cancellationCheck: {},
+                metrics: &metrics,
+                continuation: continuation,
+                emissionState: &emissionState
+            )
+
+            let resumeState = try XCTUnwrap(outcome.resumeState)
+            defer { resumeState.invalidateCursors() }
+            XCTAssertEqual(outcome.visitedItemCount, depth + 1, "depth \(depth)")
+            XCTAssertEqual(outcome.profile.observedDirectoryCount, depth, "depth \(depth)")
+            XCTAssertEqual(resumeState.workItems.count, depth + 1, "depth \(depth)")
+            XCTAssertEqual(
+                resumeState.workItems.count { $0.cursor != nil },
+                min(depth, 64),
+                "depth \(depth)"
+            )
+            XCTAssertFalse(resumeState.workItems.contains { $0.needsCursor }, "depth \(depth)")
+        }
+    }
+
     func testResumedAtomicProbeMatchesFullSummarySemantics() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
