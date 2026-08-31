@@ -22,7 +22,7 @@ final class FileBrowserModel: ObservableObject {
     @Published private var displayState = FileBrowserDisplayState()
 
     private let searchService: any FileSearching
-    private let currentContentsService = CurrentContentsSearchService()
+    private let displayService = FileBrowserDisplayService()
     private let searchDebounceDuration: Duration
     private let currentContentsAsyncThreshold: Int
     private var searchTask: Task<Void, Never>?
@@ -210,13 +210,13 @@ final class FileBrowserModel: ObservableObject {
     private func rebuildCurrentContentsResults() {
         let query = isFilteringCurrentContents ? currentContentsQuery : FileBrowserQuery()
         let displayContext = currentDisplayContext
-        let visibleNodes = Self.visibleNodes(
-            nodes,
-            hiddenNodeIDs: hiddenNodeIDs,
-            fileTreeStore: fileTreeStore
-        )
 
-        guard shouldRefreshCurrentContentsAsynchronously(visibleNodes) else {
+        guard shouldRefreshCurrentContentsAsynchronously(nodes) else {
+            let visibleNodes = FileBrowserResults.visibleNodes(
+                nodes,
+                hiddenNodeIDs: hiddenNodeIDs,
+                fileTreeStore: fileTreeStore
+            )
             setIsRefreshingCurrentContents(false)
             applyDisplayedNodes(
                 FileBrowserResults.filteredAndSortedCurrentContents(
@@ -231,7 +231,7 @@ final class FileBrowserModel: ObservableObject {
         }
 
         scheduleCurrentContentsRefresh(
-            nodes: visibleNodes,
+            nodes: nodes,
             query: query,
             displayContext: displayContext
         )
@@ -248,6 +248,7 @@ final class FileBrowserModel: ObservableObject {
     ) {
         let sortOrder = sortOrder
         let fileTreeStore = fileTreeStore
+        let hiddenNodeIDs = hiddenNodeIDs
         let request = FileBrowserDisplayRequest(
             generation: searchGeneration,
             displayContext: displayContext
@@ -255,12 +256,13 @@ final class FileBrowserModel: ObservableObject {
         let debounceDuration = query.hasText ? searchDebounceDuration : Duration.zero
 
         setIsRefreshingCurrentContents(true)
-        searchTask = Task { [currentContentsService] in
+        searchTask = Task { [displayService] in
             do {
-                let refreshedNodes = try await currentContentsService.filteredAndSortedCurrentContents(
+                let projection = try await displayService.currentContentsProjection(
                     nodes,
                     query: query,
                     sortOrder: sortOrder,
+                    hiddenNodeIDs: hiddenNodeIDs,
                     fileTreeStore: fileTreeStore,
                     debounceDuration: debounceDuration
                 )
@@ -272,7 +274,7 @@ final class FileBrowserModel: ObservableObject {
                         return
                     }
 
-                    applyDisplayedNodes(refreshedNodes, context: request.displayContext)
+                    applyDisplayedProjection(projection, context: request.displayContext)
                     setIsRefreshingCurrentContents(false)
                 }
             } catch is CancellationError {
@@ -313,7 +315,7 @@ final class FileBrowserModel: ObservableObject {
         )
 
         setIsSearchingEntireScan(true)
-        searchTask = Task { [searchService] in
+        searchTask = Task { [searchService, displayService] in
             do {
                 try await Task.sleep(for: debounceDuration)
                 let matchedNodes = try await searchService.search(
@@ -322,7 +324,7 @@ final class FileBrowserModel: ObservableObject {
                     query: query,
                     sortOrder: sortOrder
                 )
-                let visibleMatchedNodes = Self.visibleNodes(
+                let projection = try await displayService.projection(
                     matchedNodes,
                     hiddenNodeIDs: hiddenNodeIDs,
                     fileTreeStore: fileTreeStore
@@ -335,7 +337,7 @@ final class FileBrowserModel: ObservableObject {
                         return
                     }
 
-                    applyDisplayedNodes(visibleMatchedNodes, context: request.displayContext)
+                    applyDisplayedProjection(projection, context: request.displayContext)
                     setIsSearchingEntireScan(false)
                 }
             } catch is CancellationError {
@@ -363,7 +365,17 @@ final class FileBrowserModel: ObservableObject {
         _ nodes: [FileNodeRecord],
         context: FileBrowserDisplayContext
     ) {
-        displayState = FileBrowserDisplayState(nodes: nodes, context: context)
+        applyDisplayedProjection(
+            FileBrowserDisplayProjection(nodes: nodes),
+            context: context
+        )
+    }
+
+    private func applyDisplayedProjection(
+        _ projection: FileBrowserDisplayProjection,
+        context: FileBrowserDisplayContext
+    ) {
+        displayState = FileBrowserDisplayState(projection: projection, context: context)
     }
 
     private func setIsSearchingEntireScan(_ isSearching: Bool) {
@@ -374,21 +386,5 @@ final class FileBrowserModel: ObservableObject {
     private func setIsRefreshingCurrentContents(_ isRefreshing: Bool) {
         guard isRefreshingCurrentContents != isRefreshing else { return }
         isRefreshingCurrentContents = isRefreshing
-    }
-
-    private nonisolated static func visibleNodes(
-        _ nodes: [FileNodeRecord],
-        hiddenNodeIDs: Set<FileNodeRecord.ID>,
-        fileTreeStore: FileTreeStore?
-    ) -> [FileNodeRecord] {
-        guard !hiddenNodeIDs.isEmpty,
-              let fileTreeStore else {
-            return nodes
-        }
-
-        let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenNodeIDs)
-        return nodes.filter { node in
-            !fileTreeStore.isNodeOrDescendant(node.id, of: hiddenNodes)
-        }
     }
 }

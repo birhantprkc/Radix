@@ -177,11 +177,33 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             extra: "fingerprint=\(sortFingerprint)"
         )
 
-        let publicationMeasurement = await Self.measurePublication(sortedResults)
+        let projectionMeasurement = BenchmarkSupport.measure {
+            FileBrowserDisplayProjection(nodes: sortedResults)
+        }
+        let displayProjection = projectionMeasurement.value
+        Self.report(
+            phase: "display_projection",
+            seconds: projectionMeasurement.seconds,
+            count: displayProjection.nodes.count,
+            peakRSS: BenchmarkSupport.peakResidentBytes()
+        )
+
+        let publicationMeasurement = await Self.measurePublication(displayProjection)
         Self.report(
             phase: "main_actor_publication",
             seconds: publicationMeasurement,
-            count: sortedResults.count,
+            count: displayProjection.nodes.count,
+            peakRSS: BenchmarkSupport.peakResidentBytes()
+        )
+
+        let replacementMeasurement = await Self.measurePublication(
+            displayProjection,
+            replacingExistingState: true
+        )
+        Self.report(
+            phase: "main_actor_replacement",
+            seconds: replacementMeasurement,
+            count: displayProjection.nodes.count,
             peakRSS: BenchmarkSupport.peakResidentBytes()
         )
 
@@ -270,21 +292,30 @@ final class FileBrowserBenchmarkTests: XCTestCase {
     }
 
     @MainActor
-    private static func measurePublication(_ nodes: [FileNodeRecord]) -> Double {
+    private static func measurePublication(
+        _ projection: FileBrowserDisplayProjection,
+        replacingExistingState: Bool = false
+    ) -> Double {
         let publisher = FileBrowserPublicationProbe()
+        if replacingExistingState {
+            publisher.seed(with: projection.nodes)
+        }
         var publicationCount = 0
         let cancellable = publisher.objectWillChange.sink {
             publicationCount += 1
         }
 
         let startedAt = ContinuousClock.now
-        publisher.publish(nodes)
+        publisher.publish(projection)
         let seconds = BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
 
         XCTAssertEqual(publicationCount, 1)
-        XCTAssertEqual(publisher.nodeCount, nodes.count)
-        XCTAssertEqual(publisher.node(id: nodes[0].id)?.id, nodes[0].id)
-        XCTAssertEqual(publisher.node(id: nodes[nodes.count - 1].id)?.id, nodes[nodes.count - 1].id)
+        XCTAssertEqual(publisher.nodeCount, projection.nodes.count)
+        XCTAssertEqual(publisher.node(id: projection.nodes[0].id)?.id, projection.nodes[0].id)
+        XCTAssertEqual(
+            publisher.node(id: projection.nodes[projection.nodes.count - 1].id)?.id,
+            projection.nodes[projection.nodes.count - 1].id
+        )
         withExtendedLifetime(cancellable) {}
         return seconds
     }
@@ -623,8 +654,14 @@ private final class FileBrowserPublicationProbe: ObservableObject {
         displayState.node(id: id)
     }
 
-    func publish(_ nodes: [FileNodeRecord]) {
-        displayState = FileBrowserDisplayState(nodes: nodes, context: .empty)
+    func publish(_ projection: FileBrowserDisplayProjection) {
+        displayState = FileBrowserDisplayState(projection: projection, context: .empty)
+    }
+
+    func seed(with nodes: [FileNodeRecord]) {
+        var independentNodes = nodes
+        independentNodes.reverse()
+        displayState = FileBrowserDisplayState(nodes: independentNodes, context: .empty)
     }
 }
 

@@ -6,6 +6,47 @@
 import Foundation
 
 enum FileBrowserResults {
+    nonisolated static func visibleNodes(
+        _ nodes: [FileNodeRecord],
+        hiddenNodeIDs: Set<FileNodeRecord.ID>,
+        fileTreeStore: FileTreeStore?
+    ) -> [FileNodeRecord] {
+        visibleNodes(
+            nodes,
+            hiddenNodeIDs: hiddenNodeIDs,
+            fileTreeStore: fileTreeStore,
+            cancellationCheck: {}
+        )
+    }
+
+    nonisolated static func visibleNodes(
+        _ nodes: [FileNodeRecord],
+        hiddenNodeIDs: Set<FileNodeRecord.ID>,
+        fileTreeStore: FileTreeStore?,
+        cancellationCheck: @Sendable () throws -> Void
+    ) rethrows -> [FileNodeRecord] {
+        guard !hiddenNodeIDs.isEmpty,
+              let fileTreeStore else {
+            try cancellationCheck()
+            return nodes
+        }
+
+        let hiddenNodes = fileTreeStore.preparedNodeSet(for: hiddenNodeIDs)
+        var visibleNodes: [FileNodeRecord] = []
+        visibleNodes.reserveCapacity(nodes.count)
+
+        for (offset, node) in nodes.enumerated() {
+            if offset.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            if !fileTreeStore.isNodeOrDescendant(node.id, of: hiddenNodes) {
+                visibleNodes.append(node)
+            }
+        }
+        try cancellationCheck()
+        return visibleNodes
+    }
+
     nonisolated static func filteredAndSortedCurrentContents(
         _ nodes: [FileNodeRecord],
         query: FileBrowserQuery,

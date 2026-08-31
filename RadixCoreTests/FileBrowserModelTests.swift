@@ -360,13 +360,16 @@ final class FileBrowserModelTests: XCTestCase {
     }
 
     @MainActor
-    func testCurrentContentsHideDiscardPileQueuedNodes() {
+    func testCurrentContentsHideDiscardPileQueuedNodes() async throws {
         let hiddenFile = makeTestFileNode(id: "/root/hidden.txt", name: "hidden.txt", size: 40)
         let visibleFile = makeTestFileNode(id: "/root/visible.txt", name: "visible.txt", size: 10)
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [hiddenFile, visibleFile])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [hiddenFile, visibleFile]])
         let snapshot = makeTestSnapshot(root: root, store: store)
-        let model = FileBrowserModel()
+        let model = FileBrowserModel(
+            searchDebounceDuration: .zero,
+            currentContentsAsyncThreshold: 1
+        )
 
         model.updateContent(
             nodes: store.children(of: root.id),
@@ -376,6 +379,7 @@ final class FileBrowserModelTests: XCTestCase {
             hiddenNodeIDs: [hiddenFile.id]
         )
 
+        try await waitForCurrentContentsRefreshToFinish(model)
         XCTAssertEqual(model.displayedNodes.map(\.id), [visibleFile.id])
 
         model.updateContent(
@@ -385,7 +389,29 @@ final class FileBrowserModelTests: XCTestCase {
             fileTreeStore: store
         )
 
+        try await waitForCurrentContentsRefreshToFinish(model)
         XCTAssertEqual(model.displayedNodes.map(\.id), [hiddenFile.id, visibleFile.id])
+    }
+
+    func testHiddenNodeFilteringChecksCancellation() {
+        let nodes = (0..<600).map { index in
+            makeTestFileNode(id: "/root/file-\(index).txt", name: "file-\(index).txt")
+        }
+        let root = makeTestDirectoryNode(id: "/root", name: "root", children: nodes)
+        let store = FileTreeStore(root: root, childrenByID: [root.id: nodes])
+        let probe = CancellationProbe(throwOnCheck: 3)
+
+        XCTAssertThrowsError(
+            try FileBrowserResults.visibleNodes(
+                nodes,
+                hiddenNodeIDs: [nodes[0].id],
+                fileTreeStore: store,
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, 3)
     }
 
     @MainActor
@@ -507,8 +533,25 @@ final class FileBrowserModelTests: XCTestCase {
         XCTAssertEqual(modifiedResults.map(\.id), [unknownFile.id, oldFile.id, newFile.id])
     }
 
+    func testDisplayProjectionChecksCancellationDuringIndexing() {
+        let nodes = (0..<600).map { index in
+            makeTestFileNode(id: "/root/file-\(index).txt", name: "file-\(index).txt")
+        }
+        let probe = CancellationProbe(throwOnCheck: 3)
+
+        XCTAssertThrowsError(
+            try FileBrowserDisplayProjection(
+                nodes: nodes,
+                cancellationCheck: probe.check
+            )
+        ) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(probe.checkCount, 3)
+    }
+
     func testCancellableSortThrowsBeforeSort() {
-        let probe = SortCancellationProbe(throwOnCheck: 1)
+        let probe = CancellationProbe(throwOnCheck: 1)
         let node = makeTestFileNode(id: "/root/file.txt", name: "file.txt")
 
         XCTAssertThrowsError(
@@ -524,7 +567,7 @@ final class FileBrowserModelTests: XCTestCase {
     }
 
     func testCancellableSortThrowsDuringPreparation() {
-        let probe = SortCancellationProbe(throwOnCheck: 3)
+        let probe = CancellationProbe(throwOnCheck: 3)
         let nodes = (0..<600).map { index in
             makeTestFileNode(id: "/root/file-\(index).txt", name: "file-\(index).txt")
         }
@@ -553,7 +596,7 @@ final class FileBrowserModelTests: XCTestCase {
         // Entry, preparation, post-preparation, pre-allocation, and the first
         // completed projection chunk.
         let secondProjectionCheck = preparationCheckCount + 4
-        let probe = SortCancellationProbe(throwOnCheck: secondProjectionCheck)
+        let probe = CancellationProbe(throwOnCheck: secondProjectionCheck)
 
         XCTAssertThrowsError(
             try FileBrowserResults.sorted(
@@ -568,7 +611,7 @@ final class FileBrowserModelTests: XCTestCase {
     }
 
     func testCancellableSortChecksBeforeEmptyProjectionAndAfterFinalChunk() {
-        let emptyProbe = SortCancellationProbe(throwOnCheck: 3)
+        let emptyProbe = CancellationProbe(throwOnCheck: 3)
         XCTAssertThrowsError(
             try FileBrowserResults.sorted(
                 [],
@@ -585,7 +628,7 @@ final class FileBrowserModelTests: XCTestCase {
             name: "file.txt",
             size: 1
         )
-        let finalChunkProbe = SortCancellationProbe(throwOnCheck: 5)
+        let finalChunkProbe = CancellationProbe(throwOnCheck: 5)
         XCTAssertThrowsError(
             try FileBrowserResults.sorted(
                 [node],
@@ -626,7 +669,7 @@ final class FileBrowserModelTests: XCTestCase {
         let preparationCheckCount = (nodes.count + 255) / 256
         // Entry, preparation, post-preparation, and one check before each sorted run.
         let firstCheckAfterOneSortedRun = preparationCheckCount + 4
-        let probe = SortCancellationProbe(throwOnCheck: firstCheckAfterOneSortedRun)
+        let probe = CancellationProbe(throwOnCheck: firstCheckAfterOneSortedRun)
 
         XCTAssertThrowsError(
             try FileBrowserResults.sorted(
@@ -1579,7 +1622,7 @@ private actor CancellablePruningFileSearchService: FileSearching {
     }
 }
 
-private final class SortCancellationProbe: @unchecked Sendable {
+private final class CancellationProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let throwOnCheck: Int
     private var checks = 0

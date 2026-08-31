@@ -30,6 +30,38 @@ struct FileBrowserDisplayContext: Equatable, Sendable {
     )
 }
 
+nonisolated struct FileBrowserDisplayProjection: Sendable {
+    let nodes: [FileNodeRecord]
+    let indexesByNodeID: [FileNodeRecord.ID: Int]
+
+    init(nodes: [FileNodeRecord]) {
+        self.init(nodes: nodes, cancellationCheck: {})
+    }
+
+    init(
+        nodes: [FileNodeRecord],
+        cancellationCheck: @Sendable () throws -> Void
+    ) rethrows {
+        var indexesByNodeID: [FileNodeRecord.ID: Int] = [:]
+        indexesByNodeID.reserveCapacity(nodes.count)
+
+        for (index, node) in nodes.enumerated() {
+            if index.isMultiple(of: 256) {
+                try cancellationCheck()
+            }
+            let previousIndex = indexesByNodeID.updateValue(index, forKey: node.id)
+            assert(
+                previousIndex == nil,
+                "File Browser results contain duplicate node IDs"
+            )
+        }
+        try cancellationCheck()
+
+        self.nodes = nodes
+        self.indexesByNodeID = indexesByNodeID
+    }
+}
+
 struct FileBrowserDisplayState {
     var nodes: [FileNodeRecord]
     var context: FileBrowserDisplayContext
@@ -40,20 +72,19 @@ struct FileBrowserDisplayState {
         nodes: [FileNodeRecord] = [],
         context: FileBrowserDisplayContext = .empty
     ) {
-        var indexesByNodeID: [FileNodeRecord.ID: Int] = [:]
-        indexesByNodeID.reserveCapacity(nodes.count)
+        self.init(
+            projection: FileBrowserDisplayProjection(nodes: nodes),
+            context: context
+        )
+    }
 
-        for (index, node) in nodes.enumerated() {
-            assert(
-                indexesByNodeID[node.id] == nil,
-                "File Browser results contain duplicate node IDs"
-            )
-            indexesByNodeID[node.id] = index
-        }
-
-        self.nodes = nodes
+    init(
+        projection: FileBrowserDisplayProjection,
+        context: FileBrowserDisplayContext
+    ) {
+        self.nodes = projection.nodes
         self.context = context
-        self.indexesByNodeID = indexesByNodeID
+        self.indexesByNodeID = projection.indexesByNodeID
         self.displayValueCache = FileBrowserDisplayValueCache()
     }
 

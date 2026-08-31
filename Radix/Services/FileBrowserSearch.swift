@@ -6,6 +6,7 @@
 import Foundation
 
 protocol FileSearching: Sendable {
+    /// Returns matching tree records with at most one entry per node ID.
     func search(
         snapshotID: UUID,
         treeStore: FileTreeStore,
@@ -20,23 +21,55 @@ extension FileSearching {
     func pruneIndexes(keeping snapshotID: UUID?) async {}
 }
 
-actor CurrentContentsSearchService {
-    func filteredAndSortedCurrentContents(
+actor FileBrowserDisplayService {
+    func currentContentsProjection(
         _ nodes: [FileNodeRecord],
         query: FileBrowserQuery,
         sortOrder: [FileNodeTableComparator],
+        hiddenNodeIDs: Set<FileNodeRecord.ID>,
         fileTreeStore: FileTreeStore?,
         debounceDuration: Duration
-    ) async throws -> [FileNodeRecord] {
+    ) async throws -> FileBrowserDisplayProjection {
         try await Task.sleep(for: debounceDuration)
-        return try FileBrowserResults.filteredAndSortedCurrentContents(
+        let cancellationCheck: @Sendable () throws -> Void = {
+            try Task.checkCancellation()
+        }
+        let visibleNodes = try FileBrowserResults.visibleNodes(
             nodes,
+            hiddenNodeIDs: hiddenNodeIDs,
+            fileTreeStore: fileTreeStore,
+            cancellationCheck: cancellationCheck
+        )
+        let refreshedNodes = try FileBrowserResults.filteredAndSortedCurrentContents(
+            visibleNodes,
             query: query,
             sortOrder: sortOrder,
             fileTreeStore: fileTreeStore,
-            cancellationCheck: {
-                try Task.checkCancellation()
-            }
+            cancellationCheck: cancellationCheck
+        )
+        return try FileBrowserDisplayProjection(
+            nodes: refreshedNodes,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    func projection(
+        _ nodes: [FileNodeRecord],
+        hiddenNodeIDs: Set<FileNodeRecord.ID>,
+        fileTreeStore: FileTreeStore?
+    ) throws -> FileBrowserDisplayProjection {
+        let cancellationCheck: @Sendable () throws -> Void = {
+            try Task.checkCancellation()
+        }
+        let visibleNodes = try FileBrowserResults.visibleNodes(
+            nodes,
+            hiddenNodeIDs: hiddenNodeIDs,
+            fileTreeStore: fileTreeStore,
+            cancellationCheck: cancellationCheck
+        )
+        return try FileBrowserDisplayProjection(
+            nodes: visibleNodes,
+            cancellationCheck: cancellationCheck
         )
     }
 }
