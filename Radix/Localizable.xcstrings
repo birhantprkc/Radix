@@ -69,41 +69,6 @@
         }
       }
     },
-    "%@ is in the Discard Pile, so this item is included with it." : {
-      "comment" : "Inspector explanation for an item included because its ancestor is in the Discard Pile.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Da %@ in der Löschliste steht, ist dieses Element darin eingeschlossen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Como %@ está en la pila de descarte, este elemento se incluye con él."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comme %@ figure dans la pile de suppression, cet élément est inclus avec lui."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poiché %@ è nell'elenco di eliminazione, questo elemento è incluso con esso."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 位于待处理列表中，因此此项目也包含在内。"
-          }
-        }
-      }
-    },
     "%@ · %@ of %@" : {
       "comment" : "Tooltip text showing an item's size and percentage of its parent.",
       "localizations" : {
@@ -320,6 +285,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 个分组项目"
+          }
+        }
+      }
+    },
+    "%@ is in the Discard Pile, so this item is included with it." : {
+      "comment" : "Inspector explanation for an item included because its ancestor is in the Discard Pile.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Da %@ in der Löschliste steht, ist dieses Element darin eingeschlossen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Como %@ está en la pila de descarte, este elemento se incluye con él."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comme %@ figure dans la pile de suppression, cet élément est inclus avec lui."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poiché %@ è nell'elenco di eliminazione, questo elemento è incluso con esso."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 位于待处理列表中，因此此项目也包含在内。"
           }
         }
       }
@@ -653,7 +653,7 @@
       }
     },
     "%lld files" : {
-      "comment" : "File count used in the Inspector and scan progress.",
+      "comment" : "File count shown while scanning.\nInspector multiple-selection file count.",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -760,7 +760,7 @@
       }
     },
     "%lld folders" : {
-      "comment" : "Folder count used in the Inspector and scan progress.",
+      "comment" : "Folder count shown while scanning.\nInspector multiple-selection folder count.",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -867,7 +867,7 @@
       }
     },
     "%lld items • %@" : {
-      "comment" : "Discard Pile subtitle showing the marked item count and total allocated size. The item count controls pluralization.",
+      "comment" : "Discard Pile status showing the marked item count and total allocated size. The item count controls pluralization.\nDiscard Pile subtitle showing the marked item count and total allocated size. The item count controls pluralization.",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -966,113 +966,6 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%1$lld 个项目 • %2$@"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld selected" : {
-      "comment" : "Discard Pile status showing the number of selected review rows. The count controls pluralization.",
-      "localizations" : {
-        "de" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld ausgewählt"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld ausgewählt"
-                }
-              }
-            }
-          }
-        },
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld selected"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld selected"
-                }
-              }
-            }
-          }
-        },
-        "es" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld seleccionado"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld seleccionados"
-                }
-              }
-            }
-          }
-        },
-        "fr" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld sélectionné"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld sélectionnés"
-                }
-              }
-            }
-          }
-        },
-        "it" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld selezionato"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld selezionati"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "已选择 %lld 个项目"
                 }
               }
             }
@@ -1962,6 +1855,113 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "已跳过 %1$lld 个受保护位置，因此 %2$@ 的总计可能不完整。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld selected" : {
+      "comment" : "Discard Pile status showing the number of selected review rows. The count controls pluralization.",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ausgewählt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ausgewählt"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selected"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld seleccionado"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld seleccionados"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sélectionné"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sélectionnés"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selezionato"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld selezionati"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "已选择 %lld 个项目"
                 }
               }
             }
@@ -11390,41 +11390,6 @@
         }
       }
     },
-    "Moving to Trash" : {
-      "comment" : "Chart hover status for an item currently being moved to the Trash.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wird in den Papierkorb bewegt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Moviendo a la papelera"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Déplacement vers la corbeille"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spostamento nel Cestino"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在移到废纸篓"
-          }
-        }
-      }
-    },
     "Move to Trash?" : {
       "localizations" : {
         "de" : {
@@ -11490,6 +11455,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已移动"
+          }
+        }
+      }
+    },
+    "Moving to Trash" : {
+      "comment" : "Chart hover status for an item currently being moved to the Trash.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird in den Papierkorb bewegt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moviendo a la papelera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacement vers la corbeille"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spostamento nel Cestino"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在移到废纸篓"
           }
         }
       }
@@ -11917,7 +11917,7 @@
       }
     },
     "No items marked" : {
-      "comment" : "Discard Pile subtitle when it is empty.\nDiscard Pile summary when no items are marked.",
+      "comment" : "Discard Pile subtitle when it is empty.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -16225,6 +16225,7 @@
       }
     },
     "Review Discard Pile" : {
+      "comment" : "Command for reviewing the Discard Pile when the selection is already included.\nInspector action for reviewing the queued ancestor of the selected item.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
