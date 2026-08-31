@@ -47,6 +47,11 @@ struct InspectorMultiSelectionView: View {
                 InspectorSelectedItemsSection(summary: summary)
             }
             .formStyle(.grouped)
+            .contentMargins(
+                .horizontal,
+                InspectorLayout.formHorizontalMargin,
+                for: .scrollContent
+            )
 
             if availability.canRevealInFinder || canMoveSelectionToTrash {
                 InspectorActionBar(

@@ -142,6 +142,11 @@ struct SelectionInspectorView: View {
                 }
             }
             .formStyle(.grouped)
+            .contentMargins(
+                .horizontal,
+                InspectorLayout.formHorizontalMargin,
+                for: .scrollContent
+            )
 
             if availability.canRevealInFinder
                 || availability.canMoveToTrash
