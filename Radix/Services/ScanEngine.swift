@@ -2109,7 +2109,9 @@ actor ScanEngine {
         #if DEBUG
         let correctionResolutionStart = diagnostics?.start()
         #endif
-        let duplicateAllocatedSizeByOwner = sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
+        let duplicateAllocatedSizeByOwner = try sharedAllocationAccumulator.duplicateAllocatedSizeByOwner {
+            try Task.checkCancellation()
+        }
         #if DEBUG
         diagnostics?.record(
             operation: "scan.finalize.resolve_corrections",
