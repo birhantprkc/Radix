@@ -40,17 +40,18 @@ struct FileBrowserDisplayState {
         nodes: [FileNodeRecord] = [],
         context: FileBrowserDisplayContext = .empty
     ) {
-        var uniqueNodes: [FileNodeRecord] = []
         var indexesByNodeID: [FileNodeRecord.ID: Int] = [:]
-        uniqueNodes.reserveCapacity(nodes.count)
         indexesByNodeID.reserveCapacity(nodes.count)
 
-        for node in nodes where indexesByNodeID[node.id] == nil {
-            indexesByNodeID[node.id] = uniqueNodes.count
-            uniqueNodes.append(node)
+        for (index, node) in nodes.enumerated() {
+            assert(
+                indexesByNodeID[node.id] == nil,
+                "File Browser results contain duplicate node IDs"
+            )
+            indexesByNodeID[node.id] = index
         }
 
-        self.nodes = uniqueNodes
+        self.nodes = nodes
         self.context = context
         self.indexesByNodeID = indexesByNodeID
         self.displayValueCache = FileBrowserDisplayValueCache()
