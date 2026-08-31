@@ -12,9 +12,12 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             )
         }
 
+        let fixtureShape = FileBrowserBenchmarkFixtureShape(
+            environmentValue: environment["RADIX_BENCH_FILE_BROWSER_SHAPE"]
+        )
         let directoryCount = environment["RADIX_BENCH_FILE_BROWSER_DIRECTORIES"]
             .flatMap(Int.init)
-            .map { max(1, $0) } ?? 1_000
+            .map { max(1, $0) } ?? fixtureShape.defaultDirectoryCount
         let filesPerDirectory = environment["RADIX_BENCH_FILE_BROWSER_FILES_PER_DIRECTORY"]
             .flatMap(Int.init)
             .map { max(1, $0) } ?? 1_000
@@ -25,29 +28,35 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         let initialPeakRSS = BenchmarkSupport.peakResidentBytes()
         let fixtureMeasurement = BenchmarkSupport.measure {
             Self.makeFixture(
+                shape: fixtureShape,
                 directoryCount: directoryCount,
                 filesPerDirectory: filesPerDirectory
             )
         }
         let fixture = fixtureMeasurement.value
         let fixturePeakRSS = BenchmarkSupport.peakResidentBytes()
+        let fixtureCurrentRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
 
         XCTAssertEqual(
             fixture.store.nodeCount,
-            (directoryCount * filesPerDirectory) + directoryCount + 1
+            fixture.fileCount + fixture.directoryCount + 1
         )
         Self.report(
             phase: "fixture",
             seconds: fixtureMeasurement.seconds,
             count: fixture.store.nodeCount,
             peakRSS: fixturePeakRSS,
-            extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: fixturePeakRSS))"
+            extra: Self.memoryReportExtra(
+                shape: fixture.shape,
+                currentRSS: fixtureCurrentRSS,
+                extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: fixturePeakRSS))"
+            )
         )
 
         let snapshotID = UUID()
         let searchService = await FileSearchService()
         let noMatchQuery = FileBrowserQuery(text: "__radix_no_match__")
-        let coldMeasurement = try await Self.measureAsync {
+        let coldMeasurement = try await Self.measureAsyncWithMemory {
             try await searchService.search(
                 snapshotID: snapshotID,
                 treeStore: fixture.store,
@@ -56,6 +65,8 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             )
         }
         XCTAssertTrue(coldMeasurement.value.isEmpty)
+        let coldIndexedPeakRSS = BenchmarkSupport.peakResidentBytes()
+        let coldIndexedCurrentRSS = coldMeasurement.endRSS
 
         let warmNoMatchSamples = try await Self.measureSearchSamples(
             count: warmIterationCount,
@@ -67,15 +78,24 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         )
         let warmNoMatchMedian = Self.median(warmNoMatchSamples.map(\.seconds))
         let estimatedIndexSeconds = max(coldMeasurement.seconds - warmNoMatchMedian, 0)
-        let indexedPeakRSS = BenchmarkSupport.peakResidentBytes()
+        let coldIndexRSSDelta = BenchmarkSupport.byteDelta(
+            from: coldMeasurement.startRSS,
+            to: coldMeasurement.endRSS
+        )
         Self.report(
             phase: "cold_index",
             seconds: estimatedIndexSeconds,
             count: fixture.store.nodeCount - 1,
-            peakRSS: indexedPeakRSS,
-            extra: "cold_total=\(BenchmarkSupport.format(coldMeasurement.seconds)) " +
-                "warm_scan_median=\(BenchmarkSupport.format(warmNoMatchMedian)) " +
-                "rss_delta=\(BenchmarkSupport.byteDelta(from: fixturePeakRSS, to: indexedPeakRSS))"
+            peakRSS: coldIndexedPeakRSS,
+            extra: Self.phaseMemoryReportExtra(
+                shape: fixture.shape,
+                startRSS: coldMeasurement.startRSS,
+                endRSS: coldMeasurement.endRSS,
+                phasePeakRSS: coldMeasurement.peakRSS,
+                extra: "cold_total=\(BenchmarkSupport.format(coldMeasurement.seconds)) " +
+                    "warm_scan_median=\(BenchmarkSupport.format(warmNoMatchMedian)) " +
+                    "post_index_rss_delta=\(coldIndexRSSDelta)"
+            )
         )
 
         let textSamples = try await Self.measureSearchSamples(
@@ -86,48 +106,84 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             query: FileBrowserQuery(text: "needle"),
             sortOrder: []
         )
-        let expectedNeedleCount = filesPerDirectory > 777
-            ? ((directoryCount - 1) / 100) + 1
-            : 0
-        XCTAssertTrue(textSamples.allSatisfy { $0.resultCount == expectedNeedleCount })
+        XCTAssertTrue(textSamples.allSatisfy {
+            $0.resultCount == fixture.expectedTextQueryCount
+        })
         Self.reportSamples(
             phase: "warm_text",
             samples: textSamples,
-            count: expectedNeedleCount
+            count: fixture.expectedTextQueryCount
         )
 
-        let pathDirectoryOffset = directoryCount / 2
-        let pathQuery = FileBrowserQuery(
-            text: String(format: "/benchmark/directory-%04d/", pathDirectoryOffset)
-        )
-        let firstPathMeasurement = try await Self.measureAsync {
+        let firstPathMeasurement = try await Self.measureAsyncWithMemory {
             try await searchService.search(
                 snapshotID: snapshotID,
                 treeStore: fixture.store,
-                query: pathQuery,
+                query: fixture.pathQuery,
                 sortOrder: []
             )
         }
-        XCTAssertEqual(firstPathMeasurement.value.count, filesPerDirectory)
+        XCTAssertEqual(
+            firstPathMeasurement.value.count,
+            fixture.expectedPathQueryCount
+        )
+        let firstPathPeakRSS = BenchmarkSupport.peakResidentBytes()
+        let firstPathRSSDeltaFromIndex = BenchmarkSupport.byteDelta(
+            from: coldIndexedCurrentRSS,
+            to: firstPathMeasurement.endRSS
+        )
+        Self.report(
+            phase: "path_first",
+            seconds: firstPathMeasurement.seconds,
+            count: fixture.expectedPathQueryCount,
+            peakRSS: firstPathPeakRSS,
+            extra: Self.phaseMemoryReportExtra(
+                shape: fixture.shape,
+                startRSS: firstPathMeasurement.startRSS,
+                endRSS: firstPathMeasurement.endRSS,
+                phasePeakRSS: firstPathMeasurement.peakRSS,
+                extra: "post_query_rss_delta_from_index=\(firstPathRSSDeltaFromIndex)"
+            )
+        )
+
         let warmPathSamples = try await Self.measureSearchSamples(
             count: warmIterationCount,
             service: searchService,
             snapshotID: snapshotID,
             store: fixture.store,
-            query: pathQuery,
+            query: fixture.pathQuery,
             sortOrder: []
         )
-        XCTAssertTrue(warmPathSamples.allSatisfy { $0.resultCount == filesPerDirectory })
-        Self.report(
-            phase: "path_first",
-            seconds: firstPathMeasurement.seconds,
-            count: filesPerDirectory,
-            peakRSS: BenchmarkSupport.peakResidentBytes()
+        XCTAssertTrue(warmPathSamples.allSatisfy {
+            $0.resultCount == fixture.expectedPathQueryCount
+        })
+        let warmPathMemoryMeasurement = try await Self.measureAsyncWithMemory {
+            try await searchService.search(
+                snapshotID: snapshotID,
+                treeStore: fixture.store,
+                query: fixture.pathQuery,
+                sortOrder: []
+            )
+        }
+        XCTAssertEqual(
+            warmPathMemoryMeasurement.value.count,
+            fixture.expectedPathQueryCount
+        )
+        let warmPathRSSDeltaFromIndex = BenchmarkSupport.byteDelta(
+            from: coldIndexedCurrentRSS,
+            to: warmPathMemoryMeasurement.endRSS
         )
         Self.reportSamples(
             phase: "path_warm",
             samples: warmPathSamples,
-            count: filesPerDirectory
+            count: fixture.expectedPathQueryCount,
+            extra: Self.phaseMemoryReportExtra(
+                shape: fixture.shape,
+                startRSS: warmPathMemoryMeasurement.startRSS,
+                endRSS: warmPathMemoryMeasurement.endRSS,
+                phasePeakRSS: warmPathMemoryMeasurement.peakRSS,
+                extra: "post_query_rss_delta_from_index=\(warmPathRSSDeltaFromIndex)"
+            )
         )
 
         let filterQuery = FileBrowserQuery(itemKind: .file)
@@ -224,6 +280,26 @@ final class FileBrowserBenchmarkTests: XCTestCase {
                 "completed_before_cancel=\(coldCancellation.completedBeforeCancellation)"
         )
 
+        let warmSearchCancellation = try await Self.measureSearchCancellation(
+            service: searchService,
+            snapshotID: snapshotID,
+            store: fixture.store,
+            query: noMatchQuery
+        )
+        XCTAssertTrue(
+            warmSearchCancellation.wasCancelled ||
+                warmSearchCancellation.completedBeforeCancellation,
+            "Warm search returned normally after cancellation was requested."
+        )
+        Self.report(
+            phase: "cancel_warm_search",
+            seconds: warmSearchCancellation.seconds,
+            count: fixture.store.nodeCount - 1,
+            peakRSS: BenchmarkSupport.peakResidentBytes(),
+            extra: "cancelled=\(warmSearchCancellation.wasCancelled) " +
+                "completed_before_cancel=\(warmSearchCancellation.completedBeforeCancellation)"
+        )
+
         let sortCancellation = try await Self.measureSortCancellation(
             nodes: largeResults,
             sortOrder: sortOrder,
@@ -255,12 +331,18 @@ final class FileBrowserBenchmarkTests: XCTestCase {
             peakRSS: BenchmarkSupport.peakResidentBytes()
         )
 
+        let suitePeakRSS = BenchmarkSupport.peakResidentBytes()
+        let suiteCurrentRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
         Self.report(
             phase: "suite_peak_rss",
             seconds: 0,
             count: fixture.store.nodeCount,
-            peakRSS: BenchmarkSupport.peakResidentBytes(),
-            extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: BenchmarkSupport.peakResidentBytes()))"
+            peakRSS: suitePeakRSS,
+            extra: Self.memoryReportExtra(
+                shape: fixture.shape,
+                currentRSS: suiteCurrentRSS,
+                extra: "rss_delta=\(BenchmarkSupport.byteDelta(from: initialPeakRSS, to: suitePeakRSS))"
+            )
         )
     }
 
@@ -381,9 +463,23 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         query: FileBrowserQuery
     ) async throws -> CancellationMeasurement {
         let service = await FileSearchService()
+        return try await measureSearchCancellation(
+            service: service,
+            snapshotID: UUID(),
+            store: store,
+            query: query
+        )
+    }
+
+    private static func measureSearchCancellation(
+        service: FileSearchService,
+        snapshotID: UUID,
+        store: FileTreeStore,
+        query: FileBrowserQuery
+    ) async throws -> CancellationMeasurement {
         let task = Task {
             _ = try await service.search(
-                snapshotID: UUID(),
+                snapshotID: snapshotID,
                 treeStore: store,
                 query: query,
                 sortOrder: []
@@ -450,6 +546,22 @@ final class FileBrowserBenchmarkTests: XCTestCase {
     }
 
     private static func makeFixture(
+        shape: FileBrowserBenchmarkFixtureShape,
+        directoryCount: Int,
+        filesPerDirectory: Int
+    ) -> Fixture {
+        switch shape {
+        case .wide:
+            makeWideFixture(
+                directoryCount: directoryCount,
+                filesPerDirectory: filesPerDirectory
+            )
+        case .directoryHeavy:
+            makeDirectoryHeavyFixture(directoryCount: directoryCount)
+        }
+    }
+
+    private static func makeWideFixture(
         directoryCount: Int,
         filesPerDirectory: Int
     ) -> Fixture {
@@ -549,7 +661,152 @@ final class FileBrowserBenchmarkTests: XCTestCase {
                 inaccessibleItemCount: 0
             )
         )
-        return Fixture(store: store, fileCount: fileCount)
+        let expectedTextQueryCount = filesPerDirectory > 777
+            ? ((directoryCount - 1) / 100) + 1
+            : 0
+        let pathDirectoryOffset = directoryCount / 2
+        return Fixture(
+            shape: FileBrowserBenchmarkFixtureShape.wide.rawValue,
+            store: store,
+            fileCount: fileCount,
+            directoryCount: directoryCount,
+            expectedTextQueryCount: expectedTextQueryCount,
+            pathQuery: FileBrowserQuery(
+                text: String(format: "/benchmark/directory-%04d/", pathDirectoryOffset)
+            ),
+            expectedPathQueryCount: filesPerDirectory
+        )
+    }
+
+    private static func makeDirectoryHeavyFixture(
+        directoryCount: Int
+    ) -> Fixture {
+        let maximumDepth = 64
+        let fileCount = directoryCount
+        let nodeCount = (directoryCount * 2) + 1
+        let rootIndex = FileTreeNodeIndex(rawValue: 0)
+        let rootID = "/benchmark"
+
+        var nodes = [FileNodeRecord(
+            id: rootID,
+            url: URL(filePath: rootID, directoryHint: .isDirectory),
+            name: "benchmark",
+            isDirectory: true,
+            isSymbolicLink: false,
+            allocatedSize: Int64(fileCount),
+            logicalSize: Int64(fileCount),
+            descendantFileCount: fileCount,
+            lastModified: nil,
+            isPackage: false,
+            isAccessible: true,
+            isSelfAccessible: true,
+            isSynthetic: false,
+            isAutoSummarized: false
+        )]
+        nodes.reserveCapacity(nodeCount)
+        var childIndicesByIndex = Array(repeating: [FileTreeNodeIndex](), count: nodeCount)
+        var parentIndices = Array<FileTreeNodeIndex?>(repeating: nil, count: nodeCount)
+
+        // A forest of bounded chains keeps the fixture realistic while making
+        // parent-path storage scale with directory count rather than shallow breadth.
+        for directoryOffset in 0..<directoryCount {
+            let depth = directoryOffset % maximumDepth
+            let parentIndex: FileTreeNodeIndex
+            if depth == 0 {
+                parentIndex = rootIndex
+            } else {
+                parentIndex = FileTreeNodeIndex(rawValue: UInt32(directoryOffset))
+            }
+            let directoryIndex = FileTreeNodeIndex(rawValue: UInt32(directoryOffset + 1))
+            let directoryName = depth == 0
+                ? String(format: "Branch-%05d", directoryOffset / maximumDepth)
+                : String(
+                    format: depth.isMultiple(of: 2) ? "Folder-%03d" : "segment-%03d",
+                    depth
+                )
+            let directoryID = nodes[Int(parentIndex.rawValue)].id + "/" + directoryName
+            let descendantFileCount = min(
+                maximumDepth - depth,
+                directoryCount - directoryOffset
+            )
+            nodes.append(FileNodeRecord(
+                id: directoryID,
+                url: URL(filePath: directoryID, directoryHint: .isDirectory),
+                name: directoryName,
+                isDirectory: true,
+                isSymbolicLink: false,
+                allocatedSize: Int64(descendantFileCount),
+                logicalSize: Int64(descendantFileCount),
+                descendantFileCount: descendantFileCount,
+                lastModified: nil,
+                isPackage: false,
+                isAccessible: true,
+                isSelfAccessible: true,
+                isSynthetic: false,
+                isAutoSummarized: false
+            ))
+            parentIndices[Int(directoryIndex.rawValue)] = parentIndex
+            childIndicesByIndex[Int(parentIndex.rawValue)].append(directoryIndex)
+        }
+
+        for directoryOffset in 0..<directoryCount {
+            let directoryIndex = FileTreeNodeIndex(rawValue: UInt32(directoryOffset + 1))
+            let fileIndex = FileTreeNodeIndex(
+                rawValue: UInt32(directoryCount + directoryOffset + 1)
+            )
+            let name = directoryOffset.isMultiple(of: 100) ? "needle.dat" : "item.dat"
+            let fileID = nodes[Int(directoryIndex.rawValue)].id + "/" + name
+            let allocatedSize = Int64(((directoryOffset * 37) % 16_384) + 1)
+            nodes.append(FileNodeRecord(
+                id: fileID,
+                url: URL(filePath: fileID),
+                name: name,
+                isDirectory: false,
+                isSymbolicLink: false,
+                allocatedSize: allocatedSize,
+                logicalSize: allocatedSize,
+                descendantFileCount: 1,
+                lastModified: Date(
+                    timeIntervalSinceReferenceDate: Double(directoryOffset % 10_000)
+                ),
+                isPackage: false,
+                isAccessible: true,
+                isSelfAccessible: true,
+                isSynthetic: false,
+                isAutoSummarized: false
+            ))
+            parentIndices[Int(fileIndex.rawValue)] = directoryIndex
+            childIndicesByIndex[Int(directoryIndex.rawValue)].append(fileIndex)
+        }
+
+        let store = FileTreeStore(
+            verifiedRootIndex: rootIndex,
+            nodes: nodes,
+            childIndicesByIndex: childIndicesByIndex,
+            parentIndices: parentIndices,
+            orderedNodeIndices: nodes.indices.map { FileTreeNodeIndex(rawValue: UInt32($0)) },
+            aggregateStats: ScanAggregateStats(
+                totalAllocatedSize: Int64(fileCount),
+                totalLogicalSize: Int64(fileCount),
+                fileCount: fileCount,
+                directoryCount: directoryCount + 1,
+                accessibleItemCount: nodeCount,
+                inaccessibleItemCount: 0
+            )
+        )
+        let pathDirectoryOffset = min(maximumDepth - 1, directoryCount - 1)
+        let pathDirectoryIndex = FileTreeNodeIndex(rawValue: UInt32(pathDirectoryOffset + 1))
+        return Fixture(
+            shape: "\(FileBrowserBenchmarkFixtureShape.directoryHeavy.rawValue)-depth-\(maximumDepth)",
+            store: store,
+            fileCount: fileCount,
+            directoryCount: directoryCount,
+            expectedTextQueryCount: ((directoryCount - 1) / 100) + 1,
+            pathQuery: FileBrowserQuery(
+                text: nodes[Int(pathDirectoryIndex.rawValue)].id + "/"
+            ),
+            expectedPathQueryCount: 1
+        )
     }
 
     private static func assertSorted(
@@ -605,6 +862,33 @@ final class FileBrowserBenchmarkTests: XCTestCase {
         )
     }
 
+    private static func measureAsyncWithMemory<Value>(
+        _ operation: () async throws -> Value
+    ) async rethrows -> MemoryBenchmarkMeasurement<Value> {
+        let startRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
+        let sampler = BenchmarkMemorySampler(initialRSS: startRSS)
+        let samplerTask = Task {
+            while !Task.isCancelled {
+                sampler.sample()
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+        }
+        let startedAt = ContinuousClock.now
+        let value = try await operation()
+        let seconds = BenchmarkSupport.durationSeconds(startedAt.duration(to: .now))
+        samplerTask.cancel()
+        _ = await samplerTask.result
+        sampler.sample()
+        let endRSS = BenchmarkMemorySampler.currentResidentMemoryBytes()
+        return MemoryBenchmarkMeasurement(
+            value: value,
+            seconds: seconds,
+            startRSS: startRSS,
+            endRSS: endRSS,
+            peakRSS: max(sampler.peak(), endRSS)
+        )
+    }
+
     private static func median(_ values: [Double]) -> Double {
         BenchmarkSupport.median(values)!
     }
@@ -612,16 +896,39 @@ final class FileBrowserBenchmarkTests: XCTestCase {
     private static func reportSamples(
         phase: String,
         samples: [SearchSample],
-        count: Int
+        count: Int,
+        extra: String = ""
     ) {
         let seconds = samples.map(\.seconds)
+        let sampleExtra = "samples=\(seconds.map { BenchmarkSupport.format($0) }.joined(separator: ","))"
         report(
             phase: phase,
             seconds: median(seconds),
             count: count,
             peakRSS: BenchmarkSupport.peakResidentBytes(),
-            extra: "samples=\(seconds.map { BenchmarkSupport.format($0) }.joined(separator: ","))"
+            extra: extra.isEmpty ? sampleExtra : "\(extra) \(sampleExtra)"
         )
+    }
+
+    private static func memoryReportExtra(
+        shape: String,
+        currentRSS: UInt64,
+        extra: String = ""
+    ) -> String {
+        let memoryExtra = "shape=\(shape) current_rss=\(currentRSS)"
+        return extra.isEmpty ? memoryExtra : "\(memoryExtra) \(extra)"
+    }
+
+    private static func phaseMemoryReportExtra(
+        shape: String,
+        startRSS: UInt64,
+        endRSS: UInt64,
+        phasePeakRSS: UInt64,
+        extra: String = ""
+    ) -> String {
+        let memoryExtra = "shape=\(shape) start_rss=\(startRSS) end_rss=\(endRSS) " +
+            "phase_peak_rss=\(phasePeakRSS)"
+        return extra.isEmpty ? memoryExtra : "\(memoryExtra) \(extra)"
     }
 
     private static func report(
@@ -666,13 +973,44 @@ private final class FileBrowserPublicationProbe: ObservableObject {
 }
 
 private struct Fixture: Sendable {
+    let shape: String
     let store: FileTreeStore
     let fileCount: Int
+    let directoryCount: Int
+    let expectedTextQueryCount: Int
+    let pathQuery: FileBrowserQuery
+    let expectedPathQueryCount: Int
+}
+
+private enum FileBrowserBenchmarkFixtureShape: String {
+    case wide
+    case directoryHeavy = "directory-heavy"
+
+    init(environmentValue: String?) {
+        self = Self(rawValue: environmentValue?.lowercased() ?? "wide") ?? .wide
+    }
+
+    var defaultDirectoryCount: Int {
+        switch self {
+        case .wide:
+            1_000
+        case .directoryHeavy:
+            500_000
+        }
+    }
 }
 
 private struct SearchSample {
     let seconds: Double
     let resultCount: Int
+}
+
+private struct MemoryBenchmarkMeasurement<Value> {
+    let value: Value
+    let seconds: Double
+    let startRSS: UInt64
+    let endRSS: UInt64
+    let peakRSS: UInt64
 }
 
 private struct CancellationMeasurement {
