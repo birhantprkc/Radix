@@ -16,8 +16,8 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
-    @State private var showsInspector = true
-    @State private var inspectorPresentationBeforeComparison: Bool?
+    @State private var showsInspector = false
+    @State private var prefersInspectorPresented = true
     @State private var discardPileDragIsActive = false
     @State private var discardPileDragMonitorTask: Task<Void, Never>?
     @FocusState private var focusedWorkspaceTarget: WorkspaceFocusTarget?
@@ -40,7 +40,7 @@ struct ContentView: View {
                 scanState: appModel.scanState,
                 navigation: appModel.navigation,
                 scanComparison: appModel.scanComparison,
-                isInspectorPresented: $showsInspector,
+                isInspectorPresented: inspectorPresentation,
                 focusedWorkspaceTarget: $focusedWorkspaceTarget,
                 visualizationMode: Binding(
                     get: { appModel.scanVisualizationMode },
@@ -74,7 +74,7 @@ struct ContentView: View {
         .background(WorkspaceWindowObserver { window in
             appModel.setWorkspaceWindowNumber(window?.windowNumber)
         })
-        .inspector(isPresented: $showsInspector) {
+        .inspector(isPresented: inspectorPresentation) {
             SelectionInspectorView(
                 scanState: appModel.scanState,
                 navigation: appModel.navigation,
@@ -84,16 +84,21 @@ struct ContentView: View {
             )
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 380)
         }
-        .focusedSceneValue(\.inspectorVisibility, $showsInspector)
+        .focusedSceneValue(\.inspectorVisibility, inspectorPresentation)
+        .onReceive(appModel.scanState.$snapshot) { snapshot in
+            updateInspectorPresentation(hasSnapshot: snapshot != nil)
+        }
         .onChange(of: appModel.scanComparison != nil) { _, isComparing in
             if isComparing {
                 focusedWorkspaceTarget = nil
-                hideInspectorForComparison()
+                setInspectorPresented(false)
             } else {
                 Task { @MainActor in
                     await Task.yield()
                     guard appModel.scanComparison == nil else { return }
-                    restoreInspectorAfterComparison()
+                    updateInspectorPresentation(
+                        hasSnapshot: appModel.scanState.snapshot != nil
+                    )
                 }
             }
         }
@@ -747,20 +752,26 @@ private extension ContentView {
         )
     }
 
-    func hideInspectorForComparison() {
-        guard inspectorPresentationBeforeComparison == nil else { return }
-
-        inspectorPresentationBeforeComparison = showsInspector
-        setInspectorPresented(false)
+    var inspectorPresentation: Binding<Bool> {
+        Binding(
+            get: { showsInspector },
+            set: { isPresented in
+                if canPresentInspector {
+                    prefersInspectorPresented = isPresented
+                }
+                setInspectorPresented(isPresented && canPresentInspector)
+            }
+        )
     }
 
-    func restoreInspectorAfterComparison() {
-        guard let previousPresentation = inspectorPresentationBeforeComparison else {
-            return
-        }
+    var canPresentInspector: Bool {
+        appModel.scanState.snapshot != nil && appModel.scanComparison == nil
+    }
 
-        inspectorPresentationBeforeComparison = nil
-        setInspectorPresented(previousPresentation)
+    func updateInspectorPresentation(hasSnapshot: Bool) {
+        setInspectorPresented(
+            prefersInspectorPresented && hasSnapshot && appModel.scanComparison == nil
+        )
     }
 
     func setInspectorPresented(_ isPresented: Bool) {

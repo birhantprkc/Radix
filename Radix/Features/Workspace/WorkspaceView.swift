@@ -199,15 +199,16 @@ struct WorkspaceView: View {
                 ToolbarItem(placement: .automatic) {
                     visualizationModePicker
                 }
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    isInspectorPresented.toggle()
-                } label: {
-                    Label(inspectorToggleTitle, systemImage: "sidebar.trailing")
+
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        isInspectorPresented.toggle()
+                    } label: {
+                        Label(inspectorToggleTitle, systemImage: "sidebar.trailing")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help(inspectorToggleTitle)
                 }
-                .labelStyle(.iconOnly)
-                .help(inspectorToggleTitle)
             }
         }
         .dropDestination(for: URL.self) { urls, _ in

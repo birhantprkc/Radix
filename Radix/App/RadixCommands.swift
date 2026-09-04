@@ -45,7 +45,11 @@ struct RadixCommands: Commands {
                 inspectorVisibility?.wrappedValue.toggle()
             }
             .keyboardShortcut("i", modifiers: [.control, .command])
-            .disabled(!appModel.canUseWorkspaceCommands || inspectorVisibility == nil)
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    inspectorVisibility == nil ||
+                    scanState.snapshot == nil
+            )
 
             Divider()
 
