@@ -1937,30 +1937,3 @@ private actor CancellablePruningFileSearchService: FileSearching {
         pruneCancelled
     }
 }
-
-private final class CancellationProbe: @unchecked Sendable {
-    private let lock = NSLock()
-    private let throwOnCheck: Int
-    private var checks = 0
-
-    init(throwOnCheck: Int) {
-        self.throwOnCheck = throwOnCheck
-    }
-
-    var checkCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return checks
-    }
-
-    func check() throws {
-        lock.lock()
-        checks += 1
-        let shouldThrow = checks >= throwOnCheck
-        lock.unlock()
-
-        if shouldThrow {
-            throw CancellationError()
-        }
-    }
-}

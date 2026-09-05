@@ -14,7 +14,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
 
     let metadataLoader: ScanMetadataLoader
     let diagnostics: ScanDiagnosticsContext?
-    let summaryPool: AtomicDirectorySummaryPool?
+    let summaryPool: AtomicDirectorySummaryPool
     let volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy
     #if DEBUG
     let profileReporter: ProfileReporter?
@@ -23,7 +23,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     init(
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
-        summaryPool: AtomicDirectorySummaryPool? = nil,
+        summaryPool: AtomicDirectorySummaryPool,
         volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted
     ) {
         self.metadataLoader = metadataLoader
@@ -39,7 +39,7 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     init(
         metadataLoader: ScanMetadataLoader,
         diagnostics: ScanDiagnosticsContext? = nil,
-        summaryPool: AtomicDirectorySummaryPool? = nil,
+        summaryPool: AtomicDirectorySummaryPool,
         volumeBoundaryPolicy: ScanEngine.ScanVolumeBoundaryPolicy = .unrestricted,
         profileReporter: ProfileReporter?
     ) {
@@ -51,10 +51,10 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
     }
     #endif
 
-    /// Cheap, synchronous pre-check mirroring `summaryIfNeeded`'s gating: whether the
+    /// Cheap, synchronous pre-check mirroring `summaryDecisionIfNeeded`'s gating: whether the
     /// directory is worth probing or summarizing at all. Runs no descendant I/O, so it
     /// is safe to call on the scan scheduling loop before dispatching the (potentially
-    /// slow) `summaryIfNeeded` call off it.
+    /// slow) `summaryDecisionIfNeeded` call off it.
     func isAtomicSummaryCandidate(
         url: URL,
         childEntries: [DirectoryEntry],
@@ -81,50 +81,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         )
     }
 
-    /// Determines if a directory should be treated as atomic (summarized without expansion).
-    /// Returns a summary if the directory has many small files (like node_modules, caches).
-    /// Returns nil if the directory should be expanded normally.
-    ///
-    /// Sampling uses metadata decoded from `contentsOfDirectory`'s prefetched resource values,
-    /// so no additional per-file resource lookups are needed.
-    func summaryIfNeeded(
-        url: URL,
-        childEntries: [DirectoryEntry],
-        metadata: NodeMetadata,
-        expectedRootIdentity: FileIdentity? = nil,
-        includeHiddenFiles: Bool,
-        treatPackagesAsDirectories: Bool,
-        isNodeDependencyLayout: Bool,
-        minFileCount: Int,
-        maxAverageFileSize: Int64,
-        workerLimit: Int,
-        progressWeight: Double = 0,
-        exclusionMatcher: ScanExclusionMatcher,
-        cancellationCheck: @escaping CancellationCheck,
-        metrics: inout ScanMetrics,
-        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
-    ) async throws -> AtomicDirectorySummary? {
-        try await summaryDecisionIfNeeded(
-            url: url,
-            childEntries: childEntries,
-            metadata: metadata,
-            expectedRootIdentity: expectedRootIdentity,
-            includeHiddenFiles: includeHiddenFiles,
-            treatPackagesAsDirectories: treatPackagesAsDirectories,
-            isNodeDependencyLayout: isNodeDependencyLayout,
-            minFileCount: minFileCount,
-            maxAverageFileSize: maxAverageFileSize,
-            workerLimit: workerLimit,
-            progressWeight: progressWeight,
-            exclusionMatcher: exclusionMatcher,
-            cancellationCheck: cancellationCheck,
-            metrics: &metrics,
-            continuation: continuation,
-            emissionState: &emissionState
-        ).summary
-    }
-
     func summaryDecisionIfNeeded(
         url: URL,
         childEntries: [DirectoryEntry],
@@ -135,7 +91,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         isNodeDependencyLayout: Bool,
         minFileCount: Int,
         maxAverageFileSize: Int64,
-        workerLimit: Int,
         progressWeight: Double = 0,
         exclusionMatcher: ScanExclusionMatcher,
         cancellationCheck: @escaping CancellationCheck,
@@ -228,57 +183,37 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         }
         let canReuseImmediateEntries = immediateCandidate && directDirectoryCount <= max(8, childEntries.count / 10)
         if canReuseImmediateEntries {
-            let summary: AtomicDirectorySummary?
-            if summaryPool != nil {
-                var partial = AtomicDirectorySummaryPartial()
-                partial.updateAccessibility(metadata.isReadable)
-                let resumeState = AtomicDirectoryProbeResumeState(
-                    partial: partial,
-                    workItems: [AtomicSummaryWorkItem(
-                        url: url,
-                        treatPackagesAsDirectories: treatPackagesAsDirectories,
-                        ownerNodeID: url.path,
-                        expectedIdentity: expectedRootIdentity,
-                        volumeBoundaryPolicy: volumeBoundaryPolicy,
-                        bufferedEntries: childEntries,
-                        needsCursor: false,
-                        reloadsMissingBufferedMetadata: true
-                    )],
-                    visitedItemCount: 0
-                )
-                summary = try await summarize(
-                    at: url,
-                    includeHiddenFiles: includeHiddenFiles,
+            var partial = AtomicDirectorySummaryPartial()
+            partial.updateAccessibility(metadata.isReadable)
+            let resumeState = AtomicDirectoryProbeResumeState(
+                partial: partial,
+                workItems: [AtomicSummaryWorkItem(
+                    url: url,
                     treatPackagesAsDirectories: treatPackagesAsDirectories,
-                    workerLimit: workerLimit,
-                    progressWeight: progressWeight,
-                    progressKind: .autoSummary,
-                    representedItemCount: childEntries.count,
                     ownerNodeID: url.path,
-                    expectedRootIdentity: expectedRootIdentity,
-                    exclusionMatcher: exclusionMatcher,
-                    cancellationCheck: cancellationCheck,
-                    metrics: &metrics,
-                    continuation: continuation,
-                    emissionState: &emissionState,
-                    resumeState: resumeState
-                )
-            } else {
-                summary = try await summarizeReusingImmediateChildren(
-                    at: url,
-                    childEntries: childEntries,
-                    rootMetadata: metadata,
-                    includeHiddenFiles: includeHiddenFiles,
-                    treatPackagesAsDirectories: treatPackagesAsDirectories,
-                    workerLimit: workerLimit,
-                    ownerNodeID: url.path,
-                    exclusionMatcher: exclusionMatcher,
-                    cancellationCheck: cancellationCheck,
-                    metrics: &metrics,
-                    continuation: continuation,
-                    emissionState: &emissionState
-                )
-            }
+                    expectedIdentity: expectedRootIdentity,
+                    volumeBoundaryPolicy: volumeBoundaryPolicy,
+                    bufferedEntries: childEntries,
+                    needsCursor: false,
+                    reloadsMissingBufferedMetadata: true
+                )],
+                visitedItemCount: 0
+            )
+            let summary = try await summarize(
+                at: url,
+                includeHiddenFiles: includeHiddenFiles,
+                treatPackagesAsDirectories: treatPackagesAsDirectories,
+                progressWeight: progressWeight,
+                progressKind: .autoSummary,
+                representedItemCount: childEntries.count,
+                ownerNodeID: url.path,
+                expectedRootIdentity: expectedRootIdentity,
+                exclusionMatcher: exclusionMatcher,
+                cancellationCheck: cancellationCheck,
+                metrics: &metrics,
+                continuation: continuation,
+                resumeState: resumeState
+            )
             #if DEBUG
             reportCreatedSummary(summary)
             #endif
@@ -293,7 +228,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             at: url,
             includeHiddenFiles: includeHiddenFiles,
             treatPackagesAsDirectories: treatPackagesAsDirectories,
-            workerLimit: workerLimit,
             progressWeight: progressWeight,
             progressKind: .autoSummary,
             representedItemCount: childEntries.count,
@@ -303,7 +237,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
             cancellationCheck: cancellationCheck,
             metrics: &metrics,
             continuation: continuation,
-            emissionState: &emissionState,
             resumeState: probeResumeState
         ) else {
             return AtomicDirectorySummaryDecision(
@@ -339,7 +272,6 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         at url: URL,
         includeHiddenFiles: Bool = true,
         treatPackagesAsDirectories: Bool,
-        workerLimit: Int,
         progressWeight: Double = 0,
         progressKind: AtomicSummaryProgressKind = .autoSummary,
         representedItemCount: Int = 0,
@@ -349,107 +281,39 @@ nonisolated struct AtomicDirectorySummarizer: Sendable {
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
         continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState,
         resumeState: AtomicDirectoryProbeResumeState? = nil
     ) async throws -> AtomicDirectorySummary? {
         try cancellationCheck()
-        if let summaryPool {
-            #if DEBUG
-            let summaryStart = diagnostics?.start()
-            #endif
-            let summary = try await summaryPool.summarize(
-                AtomicSummaryPoolRequest(
-                    url: url,
-                    expectedRootIdentity: expectedRootIdentity,
-                    includeHiddenFiles: includeHiddenFiles,
-                    treatPackagesAsDirectories: treatPackagesAsDirectories,
-                    progressWeight: progressWeight,
-                    progressKind: progressKind,
-                    representedItemCount: representedItemCount,
-                    ownerNodeID: ownerNodeID,
-                    exclusionMatcher: exclusionMatcher,
-                    metadataLoader: metadataLoader,
-                    volumeBoundaryPolicy: volumeBoundaryPolicy,
-                    cancellationCheck: cancellationCheck,
-                    metrics: metrics,
-                    continuation: continuation,
-                    resumeState: resumeState
-                )
-            )
-            #if DEBUG
-            diagnostics?.record(
-                operation: "atomic.summary.pool",
+        #if DEBUG
+        let summaryStart = diagnostics?.start()
+        #endif
+        let summary = try await summaryPool.summarize(
+            AtomicSummaryPoolRequest(
                 url: url,
-                startedAt: summaryStart,
-                itemCount: summary?.descendantFileCount
+                expectedRootIdentity: expectedRootIdentity,
+                includeHiddenFiles: includeHiddenFiles,
+                treatPackagesAsDirectories: treatPackagesAsDirectories,
+                progressWeight: progressWeight,
+                progressKind: progressKind,
+                representedItemCount: representedItemCount,
+                ownerNodeID: ownerNodeID,
+                exclusionMatcher: exclusionMatcher,
+                metadataLoader: metadataLoader,
+                volumeBoundaryPolicy: volumeBoundaryPolicy,
+                cancellationCheck: cancellationCheck,
+                metrics: metrics,
+                continuation: continuation,
+                resumeState: resumeState
             )
-            #endif
-            return summary
-        }
-        if workerLimit > 1 {
-            #if DEBUG
-            let summaryStart = diagnostics?.start()
-            #endif
-            let summary: AtomicDirectorySummary?
-            do {
-                summary = try await Self.summarizeInParallel(
-                    at: url,
-                    includeHiddenFiles: includeHiddenFiles,
-                    treatPackagesAsDirectories: treatPackagesAsDirectories,
-                    workerLimit: workerLimit,
-                    ownerNodeID: ownerNodeID,
-                    exclusionMatcher: exclusionMatcher,
-                    metadataLoader: metadataLoader,
-                    volumeBoundaryPolicy: volumeBoundaryPolicy,
-                    cancellationCheck: cancellationCheck,
-                    metrics: metrics,
-                    continuation: continuation,
-                    resumeState: resumeState,
-                    expectedRootIdentity: expectedRootIdentity
-                )
-            } catch is AtomicSummaryRootFallbackRequired {
-                resumeState?.invalidateCursors()
-                summary = try await Self.summarizeInParallel(
-                    at: url,
-                    includeHiddenFiles: includeHiddenFiles,
-                    treatPackagesAsDirectories: treatPackagesAsDirectories,
-                    workerLimit: workerLimit,
-                    ownerNodeID: ownerNodeID,
-                    exclusionMatcher: exclusionMatcher,
-                    metadataLoader: metadataLoader,
-                    volumeBoundaryPolicy: volumeBoundaryPolicy,
-                    cancellationCheck: cancellationCheck,
-                    metrics: metrics,
-                    continuation: continuation,
-                    forcesFoundationTraversal: true,
-                    expectedRootIdentity: expectedRootIdentity
-                )
-            }
-            #if DEBUG
-            diagnostics?.record(
-                operation: "atomic.summary.parallel",
-                url: url,
-                startedAt: summaryStart,
-                itemCount: summary?.descendantFileCount,
-                detail: "workers=\(workerLimit)"
-            )
-            #endif
-            return summary
-        }
-
-        return try await summarizeSerial(
-            at: url,
-            includeHiddenFiles: includeHiddenFiles,
-            treatPackagesAsDirectories: treatPackagesAsDirectories,
-            workerLimit: workerLimit,
-            ownerNodeID: ownerNodeID,
-            expectedRootIdentity: expectedRootIdentity,
-            exclusionMatcher: exclusionMatcher,
-            cancellationCheck: cancellationCheck,
-            metrics: &metrics,
-            continuation: continuation,
-            emissionState: &emissionState,
-            resumeState: resumeState
         )
+        #if DEBUG
+        diagnostics?.record(
+            operation: "atomic.summary.pool",
+            url: url,
+            startedAt: summaryStart,
+            itemCount: summary?.descendantFileCount
+        )
+        #endif
+        return summary
     }
 }

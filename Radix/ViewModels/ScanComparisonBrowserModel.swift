@@ -7,11 +7,9 @@ import Foundation
 @MainActor
 final class ScanComparisonBrowserModel: ObservableObject {
     nonisolated struct WorkInput: Equatable, Sendable {
-        let comparisonID: UUID
         let rows: [ScanComparisonRow]
         let changeTree: ScanComparisonChangeTree
         let query: ScanComparisonRowQuery
-        let changeKinds: Set<ScanComparisonChangeKind>
         let searchIndex: ScanComparisonSearchIndex?
     }
 
@@ -55,7 +53,6 @@ final class ScanComparisonBrowserModel: ObservableObject {
     private var generation: UInt64 = 0
     private var latestComparisonID: UUID?
     private var latestQuery: ScanComparisonRowQuery?
-    private var latestChangeKinds: Set<ScanComparisonChangeKind>?
     private var searchIndex: ScanComparisonSearchIndex?
 
     init(
@@ -72,12 +69,10 @@ final class ScanComparisonBrowserModel: ObservableObject {
         comparisonID: UUID,
         rows: [ScanComparisonRow],
         changeTree: ScanComparisonChangeTree,
-        query: ScanComparisonRowQuery,
-        changeKinds: Set<ScanComparisonChangeKind>
+        query: ScanComparisonRowQuery
     ) {
         guard latestComparisonID != comparisonID ||
-                latestQuery != query ||
-                latestChangeKinds != changeKinds else {
+                latestQuery != query else {
             return
         }
 
@@ -89,17 +84,14 @@ final class ScanComparisonBrowserModel: ObservableObject {
         }
         latestComparisonID = comparisonID
         latestQuery = query
-        latestChangeKinds = changeKinds
 
         refreshTask?.cancel()
         generation &+= 1
         let requestGeneration = generation
         let input = WorkInput(
-            comparisonID: comparisonID,
             rows: rows,
             changeTree: changeTree,
             query: query,
-            changeKinds: changeKinds,
             searchIndex: searchIndex
         )
         let processor = self.processor
@@ -139,7 +131,6 @@ final class ScanComparisonBrowserModel: ObservableObject {
         generation &+= 1
         latestComparisonID = nil
         latestQuery = nil
-        latestChangeKinds = nil
         searchIndex = nil
         isRefreshing = false
     }
@@ -167,7 +158,9 @@ final class ScanComparisonBrowserModel: ObservableObject {
                 cancellationCheck: cancellationCheck
             )
             try Task.checkCancellation()
-            let projection = input.changeTree.significantProjection(changeKinds: input.changeKinds)
+            let projection = input.changeTree.significantProjection(
+                changeKinds: input.query.changeKinds
+            )
             try Task.checkCancellation()
             return WorkOutput(
                 rows: rows,

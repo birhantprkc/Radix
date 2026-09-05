@@ -297,7 +297,7 @@ private struct SidebarTargetRow: View {
                 .foregroundStyle(target.kind == .volume ? Color.accentColor : Color.secondary)
         }
         .contextMenu {
-            Button("Reveal in Finder", systemImage: RadixSystemImages.revealInFinder) {
+            Button("Reveal in Finder", systemImage: FileNodeAction.revealInFinder.systemImageName) {
                 revealInFinder()
             }
 

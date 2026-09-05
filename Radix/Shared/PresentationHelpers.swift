@@ -59,20 +59,6 @@ extension ScanWarningCategory {
     }
 }
 
-enum RadixSystemImages {
-    static var quickLook: String {
-        FileNodeAction.quickLook.systemImageName
-    }
-
-    static var revealInFinder: String {
-        FileNodeAction.revealInFinder.systemImageName
-    }
-
-    static var copyPath: String {
-        FileNodeAction.copyPath.systemImageName
-    }
-}
-
 extension FullDiskAccessStatus {
     var fullDiskAccessBadgeTitle: String {
         switch self {

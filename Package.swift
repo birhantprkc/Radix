@@ -41,7 +41,6 @@ let package = Package(
                 "Services/AtomicDirectoryParallelSummary.swift",
                 "Services/AtomicDirectorySummaryPool.swift",
                 "Services/AtomicDirectorySummaryProbe.swift",
-                "Services/AtomicDirectorySummaryWalker.swift",
                 "Services/AtomicDirectorySummarizer.swift",
                 "Services/AtomicDirectorySummaryModels.swift",
                 "Services/BulkDirectoryEnumerator.swift",

@@ -69,7 +69,6 @@ nonisolated struct SharedAllocationDeduplicator {
                 verifiedRootID: rootID,
                 nodesByID: inputNodesByID,
                 childIDsByID: inputChildIDsByID,
-                parentIDByID: parentIDByID,
                 aggregateStats: aggregateStats
             )
         }
@@ -108,7 +107,6 @@ nonisolated struct SharedAllocationDeduplicator {
             verifiedRootID: rootID,
             nodesByID: nodesByID,
             childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID,
             aggregateStats: deduplicatedStats
         )
     }

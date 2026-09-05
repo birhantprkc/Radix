@@ -65,8 +65,7 @@ final class ComparisonFlowController {
     /// sheet so the caller can surface that specific error.
     func confirmPendingSetup(currentLiveSnapshotID: UUID?) -> SetupConfirmationOutcome {
         guard let setup = pendingComparisonSetup else { return .noPendingSetup }
-        guard setup.canCompare,
-              setup.resolvedCandidates != nil else {
+        guard setup.canCompare else {
             var updatedSetup = setup
             updatedSetup.errorMessage = setup.validationMessage ?? String(
                 localized: "Choose two scans to compare.",
@@ -115,7 +114,6 @@ final class ComparisonFlowController {
 
     struct PreviewBeginInfo {
         let setupID: UUID
-        let slot: ScanComparisonSlot
     }
 
     /// Stages a preview load into a slot. When `savedScanExtension` is set, a
@@ -140,7 +138,7 @@ final class ComparisonFlowController {
             return nil
         }
 
-        let info = PreviewBeginInfo(setupID: setup.id, slot: slot)
+        let info = PreviewBeginInfo(setupID: setup.id)
         setup.loadingSlot = slot
         setup.errorMessage = nil
         setup.setCandidate(nil, for: slot)
@@ -182,7 +180,8 @@ final class ComparisonFlowController {
     @discardableResult
     func clearLoadingSlot(info: PreviewBeginInfo) -> Bool {
         guard var setup = pendingComparisonSetup,
-              setup.id == info.setupID else {
+              setup.id == info.setupID,
+              setup.loadingSlot != nil else {
             return false
         }
         setup.loadingSlot = nil

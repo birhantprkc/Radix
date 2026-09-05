@@ -511,7 +511,7 @@ final class AppModel: ObservableObject {
     }
 
     var isArchiveOperationInProgress: Bool {
-        archiveOperation != nil
+        archiveWorkflow.isRunning
     }
 
     var archiveOperation: ArchiveOperationState? {
@@ -2630,8 +2630,9 @@ final class AppModel: ObservableObject {
 
     private func validatedSelectedNodesForMutation() throws -> [FileNodeRecord] {
         try validateSnapshotAllowsMutation()
+        let visibleNodeIDs = visibleNavigationNodeIDs(from: navigationModel.selectedNodeIDs)
         let visibleNodes = navigationModel.selectedNodes.filter {
-            isVisibleNavigationNode($0.id)
+            visibleNodeIDs.contains($0.id)
         }
         return try validatedNodes(visibleNodes, requiresLivePath: true)
     }

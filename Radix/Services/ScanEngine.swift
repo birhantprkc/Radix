@@ -1294,8 +1294,7 @@ actor ScanEngine {
                 progressWeight: 1,
                 cancellationCheck: cancellationCheck,
                 metrics: &metrics,
-                continuation: continuation,
-                emissionState: &emissionState
+                continuation: continuation
             )
             if summarizesRootPackage {
                 metrics.pendingPackageSummaryCount = max(
@@ -1617,8 +1616,7 @@ actor ScanEngine {
                             progressWeight: item.weight,
                             cancellationCheck: cancellationCheck,
                             metrics: &metrics,
-                            continuation: continuation,
-                            emissionState: &emissionState
+                            continuation: continuation
                         )
                         sharedAllocationAccumulator.merge(leafResult.sharedAllocationAccumulator)
                         if let minimumAllocatedSize = leafResult.minimumAllocatedSize {
@@ -1648,11 +1646,9 @@ actor ScanEngine {
                     let taskItemKey = pendingPackage.itemKey
                     let taskMetadata = pendingPackage.metadata
                     let taskMetrics = metrics
-                    let taskEmissionState = emissionState
                     activePackageTasks += 1
                     group.addTask {
                         var localMetrics = taskMetrics
-                        var localEmissionState = taskEmissionState
                         let leaf = try await self.makeLeafNode(
                             url: taskItem.url,
                             metadata: taskMetadata,
@@ -1663,8 +1659,7 @@ actor ScanEngine {
                             progressWeight: taskItem.weight,
                             cancellationCheck: cancellationCheck,
                             metrics: &localMetrics,
-                            continuation: continuation,
-                            emissionState: &localEmissionState
+                            continuation: continuation
                         )
                         return .package(PackageSummaryResult(
                             itemKey: taskItemKey,
@@ -1695,7 +1690,6 @@ actor ScanEngine {
                             isNodeDependencyLayout: candidate.isNodeDependencyLayout,
                             minFileCount: autoSummarizeMinFileCount,
                             maxAverageFileSize: autoSummarizeMaxAverageFileSize,
-                            workerLimit: atomicSummaryWorkerLimit,
                             progressWeight: candidate.item.weight,
                             exclusionMatcher: exclusionMatcher,
                             cancellationCheck: cancellationCheck,
@@ -2991,8 +2985,7 @@ actor ScanEngine {
         progressWeight: Double,
         cancellationCheck: @escaping CancellationCheck,
         metrics: inout ScanMetrics,
-        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
-        emissionState: inout ScanEmissionState
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation
     ) async throws -> LeafNodeResult {
         try cancellationCheck()
         guard summarizesPackageContents,
@@ -3025,7 +3018,6 @@ actor ScanEngine {
             at: url,
             includeHiddenFiles: options.includeHiddenFiles,
             treatPackagesAsDirectories: true,
-            workerLimit: ScanConcurrencyPolicy.atomicSummaryWorkerLimit(for: options),
             progressWeight: progressWeight,
             progressKind: .package,
             representedItemCount: 0,
@@ -3037,8 +3029,7 @@ actor ScanEngine {
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: cancellationCheck,
             metrics: &metrics,
-            continuation: continuation,
-            emissionState: &emissionState
+            continuation: continuation
         ) else {
             let node = makeFileNode(
                 url: url,

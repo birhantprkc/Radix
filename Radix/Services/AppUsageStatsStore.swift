@@ -68,8 +68,11 @@ nonisolated struct AppUsageStats: Codable, Equatable, Sendable {
         guard snapshot.isComplete else { return }
 
         let scannedBytes = max(0, snapshot.aggregateStats.totalAllocatedSize)
-        totalScansRun = totalScansRun.incrementedClampingToMax()
-        totalBytesScanned = totalBytesScanned.addingClamped(scannedBytes)
+        totalScansRun = ScanIntegerMath.addingClamped(totalScansRun, 1)
+        totalBytesScanned = ScanIntegerMath.addingClamped(
+            totalBytesScanned,
+            scannedBytes
+        )
         largestScanBytes = max(largestScanBytes, scannedBytes)
 
         if let finishedAt = snapshot.finishedAt {
@@ -87,26 +90,34 @@ nonisolated struct AppUsageStats: Codable, Equatable, Sendable {
     }
 
     mutating func recordSunburstSegmentClick() {
-        sunburstSegmentsClicked = sunburstSegmentsClicked.incrementedClampingToMax()
+        sunburstSegmentsClicked = ScanIntegerMath.addingClamped(sunburstSegmentsClicked, 1)
         lastUpdatedAt = Date()
     }
 
     mutating func recordTrashMove(nodes: [FileNodeRecord], fileTreeStore: FileTreeStore? = nil) {
         guard !nodes.isEmpty else { return }
 
-        let trashMoveBytes = nodes.reduce(into: Int64(0)) { result, node in
-            result = result.addingClamped(max(0, node.allocatedSize))
-        }
-        let deletedFiles = nodes.reduce(into: 0) { result, node in
-            result = result.addingClamped(deletedFileCount(for: node))
-        }
-        let deletedFolders = nodes.reduce(into: 0) { result, node in
-            result = result.addingClamped(deletedFolderCount(for: node, in: fileTreeStore))
+        var trashMoveBytes: Int64 = 0
+        var deletedFiles = 0
+        var deletedFolders = 0
+        for node in nodes {
+            trashMoveBytes = ScanIntegerMath.addingClamped(
+                trashMoveBytes,
+                max(0, node.allocatedSize)
+            )
+            deletedFiles = ScanIntegerMath.addingClamped(
+                deletedFiles,
+                deletedFileCount(for: node)
+            )
+            deletedFolders = ScanIntegerMath.addingClamped(
+                deletedFolders,
+                deletedFolderCount(for: node, in: fileTreeStore)
+            )
         }
 
-        bytesMovedToTrash = bytesMovedToTrash.addingClamped(trashMoveBytes)
-        filesDeleted = filesDeleted.addingClamped(deletedFiles)
-        foldersDeleted = foldersDeleted.addingClamped(deletedFolders)
+        bytesMovedToTrash = ScanIntegerMath.addingClamped(bytesMovedToTrash, trashMoveBytes)
+        filesDeleted = ScanIntegerMath.addingClamped(filesDeleted, deletedFiles)
+        foldersDeleted = ScanIntegerMath.addingClamped(foldersDeleted, deletedFolders)
         largestTrashMoveBytes = max(largestTrashMoveBytes, trashMoveBytes)
         lastUpdatedAt = Date()
     }
@@ -125,9 +136,9 @@ nonisolated struct AppUsageStats: Codable, Equatable, Sendable {
         while let nodeID = stack.popLast() {
             guard let currentNode = fileTreeStore.node(id: nodeID) else { continue }
             if currentNode.isDirectory {
-                count = count.incrementedClampingToMax()
+                count = ScanIntegerMath.addingClamped(count, 1)
             }
-            stack.append(contentsOf: fileTreeStore.children(of: nodeID).map(\.id))
+            stack.append(contentsOf: fileTreeStore.childIDs(of: nodeID))
         }
 
         return max(count, 1)
@@ -194,23 +205,5 @@ final class InMemoryAppUsageStatsStore: AppUsageStatsPersisting {
 
     func clearUsageStats() {
         stats = .empty
-    }
-}
-
-private extension Int {
-    nonisolated func addingClamped(_ value: Int) -> Int {
-        let (sum, overflow) = addingReportingOverflow(value)
-        return overflow ? Int.max : sum
-    }
-
-    nonisolated func incrementedClampingToMax() -> Int {
-        addingClamped(1)
-    }
-}
-
-private extension Int64 {
-    nonisolated func addingClamped(_ value: Int64) -> Int64 {
-        let (sum, overflow) = addingReportingOverflow(value)
-        return overflow ? Int64.max : sum
     }
 }

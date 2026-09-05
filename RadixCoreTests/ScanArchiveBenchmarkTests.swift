@@ -5,7 +5,6 @@ import XCTest
 final class ScanArchiveBenchmarkTests: XCTestCase {
     private static let readChunkSize = 1024 * 1024
     private static let maxNodeLineByteCount = 1024 * 1024
-    private static let newlineData = Data([0x0A])
 
     func testArchiveExportImportBenchmark() async throws {
         let environment = ProcessInfo.processInfo.environment
@@ -133,8 +132,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             FileTreeStore(
                 rootID: snapshot.treeStore.rootID,
                 nodesByID: snapshot.treeStore.nodesByID,
-                childIDsByID: snapshot.treeStore.childIDsByID,
-                parentIDByID: snapshot.treeStore.parentIDByID
+                childIDsByID: snapshot.treeStore.childIDsByID
             )
         }
         let fileRead = try await Self.measureMemoryAndTime {
@@ -157,7 +155,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             ).childIDsByID,
             snapshot.treeStore.childIDsByID
         )
-        XCTAssertEqual(topologyValidate.value.count, snapshot.treeStore.parentIDByID.count)
+        XCTAssertEqual(topologyValidate.value, snapshot.treeStore.parentIDByID.count)
         XCTAssertEqual(topologyRebuild.value.nodeCount, snapshot.treeStore.nodeCount)
         XCTAssertEqual(fileRead.value.count, nodesData.count)
 
@@ -528,7 +526,6 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             rootID: makeBenchmarkDirectory(id: rootID, size: 64, descendantFileCount: 1),
         ]
         var childIDsByID: [String: [String]] = [:]
-        var parentIDByID: [String: String] = [:]
         var parentID = rootID
 
         for index in 1...depth {
@@ -538,15 +535,13 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
                 : makeBenchmarkDirectory(id: nodeID, size: 64, descendantFileCount: 1)
             nodesByID[nodeID] = node
             childIDsByID[parentID] = [nodeID]
-            parentIDByID[nodeID] = parentID
             parentID = nodeID
         }
 
         let store = FileTreeStore(
             rootID: rootID,
             nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID
+            childIDsByID: childIDsByID
         )
         return makeSnapshot(root: store.root, store: store)
     }
@@ -724,7 +719,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
         nodesByID: [String: FileNodeRecord],
         expectedRootID: String,
         expectedTargetPath: String
-    ) throws -> [String: String] {
+    ) throws -> Int {
         guard rootID == expectedRootID else {
             throw ScanArchiveError.topology("root ID does not match manifest")
         }
@@ -738,7 +733,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             throw ScanArchiveError.topology("child map parent \(parentID) is missing from node payload")
         }
 
-        var parentIDByID: [String: String] = [:]
+        var parentedNodeIDs: Set<String> = []
         var visited: Set<String> = []
         var visiting: Set<String> = []
         var stack: [(
@@ -801,10 +796,9 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
                !Self.path(childNode.url.path, isContainedIn: expectedTargetPath) {
                 throw ScanArchiveError.topology("child \(childID) path is outside target \(frame.nodeID)")
             }
-            if let existingParentID = parentIDByID[childID], existingParentID != frame.nodeID {
+            guard parentedNodeIDs.insert(childID).inserted else {
                 throw ScanArchiveError.topology("child \(childID) has multiple parents")
             }
-            parentIDByID[childID] = frame.nodeID
             try enter(childID)
         }
 
@@ -813,7 +807,7 @@ final class ScanArchiveBenchmarkTests: XCTestCase {
             throw ScanArchiveError.topology("\(missingCount) node(s) are not reachable from root")
         }
 
-        return parentIDByID
+        return parentedNodeIDs.count
     }
 
     private static func resolvedTopologyForBenchmark(

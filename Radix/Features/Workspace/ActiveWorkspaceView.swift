@@ -116,7 +116,11 @@ struct ActiveWorkspaceView: View {
     }
 
     private var contentsPane: some View {
-        VStack(spacing: 0) {
+        let warnings = warningFooterWarnings
+        let showsWarningFooter = !warnings.isEmpty &&
+            dismissedWarningsScanScope != warningDismissalScope
+
+        return VStack(spacing: 0) {
             FileBrowserTableView(
                 scanState: scanState,
                 navigation: navigation,
@@ -128,17 +132,13 @@ struct ActiveWorkspaceView: View {
             if showsWarningFooter {
                 Divider()
                 WarningFooter(
-                    warnings: warningFooterWarnings,
+                    warnings: warnings,
                     shouldSuggestFullDiskAccess: shouldSuggestFullDiskAccess,
                     actions: actions,
                     onDismiss: { dismissedWarningsScanScope = warningDismissalScope }
                 )
             }
         }
-    }
-
-    private var showsWarningFooter: Bool {
-        !warningFooterWarnings.isEmpty && dismissedWarningsScanScope != warningDismissalScope
     }
 
     private var warningFooterWarnings: [ScanWarning] {

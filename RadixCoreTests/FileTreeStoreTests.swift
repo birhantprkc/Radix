@@ -14,8 +14,7 @@ final class FileTreeStoreTests: XCTestCase {
                 first.id: first,
                 second.id: second,
             ],
-            childIDsByID: [staleRoot.id: [first.id, second.id]],
-            parentIDByID: [first.id: staleRoot.id, second.id: staleRoot.id]
+            childIDsByID: [staleRoot.id: [first.id, second.id]]
         )
 
         XCTAssertEqual(store.root.allocatedSize, Int64.max)
@@ -1019,10 +1018,6 @@ final class FileTreeStoreTests: XCTestCase {
             childIDsByID: [
                 root.id: [shared.id, folder.id, shared.id],
                 folder.id: [shared.id],
-            ],
-            parentIDByID: [
-                shared.id: folder.id,
-                folder.id: root.id,
             ]
         )
 
@@ -1055,7 +1050,6 @@ final class FileTreeStoreTests: XCTestCase {
             rootID: root.id,
             nodesByID: [root.id: root],
             childIDsByID: [root.id: []],
-            parentIDByID: [:],
             aggregateStats: precomputedStats
         )
 
@@ -1073,8 +1067,7 @@ final class FileTreeStoreTests: XCTestCase {
         let store = FileTreeStore(
             rootID: root.id,
             nodesByID: [root.id: root],
-            childIDsByID: [root.id: []],
-            parentIDByID: [:]
+            childIDsByID: [root.id: []]
         )
 
         XCTAssertFalse(store.root.isAccessible)
@@ -1155,11 +1148,6 @@ final class FileTreeStoreTests: XCTestCase {
             childIDsByID: [
                 root.id: [sibling.id, folder.id],
                 folder.id: [leaf.id],
-            ],
-            parentIDByID: [
-                sibling.id: root.id,
-                folder.id: root.id,
-                leaf.id: folder.id,
             ],
             aggregateStats: ScanAggregateStats(
                 totalAllocatedSize: 12,
@@ -1433,7 +1421,6 @@ final class FileTreeStoreTests: XCTestCase {
         let leaf = makeFileNode(id: leafID, name: "file.txt", size: 12)
         var nodesByID = [leaf.id: leaf]
         var childIDsByID: [String: [String]] = [:]
-        var parentIDByID: [String: String] = [:]
         var childID = leaf.id
 
         for level in stride(from: depth, through: 1, by: -1) {
@@ -1445,20 +1432,17 @@ final class FileTreeStoreTests: XCTestCase {
             )
             nodesByID[nodeID] = directory
             childIDsByID[nodeID] = [childID]
-            parentIDByID[childID] = nodeID
             childID = nodeID
         }
 
         let root = makeDirectoryNode(id: "/root", name: "root", children: [nodesByID[childID]!])
         nodesByID[root.id] = root
         childIDsByID[root.id] = [childID]
-        parentIDByID[childID] = root.id
 
         let store = FileTreeStore(
             rootID: root.id,
             nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID
+            childIDsByID: childIDsByID
         )
 
         XCTAssertEqual(store.path(to: leafID).count, depth + 2)

@@ -189,7 +189,7 @@ nonisolated enum CloudStorageLocation {
         cloudRootExists: (URL) -> Bool
     ) -> Impact? {
         let normalizedPath = normalize(url.standardizedFileURL.path)
-        let roots = Array(Set(managedRootsForCurrentUser + genericUserRoots(for: normalizedPath)))
+        let roots = Set(managedRootsForCurrentUser + genericUserRoots(for: normalizedPath))
         if roots.contains(where: { isEqualOrDescendant(normalizedPath, of: $0) }) {
             return .storedInCloud
         }

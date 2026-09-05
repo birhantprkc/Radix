@@ -471,9 +471,16 @@ nonisolated struct FileTreeStore: Sendable {
     }
 
     nonisolated var nodesByID: [String: FileNodeRecord] {
-        Dictionary(uniqueKeysWithValues: activeOrderedNodeIndices.compactMap { index in
-            node(at: index).map { ($0.id, $0) }
-        })
+        var result: [String: FileNodeRecord] = [:]
+        result.reserveCapacity(nodeCount)
+        for index in activeOrderedNodeIndices {
+            guard let node = node(at: index) else { continue }
+            precondition(
+                result.updateValue(node, forKey: node.id) == nil,
+                "FileTreeStore contains duplicate node IDs"
+            )
+        }
+        return result
     }
 
     nonisolated var childIDsByID: [String: [String]] {
@@ -627,15 +634,13 @@ nonisolated struct FileTreeStore: Sendable {
         self.init(
             rootID: root.id,
             nodesByID: [root.id: root],
-            childIDsByID: [:],
-            parentIDByID: [:]
+            childIDsByID: [:]
         )
     }
 
     nonisolated init(root: FileNodeRecord, childrenByID inputChildrenByID: [String: [FileNodeRecord]]) {
         var nodesByID = [root.id: root]
         var childIDsByID: [String: [String]] = [:]
-        var parentIDByID: [String: String] = [:]
         var seenNodeIDs: Set<String> = [root.id]
         var stack = [root]
 
@@ -651,7 +656,6 @@ nonisolated struct FileTreeStore: Sendable {
 
             for child in children {
                 nodesByID[child.id] = child
-                parentIDByID[child.id] = parent.id
                 stack.append(child)
             }
         }
@@ -659,8 +663,7 @@ nonisolated struct FileTreeStore: Sendable {
         self.init(
             rootID: root.id,
             nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID
+            childIDsByID: childIDsByID
         )
     }
 
@@ -704,21 +707,6 @@ nonisolated struct FileTreeStore: Sendable {
         self.logicalScope = nil
     }
 
-    nonisolated init(
-        rootID: String,
-        nodesByID: [String: FileNodeRecord],
-        childIDsByID: [String: [String]],
-        parentIDByID _: [String: String],
-        aggregateStats: ScanAggregateStats? = nil
-    ) {
-        self.init(
-            rootID: rootID,
-            nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            aggregateStats: aggregateStats
-        )
-    }
-
     private nonisolated static func computedAggregateStats(
         nodeRecords: [FileNodeRecord],
         topologyArena: FileTreeTopologyArena
@@ -746,7 +734,6 @@ nonisolated struct FileTreeStore: Sendable {
         verifiedRootID rootID: String,
         nodesByID: [String: FileNodeRecord],
         childIDsByID: [String: [String]],
-        parentIDByID: [String: String],
         aggregateStats: ScanAggregateStats
     ) {
         precondition(nodesByID[rootID] != nil, "Verified FileTreeStore root is missing.")

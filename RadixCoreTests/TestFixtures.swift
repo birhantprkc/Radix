@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import RadixCore
@@ -28,6 +29,45 @@ func makeTemporaryDirectory() throws -> URL {
         .appending(path: UUID().uuidString, directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+}
+
+func setExtendedAttribute(named name: String, data: Data, at url: URL) throws {
+    let result = data.withUnsafeBytes { bytes in
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return Int32(-1) }
+            return setxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
+        }
+    }
+    guard result == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+}
+
+final class CancellationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let throwOnCheck: Int
+    private var checks = 0
+
+    init(throwOnCheck: Int) {
+        self.throwOnCheck = throwOnCheck
+    }
+
+    var checkCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return checks
+    }
+
+    func check() throws {
+        lock.lock()
+        checks += 1
+        let shouldThrow = checks >= throwOnCheck
+        lock.unlock()
+
+        if shouldThrow {
+            throw CancellationError()
+        }
+    }
 }
 
 final class TestAppPreferencesStore: AppPreferencesPersisting {

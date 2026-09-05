@@ -579,7 +579,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
         } else if let payload = legacyNodePayload {
             let topology = try archivedTopology.resolvedTopology(orderedNodeIDs: payload.orderedNodeIDs)
             try validateCounts(manifest: manifest, nodesByID: payload.nodesByID, warnings: warnings)
-            let rebuiltParentIDs = try await validateTopology(
+            try await validateTopology(
                 topology,
                 nodesByID: payload.nodesByID,
                 expectedRootID: manifest.snapshot.rootID,
@@ -589,8 +589,7 @@ nonisolated struct ScanArchiveService: ScanArchiveServicing {
             treeStore = FileTreeStore(
                 rootID: topology.rootID,
                 nodesByID: payload.nodesByID,
-                childIDsByID: topology.childIDsByID,
-                parentIDByID: rebuiltParentIDs
+                childIDsByID: topology.childIDsByID
             )
         } else {
             throw ScanArchiveError.nodes(localized: "node payload was not decoded")

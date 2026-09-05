@@ -10,6 +10,13 @@ struct RadixCommands: Commands {
     @FocusedValue(\.chartViewportAction) private var chartViewportAction
 
     var body: some Commands {
+        let selectedActionAvailability = FileNodeActionAvailability(
+            nodes: navigation.selectedNodes,
+            activeTarget: scanState.selectedTarget,
+            trashSafetyPolicy: scanState.trashSafetyPolicy,
+            snapshotSource: scanState.snapshotSource
+        )
+
         SidebarCommands()
 
         CommandGroup(after: .toolbar) {
@@ -197,9 +204,18 @@ struct RadixCommands: Commands {
         }
 
         CommandMenu("Inspect") {
-            selectedFileActionCommand(.quickLook, shortcut: "y")
+            selectedFileActionCommand(
+                .quickLook,
+                availability: selectedActionAvailability,
+                shortcut: "y"
+            )
 
-            selectedFileActionCommand(.open, shortcut: "o", modifiers: [.command, .shift])
+            selectedFileActionCommand(
+                .open,
+                availability: selectedActionAvailability,
+                shortcut: "o",
+                modifiers: [.command, .shift]
+            )
 
             Button(
                 FileNodeAction.openInTerminal.title(for: navigation.selectedNode),
@@ -212,9 +228,19 @@ struct RadixCommands: Commands {
                     !FileNodeAction.openInTerminal.isEnabled(in: selectedActionAvailability)
             )
 
-            selectedFileActionCommand(.revealInFinder, shortcut: "j", modifiers: [.command, .shift])
+            selectedFileActionCommand(
+                .revealInFinder,
+                availability: selectedActionAvailability,
+                shortcut: "j",
+                modifiers: [.command, .shift]
+            )
 
-            selectedFileActionCommand(.copyPath, shortcut: "c", modifiers: [.command, .shift])
+            selectedFileActionCommand(
+                .copyPath,
+                availability: selectedActionAvailability,
+                shortcut: "c",
+                modifiers: [.command, .shift]
+            )
 
             Divider()
 
@@ -232,17 +258,13 @@ struct RadixCommands: Commands {
                         && !selectedActionAvailability.canMoveToTrash)
             )
 
-            selectedFileActionCommand(.moveToTrash, shortcut: .delete, modifiers: [])
+            selectedFileActionCommand(
+                .moveToTrash,
+                availability: selectedActionAvailability,
+                shortcut: .delete,
+                modifiers: []
+            )
         }
-    }
-
-    private var selectedActionAvailability: FileNodeActionAvailability {
-        FileNodeActionAvailability(
-            nodes: navigation.selectedNodes,
-            activeTarget: scanState.selectedTarget,
-            trashSafetyPolicy: scanState.trashSafetyPolicy,
-            snapshotSource: scanState.snapshotSource
-        )
     }
 
     private var inspectorToggleTitle: String {
@@ -279,6 +301,7 @@ struct RadixCommands: Commands {
 
     private func selectedFileActionCommand(
         _ action: FileNodeAction,
+        availability: FileNodeActionAvailability,
         shortcut: KeyEquivalent,
         modifiers: EventModifiers = [.command]
     ) -> some View {
@@ -288,7 +311,7 @@ struct RadixCommands: Commands {
         .keyboardShortcut(shortcut, modifiers: modifiers)
         .disabled(
             !appModel.canUseWorkspaceCommands ||
-                !action.isEnabled(in: selectedActionAvailability) ||
+                !action.isEnabled(in: availability) ||
                 (action == .moveToTrash && appModel.selectionIncludesHiddenNodes)
         )
     }

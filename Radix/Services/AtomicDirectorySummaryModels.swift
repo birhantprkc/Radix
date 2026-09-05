@@ -201,21 +201,6 @@ nonisolated enum ScanAutoSummaryProfileEvent: Sendable {
 }
 #endif
 
-nonisolated final class AtomicDirectorySummaryState {
-    var allocatedSize: Int64 = 0
-    var logicalSize: Int64 = 0
-    var descendantFileCount = 0
-    var visitedItemCount = 0
-    var isAccessible = true
-    var warnings: [ScanWarning] = []
-    var sharedAllocationAccumulator = SharedAllocationOwnerAccumulator()
-    let ownerNodeID: String
-
-    init(ownerNodeID: String) {
-        self.ownerNodeID = ownerNodeID
-    }
-}
-
 nonisolated struct AtomicDirectoryProbeProfile: Sendable {
     var observedFileCount = 0
     var observedDirectoryCount = 0

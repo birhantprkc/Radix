@@ -175,7 +175,7 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.scanVisualizationMode, .sunburst)
         XCTAssertEqual(publicationCount, 0)
 
-        try await waitForAppModelCondition("deferred visualization mode") {
+        try await waitUntil("deferred visualization mode") {
             model.scanVisualizationMode == .treemap
         }
         XCTAssertGreaterThanOrEqual(publicationCount, 1)
@@ -237,7 +237,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.scanState.replaceCurrentSnapshot(volumeSnapshot)
         model.showFreeSpaceInDiskMaps = true
-        try await waitForAppModelCondition("free-space capacity fallback applies") {
+        try await waitUntil("free-space capacity fallback applies") {
             model.cachedFreeSpaceAvailableCapacity(for: volumeSnapshot, focusNode: volumeRoot) == 123
         }
 
@@ -341,7 +341,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         let didCompleteRequest = await probe.completeRequest(id: 0, with: 456)
         XCTAssertTrue(didCompleteRequest)
-        try await waitForAppModelCondition("async free-space capacity applies") {
+        try await waitUntil("async free-space capacity applies") {
             model.cachedFreeSpaceAvailableCapacity(for: snapshot, focusNode: root) == 456
         }
     }
@@ -375,7 +375,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         let didCompleteCurrentRequest = await probe.completeRequest(id: 1, with: 222)
         XCTAssertTrue(didCompleteCurrentRequest)
-        try await waitForAppModelCondition("current free-space capacity applies") {
+        try await waitUntil("current free-space capacity applies") {
             model.cachedFreeSpaceAvailableCapacity(for: secondSnapshot, focusNode: secondRoot) == 222
         }
         let didCompleteStaleRequest = await probe.completeRequest(id: 0, with: 111)
@@ -2096,7 +2096,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         XCTAssertEqual(model.fullDiskAccessStatus, .unknown)
 
-        try await waitForAppModelCondition("async full disk access refresh applies") {
+        try await waitUntil("async full disk access refresh applies") {
             model.fullDiskAccessStatus == .granted
         }
     }
@@ -2117,13 +2117,13 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.availableTargets, [loadedTarget])
         XCTAssertTrue(model.targetCapacityDescriptions.isEmpty)
 
-        try await waitForAsyncCondition("async capacity description refresh starts") {
+        try await waitUntil("async capacity description refresh starts") {
             await probe.isWaiting
         }
 
         await probe.resume(returning: [loadedTarget.id: "1 GB free of 2 GB"])
 
-        try await waitForAppModelCondition("async capacity descriptions apply") {
+        try await waitUntil("async capacity descriptions apply") {
             model.targetCapacityDescriptions == [loadedTarget.id: "1 GB free of 2 GB"]
         }
     }
@@ -2153,7 +2153,7 @@ final class AppModelDependencyTests: XCTestCase {
         protectsMountedVolume = true
         mountedVolumeEvents.send(())
 
-        try await waitForAppModelCondition("trash safety policy refresh") {
+        try await waitUntil("trash safety policy refresh") {
             !mountedVolumeNode.supportsMoveToTrash(trashSafetyPolicy: model.scanState.trashSafetyPolicy)
         }
     }
@@ -2171,7 +2171,7 @@ final class AppModelDependencyTests: XCTestCase {
         }
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
 
-        try await waitForAsyncCondition("async capacity description refresh starts") {
+        try await waitUntil("async capacity description refresh starts") {
             await probe.isWaiting
         }
 
@@ -2236,7 +2236,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.importScanSnapshot()
 
-        try await waitForAppModelCondition("import preview presented") {
+        try await waitUntil("import preview presented") {
             model.pendingImportPreview?.archiveURL == archiveURL
         }
 
@@ -2248,7 +2248,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.confirmImportPreview()
 
-        try await waitForAppModelCondition("imported snapshot restored") {
+        try await waitUntil("imported snapshot restored") {
             model.scanState.snapshot?.id == importedSnapshot.id
         }
 
@@ -2312,7 +2312,7 @@ final class AppModelDependencyTests: XCTestCase {
         let model = AppModel(dependencies: makeDependencies(systemActions: actions, scanArchiveService: archiveService))
 
         model.importScanSnapshot()
-        try await waitForAppModelCondition("import preview presented") {
+        try await waitUntil("import preview presented") {
             model.pendingImportPreview?.archiveURL == archiveURL
         }
 
@@ -2386,19 +2386,19 @@ final class AppModelDependencyTests: XCTestCase {
         }
 
         model.importScanSnapshot()
-        try await waitForAppModelCondition("wide import preview presented") {
+        try await waitUntil("wide import preview presented") {
             model.pendingImportPreview?.archiveURL == archiveURL
         }
 
         model.confirmImportPreview()
-        try await waitForAppModelCondition("wide imported snapshot restored") {
+        try await waitUntil("wide imported snapshot restored") {
             model.scanState.snapshot?.id == importedSnapshot.id
         }
 
         XCTAssertEqual(tableNodeCountAtSnapshotPublish, 0)
         XCTAssertEqual(model.navigation.focusedNodeID, root.id)
 
-        try await waitForAppModelCondition("wide imported table materialized") {
+        try await waitUntil("wide imported table materialized") {
             model.navigation.tableNodes.count == childCount
         }
 
@@ -2417,7 +2417,7 @@ final class AppModelDependencyTests: XCTestCase {
         )
 
         model.startScan(scanTarget)
-        try await waitForAppModelCondition("scan started") {
+        try await waitUntil("scan started") {
             model.scanState.isScanning
         }
 
@@ -2454,7 +2454,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.exportCurrentScan()
 
-        try await waitForAsyncCondition("export requested") {
+        try await waitUntil("export requested") {
             await !archiveService.exportRequestsSnapshot().isEmpty
         }
 
@@ -2466,7 +2466,7 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertTrue(requestedDefaultFileNames[0].hasPrefix("Export "))
         XCTAssertFalse(requestedDefaultFileNames[0].hasSuffix(".radixscan"))
         XCTAssertNil(model.lastErrorMessage)
-        try await waitForAppModelCondition("export confirmation presented") {
+        try await waitUntil("export confirmation presented") {
             model.exportConfirmation?.archiveURL == archiveURL
         }
 
@@ -2506,12 +2506,12 @@ final class AppModelDependencyTests: XCTestCase {
         ))
 
         model.exportCurrentScan()
-        try await waitForAsyncCondition("first export panel") {
+        try await waitUntil("first export panel") {
             await firstPanel.isWaiting
         }
         model.cleanup()
         model.exportCurrentScan()
-        try await waitForAsyncCondition("second export panel") {
+        try await waitUntil("second export panel") {
             await secondPanel.isWaiting
         }
 
@@ -2549,7 +2549,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.exportCurrentScan()
 
-        try await waitForAppModelCondition("export failure presented") {
+        try await waitUntil("export failure presented") {
             model.lastErrorMessage != nil
         }
 
@@ -2580,7 +2580,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.exportCurrentScan()
 
-        try await waitForAppModelCondition("export operation visible") {
+        try await waitUntil("export operation visible") {
             model.archiveOperation?.kind == .export
         }
 
@@ -2588,12 +2588,12 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertFalse(model.canImportScanSnapshot)
         XCTAssertEqual(model.scanState.snapshot?.id, snapshot.id)
 
-        try await waitForAsyncCondition("export request waiting") {
+        try await waitUntil("export request waiting") {
             await exportProbe.isWaiting
         }
         await exportProbe.resume(returning: ())
 
-        try await waitForAppModelCondition("export operation cleared") {
+        try await waitUntil("export operation cleared") {
             model.archiveOperation == nil
         }
     }
@@ -2620,14 +2620,14 @@ final class AppModelDependencyTests: XCTestCase {
         model.scanState.restoreCompletedSnapshot(snapshot)
 
         model.exportCurrentScan()
-        try await waitForAsyncCondition("export request waiting") {
+        try await waitUntil("export request waiting") {
             await exportProbe.isWaiting
         }
 
         model.cancelArchiveOperation()
         await exportProbe.resume(returning: ())
 
-        try await waitForAsyncCondition("export cancellation recorded") {
+        try await waitUntil("export cancellation recorded") {
             await archiveService.exportCancellationStatesSnapshot().count == 1
         }
         let states = await archiveService.exportCancellationStatesSnapshot()
@@ -2644,14 +2644,14 @@ final class AppModelDependencyTests: XCTestCase {
         let model = AppModel(dependencies: makeDependencies(systemActions: actions, scanArchiveService: archiveService))
 
         model.importScanSnapshot()
-        try await waitForAsyncCondition("preview request waiting") {
+        try await waitUntil("preview request waiting") {
             await previewProbe.isWaiting
         }
 
         model.cancelArchiveOperation()
         await previewProbe.resume(returning: ())
 
-        try await waitForAsyncCondition("preview cancellation recorded") {
+        try await waitUntil("preview cancellation recorded") {
             await archiveService.previewCancellationStatesSnapshot().count == 1
         }
         let states = await archiveService.previewCancellationStatesSnapshot()
@@ -2676,7 +2676,7 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertEqual(model.presentationCoordinator.activeSheet, .onboarding)
 
         model.dismissOnboarding()
-        try await waitForAsyncCondition("queued document open starts after onboarding") {
+        try await waitUntil("queued document open starts after onboarding") {
             await previewProbe.isWaiting
         }
 
@@ -2737,19 +2737,19 @@ final class AppModelDependencyTests: XCTestCase {
         let model = AppModel(dependencies: makeDependencies(systemActions: actions, scanArchiveService: archiveService))
 
         model.importScanSnapshot()
-        try await waitForAppModelCondition("import preview presented") {
+        try await waitUntil("import preview presented") {
             model.pendingImportPreview?.archiveURL == archiveURL
         }
 
         model.confirmImportPreview()
-        try await waitForAsyncCondition("import request waiting") {
+        try await waitUntil("import request waiting") {
             await importProbe.isWaiting
         }
 
         model.cancelArchiveOperation()
         await importProbe.resume(returning: ())
 
-        try await waitForAsyncCondition("import cancellation recorded") {
+        try await waitUntil("import cancellation recorded") {
             await archiveService.importCancellationStatesSnapshot().count == 1
         }
         let states = await archiveService.importCancellationStatesSnapshot()
@@ -2815,11 +2815,11 @@ final class AppModelDependencyTests: XCTestCase {
         ))
 
         model.importScanSnapshot()
-        try await waitForAppModelCondition("import preview presented") {
+        try await waitUntil("import preview presented") {
             model.pendingImportPreview?.archiveURL == archiveURL
         }
         model.confirmImportPreview()
-        try await waitForAsyncCondition("import request waiting") {
+        try await waitUntil("import request waiting") {
             await importProbe.isWaiting
         }
 
@@ -2830,12 +2830,12 @@ final class AppModelDependencyTests: XCTestCase {
             kind: .folder
         )
         model.startScan(liveTarget)
-        try await waitForAppModelCondition("live scan started") {
+        try await waitUntil("live scan started") {
             model.scanState.selectedTarget == liveTarget && model.scanState.isScanning
         }
 
         await importProbe.resume(returning: ())
-        try await waitForAsyncCondition("import cancellation recorded") {
+        try await waitUntil("import cancellation recorded") {
             await archiveService.importCancellationStatesSnapshot().count == 1
         }
 
@@ -2891,13 +2891,13 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.chooseComparisonSnapshot(for: .before)
 
-        try await waitForAppModelCondition("comparison setup built") {
+        try await waitUntil("comparison setup built") {
             model.pendingComparisonSetup?.before?.displayName == oldSnapshot.target.displayName
         }
 
         model.chooseComparisonSnapshot(for: .after)
 
-        try await waitForAppModelCondition("comparison setup completed") {
+        try await waitUntil("comparison setup completed") {
             model.pendingComparisonSetup?.after?.displayName == newSnapshot.target.displayName
         }
 
@@ -2908,7 +2908,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.confirmComparisonSetup()
 
-        try await waitForAppModelCondition("comparison built") {
+        try await waitUntil("comparison built") {
             model.scanComparison?.summary.changedCount == 1
         }
 
@@ -3013,16 +3013,16 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.compareScanSnapshots()
         model.chooseComparisonSnapshot(for: .before)
-        try await waitForAsyncCondition("first comparison panel") {
+        try await waitUntil("first comparison panel") {
             await firstPanel.isWaiting
         }
         model.chooseComparisonSnapshot(for: .before)
-        try await waitForAsyncCondition("second comparison panel") {
+        try await waitUntil("second comparison panel") {
             await secondPanel.isWaiting
         }
 
         await secondPanel.resume(returning: newURL)
-        try await waitForAppModelCondition("current comparison selection") {
+        try await waitUntil("current comparison selection") {
             model.pendingComparisonSetup?.before?.displayName == newSnapshot.target.displayName
         }
         await firstPanel.resume(returning: oldURL)
@@ -3071,13 +3071,13 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.chooseComparisonSnapshot(for: .before)
 
-        try await waitForAppModelCondition("current comparison setup built") {
+        try await waitUntil("current comparison setup built") {
             model.pendingComparisonSetup?.before?.displayName == archivedSnapshot.target.displayName
         }
 
         model.confirmComparisonSetup()
 
-        try await waitForAppModelCondition("current comparison built") {
+        try await waitUntil("current comparison built") {
             model.scanComparison?.summary.changedCount == 1
         }
 
@@ -3113,7 +3113,7 @@ final class AppModelDependencyTests: XCTestCase {
         model.compareScanSnapshots()
         model.dropComparisonSnapshot(archiveURL, for: .after)
 
-        try await waitForAppModelCondition("dropped comparison snapshot loaded") {
+        try await waitUntil("dropped comparison snapshot loaded") {
             model.pendingComparisonSetup?.after?.displayName == snapshot.target.displayName
         }
 
@@ -3138,14 +3138,18 @@ final class AppModelDependencyTests: XCTestCase {
             previewWaitProbe: previewProbe
         )
         let model = AppModel(dependencies: makeDependencies(scanArchiveService: archiveService))
+        model.scanState.restoreCompletedSnapshot(snapshot)
 
         model.compareScanSnapshots()
+        XCTAssertTrue(model.canExportCurrentScan)
         model.dropComparisonSnapshot(archiveURL, for: .before)
 
-        try await waitForAsyncCondition("comparison preview load started") {
+        try await waitUntil("comparison preview load started") {
             await previewProbe.isWaiting
         }
         XCTAssertEqual(model.pendingComparisonSetup?.loadingSlot, .before)
+        XCTAssertTrue(model.isArchiveOperationInProgress)
+        XCTAssertFalse(model.canExportCurrentScan)
 
         model.swapPendingComparisonSetup()
         XCTAssertEqual(model.pendingComparisonSetup?.loadingSlot, .after)
@@ -3154,7 +3158,7 @@ final class AppModelDependencyTests: XCTestCase {
 
         await previewProbe.resume(returning: ())
 
-        try await waitForAsyncCondition("swapped comparison preview loaded") {
+        try await waitUntil("swapped comparison preview loaded") {
             model.pendingComparisonSetup?.loadingSlot == nil
         }
         XCTAssertNil(model.pendingComparisonSetup?.before)
@@ -3220,11 +3224,11 @@ final class AppModelDependencyTests: XCTestCase {
 
         model.compareScanSnapshots()
         model.chooseComparisonSnapshot(for: .before)
-        try await waitForAppModelCondition("comparison setup built") {
+        try await waitUntil("comparison setup built") {
             model.pendingComparisonSetup?.before?.displayName == oldSnapshot.target.displayName
         }
         model.chooseComparisonSnapshot(for: .after)
-        try await waitForAppModelCondition("comparison setup completed") {
+        try await waitUntil("comparison setup completed") {
             model.pendingComparisonSetup?.after?.displayName == newSnapshot.target.displayName
         }
 
@@ -3258,28 +3262,6 @@ final class AppModelDependencyTests: XCTestCase {
         XCTAssertFalse(model.canCompareCurrentScanWithSnapshot)
     }
 
-}
-
-@MainActor
-private func waitForAppModelCondition(
-    _ description: String,
-    timeout: TimeInterval = 1,
-    condition: @escaping @MainActor () -> Bool
-) async throws {
-    try await waitUntil(description, timeout: timeout) {
-        condition()
-    }
-}
-
-@MainActor
-private func waitForAsyncCondition(
-    _ description: String,
-    timeout: TimeInterval = 1,
-    condition: @escaping @MainActor () async -> Bool
-) async throws {
-    try await waitUntil(description, timeout: timeout) {
-        await condition()
-    }
 }
 
 private actor AsyncValueProbe<Value: Sendable> {

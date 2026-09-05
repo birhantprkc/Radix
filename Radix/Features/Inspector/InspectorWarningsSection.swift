@@ -107,15 +107,13 @@ struct InspectorWarningsSection: View {
 
     @State private var showsWarnings = false
 
-    private var presentation: InspectorWarningPresentation {
-        InspectorWarningPresentation(
+    var body: some View {
+        let presentation = InspectorWarningPresentation(
             selectionName: selectionName,
             warnings: warnings,
             fullDiskAccessAdvice: fullDiskAccessAdvice
         )
-    }
 
-    var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
                 Label(presentation.noticeTitle, systemImage: "exclamationmark.triangle.fill")

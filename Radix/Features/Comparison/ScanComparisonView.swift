@@ -86,9 +86,6 @@ struct ScanComparisonView: View {
                 browserModel.aggregateSelection.removeAll()
             }
         }
-        .onChange(of: comparison.id) { _, _ in
-            refreshBrowser(using: rowQuery)
-        }
         .task(id: comparison.id) {
             refreshBrowser(using: rowQuery)
         }
@@ -537,11 +534,10 @@ struct ScanComparisonView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Grouped smaller changes")
         } else if node.affectedCount == 1,
-                  let directRowID = node.directRowID,
-                  let row = comparison.rows.first(where: { $0.id == directRowID }),
-                  selectedChangeKinds.contains(row.kind) {
-            Label(row.kind.title, systemImage: row.kind.systemImageName)
-                .foregroundStyle(row.kind.tintColor)
+                  let changeKind = node.directChangeKind,
+                  selectedChangeKinds.contains(changeKind) {
+            Label(changeKind.title, systemImage: changeKind.systemImageName)
+                .foregroundStyle(changeKind.tintColor)
         } else if node.allocatedDelta > 0 {
             Label(ScanComparisonChangeKind.grew.title, systemImage: ScanComparisonChangeKind.grew.systemImageName)
                 .foregroundStyle(ScanComparisonChangeKind.grew.tintColor)
@@ -780,8 +776,7 @@ struct ScanComparisonView: View {
             comparisonID: comparison.id,
             rows: comparison.rows,
             changeTree: comparison.changeTree,
-            query: query,
-            changeKinds: selectedChangeKinds
+            query: query
         )
     }
 

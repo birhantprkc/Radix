@@ -8,6 +8,8 @@ struct WorkspaceHeaderView: View {
     let actions: WorkspaceActions
 
     var body: some View {
+        let breadcrumbNodes = navigation.breadcrumbNodes
+
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -43,7 +45,7 @@ struct WorkspaceHeaderView: View {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 14) {
                     BreadcrumbBar(
-                        nodes: navigation.breadcrumbNodes,
+                        nodes: breadcrumbNodes,
                         onSelect: actions.focusNode
                     )
 
@@ -54,7 +56,7 @@ struct WorkspaceHeaderView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     BreadcrumbBar(
-                        nodes: navigation.breadcrumbNodes,
+                        nodes: breadcrumbNodes,
                         onSelect: actions.focusNode
                     )
 

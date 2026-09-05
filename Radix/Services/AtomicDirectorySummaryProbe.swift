@@ -573,4 +573,21 @@ extension AtomicDirectorySummarizer {
             visitedItems
         )
     }
+
+    nonisolated func emitProgressHeartbeat(
+        currentURL: URL,
+        metrics: inout ScanMetrics,
+        continuation: AsyncThrowingStream<ScanProgressEvent, Error>.Continuation,
+        emissionState: inout ScanEmissionState
+    ) {
+        metrics.currentPath = currentURL.path
+        let now = Date()
+        guard now.timeIntervalSince(emissionState.lastProgressEmission) >= 0.15 else { return }
+
+        emissionState.lastProgressEmission = now
+        summaryPool.reportCurrentPath(
+            currentURL.path,
+            continuation: continuation,
+        )
+    }
 }

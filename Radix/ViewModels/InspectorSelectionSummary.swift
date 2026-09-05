@@ -6,15 +6,59 @@ nonisolated struct InspectorSelectionSummary: Equatable, Sendable {
     let allocatedSize: Int64
     let containsOverlappingSelections: Bool
     let missingSelectedNodeCount: Int
+    let selectedFolderCount: Int
+    let selectedPackageCount: Int
+    let selectedFileCount: Int
+    let selectedStorageCategoryCount: Int
+    let containsSharedStorageItems: Bool
+    let containsKnownClones: Bool
 
     init(selectedNodes: [FileNodeRecord], fileTreeStore: FileTreeStore?) {
         self.selectedNodes = selectedNodes
 
+        var presentNodeIDs: [String] = []
+        var selectedNodesByID: [String: FileNodeRecord] = [:]
+        if fileTreeStore != nil {
+            presentNodeIDs.reserveCapacity(selectedNodes.count)
+            selectedNodesByID.reserveCapacity(selectedNodes.count)
+        }
+        var selectedFolderCount = 0
+        var selectedPackageCount = 0
+        var selectedFileCount = 0
+        var selectedStorageCategoryCount = 0
+        var containsSharedStorageItems = false
+        var containsKnownClones = false
+
+        for node in selectedNodes {
+            if node.isSynthetic {
+                selectedStorageCategoryCount += 1
+            } else if node.isPackage {
+                selectedPackageCount += 1
+            } else if node.isDirectory {
+                selectedFolderCount += 1
+            } else {
+                selectedFileCount += 1
+            }
+
+            if node.cloneIdentity != nil {
+                containsKnownClones = true
+                containsSharedStorageItems = true
+            } else if node.mayShareDataBlocks {
+                containsSharedStorageItems = true
+            }
+
+            if let fileTreeStore {
+                precondition(
+                    selectedNodesByID.updateValue(node, forKey: node.id) == nil,
+                    "Inspector selection contains duplicate node IDs"
+                )
+                if fileTreeStore.node(id: node.id) != nil {
+                    presentNodeIDs.append(node.id)
+                }
+            }
+        }
+
         if let fileTreeStore {
-            let presentNodeIDs = selectedNodes.map(\.id).filter { fileTreeStore.node(id: $0) != nil }
-            let selectedNodesByID = Dictionary(
-                uniqueKeysWithValues: selectedNodes.map { ($0.id, $0) }
-            )
             topLevelSelectedNodes = fileTreeStore
                 .topLevelNodeIDs(from: presentNodeIDs)
                 .compactMap { selectedNodesByID[$0] }
@@ -27,6 +71,12 @@ nonisolated struct InspectorSelectionSummary: Equatable, Sendable {
         }
 
         allocatedSize = Self.total(\.allocatedSize, in: topLevelSelectedNodes)
+        self.selectedFolderCount = selectedFolderCount
+        self.selectedPackageCount = selectedPackageCount
+        self.selectedFileCount = selectedFileCount
+        self.selectedStorageCategoryCount = selectedStorageCategoryCount
+        self.containsSharedStorageItems = containsSharedStorageItems
+        self.containsKnownClones = containsKnownClones
     }
 
     var selectedCount: Int {
@@ -59,30 +109,6 @@ nonisolated struct InspectorSelectionSummary: Equatable, Sendable {
             }
         }
         return largest
-    }
-
-    var selectedFolderCount: Int {
-        selectedNodes.count { $0.isDirectory && !$0.isPackage && !$0.isSynthetic }
-    }
-
-    var selectedPackageCount: Int {
-        selectedNodes.count { $0.isPackage && !$0.isSynthetic }
-    }
-
-    var selectedFileCount: Int {
-        selectedNodes.count { !$0.isDirectory && !$0.isPackage && !$0.isSynthetic }
-    }
-
-    var selectedStorageCategoryCount: Int {
-        selectedNodes.count(where: \.isSynthetic)
-    }
-
-    var containsSharedStorageItems: Bool {
-        selectedNodes.contains { $0.cloneIdentity != nil || $0.mayShareDataBlocks }
-    }
-
-    var containsKnownClones: Bool {
-        selectedNodes.contains { $0.cloneIdentity != nil }
     }
 
     private static func total(

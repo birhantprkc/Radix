@@ -505,17 +505,16 @@ private struct ImportSnapshotDetailsPopover: View {
 private struct ImportSnapshotStatCard: View {
     let title: String
     let value: String
-    var isAccented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
-                .foregroundStyle(isAccented ? Color.orange : Color.secondary)
+                .foregroundStyle(.secondary)
 
             Text(value)
                 .font(.headline.monospacedDigit())
-                .foregroundStyle(isAccented ? Color.orange : Color.primary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -524,11 +523,7 @@ private struct ImportSnapshotStatCard: View {
         .padding(.vertical, 8)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    isAccented
-                        ? Color.orange.opacity(0.14)
-                        : Color(nsColor: .controlBackgroundColor)
-                )
+                .fill(Color(nsColor: .controlBackgroundColor))
         }
     }
 }

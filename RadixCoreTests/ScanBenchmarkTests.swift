@@ -1608,7 +1608,14 @@ final class ScanBenchmarkTests: XCTestCase {
         resumesProbe: Bool
     ) async throws -> Double {
         let metadataLoader = ScanMetadataLoader()
-        let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
+        let pool = AtomicDirectorySummaryPool(
+            workerLimit: workerLimit,
+            progressEmissionInterval: 0
+        )
+        let summarizer = AtomicDirectorySummarizer(
+            metadataLoader: metadataLoader,
+            summaryPool: pool
+        )
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: [],
             rootURL: rootURL
@@ -1624,7 +1631,7 @@ final class ScanBenchmarkTests: XCTestCase {
         let summary: AtomicDirectorySummary?
 
         if resumesProbe {
-            summary = try await summarizer.summaryIfNeeded(
+            summary = try await summarizer.summaryDecisionIfNeeded(
                 url: rootURL,
                 childEntries: rootEntries,
                 metadata: rootMetadata,
@@ -1633,13 +1640,12 @@ final class ScanBenchmarkTests: XCTestCase {
                 isNodeDependencyLayout: true,
                 minFileCount: minFileCount,
                 maxAverageFileSize: 256,
-                workerLimit: workerLimit,
                 exclusionMatcher: exclusionMatcher,
                 cancellationCheck: {},
                 metrics: &metrics,
                 continuation: progressContinuation,
                 emissionState: &emissionState
-            )
+            ).summary
         } else {
             let outcome = try summarizer.descendantAtomicProbeProfile(
                 at: rootURL,
@@ -1664,19 +1670,18 @@ final class ScanBenchmarkTests: XCTestCase {
                 at: rootURL,
                 includeHiddenFiles: true,
                 treatPackagesAsDirectories: false,
-                workerLimit: workerLimit,
                 ownerNodeID: rootURL.path,
                 exclusionMatcher: exclusionMatcher,
                 cancellationCheck: {},
                 metrics: &metrics,
-                continuation: progressContinuation,
-                emissionState: &emissionState
+                continuation: progressContinuation
             )
         }
         _ = progressStream
 
         XCTAssertEqual(summary?.descendantFileCount, expectedFileCount)
         let elapsed = startedAt.duration(to: .now)
+        await pool.finish()
         return BenchmarkSupport.durationSeconds(elapsed)
     }
 

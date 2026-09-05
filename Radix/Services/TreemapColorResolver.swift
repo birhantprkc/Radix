@@ -33,9 +33,6 @@ nonisolated enum TreemapColorResolver {
         0.14, // yellow
         0.66  // indigo
     ]
-    private nonisolated static let fnvPrime: UInt64 = 1_099_511_628_211
-    private nonisolated static let fnvOffsetBasis: UInt64 = 14_695_981_039_346_656_037
-
     nonisolated static func color(
         for token: SunburstColorToken,
         appearance: TreemapColorAppearance
@@ -57,14 +54,14 @@ nonisolated enum TreemapColorResolver {
         }
 
         let baseHue = branchHues[token.branchIndex % branchHues.count]
-        let localUnit = stableUnitInterval(for: token.localID)
-        let localVariant = centered(localUnit)
+        let localUnit = DiskMapColorMath.stableUnitInterval(for: token.localID)
+        let localVariant = DiskMapColorMath.centered(localUnit)
         let isBranchRoot = token.branchID == token.localID
         let siblingPosition = token.siblingCount > 1
             ? Double(token.siblingIndex) / Double(token.siblingCount - 1)
             : 0.5
-        let siblingVariant = centered(siblingPosition)
-        let hue = normalizedHue(
+        let siblingVariant = DiskMapColorMath.centered(siblingPosition)
+        let hue = DiskMapColorMath.normalizedHue(
             baseHue
                 + (isBranchRoot ? 0 : localVariant * 0.20)
                 + (siblingVariant * 0.045)
@@ -76,12 +73,12 @@ nonisolated enum TreemapColorResolver {
         case .dark:
             return TreemapColorComponents(
                 hue: hue,
-                saturation: clamped(
+                saturation: DiskMapColorMath.clamped(
                     0.58 + (localVariant * 0.08) - (depth * 0.012),
                     lower: 0.44,
                     upper: 0.66
                 ),
-                brightness: clamped(
+                brightness: DiskMapColorMath.clamped(
                     0.64 - (depth * 0.024) + (brightnessVariant * 0.025),
                     lower: 0.46,
                     upper: 0.68
@@ -90,12 +87,12 @@ nonisolated enum TreemapColorResolver {
         case .light:
             return TreemapColorComponents(
                 hue: hue,
-                saturation: clamped(
+                saturation: DiskMapColorMath.clamped(
                     0.48 + (localVariant * 0.07) - (depth * 0.01),
                     lower: 0.36,
                     upper: 0.56
                 ),
-                brightness: clamped(
+                brightness: DiskMapColorMath.clamped(
                     0.9 - (depth * 0.022) + (brightnessVariant * 0.018),
                     lower: 0.73,
                     upper: 0.93
@@ -109,7 +106,7 @@ nonisolated enum TreemapColorResolver {
     }
 
     private nonisolated static func variantBrightnessOffset(for key: String) -> Double {
-        switch stableHash(for: key) % 5 {
+        switch DiskMapColorMath.stableHash(for: key) % 5 {
         case 0:
             return -1
         case 1:
@@ -123,33 +120,4 @@ nonisolated enum TreemapColorResolver {
         }
     }
 
-    private nonisolated static func stableUnitInterval(for key: String) -> Double {
-        Double(stableHash(for: key)) / Double(UInt64.max)
-    }
-
-    private nonisolated static func stableHash(for key: String) -> UInt64 {
-        var hash = fnvOffsetBasis
-        for byte in key.utf8 {
-            hash ^= UInt64(byte)
-            hash &*= fnvPrime
-        }
-        return hash
-    }
-
-    private nonisolated static func centered(_ value: Double) -> Double {
-        value - 0.5
-    }
-
-    private nonisolated static func normalizedHue(_ value: Double) -> Double {
-        let remainder = value.truncatingRemainder(dividingBy: 1)
-        return remainder >= 0 ? remainder : remainder + 1
-    }
-
-    private nonisolated static func clamped(
-        _ value: Double,
-        lower: Double,
-        upper: Double
-    ) -> Double {
-        min(max(value, lower), upper)
-    }
 }

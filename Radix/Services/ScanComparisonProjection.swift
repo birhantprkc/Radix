@@ -261,7 +261,7 @@ nonisolated struct ScanComparisonChangeTreeNode: Identifiable, Equatable, Sendab
     let movedCount: Int
     let beforeNode: FileNodeRecord?
     let afterNode: FileNodeRecord?
-    let directRowID: ScanComparisonRow.ID?
+    let directChangeKind: ScanComparisonChangeKind?
     let isDirectory: Bool
     let isRemainder: Bool
     let groupedAffectedCount: Int
@@ -284,7 +284,7 @@ nonisolated struct ScanComparisonChangeTreeNode: Identifiable, Equatable, Sendab
         self.movedCount = changeKinds.contains(.moved) ? aggregate.movedCount : 0
         self.beforeNode = aggregate.beforeNode
         self.afterNode = aggregate.afterNode
-        self.directRowID = aggregate.directRowID
+        self.directChangeKind = aggregate.directChangeKind
         self.isDirectory = aggregate.isDirectory
         self.isRemainder = false
         self.groupedAffectedCount = children.reduce(0) { $0 + $1.groupedAffectedCount }
@@ -311,7 +311,7 @@ nonisolated struct ScanComparisonChangeTreeNode: Identifiable, Equatable, Sendab
         self.movedCount = movedCount
         self.beforeNode = nil
         self.afterNode = nil
-        self.directRowID = nil
+        self.directChangeKind = nil
         self.isDirectory = false
         self.isRemainder = true
         self.groupedAffectedCount = groupedAffectedCount
@@ -323,30 +323,36 @@ nonisolated struct ScanComparisonChangeTreeNode: Identifiable, Equatable, Sendab
         changeKinds: Set<ScanComparisonChangeKind>,
         hiddenNodes: [ScanComparisonAggregateChange]
     ) -> ScanComparisonChangeTreeNode {
-        let affectedCount = hiddenNodes.reduce(0) { partialResult, node in
-            partialResult + changeKinds.reduce(0) { $0 + node.changeCount(for: $1) }
+        var affectedCount = 0
+        var increasedAllocatedSize: Int64 = 0
+        var reclaimedAllocatedSize: Int64 = 0
+        var movedCount = 0
+        let includesMoved = changeKinds.contains(.moved)
+        for node in hiddenNodes {
+            for kind in changeKinds {
+                affectedCount += node.changeCount(for: kind)
+                increasedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                    increasedAllocatedSize,
+                    node.increasedAllocatedSizeByKind[kind, default: 0]
+                )
+                reclaimedAllocatedSize = ScanComparisonIntegerMath.addingClamped(
+                    reclaimedAllocatedSize,
+                    node.reclaimedAllocatedSizeByKind[kind, default: 0]
+                )
+            }
+            if includesMoved {
+                movedCount += node.movedCount
+            }
         }
         let filterID = changeKinds.map(\.rawValue).sorted().joined(separator: ",")
         return ScanComparisonChangeTreeNode(
             id: "other:\(parentPath ?? "root"):\(filterID)",
             relativePath: parentPath ?? "",
             name: "Other smaller changes",
-            increasedAllocatedSize: hiddenNodes.reduce(0) {
-                ScanComparisonIntegerMath.addingClamped(
-                    $0,
-                    $1.increasedAllocatedSize(for: changeKinds)
-                )
-            },
-            reclaimedAllocatedSize: hiddenNodes.reduce(0) {
-                ScanComparisonIntegerMath.addingClamped(
-                    $0,
-                    $1.reclaimedAllocatedSize(for: changeKinds)
-                )
-            },
+            increasedAllocatedSize: increasedAllocatedSize,
+            reclaimedAllocatedSize: reclaimedAllocatedSize,
             affectedCount: affectedCount,
-            movedCount: changeKinds.contains(.moved)
-                ? hiddenNodes.reduce(0) { $0 + $1.movedCount }
-                : 0,
+            movedCount: movedCount,
             groupedAffectedCount: affectedCount
         )
     }

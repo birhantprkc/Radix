@@ -448,18 +448,6 @@ final class ScanMetadataLoaderTests: XCTestCase {
         ])
     }
 
-    private func setExtendedAttribute(named name: String, data: Data, at url: URL) throws {
-        let result = data.withUnsafeBytes { bytes in
-            url.withUnsafeFileSystemRepresentation { path in
-                guard let path else { return Int32(-1) }
-                return setxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
-            }
-        }
-        guard result == 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
-    }
-
 }
 
 private final class MetadataProbeCounters: @unchecked Sendable {

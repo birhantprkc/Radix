@@ -69,10 +69,38 @@ nonisolated struct SunburstColorComponents: Equatable, Hashable, Sendable {
     }
 }
 
-nonisolated enum SunburstColorResolver {
-    private nonisolated static let fnvPrime: UInt64 = 1_099_511_628_211
-    private nonisolated static let fnvOffsetBasis: UInt64 = 14_695_981_039_346_656_037
+nonisolated enum DiskMapColorMath {
+    private static let fnvPrime: UInt64 = 1_099_511_628_211
+    private static let fnvOffsetBasis: UInt64 = 14_695_981_039_346_656_037
 
+    static func stableHash(for key: String) -> UInt64 {
+        var hash = fnvOffsetBasis
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= fnvPrime
+        }
+        return hash
+    }
+
+    static func stableUnitInterval(for key: String) -> Double {
+        Double(stableHash(for: key)) / Double(UInt64.max)
+    }
+
+    static func centered(_ value: Double) -> Double {
+        value - 0.5
+    }
+
+    static func normalizedHue(_ value: Double) -> Double {
+        let remainder = value.truncatingRemainder(dividingBy: 1)
+        return remainder >= 0 ? remainder : remainder + 1
+    }
+
+    static func clamped(_ value: Double, lower: Double, upper: Double) -> Double {
+        min(max(value, lower), upper)
+    }
+}
+
+nonisolated enum SunburstColorResolver {
     nonisolated static func color(for token: SunburstColorToken) -> Color {
         components(for: token).color
     }
@@ -87,23 +115,23 @@ nonisolated enum SunburstColorResolver {
             break
         }
 
-        let branchHue = stableUnitInterval(for: token.branchID)
-        let localUnit = stableUnitInterval(for: token.localID)
-        let localVariant = centered(localUnit)
+        let branchHue = DiskMapColorMath.stableUnitInterval(for: token.branchID)
+        let localUnit = DiskMapColorMath.stableUnitInterval(for: token.localID)
+        let localVariant = DiskMapColorMath.centered(localUnit)
         let depthTone = min(Double(token.depth), 6)
-        let hue = normalizedHue(
+        let hue = DiskMapColorMath.normalizedHue(
             branchHue
                 + (localVariant * 0.11)
                 + (Double(token.depth % 2) * 0.015)
         )
-        let saturation = clamped(
+        let saturation = DiskMapColorMath.clamped(
             0.74
                 - (depthTone * 0.035)
                 + (localVariant * 0.08),
             lower: 0.48,
             upper: 0.86
         )
-        let brightness = clamped(
+        let brightness = DiskMapColorMath.clamped(
             0.84
                 - (depthTone * 0.055)
                 + (variantBrightnessOffset(for: token.localID) * 0.035),
@@ -119,7 +147,7 @@ nonisolated enum SunburstColorResolver {
     }
 
     private nonisolated static func variantBrightnessOffset(for key: String) -> Double {
-        switch stableHash(for: key) % 4 {
+        switch DiskMapColorMath.stableHash(for: key) % 4 {
         case 0:
             return 0.5
         case 1:
@@ -131,33 +159,4 @@ nonisolated enum SunburstColorResolver {
         }
     }
 
-    private nonisolated static func stableUnitInterval(for key: String) -> Double {
-        Double(stableHash(for: key)) / Double(UInt64.max)
-    }
-
-    private nonisolated static func stableHash(for key: String) -> UInt64 {
-        var hash = fnvOffsetBasis
-        for byte in key.utf8 {
-            hash ^= UInt64(byte)
-            hash &*= fnvPrime
-        }
-        return hash
-    }
-
-    private nonisolated static func centered(_ value: Double) -> Double {
-        value - 0.5
-    }
-
-    private nonisolated static func normalizedHue(_ value: Double) -> Double {
-        let remainder = value.truncatingRemainder(dividingBy: 1)
-        return remainder >= 0 ? remainder : remainder + 1
-    }
-
-    private nonisolated static func clamped(
-        _ value: Double,
-        lower: Double,
-        upper: Double
-    ) -> Double {
-        min(max(value, lower), upper)
-    }
 }

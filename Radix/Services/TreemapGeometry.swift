@@ -242,7 +242,10 @@ nonisolated enum TreemapLayout {
                 } else {
                     onlyGroupedChild = nil
                 }
-                groupedSize = addingClamped(groupedSize, max(child.allocatedSize, 0))
+                groupedSize = ScanIntegerMath.addingClamped(
+                    groupedSize,
+                    max(child.allocatedSize, 0)
+                )
             } else {
                 visible.append(Entry(node: child))
             }
@@ -479,11 +482,6 @@ nonisolated enum TreemapLayout {
             indexes[entry.id] = indexes.count
         }
         return indexes
-    }
-
-    private nonisolated static func addingClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
-        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
-        return overflow ? Int64.max : sum
     }
 
     private nonisolated struct ColorBranch {

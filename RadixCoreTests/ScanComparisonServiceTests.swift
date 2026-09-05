@@ -1491,8 +1491,10 @@ final class ScanComparisonServiceTests: XCTestCase {
 
         XCTAssertEqual(addedProjection.roots.map(\.relativePath), ["added.bin"])
         XCTAssertEqual(addedProjection.roots.first?.increasedAllocatedSize, 50)
+        XCTAssertEqual(addedProjection.roots.first?.directChangeKind, .added)
         XCTAssertEqual(grewProjection.roots.map(\.relativePath), ["grew.bin"])
         XCTAssertEqual(grewProjection.roots.first?.increasedAllocatedSize, 10)
+        XCTAssertEqual(grewProjection.roots.first?.directChangeKind, .grew)
         XCTAssertEqual(Set(combinedProjection.roots.map(\.relativePath)), ["added.bin", "grew.bin"])
     }
 
@@ -1642,7 +1644,7 @@ final class ScanComparisonServiceTests: XCTestCase {
 
     func testSearchIndexStopsWhenCancellationIsRequested() {
         let rows = makeComparisonRows(count: 600)
-        let probe = ComparisonCancellationProbe(throwOnCheck: 3)
+        let probe = CancellationProbe(throwOnCheck: 3)
 
         XCTAssertThrowsError(
             try ScanComparisonSearchIndex(
@@ -1657,7 +1659,7 @@ final class ScanComparisonServiceTests: XCTestCase {
 
     func testRowQueryStopsFilteringWhenCancellationIsRequested() {
         let rows = makeComparisonRows(count: 600)
-        let probe = ComparisonCancellationProbe(throwOnCheck: 3)
+        let probe = CancellationProbe(throwOnCheck: 3)
         let query = ScanComparisonRowQuery(searchText: "", sortOrder: [])
 
         XCTAssertThrowsError(
@@ -1677,7 +1679,7 @@ final class ScanComparisonServiceTests: XCTestCase {
         // Entry, filtering, post-filter, first sorted run, then cancellation
         // before the second run starts.
         let secondSortedRunCheck = 1 + filteringCheckCount + 1 + 2
-        let probe = ComparisonCancellationProbe(throwOnCheck: secondSortedRunCheck)
+        let probe = CancellationProbe(throwOnCheck: secondSortedRunCheck)
         let query = ScanComparisonRowQuery(
             searchText: "",
             sortOrder: [
@@ -1725,33 +1727,6 @@ final class ScanComparisonServiceTests: XCTestCase {
                 beforeNode: nil,
                 afterNode: node
             )
-        }
-    }
-}
-
-private final class ComparisonCancellationProbe: @unchecked Sendable {
-    private let lock = NSLock()
-    private let throwOnCheck: Int
-    private var checks = 0
-
-    init(throwOnCheck: Int) {
-        self.throwOnCheck = throwOnCheck
-    }
-
-    var checkCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return checks
-    }
-
-    func check() throws {
-        lock.lock()
-        checks += 1
-        let shouldThrow = checks >= throwOnCheck
-        lock.unlock()
-
-        if shouldThrow {
-            throw CancellationError()
         }
     }
 }

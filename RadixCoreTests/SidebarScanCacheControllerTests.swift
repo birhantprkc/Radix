@@ -255,7 +255,7 @@ final class SidebarScanCacheControllerTests: XCTestCase {
         )
 
         XCTAssertFalse(shouldStartScan)
-        try await waitForSidebarCacheCondition("newer containing snapshot restore") {
+        try await waitUntil("newer containing snapshot restore") {
             !recorder.restoredSnapshots.isEmpty
         }
 
@@ -298,7 +298,7 @@ final class SidebarScanCacheControllerTests: XCTestCase {
         )
 
         XCTAssertFalse(shouldStartScan)
-        try await waitForSidebarCacheCondition("scoped snapshot restore") {
+        try await waitUntil("scoped snapshot restore") {
             !recorder.restoredSnapshots.isEmpty
         }
 
@@ -403,7 +403,7 @@ final class SidebarScanCacheControllerTests: XCTestCase {
         )
 
         XCTAssertFalse(shouldStartScan)
-        try await waitForSidebarCacheCondition("scoped hard-link restore") {
+        try await waitUntil("scoped hard-link restore") {
             !recorder.restoredSnapshots.isEmpty
         }
 
@@ -444,15 +444,4 @@ private func makeParentAndChildSnapshot() -> (snapshot: ScanSnapshot, childTarge
     let store = FileTreeStore(root: root, childrenByID: [root.id: [child], child.id: [file]])
     let snapshot = makeTestSnapshot(root: root, store: store)
     return (snapshot, ScanTarget(url: child.url))
-}
-
-@MainActor
-private func waitForSidebarCacheCondition(
-    _ description: String,
-    timeout: TimeInterval = 1,
-    condition: @escaping @MainActor () -> Bool
-) async throws {
-    try await waitUntil(description, timeout: timeout) {
-        condition()
-    }
 }

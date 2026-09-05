@@ -643,13 +643,15 @@ final class IncrementalScanServiceTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
+        let incrementalNodeIDs = incremental.treeStore.indexedNodeIDs()
+        let fullNodeIDs = full.treeStore.indexedNodeIDs()
         XCTAssertEqual(
-            incremental.treeStore.indexedNodeIDs(),
-            full.treeStore.indexedNodeIDs(),
+            incrementalNodeIDs,
+            fullNodeIDs,
             file: file,
             line: line
         )
-        for nodeID in full.treeStore.indexedNodeIDs() {
+        for nodeID in fullNodeIDs {
             XCTAssertEqual(
                 try XCTUnwrap(incremental.treeStore.node(id: nodeID)),
                 try XCTUnwrap(full.treeStore.node(id: nodeID)),

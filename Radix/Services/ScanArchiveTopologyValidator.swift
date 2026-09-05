@@ -12,7 +12,7 @@ extension ScanArchiveService {
         expectedRootID: String,
         expectedTargetPath: String,
         progressReporter: ScanArchiveProgressReporter?
-    ) async throws -> [String: String] {
+    ) async throws {
         guard topology.rootID == expectedRootID else {
             throw ScanArchiveError.topology(localized: "root ID does not match manifest")
         }
@@ -26,7 +26,7 @@ extension ScanArchiveService {
             throw ScanArchiveError.topology(localized: "child map parent \(parentID) is missing from node payload")
         }
 
-        var parentIDByID: [String: String] = [:]
+        var parentedNodeIDs: Set<String> = []
         var visited: Set<String> = []
         var visiting: Set<String> = []
         var stack: [(
@@ -100,10 +100,9 @@ extension ScanArchiveService {
                !Self.path(childNode.url.path, isContainedIn: expectedTargetPath) {
                 throw ScanArchiveError.topology(localized: "child \(childID) path is outside target \(parentNode.id)")
             }
-            if let existingParentID = parentIDByID[childID], existingParentID != frame.nodeID {
+            guard parentedNodeIDs.insert(childID).inserted else {
                 throw ScanArchiveError.topology(localized: "child \(childID) has multiple parents")
             }
-            parentIDByID[childID] = frame.nodeID
             try enter(childID)
         }
 
@@ -112,7 +111,6 @@ extension ScanArchiveService {
             throw ScanArchiveError.topology(localized: "\(missingCount) node(s) are not reachable from root")
         }
 
-        return parentIDByID
     }
 
     static func path(_ childPath: String, isContainedIn parentPath: String) -> Bool {

@@ -725,11 +725,13 @@ final class ScanArchiveServiceTests: XCTestCase {
 
         XCTAssertEqual(result.manifest.formatVersion, 3)
         XCTAssertEqual(result.manifest.createdBy.swiftSchema, "ScanArchiveV3")
+        let importedNodeIDs = result.snapshot.treeStore.indexedNodeIDs()
+        let expectedNodeIDs = snapshot.treeStore.indexedNodeIDs()
         XCTAssertEqual(
-            Set(result.snapshot.treeStore.indexedNodeIDs()),
-            Set(snapshot.treeStore.indexedNodeIDs())
+            Set(importedNodeIDs),
+            Set(expectedNodeIDs)
         )
-        for nodeID in snapshot.treeStore.indexedNodeIDs() {
+        for nodeID in expectedNodeIDs {
             let imported = try XCTUnwrap(result.snapshot.treeStore.node(id: nodeID))
             let expected = try XCTUnwrap(snapshot.treeStore.node(id: nodeID))
             XCTAssertEqual(imported.id, expected.id)
@@ -1789,9 +1791,11 @@ final class ScanArchiveServiceTests: XCTestCase {
             file: file,
             line: line
         )
+        let lhsNodeIDs = lhs.treeStore.indexedNodeIDs()
+        let rhsNodeIDs = rhs.treeStore.indexedNodeIDs()
         XCTAssertEqual(
-            lhs.treeStore.indexedNodeIDs(),
-            rhs.treeStore.indexedNodeIDs(),
+            lhsNodeIDs,
+            rhsNodeIDs,
             file: file,
             line: line
         )
@@ -1802,7 +1806,7 @@ final class ScanArchiveServiceTests: XCTestCase {
             file: file,
             line: line
         )
-        for nodeID in lhs.treeStore.indexedNodeIDs() {
+        for nodeID in lhsNodeIDs {
             XCTAssertEqual(
                 lhs.treeStore.node(id: nodeID),
                 rhs.treeStore.node(id: nodeID),
@@ -2105,7 +2109,6 @@ final class ScanArchiveServiceTests: XCTestCase {
             rootID: makeDeepArchiveDirectoryNode(id: rootID, name: "deep")
         ]
         var childIDsByID: [String: [String]] = [:]
-        var parentIDByID: [String: String] = [:]
         var parentID = rootID
 
         for index in 1...depth {
@@ -2117,15 +2120,13 @@ final class ScanArchiveServiceTests: XCTestCase {
 
             nodesByID[nodeID] = node
             childIDsByID[parentID] = [nodeID]
-            parentIDByID[nodeID] = parentID
             parentID = nodeID
         }
 
         let store = FileTreeStore(
             rootID: rootID,
             nodesByID: nodesByID,
-            childIDsByID: childIDsByID,
-            parentIDByID: parentIDByID
+            childIDsByID: childIDsByID
         )
         return makeTestSnapshot(root: store.root, store: store)
     }

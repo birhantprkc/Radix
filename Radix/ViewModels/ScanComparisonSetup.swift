@@ -3,20 +3,6 @@ import Foundation
 nonisolated enum ScanComparisonCandidateSource: Equatable, Sendable {
     case archive(URL)
     case currentSnapshot(UUID)
-
-    static func == (
-        lhs: ScanComparisonCandidateSource,
-        rhs: ScanComparisonCandidateSource
-    ) -> Bool {
-        switch (lhs, rhs) {
-        case (.archive(let lhsURL), .archive(let rhsURL)):
-            return lhsURL == rhsURL
-        case (.currentSnapshot(let lhsID), .currentSnapshot(let rhsID)):
-            return lhsID == rhsID
-        default:
-            return false
-        }
-    }
 }
 
 nonisolated enum ScanComparisonSlot: String, CaseIterable, Identifiable, Sendable {

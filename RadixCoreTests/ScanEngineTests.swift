@@ -170,12 +170,10 @@ final class ScanEngineTests: XCTestCase {
         let (_, continuation) = makeAtomicSummaryProgressReporter()
         defer { continuation.finish() }
         var metrics = ScanMetrics()
-        var emissionState = ScanEmissionState()
 
         let summary = try await summarizer.summarize(
             at: packageURL,
             treatPackagesAsDirectories: true,
-            workerLimit: 2,
             progressWeight: 1,
             progressKind: .package,
             ownerNodeID: packageURL.path,
@@ -183,8 +181,7 @@ final class ScanEngineTests: XCTestCase {
             exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: packageURL),
             cancellationCheck: {},
             metrics: &metrics,
-            continuation: continuation,
-            emissionState: &emissionState
+            continuation: continuation
         )
         await pool.finish()
 
@@ -207,8 +204,10 @@ final class ScanEngineTests: XCTestCase {
             for: rootURL,
             metadataLoader: metadataLoader
         )
+        let pool = AtomicDirectorySummaryPool(workerLimit: 2, progressEmissionInterval: 0)
         let summarizer = AtomicDirectorySummarizer(
             metadataLoader: metadataLoader,
+            summaryPool: pool,
             volumeBoundaryPolicy: policy
         )
         let rootMetadata = try metadataLoader.metadata(for: rootURL)
@@ -232,13 +231,13 @@ final class ScanEngineTests: XCTestCase {
             isNodeDependencyLayout: false,
             minFileCount: 1,
             maxAverageFileSize: 256,
-            workerLimit: 2,
             exclusionMatcher: ScanExclusionMatcher(patterns: [], rootURL: rootURL),
             cancellationCheck: {},
             metrics: &metrics,
             continuation: continuation,
             emissionState: &emissionState
         )
+        await pool.finish()
 
         XCTAssertNil(decision.summary)
     }
@@ -346,7 +345,7 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(result.partial.warnings.first?.category, .fileSystem)
     }
 
-    func testPooledAndNonPooledForcedFoundationSummariesMatch() async throws {
+    func testPooledFoundationRestartMatchesPooledSummary() async throws {
         let rootURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: rootURL) }
         let nestedURL = rootURL.appending(path: "Nested", directoryHint: .isDirectory)
@@ -369,11 +368,15 @@ final class ScanEngineTests: XCTestCase {
         let matcher = ScanExclusionMatcher(patterns: ["*.tmp"], rootURL: rootURL)
         let (_, continuation) = makeAtomicSummaryProgressReporter()
         defer { continuation.finish() }
-        let nonPooled = try await AtomicDirectorySummarizer.summarizeInParallel(
-            at: rootURL,
+        let pool = AtomicDirectorySummaryPool(workerLimit: 3, progressEmissionInterval: 0)
+        let reference = try await pool.summarize(AtomicSummaryPoolRequest(
+            url: rootURL,
+            expectedRootIdentity: rootIdentity,
             includeHiddenFiles: false,
             treatPackagesAsDirectories: false,
-            workerLimit: 3,
+            progressWeight: 1,
+            progressKind: .autoSummary,
+            representedItemCount: 0,
             ownerNodeID: rootURL.path,
             exclusionMatcher: matcher,
             metadataLoader: metadataLoader,
@@ -381,9 +384,8 @@ final class ScanEngineTests: XCTestCase {
             cancellationCheck: {},
             metrics: ScanMetrics(),
             continuation: continuation,
-            forcesFoundationTraversal: true,
-            expectedRootIdentity: rootIdentity
-        )
+            resumeState: nil
+        ))
 
         let cursor = try BulkDirectoryEnumerator.makeCursor(
             at: rootURL,
@@ -392,8 +394,7 @@ final class ScanEngineTests: XCTestCase {
             cancellationCheck: {},
             forcedUnavailableAfterBatchCount: 0
         )
-        let pool = AtomicDirectorySummaryPool(workerLimit: 3, progressEmissionInterval: 0)
-        let pooled = try await pool.summarize(AtomicSummaryPoolRequest(
+        let restarted = try await pool.summarize(AtomicSummaryPoolRequest(
             url: rootURL,
             expectedRootIdentity: rootIdentity,
             includeHiddenFiles: false,
@@ -424,21 +425,24 @@ final class ScanEngineTests: XCTestCase {
         ))
         await pool.finish()
 
-        let reference = try XCTUnwrap(nonPooled)
-        let candidate = try XCTUnwrap(pooled)
-        XCTAssertEqual(candidate.allocatedSize, reference.allocatedSize)
-        XCTAssertEqual(candidate.logicalSize, reference.logicalSize)
-        XCTAssertEqual(candidate.descendantFileCount, reference.descendantFileCount)
-        XCTAssertEqual(candidate.visitedItemCount, reference.visitedItemCount)
-        XCTAssertEqual(candidate.isAccessible, reference.isAccessible)
-        XCTAssertEqual(warningSemantics(candidate.warnings), warningSemantics(reference.warnings))
+        let referenceSummary = try XCTUnwrap(reference)
+        let restartedSummary = try XCTUnwrap(restarted)
+        XCTAssertEqual(restartedSummary.allocatedSize, referenceSummary.allocatedSize)
+        XCTAssertEqual(restartedSummary.logicalSize, referenceSummary.logicalSize)
+        XCTAssertEqual(restartedSummary.descendantFileCount, referenceSummary.descendantFileCount)
+        XCTAssertEqual(restartedSummary.visitedItemCount, referenceSummary.visitedItemCount)
+        XCTAssertEqual(restartedSummary.isAccessible, referenceSummary.isAccessible)
         XCTAssertEqual(
-            candidate.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
-            reference.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
+            warningSemantics(restartedSummary.warnings),
+            warningSemantics(referenceSummary.warnings)
         )
         XCTAssertEqual(
-            candidate.sharedAllocationAccumulator.identityCount,
-            reference.sharedAllocationAccumulator.identityCount
+            restartedSummary.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
+            referenceSummary.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
+        )
+        XCTAssertEqual(
+            restartedSummary.sharedAllocationAccumulator.identityCount,
+            referenceSummary.sharedAllocationAccumulator.identityCount
         )
     }
 
@@ -1421,7 +1425,8 @@ final class ScanEngineTests: XCTestCase {
             })
         )
 
-        XCTAssertEqual(optimized.treeStore.indexedNodeIDs(), foundation.treeStore.indexedNodeIDs())
+        let optimizedNodeIDs = optimized.treeStore.indexedNodeIDs()
+        XCTAssertEqual(optimizedNodeIDs, foundation.treeStore.indexedNodeIDs())
         XCTAssertEqual(optimized.treeStore.childIDsByID, foundation.treeStore.childIDsByID)
         XCTAssertEqual(optimized.aggregateStats.totalAllocatedSize, foundation.aggregateStats.totalAllocatedSize)
         XCTAssertEqual(optimized.aggregateStats.totalLogicalSize, foundation.aggregateStats.totalLogicalSize)
@@ -1429,7 +1434,7 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(optimized.aggregateStats.directoryCount, foundation.aggregateStats.directoryCount)
         XCTAssertEqual(optimized.aggregateStats.accessibleItemCount, foundation.aggregateStats.accessibleItemCount)
         XCTAssertEqual(optimized.aggregateStats.inaccessibleItemCount, foundation.aggregateStats.inaccessibleItemCount)
-        XCTAssertEqual(optimized.treeStore.indexedNodeIDs(), legacy.treeStore.indexedNodeIDs())
+        XCTAssertEqual(optimizedNodeIDs, legacy.treeStore.indexedNodeIDs())
         XCTAssertEqual(optimized.treeStore.childIDsByID, legacy.treeStore.childIDsByID)
         XCTAssertEqual(optimized.aggregateStats.totalAllocatedSize, legacy.aggregateStats.totalAllocatedSize)
         XCTAssertEqual(optimized.aggregateStats.totalLogicalSize, legacy.aggregateStats.totalLogicalSize)
@@ -1438,7 +1443,7 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(optimized.aggregateStats.accessibleItemCount, legacy.aggregateStats.accessibleItemCount)
         XCTAssertEqual(optimized.aggregateStats.inaccessibleItemCount, legacy.aggregateStats.inaccessibleItemCount)
 
-        for nodeID in optimized.treeStore.indexedNodeIDs() {
+        for nodeID in optimizedNodeIDs {
             let optimizedNode = try XCTUnwrap(optimized.treeStore.node(id: nodeID))
             let foundationNode = try XCTUnwrap(foundation.treeStore.node(id: nodeID))
             XCTAssertEqual(optimizedNode, legacy.treeStore.node(id: nodeID), nodeID)
@@ -4109,9 +4114,11 @@ final class ScanEngineTests: XCTestCase {
             metadataLoader: metadataLoader,
             cancellationCheck: {}
         )).entries
+        let pool = AtomicDirectorySummaryPool(workerLimit: 4, progressEmissionInterval: 0)
         let summarizer = AtomicDirectorySummarizer(
             metadataLoader: metadataLoader,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            summaryPool: pool
         )
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: [],
@@ -4125,7 +4132,7 @@ final class ScanEngineTests: XCTestCase {
         var metrics = ScanMetrics()
         var emissionState = ScanEmissionState()
 
-        let summary = try await summarizer.summaryIfNeeded(
+        let summary = try await summarizer.summaryDecisionIfNeeded(
             url: rootURL,
             childEntries: rootEntries,
             metadata: rootMetadata,
@@ -4134,19 +4141,19 @@ final class ScanEngineTests: XCTestCase {
             isNodeDependencyLayout: false,
             minFileCount: 10,
             maxAverageFileSize: 256,
-            workerLimit: 4,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: {},
             metrics: &metrics,
             continuation: progressContinuation,
             emissionState: &emissionState
-        )
+        ).summary
+        await pool.finish()
         _ = progressStream
 
         XCTAssertEqual(summary?.descendantFileCount, 12)
         XCTAssertEqual(summary?.logicalSize, 384)
         let report = diagnostics.makeReport(targetPath: rootURL.path, elapsedSeconds: 0)
-        XCTAssertTrue(report.contains("atomic.summary.resumed_probe"))
+        XCTAssertTrue(report.contains("atomic.summary.pool"))
         let cursorOpenLine = try XCTUnwrap(
             report.split(separator: "\n").first { $0.contains("bulk.cursor.open: ") }
         )
@@ -4158,7 +4165,11 @@ final class ScanEngineTests: XCTestCase {
         let temporaryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: temporaryURL) }
         let metadataLoader = ScanMetadataLoader()
-        let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
+        let pool = AtomicDirectorySummaryPool(workerLimit: 1)
+        let summarizer = AtomicDirectorySummarizer(
+            metadataLoader: metadataLoader,
+            summaryPool: pool
+        )
 
         for depth in [32, 64, 128, 256] {
             let rootURL = temporaryURL.appending(
@@ -4248,7 +4259,11 @@ final class ScanEngineTests: XCTestCase {
             metadataLoader: metadataLoader,
             cancellationCheck: {}
         )).entries
-        let summarizer = AtomicDirectorySummarizer(metadataLoader: metadataLoader)
+        let pool = AtomicDirectorySummaryPool(workerLimit: 4, progressEmissionInterval: 0)
+        let summarizer = AtomicDirectorySummarizer(
+            metadataLoader: metadataLoader,
+            summaryPool: pool
+        )
         let exclusionMatcher = ScanExclusionMatcher(
             patterns: ["*.tmp"],
             rootURL: rootURL
@@ -4259,9 +4274,6 @@ final class ScanEngineTests: XCTestCase {
         }
         defer { progressContinuation.finish() }
         var referenceMetrics = ScanMetrics()
-        var referenceEmissionState = ScanEmissionState()
-        var resumedSerialMetrics = ScanMetrics()
-        var resumedSerialEmissionState = ScanEmissionState()
         var resumedMetrics = ScanMetrics()
         var resumedEmissionState = ScanEmissionState()
 
@@ -4269,15 +4281,13 @@ final class ScanEngineTests: XCTestCase {
             at: rootURL,
             includeHiddenFiles: false,
             treatPackagesAsDirectories: false,
-            workerLimit: 1,
             ownerNodeID: rootURL.path,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: {},
             metrics: &referenceMetrics,
-            continuation: progressContinuation,
-            emissionState: &referenceEmissionState
+            continuation: progressContinuation
         )
-        let resumed = try await summarizer.summaryIfNeeded(
+        let resumed = try await summarizer.summaryDecisionIfNeeded(
             url: rootURL,
             childEntries: rootEntries,
             metadata: rootMetadata,
@@ -4286,29 +4296,13 @@ final class ScanEngineTests: XCTestCase {
             isNodeDependencyLayout: false,
             minFileCount: 10,
             maxAverageFileSize: 256,
-            workerLimit: 4,
             exclusionMatcher: exclusionMatcher,
             cancellationCheck: {},
             metrics: &resumedMetrics,
             continuation: progressContinuation,
             emissionState: &resumedEmissionState
-        )
-        let resumedSerial = try await summarizer.summaryIfNeeded(
-            url: rootURL,
-            childEntries: rootEntries,
-            metadata: rootMetadata,
-            includeHiddenFiles: false,
-            treatPackagesAsDirectories: false,
-            isNodeDependencyLayout: false,
-            minFileCount: 10,
-            maxAverageFileSize: 256,
-            workerLimit: 1,
-            exclusionMatcher: exclusionMatcher,
-            cancellationCheck: {},
-            metrics: &resumedSerialMetrics,
-            continuation: progressContinuation,
-            emissionState: &resumedSerialEmissionState
-        )
+        ).summary
+        await pool.finish()
         _ = progressStream
 
         XCTAssertEqual(resumed?.descendantFileCount, reference?.descendantFileCount)
@@ -4326,17 +4320,6 @@ final class ScanEngineTests: XCTestCase {
             reference?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
         )
         XCTAssertEqual(resumed?.sharedAllocationAccumulator.identityCount, 1)
-        XCTAssertEqual(resumedSerial?.descendantFileCount, resumed?.descendantFileCount)
-        XCTAssertEqual(resumedSerial?.logicalSize, resumed?.logicalSize)
-        XCTAssertEqual(resumedSerial?.allocatedSize, resumed?.allocatedSize)
-        XCTAssertEqual(
-            resumedSerial?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path,
-            resumed?.sharedAllocationAccumulator.winner(for: hardLinkIdentity)?.path
-        )
-        XCTAssertEqual(
-            resumedSerial?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner,
-            resumed?.sharedAllocationAccumulator.duplicateAllocatedSizeByOwner
-        )
     }
 
     func testNodeModulesPnpmStoreAutoSummarizesAtShallowDepth() async throws {
@@ -4901,37 +4884,6 @@ private func cloneFileOrSkip(at sourceURL: URL, to destinationURL: URL) throws {
         }
         throw NSError(domain: NSPOSIXErrorDomain, code: Int(errorCode))
     }
-}
-
-private func setExtendedAttribute(named name: String, data: Data, at url: URL) throws {
-    let result = data.withUnsafeBytes { bytes in
-        url.withUnsafeFileSystemRepresentation { path in
-            guard let path else { return Int32(-1) }
-            return setxattr(path, name, bytes.baseAddress, bytes.count, 0, 0)
-        }
-    }
-    guard result == 0 else {
-        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-    }
-}
-
-private func makeScanEngineFileNode(id: String, name: String, size: Int64) -> FileNodeRecord {
-    FileNodeRecord(
-        id: id,
-        url: URL(filePath: id),
-        name: name,
-        isDirectory: false,
-        isSymbolicLink: false,
-        allocatedSize: size,
-        logicalSize: size,
-        descendantFileCount: 1,
-        lastModified: nil,
-        isPackage: false,
-        isAccessible: true,
-        isSelfAccessible: true,
-        isSynthetic: false,
-        isAutoSummarized: false
-    )
 }
 
 private enum AsyncTestTimeout: Error {

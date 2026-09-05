@@ -85,7 +85,9 @@ struct DiscardPileReviewSheet: View {
     }
 
     private var listAndStatusBar: some View {
-        VStack(spacing: 0) {
+        let selectedRowCount = selection.intersection(rowIDs).count
+
+        return VStack(spacing: 0) {
             List(selection: $selection) {
                 ForEach(rows) { row in
                     reviewRow(row)
@@ -116,7 +118,7 @@ struct DiscardPileReviewSheet: View {
 
                 if selectedRowCount > 0 {
                     Text(verbatim: "•")
-                    Text(selectedText)
+                    Text(selectedText(for: selectedRowCount))
                 }
 
                 Spacer()
@@ -136,7 +138,9 @@ struct DiscardPileReviewSheet: View {
     }
 
     private func reviewRow(_ row: DiscardPileReviewRow) -> some View {
-        HStack(spacing: 10) {
+        let removeButtonLabel = removeButtonLabel(for: row)
+
+        return HStack(spacing: 10) {
             Image(systemName: row.systemImageName)
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
@@ -167,8 +171,8 @@ struct DiscardPileReviewSheet: View {
                 Image(systemName: "minus.circle")
             }
             .buttonStyle(.borderless)
-            .help(removeButtonLabel(for: row))
-            .accessibilityLabel(Text(removeButtonLabel(for: row)))
+            .help(removeButtonLabel)
+            .accessibilityLabel(Text(removeButtonLabel))
         }
         .padding(.vertical, 4)
     }
@@ -178,12 +182,8 @@ struct DiscardPileReviewSheet: View {
         return String(localized: "\(summary.itemCount) items • \(size)", comment: "Discard Pile status showing the marked item count and total allocated size. The item count controls pluralization.")
     }
 
-    private var selectedText: String {
+    private func selectedText(for selectedRowCount: Int) -> String {
         String(localized: "\(selectedRowCount) selected", comment: "Discard Pile status showing the number of selected review rows. The count controls pluralization.")
-    }
-
-    private var selectedRowCount: Int {
-        selection.intersection(rowIDs).count
     }
 
     private func removeButtonLabel(for row: DiscardPileReviewRow) -> String {

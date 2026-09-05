@@ -45,7 +45,6 @@ struct WorkspaceNavigationState: Equatable {
             lhs.focusForwardStack == rhs.focusForwardStack &&
             lhs.tableContentID == rhs.tableContentID &&
             lhs.tableContentRevision == rhs.tableContentRevision &&
-            lhs.tableNodes == rhs.tableNodes &&
             lhs.selectedAncestorIDs == rhs.selectedAncestorIDs
     }
 }
@@ -316,11 +315,6 @@ private extension WorkspaceNavigationState {
             selectedNodeID = nil
         }
 
-        if let selectedNodeID,
-           !selectedNodeIDs.contains(selectedNodeID) {
-            self.selectedNodeID = nil
-        }
-
         if selectedNodeID == nil {
             selectedNodeID = firstSelectedID(in: selectedNodeIDs)
         }
@@ -350,8 +344,6 @@ private extension WorkspaceNavigationState {
             next.selectedAncestorIDs = []
             return next
         }
-
-        next.clearMissingSelectionReferences()
 
         guard let selectedNodeID = next.selectedNodeID else {
             next.selectedAncestorIDs = []
@@ -399,7 +391,7 @@ private extension WorkspaceNavigationState {
     }
 
     func firstSelectedID(in nodeIDs: Set<FileNodeRecord.ID>) -> FileNodeRecord.ID? {
-        tableNodes.first(where: { nodeIDs.contains($0.id) })?.id ?? nodeIDs.sorted().first
+        tableNodes.first(where: { nodeIDs.contains($0.id) })?.id ?? nodeIDs.min()
     }
 }
 
@@ -463,7 +455,7 @@ final class WorkspaceNavigationModel: ObservableObject {
             emittedIDs.insert(node.id)
         }
 
-        for id in state.selectedNodeIDs.sorted() where !emittedIDs.contains(id) {
+        for id in state.selectedNodeIDs.lazy.filter({ !emittedIDs.contains($0) }).sorted() {
             if let node = fileTreeStore.node(id: id) {
                 nodes.append(node)
             }

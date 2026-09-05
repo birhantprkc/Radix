@@ -225,7 +225,7 @@ nonisolated enum SunburstLayout {
                 } else {
                     onlyGroupedChild = nil
                 }
-                groupedSize = addingClamped(groupedSize, size)
+                groupedSize = ScanIntegerMath.addingClamped(groupedSize, size)
             } else {
                 visible.append(
                     GroupEntry(
@@ -268,11 +268,6 @@ nonisolated enum SunburstLayout {
         }
 
         return visible
-    }
-
-    private nonisolated static func addingClamped(_ lhs: Int64, _ rhs: Int64) -> Int64 {
-        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
-        return overflow ? .max : sum
     }
 
     private nonisolated static func colorRole(for entry: GroupEntry) -> SunburstColorRole {

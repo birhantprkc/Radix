@@ -270,12 +270,11 @@ nonisolated struct ScanSnapshot: Identifiable, Sendable {
             cancellationCheck: cancellationCheck
         ) else { return nil }
 
-        let replacedRootPaths = Array(replacements.keys)
         var retainedWarnings: [ScanWarning] = []
         retainedWarnings.reserveCapacity(scanWarnings.count)
         for warning in scanWarnings {
             try cancellationCheck()
-            guard !replacedRootPaths.contains(where: { replacedRootPath in
+            guard !replacements.keys.contains(where: { replacedRootPath in
                 Self.path(warning.path, isContainedIn: replacedRootPath)
             }) else {
                 continue

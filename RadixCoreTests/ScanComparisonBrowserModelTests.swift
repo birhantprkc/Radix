@@ -18,8 +18,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query("first"),
-            changeKinds: allKinds
+            query: query("first")
         )
         try await waitUntil { await gate.requestCount == 1 }
         await gate.resumeRequest(at: 0)
@@ -31,8 +30,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query("second"),
-            changeKinds: allKinds
+            query: query("second")
         )
         try await waitUntil { await gate.requestCount == 2 }
 
@@ -62,16 +60,14 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query("first"),
-            changeKinds: allKinds
+            query: query("first")
         )
         try await waitUntil { await gate.requestCount == 1 }
         model.refresh(
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query("second"),
-            changeKinds: allKinds
+            query: query("second")
         )
         try await waitUntil { await gate.requestCount == 2 }
 
@@ -100,8 +96,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query,
-            changeKinds: allKinds
+            query: query
         )
         try await waitUntil { await gate.requestCount == 1 }
         model.cancel()
@@ -110,8 +105,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query,
-            changeKinds: allKinds
+            query: query
         )
         try await waitUntil { await gate.requestCount == 2 }
         await gate.resumeRequest(at: 1)
@@ -129,25 +123,22 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: UUID(),
             rows: rows,
             changeTree: .empty,
-            query: query("second"),
-            changeKinds: allKinds
+            query: query("second", changeKinds: [.added])
         )
 
         try await waitUntil { !model.isRefreshing }
         XCTAssertEqual(model.displayedRows.map(\.name), ["second.txt"])
         XCTAssertTrue(model.projection.roots.isEmpty)
+        XCTAssertEqual(model.projection.changeKinds, [.added])
     }
 
     func testDefaultProcessorBuildsSearchIndexOnlyForNonemptySearch() async throws {
         let rows = [makeRow("first.txt"), makeRow("second.txt")]
-        let comparisonID = UUID()
         let emptyOutput = try await ScanComparisonBrowserModel.process(
             ScanComparisonBrowserModel.WorkInput(
-                comparisonID: comparisonID,
                 rows: rows,
                 changeTree: .empty,
                 query: query(""),
-                changeKinds: allKinds,
                 searchIndex: nil
             )
         )
@@ -156,11 +147,9 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
 
         let searchOutput = try await ScanComparisonBrowserModel.process(
             ScanComparisonBrowserModel.WorkInput(
-                comparisonID: comparisonID,
                 rows: rows,
                 changeTree: .empty,
                 query: query("second"),
-                changeKinds: allKinds,
                 searchIndex: nil
             )
         )
@@ -176,8 +165,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: UUID(),
             rows: [makeRow("first.txt")],
             changeTree: .empty,
-            query: query("first"),
-            changeKinds: allKinds
+            query: query("first")
         )
         try await waitUntil { !model.isRefreshing }
         XCTAssertEqual(model.displayedRows.map(\.name), ["first.txt"])
@@ -186,8 +174,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: UUID(),
             rows: [makeRow("second.txt")],
             changeTree: .empty,
-            query: query("second"),
-            changeKinds: allKinds
+            query: query("second")
         )
         try await waitUntil { !model.isRefreshing }
 
@@ -213,8 +200,7 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query(""),
-            changeKinds: allKinds
+            query: query("")
         )
         try await waitUntil { await recorder.searchTexts.count == 1 }
 
@@ -222,15 +208,13 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query("first"),
-            changeKinds: allKinds
+            query: query("first")
         )
         model.refresh(
             comparisonID: comparisonID,
             rows: rows,
             changeTree: .empty,
-            query: query("second"),
-            changeKinds: allKinds
+            query: query("second")
         )
 
         try await waitUntil { await recorder.searchTexts.count == 2 }
@@ -238,12 +222,12 @@ final class ScanComparisonBrowserModelTests: XCTestCase {
         XCTAssertEqual(processedSearchTexts, ["", "second"])
     }
 
-    private var allKinds: Set<ScanComparisonChangeKind> {
-        Set(ScanComparisonChangeKind.allCases)
-    }
-
-    private func query(_ searchText: String) -> ScanComparisonRowQuery {
+    private func query(
+        _ searchText: String,
+        changeKinds: Set<ScanComparisonChangeKind> = Set(ScanComparisonChangeKind.allCases)
+    ) -> ScanComparisonRowQuery {
         ScanComparisonRowQuery(
+            changeKinds: changeKinds,
             searchText: searchText,
             sortOrder: [ScanComparisonRowComparator.defaultOrder]
         )
@@ -297,7 +281,7 @@ private actor ComparisonProcessorGate {
                 to: input.rows,
                 cancellationCheck: {}
             ),
-            projection: input.changeTree.significantProjection(changeKinds: input.changeKinds)
+            projection: input.changeTree.significantProjection(changeKinds: input.query.changeKinds)
         )
     }
 
@@ -318,7 +302,7 @@ private actor ComparisonProcessorRecorder {
                 to: input.rows,
                 cancellationCheck: {}
             ),
-            projection: input.changeTree.significantProjection(changeKinds: input.changeKinds)
+            projection: input.changeTree.significantProjection(changeKinds: input.query.changeKinds)
         )
     }
 }
