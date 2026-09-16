@@ -209,7 +209,7 @@ extension FileNodeRecord {
         return isDirectory ? "folder.fill" : "doc.fill"
     }
 
-    var secondaryStatusText: String? {
+    nonisolated var secondaryStatusText: String? {
         if isSynthetic {
             return String(localized: "Estimated from volume usage", comment: "Secondary status shown for system storage estimated from volume usage.")
         }
@@ -222,7 +222,7 @@ extension FileNodeRecord {
         return sharedStorageStatusText
     }
 
-    var sharedStorageStatusText: String? {
+    nonisolated var sharedStorageStatusText: String? {
         if cloneIdentity != nil {
             return String(localized: "APFS clone · shared storage", comment: "Secondary status for a full APFS clone whose data storage is shared with another file.")
         }
@@ -232,7 +232,7 @@ extension FileNodeRecord {
         return nil
     }
 
-    var sharedStorageDescription: String? {
+    nonisolated var sharedStorageDescription: String? {
         if cloneIdentity != nil {
             return String(
                 localized: "APFS lets files share storage, but Finder may show the full file size for every clone. Radix counts shared bytes once, so one file carries the allocated size and the others may show zero. That file is only an accounting representative, not an original. Deleting one clone may not free the displayed amount.",

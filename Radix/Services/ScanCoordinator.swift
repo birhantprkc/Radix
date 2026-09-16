@@ -13,7 +13,7 @@ enum AppModelPhase: Equatable, Sendable {
     case failed
 }
 
-protocol ScanEventStreaming: Sendable {
+nonisolated protocol ScanEventStreaming: Sendable {
     nonisolated func scan(target: ScanTarget, options: ScanOptions) -> AsyncThrowingStream<ScanProgressEvent, Error>
     nonisolated func scanSubtree(
         target: ScanTarget,

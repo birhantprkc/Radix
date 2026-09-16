@@ -5,7 +5,7 @@
 
 import Foundation
 
-protocol FileSearching: Sendable {
+nonisolated protocol FileSearching: Sendable {
     /// Returns matching tree records with at most one entry per node ID.
     func search(
         snapshotID: UUID,

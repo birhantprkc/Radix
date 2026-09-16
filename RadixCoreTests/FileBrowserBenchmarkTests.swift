@@ -22,7 +22,7 @@ struct FileBrowserBenchmarkTests {
                 : nil
         )
         let sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
         let expectedCount = noMatches ? 0 : fixture.fileCount
         let phases: [(name: String, query: FileBrowserQuery, order: [FileNodeTableComparator], count: Int)] = [
@@ -126,7 +126,7 @@ struct FileBrowserBenchmarkTests {
         )
 
         let snapshotID = UUID()
-        let searchService = await FileSearchService()
+        let searchService = FileSearchService()
         let noMatchQuery = FileBrowserQuery(text: "__radix_no_match__")
         let coldMeasurement = try await Self.measureAsyncWithMemory {
             try await searchService.search(
@@ -532,7 +532,7 @@ struct FileBrowserBenchmarkTests {
         store: FileTreeStore,
         query: FileBrowserQuery
     ) async throws -> CancellationMeasurement {
-        let service = await FileSearchService()
+        let service = FileSearchService()
         return try await measureSearchCancellation(
             service: service,
             snapshotID: UUID(),

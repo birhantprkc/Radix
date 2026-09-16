@@ -7,7 +7,7 @@ import Combine
 import CoreGraphics
 import Foundation
 
-protocol TreemapLayouting: Sendable {
+nonisolated protocol TreemapLayouting: Sendable {
     func segments(
         in treeStore: DiskMapTreeStore,
         rootID: String,

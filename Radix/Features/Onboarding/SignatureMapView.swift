@@ -90,7 +90,7 @@ struct SignatureMapView: View {
     }
 }
 
-private struct MapSector: Shape {
+nonisolated private struct MapSector: Shape {
     let start: Double
     let end: Double
     let inner: Double

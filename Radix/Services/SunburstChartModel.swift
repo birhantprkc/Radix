@@ -8,7 +8,7 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 
-protocol SunburstLayouting: Sendable {
+nonisolated protocol SunburstLayouting: Sendable {
     func segments(
         in treeStore: DiskMapTreeStore,
         rootID: String,

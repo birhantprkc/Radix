@@ -135,7 +135,7 @@ struct FileBrowserModelTests {
         let nodes = [resume, report, cache, ignored]
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: nodes)
         let store = FileTreeStore(root: root, childrenByID: [root.id: nodes])
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
         let sortOrder = [FileNodeTableComparator(field: .allocatedSize, order: .reverse)]
         let currentContentsResults = FileBrowserResults.filteredAndSortedCurrentContents(
@@ -184,7 +184,7 @@ struct FileBrowserModelTests {
                 home.id: [visible],
             ])
         let scope = try #require(store.logicalScope(rootedAt: home.id))
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
 
         let metadataResults = try await service.search(
@@ -292,7 +292,7 @@ struct FileBrowserModelTests {
                 folder.id: [nested],
                 package.id: [payload],
             ])
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
         let cases: [(query: FileBrowserQuery, expected: [String])] = [
             (FileBrowserQuery(text: " \n ", itemKind: .file), [payload.id, nested.id, file.id]),
@@ -542,7 +542,7 @@ struct FileBrowserModelTests {
 
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [beta, alphaB, alphaA])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [beta, alphaB, alphaA]])
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let searchResults = try await service.search(
             snapshotID: UUID(),
             treeStore: store,
@@ -1054,7 +1054,7 @@ struct FileBrowserModelTests {
                 photos.id: [photo],
                 library.id: [cache],
             ])
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
 
         let photoMatches = try await service.search(
@@ -1110,7 +1110,7 @@ struct FileBrowserModelTests {
                 archive.id: [projects],
                 projects.id: [resume, report],
             ])
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
         let cases: [(query: String, expectedIDs: Set<String>)] = [
             ("/archive", [archive.id, projects.id, resume.id, report.id]),
@@ -1168,7 +1168,7 @@ struct FileBrowserModelTests {
             root: replacementRoot,
             childrenByID: [replacementRoot.id: [replacementFile]]
         )
-        let service = await FileSearchService()
+        let service = FileSearchService()
 
         let originalMatches = try await service.search(
             snapshotID: snapshotID,
@@ -1213,7 +1213,7 @@ struct FileBrowserModelTests {
         let match = makeTestFileNode(id: "/root/target.txt", name: "target.txt")
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [match])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [match]])
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
 
         func resultIDs() async throws -> [String] {
@@ -1248,7 +1248,7 @@ struct FileBrowserModelTests {
         let root = makeTestDirectoryNode(id: "/root", name: "root", children: [target])
         let store = FileTreeStore(root: root, childrenByID: [root.id: [target]])
         for query in [FileBrowserQuery(text: "target"), FileBrowserQuery(itemKind: .file)] {
-            let service = await FileSearchService()
+            let service = FileSearchService()
             let snapshotID = UUID()
 
             let cancelledColdSearch = Task {
@@ -1365,7 +1365,7 @@ struct FileBrowserModelTests {
                 overlappingPrefixFolder.id: [overlappingPrefixFile],
             ])
         let searchableNodes = store.indexedNodeIDs(excludingRoot: true).compactMap(store.node(id:))
-        let service = await FileSearchService()
+        let service = FileSearchService()
         let snapshotID = UUID()
         let queries = [
             "/",

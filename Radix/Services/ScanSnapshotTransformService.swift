@@ -11,7 +11,7 @@ nonisolated enum ScanSnapshotTransformError: Error, Sendable {
     case sharedAllocationRequiresFullScan
 }
 
-protocol ScanSnapshotTransforming: Sendable {
+nonisolated protocol ScanSnapshotTransforming: Sendable {
     func replacingNode(
         in snapshot: ScanSnapshot,
         id targetID: String,
