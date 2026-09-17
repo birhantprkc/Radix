@@ -55,8 +55,8 @@ Choose validation based on the change:
   tests and build the complete app.
 - Test-only changes: run the affected tests. Run the full core suite
   when changing shared fixtures or test infrastructure.
-- UI behavior changes: also manually exercise the affected interaction
-  using this checkout's exact Debug bundle.
+- UI changes that affect interactions, navigation, focus, selection, or accessibility: manually exercise the affected behavior using this checkout’s exact Debug bundle.
+- Static UI changes, such as editing text or removing an informational section, do not require a manual UI check unless they also affect behavior.
 - Documentation-only changes: verify changed paths and commands and
   check the diff for formatting errors. Builds and tests are not required.
 - Performance changes: run relevant benchmarks when practical.
