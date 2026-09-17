@@ -31,7 +31,6 @@ struct SelectionInspectorView: View {
                 InspectorNoSelectionView()
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func multiSelectionView(_ selectedNodes: [FileNodeRecord]) -> some View {
