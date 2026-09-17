@@ -60,17 +60,6 @@ extension ScanWarningCategory {
 }
 
 extension FullDiskAccessStatus {
-    var fullDiskAccessBadgeTitle: String {
-        switch self {
-        case .granted:
-            return String(localized: "Enabled", comment: "Full Disk Access status badge when permission is granted.")
-        case .notGranted:
-            return String(localized: "Not Enabled", comment: "Full Disk Access status badge when permission is not granted.")
-        case .unknown:
-            return String(localized: "Unknown", comment: "Full Disk Access status badge when permission cannot be determined.")
-        }
-    }
-
     var fullDiskAccessSettingsSummary: String {
         switch self {
         case .granted:

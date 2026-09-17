@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 struct FileBrowserActions {
     let selectNode: (String?) -> Void
-    let selectNodeAfterViewUpdate: (String?) -> Void
     let selectNodes: (Set<String>, String?) -> Void
     let selectNodesAfterViewUpdate: (Set<String>, String?) -> Void
     let expandSummarizedNode: (FileNodeRecord) -> Void

@@ -158,7 +158,6 @@ struct ActiveWorkspaceView: View {
     private var fileBrowserActions: FileBrowserActions {
         FileBrowserActions(
             selectNode: actions.selectNodeImmediately,
-            selectNodeAfterViewUpdate: actions.selectNode,
             selectNodes: actions.selectNodesImmediately,
             selectNodesAfterViewUpdate: actions.selectNodes,
             expandSummarizedNode: actions.expandSummarizedNode,
