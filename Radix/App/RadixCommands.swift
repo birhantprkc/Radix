@@ -33,13 +33,13 @@ struct RadixCommands: Commands {
         }
 
         CommandGroup(after: .toolbar) {
-            Button("Focus Sidebar", systemImage: "sidebar.left") {
+            Button("Focus Sidebar") {
                 workspaceFocusAction?(.sidebar)
             }
             .keyboardShortcut("1")
             .disabled(!appModel.canUseWorkspaceCommands || workspaceFocusAction == nil)
 
-            Button("Focus Chart", systemImage: "chart.pie") {
+            Button("Focus Chart") {
                 workspaceFocusAction?(.chart)
             }
             .keyboardShortcut("2")
@@ -49,7 +49,7 @@ struct RadixCommands: Commands {
                     scanState.snapshot == nil
             )
 
-            Button("Focus Contents", systemImage: "list.bullet") {
+            Button("Focus Contents") {
                 workspaceFocusAction?(.contents)
             }
             .keyboardShortcut("3")
@@ -93,7 +93,7 @@ struct RadixCommands: Commands {
                     scanState.snapshot == nil
             )
 
-            Button("Actual Size", systemImage: "arrow.counterclockwise") {
+            Button("Actual Size") {
                 chartViewportAction?(.reset)
             }
             .keyboardShortcut("0", modifiers: [.command])
@@ -105,7 +105,7 @@ struct RadixCommands: Commands {
         }
 
         CommandGroup(replacing: .newItem) {
-            Button("Scan Folder…", systemImage: "folder.badge.plus") {
+            Button("Scan Folder…") {
                 appModel.presentOpenPanelAndScan()
             }
             .keyboardShortcut("o")
@@ -125,13 +125,13 @@ struct RadixCommands: Commands {
 
             Divider()
 
-            Button("Compare Scans…", systemImage: "rectangle.split.2x1") {
+            Button("Compare Scans…") {
                 appModel.compareScanSnapshots()
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
             .disabled(!appModel.canCompareScanSnapshots)
 
-            Button("Compare Current Scan With Saved Scan…", systemImage: "arrow.left.arrow.right") {
+            Button("Compare Current Scan With Saved Scan…") {
                 appModel.compareCurrentScanWithSnapshot()
             }
             .keyboardShortcut("d", modifiers: [.command, .option])
@@ -139,13 +139,13 @@ struct RadixCommands: Commands {
 
             Divider()
 
-            Button("Rescan Current Folder", systemImage: "arrow.clockwise") {
+            Button("Rescan Current Folder") {
                 appModel.rescan()
             }
             .keyboardShortcut("r")
             .disabled(!appModel.canRescanCurrentFolder)
 
-            Button("Rescan Entire Scan", systemImage: "arrow.clockwise.circle") {
+            Button("Rescan Entire Scan") {
                 appModel.rescanEntireScan()
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
@@ -159,13 +159,13 @@ struct RadixCommands: Commands {
         }
 
         CommandMenu("Find") {
-            Button("Find in Current Contents", systemImage: "sparkle.magnifyingglass") {
+            Button("Find in Current Contents") {
                 fileListFilterAction?(.currentContents)
             }
             .keyboardShortcut("f")
             .disabled(fileListFilterAction == nil)
 
-            Button("Search Entire Scan", systemImage: "magnifyingglass") {
+            Button("Search Entire Scan") {
                 fileListFilterAction?(.entireScan)
             }
             .keyboardShortcut("f", modifiers: [.command, .shift])
@@ -195,13 +195,13 @@ struct RadixCommands: Commands {
 
             Divider()
 
-            Button("Zoom Into Selection", systemImage: "plus.magnifyingglass") {
+            Button("Zoom Into Selection") {
                 appModel.zoomIntoSelection()
             }
             .keyboardShortcut(.downArrow, modifiers: [.command])
             .disabled(!appModel.canUseWorkspaceCommands || !appModel.canZoomIntoSelection)
 
-            Button("Back to Scan Root", systemImage: "arrowshape.turn.up.backward") {
+            Button("Back to Scan Root") {
                 appModel.resetFocusToRoot()
             }
             .keyboardShortcut("\\", modifiers: [.command, .option])
@@ -209,7 +209,7 @@ struct RadixCommands: Commands {
 
             Divider()
 
-            Button("Clear Selection", systemImage: "clear") {
+            Button("Clear Selection") {
                 appModel.clearSelection()
             }
             .keyboardShortcut(.escape, modifiers: [])
@@ -229,6 +229,7 @@ struct RadixCommands: Commands {
                 shortcut: "o",
                 modifiers: [.command, .shift]
             )
+            .labelStyle(.titleOnly)
 
             Button(
                 FileNodeAction.openInTerminal.title(for: navigation.selectedNode),
@@ -254,6 +255,7 @@ struct RadixCommands: Commands {
                 shortcut: "c",
                 modifiers: [.command, .shift]
             )
+            .labelStyle(.titleOnly)
 
             Divider()
 

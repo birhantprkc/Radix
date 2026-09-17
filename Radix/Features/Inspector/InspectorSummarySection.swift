@@ -39,19 +39,13 @@ struct InspectorSummarySection: View {
                 if showsMoreMenu {
                     Menu {
                         if availability.canOpen {
-                            Button(
-                                FileNodeAction.open.title,
-                                systemImage: FileNodeAction.open.systemImageName
-                            ) {
+                            Button(FileNodeAction.open.title) {
                                 actions.perform(.open)
                             }
                         }
 
                         if availability.canCopyPath {
-                            Button(
-                                FileNodeAction.copyPath.title,
-                                systemImage: FileNodeAction.copyPath.systemImageName
-                            ) {
+                            Button(FileNodeAction.copyPath.title) {
                                 actions.perform(.copyPath)
                             }
                         }

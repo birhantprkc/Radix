@@ -86,7 +86,7 @@ struct InspectorMultiSelectionView: View {
             if availability.canCopyPath || canMoveSelectionToTrash {
                 Menu {
                     if availability.canCopyPath {
-                        Button("Copy Paths", systemImage: FileNodeAction.copyPath.systemImageName) {
+                        Button("Copy Paths") {
                             actions.copyPaths(summary.selectedNodes)
                         }
                     }

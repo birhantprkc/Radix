@@ -594,10 +594,8 @@ struct ScanComparisonView: View {
                 }
                 .disabled(!actions.canRevealNode(node))
 
-                Button {
+                Button("Copy Path") {
                     actions.copyNodePath(node)
-                } label: {
-                    Label("Copy Path", systemImage: "doc.on.doc")
                 }
                 .disabled(node.fileURL == nil)
             }
@@ -633,10 +631,8 @@ struct ScanComparisonView: View {
             }
             .disabled(!actions.canReveal(row))
 
-            Button {
+            Button("Copy Path") {
                 actions.copyPath(row)
-            } label: {
-                Label("Copy Path", systemImage: "doc.on.doc")
             }
         }
         .controlSize(.small)
@@ -655,19 +651,15 @@ struct ScanComparisonView: View {
             }
             .disabled(!actions.canReveal(row))
 
-            Button {
+            Button("Show in Browser") {
                 actions.showInBrowser(row)
-            } label: {
-                Label("Show in Browser", systemImage: "sidebar.squares.left")
             }
             .disabled(!actions.canShowInBrowser(row))
 
             Divider()
 
-            Button {
+            Button("Copy Path") {
                 actions.copyPath(row)
-            } label: {
-                Label("Copy Path", systemImage: "doc.on.doc")
             }
         }
     }
@@ -676,10 +668,8 @@ struct ScanComparisonView: View {
     private func aggregateContextMenu(for ids: Set<ScanComparisonChangeTreeNode.ID>) -> some View {
         if let node = singleAggregateNode(in: ids) {
             if node.isRemainder {
-                Button {
+                Button("Show All Changes") {
                     showAllChanges(for: node)
-                } label: {
-                    Label("Show All Changes", systemImage: "list.bullet")
                 }
             } else {
                 Button {
@@ -689,19 +679,15 @@ struct ScanComparisonView: View {
                 }
                 .disabled(!actions.canRevealNode(node))
 
-                Button {
+                Button("Show in Browser") {
                     actions.showNodeInBrowser(node)
-                } label: {
-                    Label("Show in Browser", systemImage: "sidebar.squares.left")
                 }
                 .disabled(!actions.canShowNodeInBrowser(node))
 
                 Divider()
 
-                Button {
+                Button("Copy Path") {
                     actions.copyNodePath(node)
-                } label: {
-                    Label("Copy Path", systemImage: "doc.on.doc")
                 }
                 .disabled(node.fileURL == nil)
             }

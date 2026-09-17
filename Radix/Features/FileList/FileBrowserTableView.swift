@@ -372,6 +372,7 @@ struct FileBrowserTableView: View {
             fileActionButton(.revealInFinder, availability: selection.actionAvailability, selectedID: selection.id)
 
             fileActionButton(.open, availability: selection.actionAvailability, selectedID: selection.id)
+                .labelStyle(.titleOnly)
 
             fileActionButton(
                 .openInTerminal,
@@ -382,16 +383,13 @@ struct FileBrowserTableView: View {
 
             if node.isAutoSummarized {
                 let expansionIsActive = isExpanding(node)
-                Button(
-                    expansionIsActive ? "Expanding…" : "Expand Fully",
-                    systemImage: "arrowshape.turn.up.right.circle.fill"
-                ) {
+                Button(expansionIsActive ? "Expanding…" : "Expand Fully") {
                     actions.selectNode(id)
                     expandSummarizedNode(node)
                 }
                 .disabled(expansionIsActive)
             } else {
-                Button("Zoom In", systemImage: "magnifyingglass") {
+                Button("Zoom In") {
                     actions.selectNode(id)
                     actions.zoomIntoSelection()
                 }
@@ -399,7 +397,7 @@ struct FileBrowserTableView: View {
             }
 
             if node.isDirectory {
-                Button("Rescan Folder", systemImage: "arrow.clockwise") {
+                Button("Rescan Folder") {
                     actions.rescanFolder(id)
                 }
                 .disabled(!scanState.canRescanFolder(id: id))
@@ -424,6 +422,7 @@ struct FileBrowserTableView: View {
             .disabled(!FileNodeAction.moveToTrash.isEnabled(in: selection.actionAvailability))
 
             fileActionButton(.copyPath, availability: selection.actionAvailability, selectedID: selection.id)
+                .labelStyle(.titleOnly)
         }
     }
 
@@ -435,7 +434,7 @@ struct FileBrowserTableView: View {
         }
         .disabled(!selection.actionAvailability.canRevealInFinder)
 
-        Button("Copy Paths", systemImage: FileNodeAction.copyPath.systemImageName) {
+        Button("Copy Paths") {
             actions.selectNodes(selection.ids, selection.primaryID)
             actions.bulkFileActions.copyPaths(selection.nodes)
         }
