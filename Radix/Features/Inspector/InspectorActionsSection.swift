@@ -37,7 +37,7 @@ struct InspectorActionBar: View {
             .controlSize(.regular)
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            .padding(.bottom, 24)
+            .padding(.bottom, 16)
             .background(.bar)
         }
     }
