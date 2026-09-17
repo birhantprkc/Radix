@@ -32,7 +32,6 @@ struct ContentView: View {
             SidebarView(
                 model: appModel.sidebar,
                 scanState: appModel.scanState,
-                focusedWorkspaceTarget: $focusedWorkspaceTarget,
                 discardPileSummary: discardPileSnapshot.summary,
                 discardPileDragIsActive: discardPileDragIsActive,
                 actions: sidebarActions
@@ -83,13 +82,6 @@ struct ContentView: View {
         }
         .environmentObject(appModel.workspaceTour)
         .environmentObject(tourPresentation)
-        .focusedSceneValue(\.workspaceFocusAction) { target in
-            guard appModel.scanComparison == nil else { return }
-            if target == .sidebar {
-                splitViewVisibility = .all
-            }
-            focusedWorkspaceTarget = target
-        }
         .background(WorkspaceWindowObserver { window in
             appModel.setWorkspaceWindowNumber(window?.windowNumber)
         })
@@ -103,7 +95,6 @@ struct ContentView: View {
             )
                 .inspectorColumnWidth(min: 300, ideal: 330, max: 380)
         }
-        .focusedSceneValue(\.inspectorVisibility, inspectorPresentation)
         .onChange(of: appModel.workspaceTourSessionID) { _, sessionID in
             if sessionID != nil {
                 inspectorPreferenceBeforeTour = prefersInspectorPresented

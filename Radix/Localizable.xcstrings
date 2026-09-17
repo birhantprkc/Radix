@@ -5406,37 +5406,43 @@
         }
       }
     },
-    "Clear current contents filter" : {
-      "comment" : "Help text for clearing the current-folder search filter.",
+    "Clear current contents search" : {
+      "comment" : "Help text for clearing the current-folder search text.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aktuellen Inhaltsfilter löschen"
+            "value" : "Suche im aktuellen Inhalt löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear current contents search"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Borrar el filtro del contenido actual"
+            "value" : "Borrar la búsqueda del contenido actual"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Effacer le filtre du contenu actuel"
+            "value" : "Effacer la recherche dans le contenu actuel"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancella il filtro del contenuto corrente"
+            "value" : "Cancella la ricerca nel contenuto corrente"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除当前内容筛选条件"
+            "value" : "清除当前内容搜索"
           }
         }
       }
@@ -5688,40 +5694,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除最近扫描…"
-          }
-        }
-      }
-    },
-    "Clear Selection" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auswahl aufheben"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Borrar selección"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effacer la sélection"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancella selezione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除选择"
           }
         }
       }
@@ -6015,40 +5987,6 @@
         }
       }
     },
-    "Compare Current Scan With Saved Scan…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktuellen Scan mit gespeichertem Scan vergleichen …"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comparar el análisis actual con uno guardado…"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comparer l’analyse actuelle avec une analyse enregistrée…"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confronta scansione corrente con scansione salvata…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将当前扫描与已保存的扫描比较…"
-          }
-        }
-      }
-    },
     "Compare Scans" : {
       "localizations" : {
         "de" : {
@@ -6217,41 +6155,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "比较失败"
-          }
-        }
-      }
-    },
-    "Complete a live scan before comparing it with a snapshot." : {
-      "comment" : "Error shown when comparing a live scan before it is complete.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schließen Sie einen Live-Scan ab, bevor Sie ihn mit einem Snapshot vergleichen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Completa un análisis en vivo antes de compararlo con una instantánea."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminez une analyse en direct avant de la comparer avec un instantané."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Completa una scansione in tempo reale prima di confrontarla con un'istantanea."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先完成实时扫描，再将其与快照比较。"
           }
         }
       }
@@ -9381,41 +9284,6 @@
         }
       }
     },
-    "Filter current contents" : {
-      "comment" : "Search field placeholder for filtering the current directory contents.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktuellen Inhalt filtern"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filtrar el contenido actual"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filtrer le contenu actuel"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filtra il contenuto corrente"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "筛选当前内容"
-          }
-        }
-      }
-    },
     "Filters" : {
       "localizations" : {
         "de" : {
@@ -9521,40 +9389,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "查找文件"
-          }
-        }
-      }
-    },
-    "Find in Current Contents" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Im aktuellen Inhalt suchen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar en el contenido actual"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechercher dans le contenu actuel"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trova nel contenuto corrente"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在当前内容中查找"
           }
         }
       }
@@ -9800,108 +9634,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在完成 %@"
-          }
-        }
-      }
-    },
-    "Focus Chart" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagramm fokussieren"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enfocar gráfico"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer le focus sur le graphique"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Focus sul grafico"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "聚焦图表"
-          }
-        }
-      }
-    },
-    "Focus Contents" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inhalt fokussieren"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enfocar contenido"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer le focus sur le contenu"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Focus sul contenuto"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "聚焦内容"
-          }
-        }
-      }
-    },
-    "Focus Sidebar" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Seitenleiste fokussieren"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enfocar barra lateral"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer le focus sur la barre latérale"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Focus sulla barra laterale"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "聚焦边栏"
           }
         }
       }
@@ -11348,40 +11080,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "包含 %@ 的非本地宗卷不支持增量扫描。"
-          }
-        }
-      }
-    },
-    "Inspect" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Untersuchen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inspeccionar"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inspecter"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ispeziona"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查"
           }
         }
       }
@@ -19778,6 +19476,88 @@
         }
       }
     },
+    "Search current contents" : {
+      "comment" : "Search field placeholder for searching the current directory contents.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktuellen Inhalt durchsuchen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search current contents"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en el contenido actual"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans le contenu actuel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca nel contenuto corrente"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索当前内容"
+          }
+        }
+      }
+    },
+    "Search Current Contents" : {
+      "comment" : "Menu command for searching the currently visible directory contents.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktuellen Inhalt durchsuchen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Current Contents"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en el contenido actual"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans le contenu actuel"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca nel contenuto corrente"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索当前内容"
+          }
+        }
+      }
+    },
     "Search entire scan" : {
       "comment" : "Search field placeholder for searching all scanned items.",
       "localizations" : {
@@ -24604,37 +24384,43 @@
         }
       }
     },
-    "Try a different filter or clear the current contents filter." : {
-      "comment" : "Empty state guidance shown when the current contents filter has no results.",
+    "Try a different search or adjust the filters." : {
+      "comment" : "Empty state guidance shown when searching the current contents has no results.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versuchen Sie einen anderen Filter oder löschen Sie den aktuellen Inhaltsfilter."
+            "value" : "Versuchen Sie eine andere Suche oder passen Sie die Filter an."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try a different search or adjust the filters."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prueba otro filtro o borra el filtro del contenido actual."
+            "value" : "Prueba otra búsqueda o ajusta los filtros."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Essayez un autre filtre ou effacez le filtre du contenu actuel."
+            "value" : "Essayez une autre recherche ou ajustez les filtres."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prova un filtro diverso o cancella il filtro del contenuto corrente."
+            "value" : "Prova una ricerca diversa o modifica i filtri."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请尝试其他筛选条件，或清除当前内容筛选条件。"
+            "value" : "请尝试其他搜索内容或调整筛选条件。"
           }
         }
       }
@@ -25697,43 +25483,43 @@
         }
       }
     },
-    "You can also select an item and choose Inspect > Add to Discard Pile (⇧⌘L)." : {
+    "You can also select an item and choose File > Add to Discard Pile (⇧⌘L)." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sie können auch ein Element auswählen und „Untersuchen > Zur Löschliste hinzufügen“ (⇧⌘L) wählen."
+            "value" : "Sie können auch ein Element auswählen und „Ablage > Zur Löschliste hinzufügen“ (⇧⌘L) wählen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can also select an item and choose Inspect > Add to Discard Pile (⇧⌘L)."
+            "value" : "You can also select an item and choose File > Add to Discard Pile (⇧⌘L)."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "También puedes seleccionar un elemento y elegir Inspeccionar > Añadir a la pila de descarte (⇧⌘L)."
+            "value" : "También puedes seleccionar un elemento y elegir Archivo > Añadir a la pila de descarte (⇧⌘L)."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vous pouvez aussi sélectionner un élément et choisir Inspecter > Ajouter à la pile de suppression (⇧⌘L)."
+            "value" : "Vous pouvez aussi sélectionner un élément et choisir Fichier > Ajouter à la pile de suppression (⇧⌘L)."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puoi anche selezionare un elemento e scegliere Ispeziona > Aggiungi all’elenco di eliminazione (⇧⌘L)."
+            "value" : "Puoi anche selezionare un elemento e scegliere File > Aggiungi all’elenco di eliminazione (⇧⌘L)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你也可以选择项目，然后选取“检查”>“加入待处理列表”（⇧⌘L）。"
+            "value" : "你也可以选择项目，然后选取“文件”>“加入待处理列表”（⇧⌘L）。"
           }
         }
       }

@@ -169,7 +169,7 @@ struct FileBrowserTableView: View {
         if model.isShowingEntireScanResults {
             return String(localized: "No items anywhere in this scan match your search.", comment: "Empty state shown when an entire-scan search has no results.")
         }
-        return String(localized: "Try a different filter or clear the current contents filter.", comment: "Empty state guidance shown when the current contents filter has no results.")
+        return String(localized: "Try a different search or adjust the filters.", comment: "Empty state guidance shown when searching the current contents has no results.")
     }
 
     @ViewBuilder

@@ -6,8 +6,6 @@ struct RadixCommands: Commands {
     @ObservedObject var navigation: WorkspaceNavigationModel
     @ObservedObject var workspaceTour: WorkspaceTourController
     @FocusedValue(\.fileListFilterAction) private var fileListFilterAction
-    @FocusedValue(\.inspectorVisibility) private var inspectorVisibility
-    @FocusedValue(\.workspaceFocusAction) private var workspaceFocusAction
     @FocusedValue(\.chartViewportAction) private var chartViewportAction
 
     var body: some Commands {
@@ -19,6 +17,7 @@ struct RadixCommands: Commands {
         )
 
         SidebarCommands()
+        InspectorCommands()
 
         CommandGroup(after: .help) {
             Button("Take a Quick Tour") {
@@ -33,46 +32,6 @@ struct RadixCommands: Commands {
         }
 
         CommandGroup(after: .toolbar) {
-            Button("Focus Sidebar") {
-                workspaceFocusAction?(.sidebar)
-            }
-            .keyboardShortcut("1")
-            .disabled(!appModel.canUseWorkspaceCommands || workspaceFocusAction == nil)
-
-            Button("Focus Chart") {
-                workspaceFocusAction?(.chart)
-            }
-            .keyboardShortcut("2")
-            .disabled(
-                !appModel.canUseWorkspaceCommands ||
-                    workspaceFocusAction == nil ||
-                    scanState.snapshot == nil
-            )
-
-            Button("Focus Contents") {
-                workspaceFocusAction?(.contents)
-            }
-            .keyboardShortcut("3")
-            .disabled(
-                !appModel.canUseWorkspaceCommands ||
-                    workspaceFocusAction == nil ||
-                    scanState.snapshot == nil
-            )
-
-            Divider()
-
-            Button(inspectorToggleTitle, systemImage: "sidebar.trailing") {
-                inspectorVisibility?.wrappedValue.toggle()
-            }
-            .keyboardShortcut("i", modifiers: [.control, .command])
-            .disabled(
-                !appModel.canUseWorkspaceCommands ||
-                    inspectorVisibility == nil ||
-                    scanState.snapshot == nil
-            )
-
-            Divider()
-
             Button("Zoom In", systemImage: "plus.magnifyingglass") {
                 chartViewportAction?(.zoomIn)
             }
@@ -131,12 +90,6 @@ struct RadixCommands: Commands {
             .keyboardShortcut("d", modifiers: [.command, .shift])
             .disabled(!appModel.canCompareScanSnapshots)
 
-            Button("Compare Current Scan With Saved Scan…") {
-                appModel.compareCurrentScanWithSnapshot()
-            }
-            .keyboardShortcut("d", modifiers: [.command, .option])
-            .disabled(!appModel.canCompareCurrentScanWithSnapshot)
-
             Divider()
 
             Button("Rescan Current Folder") {
@@ -156,20 +109,88 @@ struct RadixCommands: Commands {
             }
             .keyboardShortcut(".")
             .disabled(!scanState.canStopScan)
+
+            Divider()
+
+            selectedFileActionCommand(
+                .quickLook,
+                availability: selectedActionAvailability,
+                shortcut: "y"
+            )
+
+            selectedFileActionCommand(
+                .open,
+                availability: selectedActionAvailability,
+                shortcut: "o",
+                modifiers: [.command, .shift]
+            )
+            .labelStyle(.titleOnly)
+
+            Button(
+                FileNodeAction.openInTerminal.title(for: navigation.selectedNode),
+                systemImage: FileNodeAction.openInTerminal.systemImageName
+            ) {
+                commandSelectedFileActions.perform(.openInTerminal)
+            }
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    !FileNodeAction.openInTerminal.isEnabled(in: selectedActionAvailability)
+            )
+
+            selectedFileActionCommand(
+                .revealInFinder,
+                availability: selectedActionAvailability,
+                shortcut: "j",
+                modifiers: [.command, .shift]
+            )
+
+            Divider()
+
+            Button(addSelectionToDiscardPileTitle, systemImage: "checklist") {
+                if appModel.selectionIncludesHiddenNodes {
+                    appModel.presentDiscardPileReview()
+                } else {
+                    appModel.addSelectedNodesToDiscardPile()
+                }
+            }
+            .keyboardShortcut("l", modifiers: [.command, .shift])
+            .disabled(
+                !appModel.canUseWorkspaceCommands ||
+                    (!appModel.selectionIncludesHiddenNodes
+                        && !selectedActionAvailability.canMoveToTrash)
+            )
+
+            selectedFileActionCommand(
+                .moveToTrash,
+                availability: selectedActionAvailability,
+                shortcut: .delete
+            )
         }
 
-        CommandMenu("Find") {
-            Button("Find in Current Contents") {
-                fileListFilterAction?(.currentContents)
-            }
-            .keyboardShortcut("f")
-            .disabled(fileListFilterAction == nil)
+        CommandGroup(after: .pasteboard) {
+            selectedFileActionCommand(
+                .copyPath,
+                availability: selectedActionAvailability,
+                shortcut: "c",
+                modifiers: [.command, .shift]
+            )
+            .labelStyle(.titleOnly)
+        }
 
-            Button("Search Entire Scan") {
-                fileListFilterAction?(.entireScan)
+        CommandGroup(after: .textEditing) {
+            Menu("Find") {
+                Button("Search Current Contents") {
+                    fileListFilterAction?(.currentContents)
+                }
+                .keyboardShortcut("f")
+                .disabled(fileListFilterAction == nil)
+
+                Button("Search Entire Scan") {
+                    fileListFilterAction?(.entireScan)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(fileListFilterAction == nil)
             }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
-            .disabled(fileListFilterAction == nil)
         }
 
         CommandMenu("Navigate") {
@@ -204,89 +225,8 @@ struct RadixCommands: Commands {
             Button("Back to Scan Root") {
                 appModel.resetFocusToRoot()
             }
-            .keyboardShortcut("\\", modifiers: [.command, .option])
             .disabled(!appModel.canUseWorkspaceCommands || navigation.isFocusedAtRoot)
-
-            Divider()
-
-            Button("Clear Selection") {
-                appModel.clearSelection()
-            }
-            .keyboardShortcut(.escape, modifiers: [])
-            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canClearSelection)
         }
-
-        CommandMenu("Inspect") {
-            selectedFileActionCommand(
-                .quickLook,
-                availability: selectedActionAvailability,
-                shortcut: "y"
-            )
-
-            selectedFileActionCommand(
-                .open,
-                availability: selectedActionAvailability,
-                shortcut: "o",
-                modifiers: [.command, .shift]
-            )
-            .labelStyle(.titleOnly)
-
-            Button(
-                FileNodeAction.openInTerminal.title(for: navigation.selectedNode),
-                systemImage: FileNodeAction.openInTerminal.systemImageName
-            ) {
-                commandSelectedFileActions.perform(.openInTerminal)
-            }
-            .disabled(
-                !appModel.canUseWorkspaceCommands ||
-                    !FileNodeAction.openInTerminal.isEnabled(in: selectedActionAvailability)
-            )
-
-            selectedFileActionCommand(
-                .revealInFinder,
-                availability: selectedActionAvailability,
-                shortcut: "j",
-                modifiers: [.command, .shift]
-            )
-
-            selectedFileActionCommand(
-                .copyPath,
-                availability: selectedActionAvailability,
-                shortcut: "c",
-                modifiers: [.command, .shift]
-            )
-            .labelStyle(.titleOnly)
-
-            Divider()
-
-            Button(addSelectionToDiscardPileTitle, systemImage: "checklist") {
-                if appModel.selectionIncludesHiddenNodes {
-                    appModel.presentDiscardPileReview()
-                } else {
-                    appModel.addSelectedNodesToDiscardPile()
-                }
-            }
-            .keyboardShortcut("l", modifiers: [.command, .shift])
-            .disabled(
-                !appModel.canUseWorkspaceCommands ||
-                    (!appModel.selectionIncludesHiddenNodes
-                        && !selectedActionAvailability.canMoveToTrash)
-            )
-
-            selectedFileActionCommand(
-                .moveToTrash,
-                availability: selectedActionAvailability,
-                shortcut: .delete,
-                modifiers: []
-            )
-        }
-    }
-
-    private var inspectorToggleTitle: String {
-        if inspectorVisibility?.wrappedValue == true {
-            return String(localized: "Hide Inspector", comment: "Command for hiding the inspector sidebar.")
-        }
-        return String(localized: "Show Inspector", comment: "Command for showing the inspector sidebar.")
     }
 
     private var addSelectionToDiscardPileTitle: String {

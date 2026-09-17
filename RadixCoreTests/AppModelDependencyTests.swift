@@ -3280,7 +3280,7 @@ struct AppModelDependencyTests {
     }
 
     @Test
-    func testCompareCurrentScanWithSnapshotUsesCurrentScanAsAfter() async throws {
+    func testCompareScansCanUseCurrentScanAsAfter() async throws {
         let archiveURL = URL(filePath: "/tmp/current-compare.radixscan", directoryHint: .isDirectory)
         let archivedSnapshot = makeComparisonSnapshot(
             rootPath: "/current-root",
@@ -3309,9 +3309,11 @@ struct AppModelDependencyTests {
         model.dismissOnboarding()
         model.scanState.restoreCompletedSnapshot(currentSnapshot)
 
-        #expect(model.canCompareCurrentScanWithSnapshot)
+        #expect(model.canCompareScanSnapshots)
+        #expect(model.canUseCurrentScanInComparisonSetup)
 
-        model.compareCurrentScanWithSnapshot()
+        model.compareScanSnapshots()
+        model.useCurrentScanForComparisonSlot(.after)
 
         #expect(model.pendingComparisonSetup?.before == nil)
         #expect(model.pendingComparisonSetup?.after?.id == currentSnapshot.id)
@@ -3498,7 +3500,7 @@ struct AppModelDependencyTests {
 
         model.scanState.restoreCompletedSnapshot(importedSnapshot)
 
-        #expect(!(model.canCompareCurrentScanWithSnapshot))
+        #expect(!(model.canUseCurrentScanInComparisonSetup))
     }
 
 }

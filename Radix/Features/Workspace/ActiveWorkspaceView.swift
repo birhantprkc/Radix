@@ -50,12 +50,14 @@ struct ActiveWorkspaceView: View {
             visualizationPane
         } bottom: {
             contentsPane
+                .focusSection()
         }
     }
 
     private var visualizationPane: some View {
         chartContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .focusSection()
     }
 
     @ViewBuilder

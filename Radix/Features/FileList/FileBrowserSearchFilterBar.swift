@@ -20,7 +20,7 @@ struct FileBrowserSearchFilterBar: View {
     private var prompt: String {
         switch scope {
         case .currentContents:
-            String(localized: "Filter current contents", comment: "Search field placeholder for filtering the current directory contents.")
+            String(localized: "Search current contents", comment: "Search field placeholder for searching the current directory contents.")
         case .entireScan:
             String(localized: "Search entire scan", comment: "Search field placeholder for searching all scanned items.")
         }
@@ -65,7 +65,7 @@ struct FileBrowserSearchFilterBar: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: scope == .currentContents ? "line.3.horizontal.decrease.circle" : "magnifyingglass")
+                Image(systemName: "magnifyingglass")
                 Text(scopeLabel)
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.semibold))
@@ -91,7 +91,7 @@ struct FileBrowserSearchFilterBar: View {
 
     private var clearButtonLocalizedText: String {
         scope == .currentContents
-            ? String(localized: "Clear current contents filter", comment: "Help text for clearing the current-folder search filter.")
+            ? String(localized: "Clear current contents search", comment: "Help text for clearing the current-folder search text.")
             : String(localized: "Clear entire scan search", comment: "Help text for clearing the whole-scan search.")
     }
 

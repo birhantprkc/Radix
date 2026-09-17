@@ -24,7 +24,7 @@ struct WorkspaceTourPromptView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if step == .markForReview {
-                Text("You can also select an item and choose Inspect > Add to Discard Pile (⇧⌘L).")
+                Text("You can also select an item and choose File > Add to Discard Pile (⇧⌘L).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

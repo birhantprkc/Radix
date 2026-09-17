@@ -808,12 +808,6 @@ final class AppModel: ObservableObject {
         scanComparison == nil
     }
 
-    var canCompareCurrentScanWithSnapshot: Bool {
-        canCompareScanSnapshots &&
-            scanCoordinator.snapshot?.isComplete == true &&
-            scanCoordinator.snapshotSource.allowsFileMutation
-    }
-
     var canUseCurrentScanInComparisonSetup: Bool {
         scanCoordinator.snapshot?.isComplete == true &&
             scanCoordinator.snapshotSource.allowsFileMutation
@@ -1017,22 +1011,6 @@ final class AppModel: ObservableObject {
         }
 
         previewArchiveSnapshotComparison(sourceURLs: sourceURLs)
-    }
-
-    func compareCurrentScanWithSnapshot() {
-        guard canCompareCurrentScanWithSnapshot,
-              let currentSnapshot = scanCoordinator.snapshot else {
-            presentErrorMessage(currentScanComparisonUnavailableMessage)
-            return
-        }
-        beginComparisonSetup(after: ScanComparisonCandidate(snapshot: currentSnapshot))
-    }
-
-    private var currentScanComparisonUnavailableMessage: String {
-        if !canCompareScanSnapshots {
-            return comparisonUnavailableMessage
-        }
-        return String(localized: "Complete a live scan before comparing it with a snapshot.", comment: "Error shown when comparing a live scan before it is complete.")
     }
 
     func closeScanComparison() {
@@ -1253,12 +1231,9 @@ final class AppModel: ObservableObject {
         comparisonFlow.clearComparisonSlot(slot)
     }
 
-    private func beginComparisonSetup(
-        before: ScanComparisonCandidate? = nil,
-        after: ScanComparisonCandidate? = nil
-    ) {
+    private func beginComparisonSetup() {
         cancelArchiveOperation()
-        pendingComparisonSetup = ScanComparisonSetup(before: before, after: after)
+        pendingComparisonSetup = ScanComparisonSetup()
     }
 
     private func previewComparisonSnapshot(from sourceURL: URL, for slot: ScanComparisonSlot) {

@@ -11,7 +11,6 @@ struct SidebarActions {
 struct SidebarView: View {
     @ObservedObject var model: SidebarModel
     @ObservedObject var scanState: ScanCoordinator
-    @FocusState.Binding var focusedWorkspaceTarget: WorkspaceFocusTarget?
     let discardPileSummary: DiscardPileSummary
     let discardPileDragIsActive: Bool
     let actions: SidebarActions
@@ -75,7 +74,7 @@ struct SidebarView: View {
             }
         }
         .navigationTitle("Locations")
-        .focused($focusedWorkspaceTarget, equals: .sidebar)
+        .focusSection()
     }
 
     private func addDroppedPayloadsToDiscardPile(_ payloads: [DiscardPileDragPayload]) -> Bool {
