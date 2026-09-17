@@ -8101,41 +8101,6 @@
         }
       }
     },
-    "Enabled" : {
-      "comment" : "Full Disk Access status badge when permission is granted.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aktiviert"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activé"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abilitato"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已启用"
-          }
-        }
-      }
-    },
     "Entire Scan" : {
       "comment" : "Search scope label for all items in the scan.",
       "localizations" : {
@@ -14999,41 +14964,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无"
-          }
-        }
-      }
-    },
-    "Not Enabled" : {
-      "comment" : "Full Disk Access status badge when permission is not granted.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht aktiviert"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No activado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non activé"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non abilitato"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未启用"
           }
         }
       }
@@ -24825,7 +24755,7 @@
       }
     },
     "Unknown" : {
-      "comment" : "Full Disk Access status badge when permission cannot be determined.\nPlaceholder for a file whose modification date is unavailable.",
+      "comment" : "Placeholder for a file whose modification date is unavailable.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
