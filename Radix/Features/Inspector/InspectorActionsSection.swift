@@ -1,11 +1,5 @@
 import SwiftUI
 
-enum InspectorLayout {
-    static let formHorizontalMargin: CGFloat = 12
-    static let groupedSectionHorizontalInset: CGFloat = 8
-    static let actionHorizontalMargin = formHorizontalMargin + groupedSectionHorizontalInset
-}
-
 struct InspectorActionBar: View {
     let revealAction: (() -> Void)?
     let discardPileAction: (() -> Void)?
@@ -41,7 +35,7 @@ struct InspectorActionBar: View {
                 }
             }
             .controlSize(.regular)
-            .padding(.horizontal, InspectorLayout.actionHorizontalMargin)
+            .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 24)
             .background(.bar)
