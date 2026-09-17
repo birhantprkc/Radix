@@ -212,7 +212,6 @@ struct ContentView: View {
                             appModel.confirmImportPreview()
                         }
                     )
-                    .interactiveDismissDisabled()
                 }
             case .comparisonSetup:
                 if let setup = appModel.pendingComparisonSetup {
@@ -241,7 +240,6 @@ struct ContentView: View {
                             appModel.confirmComparisonSetup()
                         }
                     )
-                    .interactiveDismissDisabled()
                 }
             }
         }
