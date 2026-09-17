@@ -24,7 +24,6 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(SettingsTab.general)
         }
-        .scenePadding()
         .frame(width: 600, height: 580)
     }
 }
