@@ -17,7 +17,6 @@ struct RadixApp: App {
     private let issueReportURL = URL(string: "https://github.com/colinvkim/Radix/issues/new/choose")
 
     init() {
-        NSWindow.allowsAutomaticWindowTabbing = false
         let updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
