@@ -3,25 +3,10 @@ import AppKit
 @MainActor
 class ChartKeyboardInteractionView: NSView {
     var onMove: (ChartSpatialSelectionDirection) -> Bool = { _ in false }
-    var onKeyboardFocus: () -> Void = {}
-    var isKeyboardFocused = false
 
     override var acceptsFirstResponder: Bool { true }
 
-    func acquireKeyboardFocusIfNeeded() {
-        guard isKeyboardFocused else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, isKeyboardFocused,
-                  let window,
-                  window.firstResponder !== self else {
-                return
-            }
-            window.makeFirstResponder(self)
-        }
-    }
-
     func focusForKeyboardInput() {
-        onKeyboardFocus()
         guard let window, window.firstResponder !== self else { return }
         window.makeFirstResponder(self)
     }

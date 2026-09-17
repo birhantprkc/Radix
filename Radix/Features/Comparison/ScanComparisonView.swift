@@ -29,6 +29,7 @@ struct ScanComparisonView: View {
     @State private var focusedLocationPath: String?
     @State private var sortOrder: [ScanComparisonRowComparator]
     @StateObject private var browserModel: ScanComparisonBrowserModel
+    @FocusState private var isTableFocused: Bool
 
     init(
         comparison: ScanComparison,
@@ -473,6 +474,7 @@ struct ScanComparisonView: View {
                 actions.showNodeInBrowser(node)
             }
         }
+        .tableKeyboardFocus($isTableFocused, equals: true)
     }
 
     private var comparisonTable: some View {
@@ -525,6 +527,7 @@ struct ScanComparisonView: View {
             guard let row = singleRow(in: ids), actions.canReveal(row) else { return }
             actions.reveal(row)
         }
+        .tableKeyboardFocus($isTableFocused, equals: true)
     }
 
     @ViewBuilder

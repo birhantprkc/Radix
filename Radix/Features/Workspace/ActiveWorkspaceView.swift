@@ -40,6 +40,9 @@ struct ActiveWorkspaceView: View {
 
             resizableWorkspacePanes
         }
+        .onExitCommand {
+            actions.selectNodeImmediately(nil)
+        }
     }
 
     private var resizableWorkspacePanes: some View {

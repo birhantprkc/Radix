@@ -153,7 +153,7 @@ struct FileBrowserTableView: View {
             model.setSearchScope(target)
             isSearchFieldFocused = true
         }
-        .onExitCommand(perform: exitCommandHandler)
+        .onExitCommand(perform: handleExitCommand)
         .task(id: contentRefreshID) {
             await Task.yield()
             guard !Task.isCancelled else { return }
@@ -162,11 +162,6 @@ struct FileBrowserTableView: View {
         .onDisappear {
             presentedSharedStorageNodeID = nil
             model.cleanup()
-        }
-        .onChange(of: focusedWorkspaceTarget) { _, target in
-            if target != nil {
-                isSearchFieldFocused = false
-            }
         }
     }
 
@@ -262,7 +257,7 @@ struct FileBrowserTableView: View {
         } primaryAction: { selectedIDs in
             performPrimaryAction(for: selectedIDs)
         }
-        .focused($focusedWorkspaceTarget, equals: .contents)
+        .tableKeyboardFocus($focusedWorkspaceTarget, equals: .contents)
     }
 
     private var tourFolder: FileNodeRecord? {
@@ -559,16 +554,13 @@ struct FileBrowserTableView: View {
         return model.displayedNodes.first(where: { selectedIDs.contains($0.id) })?.id
     }
 
-    private var exitCommandHandler: (() -> Void)? {
-        guard isSearchFieldFocused || model.activeQuery != FileBrowserQuery() else { return nil }
-        return handleExitCommand
-    }
-
     private func handleExitCommand() {
         if model.activeQuery != FileBrowserQuery() {
             model.clearActiveQuery()
+        } else if isSearchFieldFocused {
+            focusedWorkspaceTarget = .contents
         } else {
-            isSearchFieldFocused = false
+            actions.selectNode(nil)
         }
     }
 

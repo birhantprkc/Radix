@@ -158,10 +158,6 @@ struct TreemapChartView: View {
                             in: baseChartFrame.size
                         )
                     },
-                    onKeyboardFocus: {
-                        focusedWorkspaceTarget = .chart
-                    },
-                    isKeyboardFocused: focusedWorkspaceTarget == .chart,
                     onPan: { delta, location in
                         panViewport(
                             by: delta,
@@ -193,6 +189,8 @@ struct TreemapChartView: View {
                     onDiscardPileDragActiveChange: onDiscardPileDragActiveChange,
                     isPanEnabled: canAdjustViewport && viewport.transform.isZoomed
                 )
+                // Keep SwiftUI focus on the NSView that handles arrow keys.
+                .focused($focusedWorkspaceTarget, equals: .chart)
                 .accessibilityHidden(true)
                 .allowsHitTesting(layoutPresentation.canUseRenderedLayout)
 
@@ -220,9 +218,6 @@ struct TreemapChartView: View {
             .accessibilityAction(named: String(localized: "Reset Zoom", comment: "Accessibility action for resetting the disk map zoom.")) {
                 handleViewportAction(.reset, in: baseChartFrame)
             }
-            .focusable()
-            .focusEffectDisabled()
-            .focused($focusedWorkspaceTarget, equals: .chart)
             .overlay(alignment: .topLeading) {
                 if layoutPresentation.canUseRenderedLayout,
                    let tooltipContent,

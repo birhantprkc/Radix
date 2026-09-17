@@ -11,8 +11,6 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
     let onHover: (CGPoint?) -> Void
     let onClick: (CGPoint, Int) -> Void
     let onMove: (ChartSpatialSelectionDirection) -> Bool
-    let onKeyboardFocus: () -> Void
-    let isKeyboardFocused: Bool
     let onPan: (CGSize, CGPoint) -> Void
     let onMagnify: (CGPoint, CGFloat) -> Void
     let canStartPan: (CGPoint) -> Bool
@@ -35,8 +33,6 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         view.onHover = onHover
         view.onClick = onClick
         view.onMove = onMove
-        view.onKeyboardFocus = onKeyboardFocus
-        view.isKeyboardFocused = isKeyboardFocused
         view.onPan = onPan
         view.onMagnify = onMagnify
         view.canStartPan = canStartPan
@@ -44,7 +40,6 @@ struct SunburstInteractionOverlay: NSViewRepresentable {
         view.onDragActiveChange = onDiscardPileDragActiveChange
         view.help = help
         view.isPanEnabled = isPanEnabled
-        view.acquireKeyboardFocusIfNeeded()
     }
 
     final class InteractionView: ChartViewportInteractionView {
