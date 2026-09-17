@@ -91,12 +91,6 @@ struct StatsSettingsPane: View {
                     )
                 }
             }
-
-            Section("Local Data") {
-                Text("Stats are stored locally on this Mac. Radix records aggregate counts and sizes only.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
     }

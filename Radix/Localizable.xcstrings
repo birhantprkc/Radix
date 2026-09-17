@@ -12350,46 +12350,6 @@
         }
       }
     },
-    "Local Data" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lokale Daten"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local Data"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Datos locales"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Données locales"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dati locali"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本地数据"
-          }
-        }
-      }
-    },
     "Location" : {
       "localizations" : {
         "de" : {
@@ -22157,40 +22117,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "统计"
-          }
-        }
-      }
-    },
-    "Stats are stored locally on this Mac. Radix records aggregate counts and sizes only." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Statistiken werden lokal auf diesem Mac gespeichert. Radix erfasst nur zusammengefasste Anzahlen und Größen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las estadísticas se almacenan localmente en este Mac. Radix solo registra recuentos y tamaños agregados."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les statistiques sont stockées localement sur ce Mac. Radix n’enregistre que les nombres et tailles agrégés."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le statistiche sono memorizzate localmente su questo Mac. Radix registra solo conteggi e dimensioni aggregate."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "统计信息存储在此 Mac 本地。Radix 只记录汇总的数量和大小。"
           }
         }
       }
