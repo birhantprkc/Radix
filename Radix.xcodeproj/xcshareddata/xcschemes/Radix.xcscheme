@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2660"
+   LastUpgradeVersion = "2700"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -21,8 +21,19 @@
                ReferencedContainer = "container:Radix.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
-         <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="YES">
-            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A10000000000000000000001" BuildableName="RadixCoreTests.xctest" BlueprintName="RadixCoreTests" ReferencedContainer="container:Radix.xcodeproj"/>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A10000000000000000000001"
+               BuildableName = "RadixCoreTests.xctest"
+               BlueprintName = "RadixCoreTests"
+               ReferencedContainer = "container:Radix.xcodeproj">
+            </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
@@ -32,7 +43,10 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <TestPlans>
-         <TestPlanReference reference="container:Radix.xctestplan" default="YES"/>
+         <TestPlanReference
+            reference = "container:Radix.xctestplan"
+            default = "YES">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <LaunchAction
