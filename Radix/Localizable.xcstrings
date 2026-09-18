@@ -174,46 +174,6 @@
         }
       }
     },
-    "%@ changes summarized" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Änderungen zusammengefasst"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se resumieron %@ cambios"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ changements résumés"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ modifiche riassunte"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已汇总 %@ 项变化"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Сводка по %@ изменениям"
-          }
-        }
-      }
-    },
     "%@ checksum mismatch" : {
       "comment" : "Archive integrity error detail. The placeholder names the section whose decoded checksum did not match.",
       "localizations" : {
@@ -251,47 +211,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Контрольная сумма %@ не совпадает"
-          }
-        }
-      }
-    },
-    "%@ files" : {
-      "comment" : "Tooltip metadata for a directory containing multiple files.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Dateien"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ archivos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ fichiers"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ file"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 个文件"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ файлов"
           }
         }
       }
@@ -339,47 +258,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Свободно %1$@ из %2$@"
-          }
-        }
-      }
-    },
-    "%@ grouped items" : {
-      "comment" : "Tooltip metadata for multiple items represented by an aggregate segment.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ gruppierte Elemente"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ elementos agrupados"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ éléments regroupés"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ elementi raggruppati"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 个分组项目"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ сгруппированных объектов"
           }
         }
       }
@@ -765,6 +643,136 @@
         }
       }
     },
+    "%lld changes summarized" : {
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Änderung zusammengefasst"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Änderungen zusammengefasst"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld change summarized"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changes summarized"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cambio resumido"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se resumieron %lld cambios"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changement résumé"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changements résumés"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld modifica riepilogata"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld modifiche riepilogate"
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Сводка по %lld изменению"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Сводка по %lld изменениям"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Сводка по %lld изменениям"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Сводка по %lld изменениям"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已汇总 %lld 项变化"
+          }
+        }
+      }
+    },
     "%lld files" : {
       "comment" : "File count shown while scanning.\nInspector multiple-selection file count.",
       "localizations" : {
@@ -1035,6 +1043,137 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld grouped items" : {
+      "comment" : "Tooltip metadata counting items represented by an aggregate segment.",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld gruppiertes Element"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld gruppierte Elemente"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld grouped item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld grouped items"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento agrupado"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos agrupados"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld élément regroupé"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld éléments regroupés"
+                }
+              }
+            }
+          }
+        },
+        "it" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento raggruppato"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementi raggruppati"
+                }
+              }
+            }
+          }
+        },
+        "ru" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld сгруппированный объект"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld сгруппированных объекта"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld сгруппированных объектов"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld сгруппированных объекта"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个分组项目"
           }
         }
       }
@@ -1346,9 +1485,33 @@
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld уровней"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровень"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровня"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровней"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровня"
+                }
+              }
+            }
           }
         }
       }
@@ -1388,13 +1551,37 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 层，包含可用空间"
+            "value" : "%lld 个层级，包含可用空间"
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld уровней, включая свободное место"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровень, включая свободное место"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровня, включая свободное место"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровней, включая свободное место"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld уровня, включая свободное место"
+                }
+              }
+            }
           }
         }
       }
@@ -2593,33 +2780,9 @@
           }
         },
         "ru" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Выбрано: %lld"
-                }
-              },
-              "few" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Выбрано: %lld"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Выбрано: %lld"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "Выбрано: %lld"
-                }
-              }
-            }
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрано: %lld"
           }
         }
       }
@@ -3176,115 +3339,9 @@
           }
         },
         "ru" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "+ ещё %lld"
-                }
-              },
-              "few" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "+ ещё %lld"
-                }
-              },
-              "many" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "+ ещё %lld"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "+ ещё %lld"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "1 file" : {
-      "comment" : "Tooltip metadata for a directory containing one file.",
-      "localizations" : {
-        "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 Datei"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 archivo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 fichier"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 file"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 个文件"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 файл"
-          }
-        }
-      }
-    },
-    "1 grouped item" : {
-      "comment" : "Tooltip metadata for one item represented by an aggregate segment.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 gruppiertes Element"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 elemento agrupado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 élément regroupé"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 elemento raggruppato"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 个分组项目"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 сгруппированный объект"
+            "value" : "+ ещё %lld"
           }
         }
       }
@@ -9196,7 +9253,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Objekte in die Löschliste ziehen und prüfen"
+            "value" : "Elemente in die Löschliste ziehen und prüfen"
           }
         },
         "en" : {
@@ -9781,7 +9838,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Исключено и не определено"
+            "value" : "Исключённые и неопределённые данные"
           }
         }
       }
@@ -10856,9 +10913,33 @@
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Выделенные области файлов перекрываются на %lld байт; клоны APFS или файлы, изменившиеся во время сканирования, могут совместно использовать физическое хранилище."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Выделенные области файлов перекрываются на %lld байт; клоны APFS или файлы, изменившиеся во время сканирования, могут совместно использовать физическое хранилище."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Выделенные области файлов перекрываются на %lld байта; клоны APFS или файлы, изменившиеся во время сканирования, могут совместно использовать физическое хранилище."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Выделенные области файлов перекрываются на %lld байт; клоны APFS или файлы, изменившиеся во время сканирования, могут совместно использовать физическое хранилище."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Выделенные области файлов перекрываются на %lld байта; клоны APFS или файлы, изменившиеся во время сканирования, могут совместно использовать физическое хранилище."
+                }
+              }
+            }
           }
         }
       }
@@ -12464,7 +12545,7 @@
       }
     },
     "Hide Inspector" : {
-      "comment" : "Command for hiding the inspector sidebar.\nToolbar action for hiding the inspector sidebar.",
+      "comment" : "Toolbar action for hiding the inspector sidebar.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -14123,9 +14204,33 @@
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ограниченный охват: не удалось прочитать %lld расположений. Отсутствующие в них объекты не обязательно были удалены."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ограниченный охват: не удалось прочитать %lld расположение. Отсутствующие в нём объекты не обязательно были удалены."
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ограниченный охват: не удалось прочитать %lld расположения. Отсутствующие в них объекты не обязательно были удалены."
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ограниченный охват: не удалось прочитать %lld расположений. Отсутствующие в них объекты не обязательно были удалены."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Ограниченный охват: не удалось прочитать %lld расположения. Отсутствующие в них объекты не обязательно были удалены."
+                }
+              }
+            }
           }
         }
       }
@@ -14584,7 +14689,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "в манифесте указано %lld узлов, что превышает поддерживаемое количество"
+            "value" : "число узлов в манифесте (%lld) превышает поддерживаемое количество"
           }
         }
       }
@@ -14624,7 +14729,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "в манифесте указано %1$lld узлов, найдено %2$lld"
+            "value" : "число узлов в манифесте: %1$lld, найдено: %2$lld"
           }
         }
       }
@@ -14664,7 +14769,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "в манифесте указано %1$lld предупреждений, найдено %2$lld"
+            "value" : "число предупреждений в манифесте: %1$lld, найдено: %2$lld"
           }
         }
       }
@@ -14923,88 +15028,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Другие действия"
-          }
-        }
-      }
-    },
-    "Move %@ Item to Trash" : {
-      "comment" : "Destructive action for moving one marked item to the Trash.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Element in den Papierkorb bewegen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mover %@ elemento a la papelera"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer %@ élément dans la corbeille"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sposta %@ elemento nel Cestino"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 %@ 个项目移到废纸篓"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Переместить %@ объект в Корзину"
-          }
-        }
-      }
-    },
-    "Move %@ Items to Trash" : {
-      "comment" : "Destructive action for moving multiple marked items to the Trash.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ Elemente in den Papierkorb bewegen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mover %@ elementos a la papelera"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placer %@ éléments dans la corbeille"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sposta %@ elementi nel Cestino"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 %@ 个项目移到废纸篓"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Переместить %@ объектов в Корзину"
           }
         }
       }
@@ -15473,7 +15496,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показанные объекты составляют %1$@ выбранного изменения; ещё %2$@ небольших изменений объединены в «Другое»."
+            "value" : "Показанные объекты составляют %1$@ выбранного изменения; в группе «Другие небольшие изменения» — %2$@."
           }
         }
       }
@@ -19716,9 +19739,33 @@
           }
         },
         "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Radix попросит macOS переместить %1$lld выбранных объектов в Корзину:\n%2$@%3$@"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Radix попросит macOS переместить %1$lld выбранный объект в Корзину:\n%2$@%3$@"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Radix попросит macOS переместить %1$lld выбранных объекта в Корзину:\n%2$@%3$@"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Radix попросит macOS переместить %1$lld выбранных объектов в Корзину:\n%2$@%3$@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Radix попросит macOS переместить %1$lld выбранных объекта в Корзину:\n%2$@%3$@"
+                }
+              }
+            }
           }
         }
       }
@@ -20434,7 +20481,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Objekt entfernen"
+            "value" : "Ein Element entfernen"
           }
         },
         "en" : {
@@ -20470,7 +20517,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Удалить объект"
+            "value" : "Убрать объект из списка"
           }
         }
       }
@@ -21006,7 +21053,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "«Повторно просканировать» обновляет текущую папку. Команда «Повторно просканировать всё» в меню «Файл» обновляет всё сканирование."
+            "value" : "«Сканировать повторно» обновляет текущую папку. Команда «Повторно просканировать всё» в меню «Файл» обновляет всё сканирование."
           }
         }
       }
@@ -21352,7 +21399,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重置统计数据？"
+            "value" : "重置统计信息？"
           }
         },
         "ru" : {
@@ -21398,7 +21445,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重置统计数据…"
+            "value" : "重置统计信息…"
           }
         },
         "ru" : {
@@ -21741,7 +21788,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新查看欢迎屏幕和引导教程。"
+            "value" : "重新查看欢迎屏幕和导览。"
           }
         },
         "ru" : {
@@ -22820,13 +22867,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Scansiona %lld file in questa cartella riassunta."
+                  "value" : "Scansiona %lld file in questa cartella riepilogata."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Scansiona i %lld file in questa cartella riassunta."
+                  "value" : "Scansiona i %lld file in questa cartella riepilogata."
                 }
               }
             }
@@ -23364,7 +23411,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleziona una riga per esaminarla. Fai doppio clic su una cartella per ingrandire, o su una cartella riassunta per espanderla. Premi Spazio per la Visualizzazione rapida."
+            "value" : "Seleziona una riga per esaminarla. Fai doppio clic su una cartella per ingrandire, o su una cartella riepilogata per espanderla. Premi Spazio per la Visualizzazione rapida."
           }
         },
         "zh-Hans" : {
@@ -23427,7 +23474,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Objekt auswählen"
+            "value" : "Ein Element auswählen"
           }
         },
         "en" : {
@@ -23717,9 +23764,21 @@
       "comment" : "Action that expands the Inspector selected-items list.",
       "localizations" : {
         "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld weitere anzeigen"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld weiteres anzeigen"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld weitere anzeigen"
+                }
+              }
+            }
           }
         },
         "es" : {
@@ -23735,9 +23794,21 @@
           }
         },
         "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostra altri %lld"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mostra %lld altro"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Mostra altri %lld"
+                }
+              }
+            }
           }
         },
         "zh-Hans" : {
@@ -24058,7 +24129,7 @@
       }
     },
     "Show Inspector" : {
-      "comment" : "Command for showing the inspector sidebar.\nToolbar action for showing the inspector sidebar.",
+      "comment" : "Toolbar action for showing the inspector sidebar.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -24594,53 +24665,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Значение размера"
-          }
-        }
-      }
-    },
-    "Sizes show attributed allocated storage, not guaranteed space reclaimed." : {
-      "comment" : "Discard Pile note clarifying that displayed allocated sizes are not a promise of how much space deleting the items will reclaim.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Größen zeigen zugeordneten belegten Speicher, nicht den garantiert freigegebenen Speicherplatz."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sizes show attributed allocated storage, not guaranteed space reclaimed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los tamaños muestran el almacenamiento asignado atribuido, no el espacio que se recuperará con certeza."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les tailles indiquent le stockage alloué attribué, pas l’espace dont la récupération est garantie."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le dimensioni mostrano lo spazio allocato attribuito, non lo spazio che verrà sicuramente recuperato."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "大小显示归属的已分配存储空间，而不是删除后保证释放的空间。"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Размеры показывают учтённое занятое место, а не гарантированный объём, который освободится после удаления."
           }
         }
       }
@@ -25466,7 +25490,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Einige ausgewählte Objekte sind in diesem Scan nicht mehr verfügbar und werden von den Summen ausgeschlossen."
+            "value" : "Einige ausgewählte Elemente sind in diesem Scan nicht mehr verfügbar und werden von den Summen ausgeschlossen."
           }
         },
         "es" : {
@@ -25709,7 +25733,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kurze Einführung starten"
+            "value" : "Kurztour starten"
           }
         },
         "en" : {
@@ -26238,7 +26262,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Riassunto"
+            "value" : "Riepilogato"
           }
         },
         "zh-Hans" : {
@@ -26336,13 +26360,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Riassunto (%lld file)"
+                  "value" : "Riepilogato (%lld file)"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Riassunto (%lld file)"
+                  "value" : "Riepilogato (%lld file)"
                 }
               }
             }
@@ -26731,7 +26755,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Система и нераспределённое"
+            "value" : "Система и неопределённые данные"
           }
         }
       }
@@ -27164,7 +27188,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Inspektor zeigt Details zum ausgewählten Objekt. Diese Taste blendet ihn ein oder aus."
+            "value" : "Der Inspektor zeigt Details zum ausgewählten Element. Diese Taste blendet ihn ein oder aus."
           }
         },
         "en" : {
@@ -27242,47 +27266,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Объект по адресу %@ изменился после сканирования. Выполните повторное сканирование перед перемещением в Корзину."
-          }
-        }
-      }
-    },
-    "The item at %@ is no longer available for Quick Look." : {
-      "comment" : "Error shown when Quick Look cannot preview a selected item.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das Element unter %@ ist für die Übersicht nicht mehr verfügbar."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El elemento de %@ ya no está disponible para Vista rápida."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L’élément situé à %@ n’est plus disponible pour Coup d’œil."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L'elemento in %@ non è più disponibile per la Visualizzazione rapida."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 处的项目已无法使用“快速查看”。"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Объект по адресу %@ больше недоступен для Быстрого просмотра."
           }
         }
       }
@@ -27428,7 +27411,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Minustaste (–) entfernt ein Objekt aus der Löschliste. Es erscheint wieder in der Ordneransicht und ist nicht mehr zum Löschen vorgemerkt."
+            "value" : "Die Minustaste (–) entfernt ein Element aus der Löschliste. Es erscheint wieder in der Ordneransicht und ist nicht mehr zum Löschen vorgemerkt."
           }
         },
         "en" : {
@@ -27760,7 +27743,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das ausgewählte Objekt ist nur im Cloud-Speicher abgelegt und enthält keine lokalen Daten zum Scannen."
+            "value" : "Das ausgewählte Element ist nur im Cloud-Speicher abgelegt und enthält keine lokalen Daten zum Scannen."
           }
         },
         "es" : {
@@ -27936,7 +27919,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Estos archivos de ejemplo se han creado para el recorrido de Radix."
+            "value" : "Estos archivos de ejemplo se han creado para la visita de Radix."
           }
         },
         "fr" : {
@@ -29503,7 +29486,7 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "View All %lld Item…"
+                  "value" : "View %lld Item…"
                 }
               },
               "other" : {
@@ -30090,7 +30073,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sie können die Einführung später über „Hilfe“ starten."
+            "value" : "Sie können die Tour später über „Hilfe“ starten."
           }
         },
         "en" : {

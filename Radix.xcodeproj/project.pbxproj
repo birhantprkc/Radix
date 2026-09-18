@@ -6,10 +6,6 @@
 	objectVersion = 100;
 	objects = {
 
-/* Begin XCLocalSwiftPackageReference section */
-		A10000000000000000000018 /* RadixCore */ = {isa = XCLocalSwiftPackageReference; relativePath = .; };
-/* End XCLocalSwiftPackageReference section */
-
 /* Begin PBXBuildFile section */
 		3BBA11332F80739B009EFB1C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3BBA11322F80739B009EFB1C /* Sparkle */; };
 		A10000000000000000000008 /* RadixCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000009 /* RadixCore */; };
@@ -40,7 +36,11 @@
 			path = Radix;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000006 /* RadixCoreTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = RadixCoreTests; sourceTree = "<group>"; };
+		A10000000000000000000006 /* RadixCoreTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RadixCoreTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,7 +50,12 @@
 				3BBA11332F80739B009EFB1C /* Sparkle in Frameworks */,
 			);
 		};
-		A1000000000000000000000A = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000008,); runOnlyForDeploymentPostprocessing = 0; };
+		A1000000000000000000000A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				A10000000000000000000008 /* RadixCore in Frameworks */,
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -99,15 +104,23 @@
 		};
 		A10000000000000000000001 /* RadixCoreTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A10000000000000000000010;
-			buildPhases = (A1000000000000000000000C, A1000000000000000000000A, A1000000000000000000000E);
-			buildRules = ();
-			dependencies = ();
-			fileSystemSynchronizedGroups = (A10000000000000000000006);
+			buildConfigurationList = A10000000000000000000010 /* Build configuration list for PBXNativeTarget "RadixCoreTests" */;
+			buildPhases = (
+				A1000000000000000000000C /* Sources */,
+				A1000000000000000000000A /* Frameworks */,
+				A1000000000000000000000E /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000006 /* RadixCoreTests */,
+			);
 			name = RadixCoreTests;
-			packageProductDependencies = (A10000000000000000000009,);
+			packageProductDependencies = (
+				A10000000000000000000009 /* RadixCore */,
+			);
 			productName = RadixCoreTests;
-			productReference = A10000000000000000000003;
+			productReference = A10000000000000000000003 /* RadixCoreTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -118,11 +131,13 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2640;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
-					A10000000000000000000001 = {CreatedOnToolsVersion = 26.6; };
 					3BF007FD2F7E285500DA9E45 = {
 						CreatedOnToolsVersion = 26.4;
+					};
+					A10000000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -142,7 +157,7 @@
 			mainGroup = 3BF007F52F7E285500DA9E45;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A10000000000000000000018 /* RadixCore */,
+				A10000000000000000000018 /* XCLocalSwiftPackageReference "." */,
 				3BBA11312F80739B009EFB1C /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 100;
@@ -162,7 +177,11 @@
 			files = (
 			);
 		};
-		A1000000000000000000000E = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A1000000000000000000000E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -171,7 +190,11 @@
 			files = (
 			);
 		};
-		A1000000000000000000000C = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A1000000000000000000000C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -180,6 +203,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -246,6 +270,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -378,33 +403,41 @@
 			};
 			name = Release;
 		};
-		A10000000000000000000012 = {
+		A10000000000000000000012 /* Debug configuration for PBXNativeTarget "RadixCoreTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.colinkim.RadixCoreTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 6.0;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
-		A10000000000000000000013 = {
+		A10000000000000000000013 /* Release configuration for PBXNativeTarget "RadixCoreTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.colinkim.RadixCoreTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 6.0;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -427,8 +460,22 @@
 			);
 			defaultConfigurationName = Release;
 		};
-		A10000000000000000000010 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000012, A10000000000000000000013); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000010 /* Build configuration list for PBXNativeTarget "RadixCoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000012 /* Debug configuration for PBXNativeTarget "RadixCoreTests" */,
+				A10000000000000000000013 /* Release configuration for PBXNativeTarget "RadixCoreTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A10000000000000000000018 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		3BBA11312F80739B009EFB1C /* XCRemoteSwiftPackageReference "Sparkle" */ = {
@@ -447,7 +494,11 @@
 			package = 3BBA11312F80739B009EFB1C /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
-		A10000000000000000000009 /* RadixCore */ = {isa = XCSwiftPackageProductDependency; package = A10000000000000000000018; productName = RadixCore; };
+		A10000000000000000000009 /* RadixCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000018 /* XCLocalSwiftPackageReference "." */;
+			productName = RadixCore;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3BF007F62F7E285500DA9E45 /* Project object */;

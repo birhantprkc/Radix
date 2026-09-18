@@ -46,10 +46,6 @@ struct DiscardPileReviewSheet: View {
 
             listAndStatusBar
 
-            Text("Sizes show attributed allocated storage, not guaranteed space reclaimed.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
             Divider()
 
             HStack {
@@ -221,11 +217,7 @@ struct DiscardPileReviewSheet: View {
     }
 
     private var moveButtonTitle: String {
-        let count = summary.itemCount.formatted()
-        if summary.itemCount == 1 {
-            return String(localized: "Move \(count) Item to Trash", comment: "Destructive action for moving one marked item to the Trash.")
-        }
-        return String(localized: "Move \(count) Items to Trash", comment: "Destructive action for moving multiple marked items to the Trash.")
+        String(localized: "Move \(summary.itemCount) Items to Trash", comment: "Destructive action for moving marked items to the Trash.")
     }
 }
 

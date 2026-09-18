@@ -44,6 +44,11 @@ struct LocalizationCatalogTests {
                     let variations = try #require(localization["variations"] as? [String: Any])
                     let plurals = try #require(variations["plural"] as? [String: Any])
                     #expect(!(plurals.isEmpty), "Missing plural variants for \(locale) key \(key)")
+                    if locale == "ru" {
+                        #expect(
+                            Set(["one", "few", "many", "other"]).isSubset(of: Set(plurals.keys)),
+                            "Missing Russian plural categories for \(key)")
+                    }
                     for (category, value) in plurals {
                         let variant = try #require(value as? [String: Any])
                         let stringUnit = try #require(variant["stringUnit"] as? [String: Any])
@@ -136,6 +141,82 @@ struct LocalizationCatalogTests {
             rawStatusLiterals.isEmpty,
             "Scan progress status literals must use String(localized:): \(rawStatusLiterals)"
         )
+    }
+
+    @Test
+    func testArchiveProgressStatusLiteralsAreLocalized() throws {
+        let sources = try swiftSourceFiles(in: repositoryRoot.appendingPathComponent("Radix/Services"))
+            .filter { $0.lastPathComponent.hasPrefix("ScanArchive") }
+        for url in sources {
+            let source = try String(contentsOf: url, encoding: .utf8)
+            let rawMessages = matches(
+                in: source,
+                pattern: #"\bmessage\s*:\s*"((?:\\.|[^"\\])*)""#
+            ).map(\.value)
+            #expect(
+                rawMessages.isEmpty,
+                "Archive status literals must be localized in \(url.lastPathComponent): \(rawMessages)")
+        }
+    }
+
+    @Test
+    func testRussianCountsRenderUsingCompiledCatalog() throws {
+        let output = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: output) }
+
+        // Exercise Apple's catalog compiler and plural selection, including positional arguments.
+        let compiler = Process()
+        compiler.executableURL = URL(filePath: "/usr/bin/xcrun")
+        compiler.arguments = [
+            "xcstringstool", "compile",
+            repositoryRoot.appendingPathComponent("Radix/Localizable.xcstrings").path,
+            "--output-directory", output.path, "--language", "ru",
+        ]
+        try compiler.run()
+        compiler.waitUntilExit()
+        try #require(compiler.terminationStatus == 0, "Failed to compile the Russian catalog")
+        let bundle = try #require(Bundle(url: output.appendingPathComponent("ru.lproj")))
+        func render(_ key: String, _ arguments: CVarArg...) -> String {
+            String(
+                format: bundle.localizedString(forKey: key, value: nil, table: "Localizable"),
+                locale: Locale(identifier: "ru"), arguments: arguments)
+        }
+
+        let examples: [(Int64, String, String, String)] = [
+            (0, "уровней", "файлов", "объектов"),
+            (1, "уровень", "файл", "объект"),
+            (2, "уровня", "файла", "объекта"),
+            (3, "уровня", "файла", "объекта"),
+            (4, "уровня", "файла", "объекта"),
+            (5, "уровней", "файлов", "объектов"),
+            (11, "уровней", "файлов", "объектов"),
+            (21, "уровень", "файл", "объект"),
+            (22, "уровня", "файла", "объекта"),
+            (25, "уровней", "файлов", "объектов"),
+        ]
+        for (count, levels, files, items) in examples {
+            #expect(render("%lld levels", count) == "\(count) \(levels)")
+            #expect(
+                render("%lld levels, including free space", count)
+                    == "\(count) \(levels), включая свободное место")
+            #expect(render("%lld files", count) == "\(count) \(files)")
+            #expect(
+                render("Move %lld Items to Trash", count) == "Переместить \(count) \(items) в Корзину")
+            let adjective = items == "объект" ? "сгруппированный" : "сгруппированных"
+            #expect(render("%lld grouped items", count) == "\(count) \(adjective) \(items)")
+            let changes = items == "объект" ? "изменению" : "изменениям"
+            #expect(render("%lld changes summarized", count) == "Сводка по \(count) \(changes)")
+        }
+        #expect(
+            render(
+                "Limited coverage: %lld unreadable locations. Missing entries below them are not necessarily deleted.",
+                Int64(22))
+                == "Ограниченный охват: не удалось прочитать 22 расположения. Отсутствующие в них объекты не обязательно были удалены.")
+        #expect(
+            render(
+                "Radix will ask macOS to move %lld selected items to the Trash:\n%@%@",
+                Int64(21), "/example", "\n+ ещё 20")
+                == "Radix попросит macOS переместить 21 выбранный объект в Корзину:\n/example\n+ ещё 20")
     }
 
     @Test

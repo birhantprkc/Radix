@@ -68,7 +68,7 @@ struct DiscardPileSnapshot: Equatable, Sendable {
     let summary: DiscardPileSummary
 }
 
-enum FileActionError: LocalizedError {
+nonisolated enum FileActionError: LocalizedError, Sendable {
     case noSelection
     case unavailable(path: String)
     case changedSinceScan(path: String)
@@ -200,7 +200,9 @@ final class AppModel: ObservableObject {
     var workspaceTourSessionID: UUID? { tourSession.sessionID }
 
     func makeFileBrowserModel() -> FileBrowserModel {
-        tourSession.makeFileBrowser(snapshotID: scanCoordinator.snapshot?.id)
+        let model = tourSession.makeFileBrowser(snapshotID: scanCoordinator.snapshot?.id)
+        quickLookController.fileBrowser = model
+        return model
     }
 
     private(set) var scanComparison: ScanComparison? {
@@ -288,7 +290,8 @@ final class AppModel: ObservableObject {
 
     init(
         dependencies: AppDependencies = .live,
-        completedScanCacheMaxTotalNodeCount: Int = 250_000
+        completedScanCacheMaxTotalNodeCount: Int = 250_000,
+        currentAppVersion: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     ) {
         self.dependencies = dependencies
         self.scanCoordinator = ScanCoordinator(scanService: dependencies.scanService)
@@ -321,6 +324,14 @@ final class AppModel: ObservableObject {
         usageStats = dependencies.usageStats.loadUsageStats()
         fullDiskAccessStatus = .unknown
         recentTargets = dependencies.recentTargets.loadAvailableTargets()
+
+        // Read the previous launch history above before advancing it. A future
+        // What's New flow can use that history to distinguish upgrades from first launches.
+        if let currentAppVersion, !currentAppVersion.isEmpty,
+           preferences.highestLaunchedVersion == nil
+            || preferences.highestLaunchedVersion?.compare(currentAppVersion, options: .numeric) == .orderedAscending {
+            dependencies.preferences.saveHighestLaunchedVersion(currentAppVersion)
+        }
 
         refreshAvailableTargets()
         refreshSidebarTargetSections()
@@ -364,7 +375,6 @@ final class AppModel: ObservableObject {
         observeScanCoordinator()
         observeMountedVolumes()
         observePreferences()
-        quickLookController.installKeyMonitor()
     }
 
     isolated deinit {
@@ -403,9 +413,8 @@ final class AppModel: ObservableObject {
         showsDiscardPileReview = false
         pendingComparisonSetup = nil
         pendingImportPreview = nil
-        quickLookController.setWorkspaceWindowNumber(nil)
         scanCoordinator.stopScan()
-        quickLookController.removeKeyMonitor()
+        quickLookController.closePreview()
     }
 
     func suspendMainWindowActivity() {
@@ -1796,10 +1805,6 @@ final class AppModel: ObservableObject {
         performNavigationAction(.clearSelection)
     }
 
-    func setWorkspaceWindowNumber(_ windowNumber: Int?) {
-        quickLookController.setWorkspaceWindowNumber(windowNumber)
-    }
-
     func zoomIntoSelection() {
         do {
             let node = try validatedSelection(requiresDirectory: true, requiresLivePath: false)
@@ -2000,12 +2005,34 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var quickLook: AppQuickLookController { quickLookController }
+
     func previewSelectedWithQuickLook() {
+        guard !isQuickLookKeyboardShortcutBlocked else { return }
         quickLookController.previewSelected()
     }
 
+    func previewPrimarySelectionWithQuickLook() {
+        guard !isQuickLookKeyboardShortcutBlocked else { return }
+        quickLookController.previewSelected(scope: .primaryItem)
+    }
+
     func toggleQuickLookForSelected() {
+        guard !isQuickLookKeyboardShortcutBlocked else { return }
         quickLookController.toggleSelected()
+    }
+
+    func handleQuickLookShortcut() -> Bool {
+        guard !isQuickLookKeyboardShortcutBlocked,
+              quickLookController.isActive || (
+                  scanCoordinator.snapshotSource.allowsLivePathActions &&
+                  !navigationModel.selectedNodeIDs.isEmpty &&
+                  navigationModel.selectedNodes.allSatisfy(\.supportsFileActions)
+              ) else {
+            return false
+        }
+        quickLookController.toggleSelected()
+        return true
     }
 
     func copySelectedPath() {
@@ -2608,32 +2635,16 @@ final class AppModel: ObservableObject {
     }
 
     private func validateLivePathAction(_ node: FileNodeRecord) throws {
-        guard scanCoordinator.snapshotSource.allowsLivePathActions else {
-            throw FileActionError.unsupported
-        }
-        guard dependencies.systemActions.fileExists(node.url) else {
-            clearSelection()
-            throw FileActionError.unavailable(path: node.url.path)
-        }
-        try validateImportedIdentityIfAvailable(node)
-    }
-
-    private func validateImportedIdentityIfAvailable(_ node: FileNodeRecord) throws {
-        guard scanCoordinator.snapshotSource.isImported,
-              node.fileIdentity != nil else {
-            return
-        }
-
-        switch dependencies.systemActions.verifyTrashIdentity(node) {
-        case .matches, .missingScannedIdentity:
-            return
-        case .missingCurrentItem:
-            clearSelection()
-            throw FileActionError.unavailable(path: node.url.path)
-        case .mismatch:
-            throw FileActionError.changedSinceScan(path: node.url.path)
-        case .metadataUnavailable(let reason):
-            throw FileActionError.currentIdentityUnavailable(path: node.url.path, reason: reason)
+        do {
+            try FileActionValidation.validateLivePath(
+                node,
+                source: scanCoordinator.snapshotSource,
+                fileExists: dependencies.systemActions.fileExists,
+                verifyIdentity: dependencies.systemActions.verifyTrashIdentity
+            )
+        } catch {
+            if case FileActionError.unavailable = error { clearSelection() }
+            throw error
         }
     }
 
@@ -2980,6 +2991,7 @@ final class AppModel: ObservableObject {
         scanCoordinator.$snapshot
             .sink { [weak self] snapshot in
                 guard let self else { return }
+                quickLookController.closePreview()
                 refreshDiskFreeSpaceCapacity(for: snapshot)
                 syncOptimisticTrashVisibility(with: snapshot)
                 syncDiscardPile(with: snapshot)
@@ -3235,26 +3247,20 @@ final class AppModel: ObservableObject {
 extension AppModel: AppQuickLookControllerDelegate {
     var quickLookSelectionContext: AppQuickLookSelectionContext {
         AppQuickLookSelectionContext(
-            selectedNode: navigationModel.selectedNode,
-            activeTarget: scanCoordinator.selectedTarget,
-            trashSafetyPolicy: scanCoordinator.trashSafetyPolicy,
+            selectedNodes: navigationModel.selectedNodes,
+            primaryURL: navigationModel.selectedNode?.url,
             snapshotSource: scanCoordinator.snapshotSource
         )
     }
 
     var isQuickLookKeyboardShortcutBlocked: Bool {
-        showsOnboarding ||
-            !canUseWorkspaceCommands ||
-            pendingTrashSelection != nil ||
-            pendingCloudFileAction != nil ||
-            navigationModel.selectedNodeIDs.count > 1
-    }
-
-    func validatedSelectionForQuickLook() throws -> FileNodeRecord {
-        try validatedSelection(requiresLivePath: true)
+        !canUseWorkspaceCommands ||
+            presentationCoordinator.activeSheet != nil ||
+            presentationCoordinator.activeDialog != nil
     }
 
     func appQuickLookController(_ controller: AppQuickLookController, didFailWith error: Error) {
+        if case FileActionError.unavailable = error { clearSelection() }
         presentError(error)
     }
 }

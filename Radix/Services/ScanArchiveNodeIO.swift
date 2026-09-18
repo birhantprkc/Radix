@@ -243,7 +243,7 @@ extension ScanArchiveService {
                     phase: .writingTopology,
                     completedUnitCount: completedCount,
                     totalUnitCount: orderedNodeIndices.count,
-                    message: "Writing topology"
+                    message: String(localized: "Writing topology", comment: "Progress message while writing scan tree topology.")
                 ))
                 await Task.yield()
             }

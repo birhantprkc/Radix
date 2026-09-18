@@ -104,6 +104,10 @@ final class TestAppPreferencesStore: AppPreferencesPersisting {
     func saveOnboardingPage(_ page: OnboardingPage) {
         preferences.onboardingPage = page
     }
+
+    func saveHighestLaunchedVersion(_ version: String) {
+        preferences.highestLaunchedVersion = version
+    }
 }
 
 final class TestRecentTargetPersistence: RecentTargetPersisting {

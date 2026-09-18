@@ -7,6 +7,53 @@ import Testing
 
 @MainActor
 struct AppModelDependencyTests {
+    @Test(arguments: [false, true])
+    func testLaunchHistoryAdvancesOnlyForNewerVersions(didCompleteOnboarding: Bool) {
+        let preferences = SpyAppPreferencesStore(
+            preferences: AppPreferences(scan: .defaults, didCompleteOnboarding: didCompleteOnboarding)
+        )
+
+        for (version, expectedHighest) in [
+            ("1.8.0", "1.8.0"),
+            ("1.8.0", "1.8.0"),
+            ("1.9.0", "1.9.0"),
+            ("1.8.0", "1.9.0"),
+            ("1.9.0", "1.9.0"),
+            ("1.10.0", "1.10.0"),
+            ("1.9.0", "1.10.0"),
+            ("1.10.1", "1.10.1"),
+            ("2.0.0", "2.0.0")
+        ] {
+            let model = AppModel(
+                dependencies: makeDependencies(preferences: preferences),
+                currentAppVersion: version
+            )
+            defer { model.cleanup() }
+            #expect(preferences.preferences.highestLaunchedVersion == expectedHighest)
+            #expect(model.showsOnboarding == !didCompleteOnboarding)
+            #expect(preferences.preferences.didCompleteOnboarding == didCompleteOnboarding)
+        }
+
+        #expect(preferences.savedHighestLaunchedVersions == ["1.8.0", "1.9.0", "1.10.0", "1.10.1", "2.0.0"])
+    }
+
+    @Test(arguments: [nil, ""] as [String?], [nil, "1.8.0"] as [String?])
+    func testMissingAppVersionLeavesLaunchHistoryUnchanged(currentVersion: String?, previousVersion: String?) {
+        let preferences = SpyAppPreferencesStore(
+            preferences: AppPreferences(
+                scan: .defaults, didCompleteOnboarding: true, highestLaunchedVersion: previousVersion
+            )
+        )
+        let model = AppModel(
+            dependencies: makeDependencies(preferences: preferences),
+            currentAppVersion: currentVersion
+        )
+        defer { model.cleanup() }
+
+        #expect(preferences.preferences.highestLaunchedVersion == previousVersion)
+        #expect(preferences.savedHighestLaunchedVersions.isEmpty)
+    }
+
     @Test
     func testOnboardingResumesAtAccessAndTourChoiceControlsTheWorkspaceHandoff() {
         let preferences = SpyAppPreferencesStore(
@@ -195,7 +242,8 @@ struct AppModelDependencyTests {
                     useScanExclusions: true, exclusionPatterns: ["custom/**"]
                 ),
                 didCompleteOnboarding: true,
-                onboardingPage: .access
+                onboardingPage: .access,
+                highestLaunchedVersion: "1.8.0"
             )
         )
         let recent = makeTestTarget("/recent/kept")
@@ -212,7 +260,9 @@ struct AppModelDependencyTests {
                 availableRecentIDs: [recent.id],
                 systemActions: actions,
                 usageStats: usageStats
-            ))
+            ),
+            currentAppVersion: "1.8.0"
+        )
         defer { model.cleanup() }
         try await waitUntil("initial permission status") { model.fullDiskAccessStatus == .notGranted }
 
@@ -228,6 +278,7 @@ struct AppModelDependencyTests {
         #expect(model.fullDiskAccessStatus == .notGranted)
         #expect(preferences.preferences.didCompleteOnboarding)
         #expect(preferences.preferences.onboardingPage == .access)
+        #expect(preferences.preferences.highestLaunchedVersion == "1.8.0")
         #expect(!(model.showsOnboarding))
     }
 
@@ -630,14 +681,6 @@ struct AppModelDependencyTests {
         actions.openInTerminal = { recorder.terminalDirectoryURLs.append($0) }
         actions.reveal = { recorder.revealedURLs.append($0) }
         actions.copyPath = { recorder.copiedPathURLs.append($0) }
-        actions.quickLook = AppQuickLookActions(
-            isPreviewVisible: { false },
-            isPreviewPanelKeyWindow: { false },
-            present: { recorder.presentedQuickLookURLs.append($0) },
-            toggle: { recorder.toggledQuickLookURLs.append($0) },
-            updateVisiblePreview: { recorder.updatedQuickLookURLs.append($0) },
-            close: { recorder.quickLookCloseCount += 1 }
-        )
         let model = AppModel(dependencies: makeDependencies(systemActions: actions))
         let file = installSelection(on: model)
 
@@ -645,15 +688,11 @@ struct AppModelDependencyTests {
         model.openSelected()
         await model.openSelectedInTerminal()
         model.copySelectedPath()
-        model.previewSelectedWithQuickLook()
-        model.toggleQuickLookForSelected()
 
         #expect(recorder.revealedURLs == [file.url])
         #expect(recorder.openedURLs == [file.url])
         #expect(recorder.terminalDirectoryURLs == [file.url.deletingLastPathComponent()])
         #expect(recorder.copiedPathURLs == [file.url])
-        #expect(recorder.presentedQuickLookURLs == [file.url])
-        #expect(recorder.toggledQuickLookURLs == [file.url])
         #expect(model.lastErrorMessage == nil)
     }
 
@@ -716,109 +755,6 @@ struct AppModelDependencyTests {
     }
 
     @Test
-    func testInstallsQuickLookKeyMonitorOnInit() {
-        let recorder = AppModelActionRecorder()
-        var actions = AppSystemActions.inert
-        installRecordingQuickLookMonitor(on: &actions, recorder: recorder)
-
-        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
-
-        #expect(recorder.quickLookKeyHandlers.count == 1)
-        withExtendedLifetime(model) {}
-    }
-
-    @Test
-    func testCleanupRemovesQuickLookKeyMonitorOnce() {
-        let recorder = AppModelActionRecorder()
-        var actions = AppSystemActions.inert
-        installRecordingQuickLookMonitor(on: &actions, recorder: recorder)
-
-        var model: AppModel? = AppModel(dependencies: makeDependencies(systemActions: actions))
-
-        model?.cleanup()
-        model?.cleanup()
-        model = nil
-
-        #expect(recorder.quickLookMonitorRemovalCount == 1)
-    }
-
-    @Test
-    func testDeinitRemovesQuickLookKeyMonitor() {
-        let recorder = AppModelActionRecorder()
-        var actions = AppSystemActions.inert
-        installRecordingQuickLookMonitor(on: &actions, recorder: recorder)
-
-        var model: AppModel? = AppModel(dependencies: makeDependencies(systemActions: actions))
-        #expect(model != nil)
-        #expect(recorder.quickLookKeyHandlers.count == 1)
-
-        model = nil
-
-        #expect(recorder.quickLookMonitorRemovalCount == 1)
-    }
-
-    @Test
-    func testQuickLookKeyMonitorSpaceTogglesSelectedItemThroughDependency() {
-        let recorder = AppModelActionRecorder()
-        var actions = AppSystemActions.inert
-        actions.fileExists = { _ in true }
-        actions.quickLook = AppQuickLookActions(
-            isPreviewVisible: { false },
-            isPreviewPanelKeyWindow: { false },
-            present: { _ in },
-            toggle: { recorder.toggledQuickLookURLs.append($0) },
-            updateVisiblePreview: { _ in },
-            close: {}
-        )
-        installRecordingQuickLookMonitor(on: &actions, recorder: recorder)
-        let preferences = SpyAppPreferencesStore(
-            preferences: AppPreferences(
-                scan: .defaults,
-                didCompleteOnboarding: true
-            )
-        )
-        let model = AppModel(dependencies: makeDependencies(preferences: preferences, systemActions: actions))
-        let file = installSelection(on: model)
-        model.setWorkspaceWindowNumber(100)
-
-        let didHandleEvent = recorder.quickLookKeyHandlers.first?(makeSpaceKeyEvent(windowNumber: 100))
-
-        #expect(didHandleEvent == true)
-        #expect(recorder.toggledQuickLookURLs == [file.url])
-        #expect(model.lastErrorMessage == nil)
-    }
-
-    @Test
-    func testQuickLookKeyMonitorIgnoresSpaceOutsideWorkspaceWindow() {
-        let recorder = AppModelActionRecorder()
-        var actions = AppSystemActions.inert
-        actions.fileExists = { _ in true }
-        actions.quickLook = AppQuickLookActions(
-            isPreviewVisible: { false },
-            isPreviewPanelKeyWindow: { false },
-            present: { _ in },
-            toggle: { recorder.toggledQuickLookURLs.append($0) },
-            updateVisiblePreview: { _ in },
-            close: {}
-        )
-        installRecordingQuickLookMonitor(on: &actions, recorder: recorder)
-        let preferences = SpyAppPreferencesStore(
-            preferences: AppPreferences(
-                scan: .defaults,
-                didCompleteOnboarding: true
-            )
-        )
-        let model = AppModel(dependencies: makeDependencies(preferences: preferences, systemActions: actions))
-        installSelection(on: model)
-        model.setWorkspaceWindowNumber(100)
-
-        let didHandleEvent = recorder.quickLookKeyHandlers.first?(makeSpaceKeyEvent(windowNumber: 200))
-
-        #expect(didHandleEvent == false)
-        #expect(recorder.toggledQuickLookURLs.isEmpty)
-    }
-
-    @Test
     func testUnavailableSelectionClearsSelectionAndSkipsInjectedAction() {
         let recorder = AppModelActionRecorder()
         var actions = AppSystemActions.inert
@@ -869,26 +805,44 @@ struct AppModelDependencyTests {
     }
 
     @Test
-    func testQuickLookVisibleSelectionChangesUpdateAndCloseThroughDependency() {
-        let recorder = AppModelActionRecorder()
-        recorder.isQuickLookVisible = true
-        var actions = AppSystemActions.inert
-        actions.quickLook = AppQuickLookActions(
-            isPreviewVisible: { recorder.isQuickLookVisible },
-            isPreviewPanelKeyWindow: { false },
-            present: { _ in },
-            toggle: { _ in },
-            updateVisiblePreview: { recorder.updatedQuickLookURLs.append($0) },
-            close: { recorder.quickLookCloseCount += 1 }
+    func testQuickLookSelectionAndDismissalStaySeparate() async throws {
+        let preferences = SpyAppPreferencesStore(
+            preferences: AppPreferences(scan: .defaults, didCompleteOnboarding: true)
         )
-        let model = AppModel(dependencies: makeDependencies(systemActions: actions))
-        let file = installSelection(on: model, selectNode: false)
+        let model = AppModel(dependencies: makeDependencies(preferences: preferences))
+        let file = installSelection(on: model)
+        #expect(model.quickLook.session == nil)
 
-        model.select(nodeID: file.id)
-        #expect(recorder.updatedQuickLookURLs == [file.url])
+        #expect(model.handleQuickLookShortcut())
+        try await waitUntil("Quick Look opens") { model.quickLook.session?.selection == file.url }
+        model.quickLook.setPreviewSelection(nil)
+        #expect(model.navigation.selectedNodeID == file.id)
+        #expect(model.quickLook.session == nil)
 
+        model.previewSelectedWithQuickLook()
+        try await waitUntil("Quick Look reopens") { model.quickLook.session != nil }
         model.select(nodeID: nil)
-        #expect(recorder.quickLookCloseCount == 1)
+        #expect(model.quickLook.session == nil)
+    }
+
+    @Test(arguments: ["background", "window", "snapshot", "cleanup"])
+    func testQuickLookWorkflowChangesDismissPreview(change: String) async throws {
+        let preferences = SpyAppPreferencesStore(
+            preferences: AppPreferences(scan: .defaults, didCompleteOnboarding: true)
+        )
+        let model = AppModel(dependencies: makeDependencies(preferences: preferences))
+        installSelection(on: model)
+        model.previewSelectedWithQuickLook()
+        try await waitUntil("Quick Look opens before workflow change") { model.quickLook.session != nil }
+
+        switch change {
+        case "background": model.suspendBackgroundActivity()
+        case "window": model.suspendMainWindowActivity()
+        case "snapshot": installSelection(on: model)
+        default: model.cleanup()
+        }
+        #expect(model.quickLook.session == nil)
+        #expect(!model.quickLook.isActive)
     }
 
     @Test
@@ -3699,39 +3653,6 @@ private func makeDependencies(
 }
 
 @MainActor
-private func installRecordingQuickLookMonitor(
-    on actions: inout AppSystemActions,
-    recorder: AppModelActionRecorder
-) {
-    actions.installQuickLookKeyMonitor = { handler in
-        recorder.quickLookKeyHandlers.append(handler)
-        return AppEventMonitorToken {
-            recorder.quickLookMonitorRemovalCount += 1
-        }
-    }
-}
-
-private func makeSpaceKeyEvent(windowNumber: Int = 0) -> NSEvent {
-    guard
-        let event = NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: windowNumber,
-            context: nil,
-            characters: " ",
-            charactersIgnoringModifiers: " ",
-            isARepeat: false,
-            keyCode: 49
-        )
-    else {
-        fatalError("Failed to create Space key event")
-    }
-    return event
-}
-
-@MainActor
 @discardableResult
 private func installSelection(
     on model: AppModel,
@@ -3807,6 +3728,7 @@ private func makeArchivePreview(
 private final class SpyAppPreferencesStore: AppPreferencesPersisting {
     var preferences: AppPreferences
     var savedScanPreferences: [AppScanPreferences] = []
+    var savedHighestLaunchedVersions: [String] = []
     var markOnboardingCompleteCount = 0
     var markOnboardingIncompleteCount = 0
 
@@ -3835,6 +3757,11 @@ private final class SpyAppPreferencesStore: AppPreferencesPersisting {
 
     func saveOnboardingPage(_ page: OnboardingPage) {
         preferences.onboardingPage = page
+    }
+
+    func saveHighestLaunchedVersion(_ version: String) {
+        preferences.highestLaunchedVersion = version
+        savedHighestLaunchedVersions.append(version)
     }
 }
 
@@ -3895,13 +3822,6 @@ private final class AppModelActionRecorder {
     var copiedPathURLs: [URL] = []
     var copiedPathManyURLs: [[URL]] = []
     var movedToTrashURLs: [URL] = []
-    var presentedQuickLookURLs: [URL] = []
-    var toggledQuickLookURLs: [URL] = []
-    var updatedQuickLookURLs: [URL?] = []
-    var quickLookCloseCount = 0
-    var isQuickLookVisible = false
-    var quickLookKeyHandlers: [(NSEvent) -> Bool] = []
-    var quickLookMonitorRemovalCount = 0
     var defaultTargets: [ScanTarget] = []
     var defaultTargetsCallCount = 0
 }

@@ -2,6 +2,7 @@ import AppKit
 
 @MainActor
 class ChartKeyboardInteractionView: NSView {
+    var onQuickLook: () -> Bool = { false }
     var onMove: (ChartSpatialSelectionDirection) -> Bool = { _ in false }
 
     override var acceptsFirstResponder: Bool { true }
@@ -18,8 +19,14 @@ class ChartKeyboardInteractionView: NSView {
             .option,
             .shift
         ]
-        guard event.modifierFlags.intersection(selectionModifiers).isEmpty,
-              let direction = spatialSelectionDirection(for: event),
+        guard event.modifierFlags.intersection(selectionModifiers).isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+        if event.keyCode == 49 {
+            if event.isARepeat || onQuickLook() { return }
+        }
+        guard let direction = spatialSelectionDirection(for: event),
               onMove(direction) else {
             super.keyDown(with: event)
             return

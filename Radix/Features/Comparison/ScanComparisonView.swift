@@ -544,15 +544,15 @@ struct ScanComparisonView: View {
         } else if node.allocatedDelta > 0 {
             Label(ScanComparisonChangeKind.grew.title, systemImage: ScanComparisonChangeKind.grew.systemImageName)
                 .foregroundStyle(ScanComparisonChangeKind.grew.tintColor)
-                .help("\(node.affectedCount.formatted()) changes summarized")
+                .help("\(node.affectedCount) changes summarized")
         } else if node.allocatedDelta < 0 {
             Label(ScanComparisonChangeKind.shrank.title, systemImage: ScanComparisonChangeKind.shrank.systemImageName)
                 .foregroundStyle(ScanComparisonChangeKind.shrank.tintColor)
-                .help("\(node.affectedCount.formatted()) changes summarized")
+                .help("\(node.affectedCount) changes summarized")
         } else {
             Text("–", tableName: "Interface")
                 .foregroundStyle(.secondary)
-                .help("\(node.affectedCount.formatted()) changes summarized")
+                .help("\(node.affectedCount) changes summarized")
                 .accessibilityLabel(Text("No net change", tableName: "Interface"))
         }
     }

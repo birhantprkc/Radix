@@ -27,8 +27,9 @@ SwiftUI, and Xcode 26+.
   and the adjacent `FileBrowser*` services
 - Sunburst or treemap layout: the corresponding geometry/chart model in
   `Radix/Services/`; layout requests: `ChartLayoutRequestCoordinator.swift`
-- Quick Look coordination: `Radix/ViewModels/AppQuickLookController.swift`;
-  native integration: `Radix/Services/QuickLookIntegration.swift`
+- Quick Look sessions: `Radix/ViewModels/AppQuickLookController.swift`;
+  SwiftUI presentation: `Radix/Features/Workspace/WorkspaceQuickLookPreview.swift`;
+  shared live-path validation: `Radix/Services/FileActionValidation.swift`
 - Feature UI: `Radix/Features/`; reusable UI: `Radix/Shared/`;
   menu commands: `Radix/App/RadixCommands.swift`
 - Swift Testing core and integration tests: `RadixCoreTests/`

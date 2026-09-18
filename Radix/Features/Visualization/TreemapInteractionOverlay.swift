@@ -10,6 +10,7 @@ struct TreemapDiscardPileDragItem {
 struct TreemapInteractionOverlay: NSViewRepresentable {
     let onHover: (CGPoint?) -> Void
     let onClick: (CGPoint, Int) -> Void
+    let onQuickLook: () -> Bool
     let onMove: (ChartSpatialSelectionDirection) -> Bool
     let onPan: (CGSize, CGPoint) -> Void
     let onMagnify: (CGPoint, CGFloat) -> Void
@@ -32,6 +33,7 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
         view.onHover = onHover
         view.onClick = onClick
         view.onMove = onMove
+        view.onQuickLook = onQuickLook
         view.onPan = onPan
         view.onMagnify = onMagnify
         view.canStartPan = canStartPan

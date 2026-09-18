@@ -160,7 +160,7 @@ nonisolated struct FileNodeActionAvailability: Equatable, Sendable {
 
         self.init(
             canOpen: false,
-            canPreviewWithQuickLook: false,
+            canPreviewWithQuickLook: nodes.allSatisfy(\.supportsFileActions) && snapshotSource.allowsLivePathActions,
             canRevealInFinder: nodes.allSatisfy(\.supportsFileActions) && snapshotSource.allowsLivePathActions,
             canCopyPath: nodes.allSatisfy(\.supportsFileActions) && snapshotSource.allowsArchivedPathCopy,
             canMoveToTrash: nodes.allSatisfy {
