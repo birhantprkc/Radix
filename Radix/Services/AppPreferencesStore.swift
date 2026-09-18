@@ -38,6 +38,8 @@ nonisolated struct AppPreferences: Equatable {
     var scan: AppScanPreferences
     var didCompleteOnboarding: Bool
     var onboardingPage: OnboardingPage = .welcome
+    // Launch history for future upgrade detection, not release-note acknowledgment.
+    var highestLaunchedVersion: String? = nil
 
     static let defaults = AppPreferences(
         scan: .defaults,
@@ -51,12 +53,14 @@ protocol AppPreferencesPersisting: AnyObject {
     func markOnboardingComplete()
     func markOnboardingIncomplete()
     func saveOnboardingPage(_ page: OnboardingPage)
+    func saveHighestLaunchedVersion(_ version: String)
 }
 
 final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
     private enum Key {
         static let didCompleteOnboarding = "didCompleteOnboarding"
         static let onboardingPage = "onboardingPage"
+        static let highestLaunchedVersion = "highestLaunchedVersion"
         static let showHiddenFiles = "showHiddenFiles"
         static let treatPackagesAsDirectories = "treatPackagesAsDirectories"
         static let maxRenderedDepth = "maxRenderedDepth"
@@ -128,7 +132,8 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
             ),
             didCompleteOnboarding: defaults.bool(forKey: Key.didCompleteOnboarding),
             onboardingPage: defaults.string(forKey: Key.onboardingPage)
-                .flatMap(OnboardingPage.init(rawValue:)) ?? .welcome
+                .flatMap(OnboardingPage.init(rawValue:)) ?? .welcome,
+            highestLaunchedVersion: defaults.string(forKey: Key.highestLaunchedVersion)
         )
     }
 
@@ -153,5 +158,9 @@ final class UserDefaultsAppPreferencesStore: AppPreferencesPersisting {
 
     func saveOnboardingPage(_ page: OnboardingPage) {
         defaults.set(page.rawValue, forKey: Key.onboardingPage)
+    }
+
+    func saveHighestLaunchedVersion(_ version: String) {
+        defaults.set(version, forKey: Key.highestLaunchedVersion)
     }
 }

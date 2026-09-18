@@ -290,7 +290,8 @@ final class AppModel: ObservableObject {
 
     init(
         dependencies: AppDependencies = .live,
-        completedScanCacheMaxTotalNodeCount: Int = 250_000
+        completedScanCacheMaxTotalNodeCount: Int = 250_000,
+        currentAppVersion: String? = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     ) {
         self.dependencies = dependencies
         self.scanCoordinator = ScanCoordinator(scanService: dependencies.scanService)
@@ -323,6 +324,14 @@ final class AppModel: ObservableObject {
         usageStats = dependencies.usageStats.loadUsageStats()
         fullDiskAccessStatus = .unknown
         recentTargets = dependencies.recentTargets.loadAvailableTargets()
+
+        // Read the previous launch history above before advancing it. A future
+        // What's New flow can use that history to distinguish upgrades from first launches.
+        if let currentAppVersion, !currentAppVersion.isEmpty,
+           preferences.highestLaunchedVersion == nil
+            || preferences.highestLaunchedVersion?.compare(currentAppVersion, options: .numeric) == .orderedAscending {
+            dependencies.preferences.saveHighestLaunchedVersion(currentAppVersion)
+        }
 
         refreshAvailableTargets()
         refreshSidebarTargetSections()

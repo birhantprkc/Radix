@@ -16,6 +16,24 @@ struct AppPreferencesStoreTests {
     }
 
     @Test
+    func testLaunchHistorySurvivesReloadAndOtherPreferenceChanges() throws {
+        let defaults = try temporaryDefaults.make()
+        let store = UserDefaultsAppPreferencesStore(defaults: defaults)
+        #expect(store.loadPreferences().highestLaunchedVersion == nil)
+
+        store.saveHighestLaunchedVersion("1.8.0")
+        store.saveScanPreferences(.defaults)
+        store.markOnboardingComplete()
+        store.markOnboardingIncomplete()
+        store.saveOnboardingPage(.access)
+
+        let restored = UserDefaultsAppPreferencesStore(defaults: defaults).loadPreferences()
+        #expect(restored.highestLaunchedVersion == "1.8.0")
+        #expect(!(restored.didCompleteOnboarding))
+        #expect(restored.onboardingPage == .access)
+    }
+
+    @Test
     func testSaveAndReloadScanPreferencesRoundTripsValues() throws {
         let defaults = try temporaryDefaults.make()
         let store = UserDefaultsAppPreferencesStore(defaults: defaults)
