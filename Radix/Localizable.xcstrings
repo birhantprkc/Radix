@@ -20836,47 +20836,6 @@
         }
       }
     },
-    "Sizes show attributed allocated storage, not guaranteed space reclaimed." : {
-      "comment" : "Discard Pile note clarifying that displayed allocated sizes are not a promise of how much space deleting the items will reclaim.",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Größen zeigen zugeordneten belegten Speicher, nicht den garantiert freigegebenen Speicherplatz."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sizes show attributed allocated storage, not guaranteed space reclaimed."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los tamaños muestran el almacenamiento asignado atribuido, no el espacio que se recuperará con certeza."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les tailles indiquent le stockage alloué attribué, pas l’espace dont la récupération est garantie."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le dimensioni mostrano lo spazio allocato attribuito, non lo spazio che verrà sicuramente recuperato."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "大小显示归属的已分配存储空间，而不是删除后保证释放的空间。"
-          }
-        }
-      }
-    },
     "Skip" : {
       "extractionState" : "manual",
       "localizations" : {

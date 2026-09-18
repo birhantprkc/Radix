@@ -46,10 +46,6 @@ struct DiscardPileReviewSheet: View {
 
             listAndStatusBar
 
-            Text("Sizes show attributed allocated storage, not guaranteed space reclaimed.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
             Divider()
 
             HStack {
