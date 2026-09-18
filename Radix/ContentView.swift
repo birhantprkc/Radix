@@ -82,9 +82,7 @@ struct ContentView: View {
         }
         .environmentObject(appModel.workspaceTour)
         .environmentObject(tourPresentation)
-        .background(WorkspaceWindowObserver { window in
-            appModel.setWorkspaceWindowNumber(window?.windowNumber)
-        })
+        .modifier(WorkspaceQuickLookPreview(controller: appModel.quickLook))
         .inspector(isPresented: inspectorPresentation) {
             SelectionInspectorView(
                 scanState: appModel.scanState,
@@ -309,7 +307,6 @@ struct ContentView: View {
         }
         .onDisappear {
             discardPileDragDidEnd()
-            appModel.setWorkspaceWindowNumber(nil)
             appModel.suspendMainWindowActivity()
         }
         .onOpenURL { url in
@@ -654,50 +651,6 @@ private extension ContentView {
     }
 }
 
-private struct WorkspaceWindowObserver: NSViewRepresentable {
-    let onWindowChange: (NSWindow?) -> Void
-
-    func makeNSView(context: Context) -> WindowView {
-        let view = WindowView()
-        view.onWindowChange = onWindowChange
-        return view
-    }
-
-    func updateNSView(_ nsView: WindowView, context: Context) {
-        nsView.onWindowChange = onWindowChange
-        nsView.reportWindowIfNeeded()
-    }
-
-    final class WindowView: NSView {
-        var onWindowChange: (NSWindow?) -> Void = { _ in }
-        private var hasReportedWindow = false
-        private var lastReportedWindowID: ObjectIdentifier?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            reportWindowIfNeeded()
-        }
-
-        func reportWindowIfNeeded() {
-            let reportedWindow = window
-            let reportedWindowID = reportedWindow.map(ObjectIdentifier.init)
-            guard !hasReportedWindow || reportedWindowID != lastReportedWindowID else { return }
-
-            hasReportedWindow = true
-            lastReportedWindowID = reportedWindowID
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                guard self.window.map(ObjectIdentifier.init) == reportedWindowID else {
-                    self.reportWindowIfNeeded()
-                    return
-                }
-                self.onWindowChange(reportedWindow)
-            }
-        }
-    }
-}
-
 private struct WorkspaceDetailView: View {
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
@@ -811,6 +764,7 @@ private extension ContentView {
     var workspaceActions: WorkspaceActions {
         WorkspaceActions(
             makeFileBrowserModel: { appModel.makeFileBrowserModel() },
+            quickLook: { appModel.handleQuickLookShortcut() },
             chooseFolder: { appModel.presentOpenPanelAndScan() },
             startScan: { appModel.startScan($0) },
             stopScan: { appModel.stopScan() },
@@ -871,7 +825,7 @@ private extension ContentView {
 
     var primarySelectedFileActions: SelectedFileActions {
         SelectedFileActions(
-            quickLook: { appModel.previewSelectedWithQuickLook() },
+            quickLook: { appModel.previewPrimarySelectionWithQuickLook() },
             revealInFinder: { appModel.revealPrimarySelectionInFinder() },
             open: { appModel.openSelected() },
             openInTerminal: { Task { await appModel.openSelectedInTerminal() } },

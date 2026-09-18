@@ -19,6 +19,7 @@ struct SunburstChartView: View {
     let discardPileRootNodeIDs: Set<FileNodeRecord.ID>
     let movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>
     let onSelect: (String?) -> Void
+    let onQuickLook: () -> Bool
     let onZoom: (String) -> Void
     let onSegmentClick: () -> Void
     let onNavigateToParent: () -> Void
@@ -46,6 +47,7 @@ struct SunburstChartView: View {
         discardPileRootNodeIDs: Set<FileNodeRecord.ID>,
         movingToTrashRootNodeIDs: Set<FileNodeRecord.ID>,
         onSelect: @escaping (String?) -> Void,
+        onQuickLook: @escaping () -> Bool,
         onZoom: @escaping (String) -> Void,
         onSegmentClick: @escaping () -> Void,
         onNavigateToParent: @escaping () -> Void,
@@ -67,6 +69,7 @@ struct SunburstChartView: View {
         self.discardPileRootNodeIDs = discardPileRootNodeIDs
         self.movingToTrashRootNodeIDs = movingToTrashRootNodeIDs
         self.onSelect = onSelect
+        self.onQuickLook = onQuickLook
         self.onZoom = onZoom
         self.onSegmentClick = onSegmentClick
         self.onNavigateToParent = onNavigateToParent
@@ -215,6 +218,7 @@ struct SunburstChartView: View {
                             discardPileOverlay: discardPileOverlay
                         )
                     },
+                    onQuickLook: onQuickLook,
                     onMove: { direction in
                         guard layoutPresentation.canUseRenderedLayout else { return false }
                         return handleSpatialMove(

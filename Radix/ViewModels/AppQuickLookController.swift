@@ -1,146 +1,132 @@
-//
-//  AppQuickLookController.swift
-//  Radix
-//
-
-import AppKit
+import Combine
 import Foundation
 
-@MainActor
 struct AppQuickLookSelectionContext {
-    let selectedNode: FileNodeRecord?
-    let activeTarget: ScanTarget?
-    let trashSafetyPolicy: TrashSafetyPolicy
+    let selectedNodes: [FileNodeRecord]
+    let primaryURL: URL?
     let snapshotSource: ScanSnapshotSource
 }
 
 @MainActor
 protocol AppQuickLookControllerDelegate: AnyObject {
     var quickLookSelectionContext: AppQuickLookSelectionContext { get }
-    var isQuickLookKeyboardShortcutBlocked: Bool { get }
-
-    func validatedSelectionForQuickLook() throws -> FileNodeRecord
     func appQuickLookController(_ controller: AppQuickLookController, didFailWith error: Error)
 }
 
 @MainActor
-final class AppQuickLookController {
-    weak var delegate: (any AppQuickLookControllerDelegate)?
+final class AppQuickLookController: ObservableObject {
+    struct Session: Equatable {
+        let urls: [URL]
+        var selection: URL
+    }
 
-    private let quickLookActions: AppQuickLookActions
-    private let installKeyMonitorAction: (@escaping (NSEvent) -> Bool) -> AppEventMonitorToken?
-    private var keyMonitor: AppEventMonitorToken?
-    private var workspaceWindowNumber: Int?
+    enum SelectionScope {
+        case selection
+        case primaryItem
+    }
+
+    weak var delegate: (any AppQuickLookControllerDelegate)?
+    weak var fileBrowser: FileBrowserModel?
+    @Published private(set) var session: Session?
+
+    private let validateSelection: ([FileNodeRecord], ScanSnapshotSource) async throws -> Void
+    private var preparation: Task<Void, Never>?
+    // Retain intent while validation is pending, so selection changes follow and
+    // a second toggle cancels instead of opening a stale preview later.
+    private var requestedScope: SelectionScope?
+
+    var isActive: Bool { requestedScope != nil }
 
     init(systemActions: AppSystemActions) {
-        quickLookActions = systemActions.quickLook
-        installKeyMonitorAction = systemActions.installQuickLookKeyMonitor
+        validateSelection = systemActions.validateQuickLookSelection
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            removeKeyMonitor()
-        }
-    }
-
-    func setWorkspaceWindowNumber(_ windowNumber: Int?) {
-        workspaceWindowNumber = windowNumber
-    }
-
-    func installKeyMonitor() {
-        removeKeyMonitor()
-        keyMonitor = installKeyMonitorAction { [weak self] event in
-            MainActor.assumeIsolated {
-                self?.handleKeyDown(event) == true
-            }
-        }
-    }
-
-    func removeKeyMonitor() {
-        keyMonitor?.remove()
-        keyMonitor = nil
+    isolated deinit {
+        preparation?.cancel()
     }
 
     func closePreview() {
-        quickLookActions.close()
+        preparation?.cancel()
+        preparation = nil
+        requestedScope = nil
+        if session != nil { session = nil }
     }
 
-    func previewSelected() {
-        performSelectedPreviewAction(quickLookActions.present)
+    func previewSelected(scope: SelectionScope = .selection) {
+        requestPreview(scope: scope, reportsErrors: true)
     }
 
     func toggleSelected() {
-        performSelectedPreviewAction(quickLookActions.toggle)
+        if isActive {
+            closePreview()
+        } else {
+            previewSelected()
+        }
     }
 
     func syncVisiblePreview() {
-        guard quickLookActions.isPreviewVisible() else { return }
+        guard let requestedScope else { return }
+        requestPreview(scope: requestedScope, reportsErrors: false)
+    }
 
-        guard let context = delegate?.quickLookSelectionContext,
-              let selectedNode = context.selectedNode,
-              canPreview(selectedNode, in: context) else {
-            quickLookActions.close()
+    func setPreviewSelection(_ url: URL?) {
+        guard let url else {
+            closePreview()
+            return
+        }
+        guard var next = session, next.urls.contains(url), next.selection != url else { return }
+        next.selection = url
+        session = next
+    }
+
+    private func requestPreview(scope: SelectionScope, reportsErrors: Bool) {
+        preparation?.cancel()
+        preparation = nil
+        guard let context = delegate?.quickLookSelectionContext else {
+            closePreview()
             return
         }
 
-        quickLookActions.updateVisiblePreview(selectedNode.url)
-    }
-
-    private func performSelectedPreviewAction(_ action: (URL) throws -> Void) {
-        do {
-            guard let selectedNode = try delegate?.validatedSelectionForQuickLook() else { return }
-            try action(selectedNode.url)
-        } catch {
-            delegate?.appQuickLookController(self, didFailWith: error)
-        }
-    }
-
-    private func handleKeyDown(_ event: NSEvent) -> Bool {
-        guard Self.isPlainSpaceKey(event) else { return false }
-        guard isWorkspaceKeyEvent(event) else { return false }
-        guard let delegate, !delegate.isQuickLookKeyboardShortcutBlocked else { return false }
-        guard !quickLookActions.isPreviewPanelKeyWindow() else { return false }
-        guard !Self.shouldPreserveSpaceKey(for: event.window?.firstResponder) else { return false }
-        let context = delegate.quickLookSelectionContext
-        guard let selectedNode = context.selectedNode,
-              canPreview(selectedNode, in: context) else {
-            return false
+        var nodes = context.selectedNodes
+        if scope == .primaryItem {
+            nodes = nodes.filter { $0.url == context.primaryURL }
+        } else if let ordered = fileBrowser?.displayedNodes(ids: Set(nodes.map(\.id))),
+                  ordered.count == nodes.count {
+            nodes = ordered
         }
 
-        toggleSelected()
-        return true
-    }
-
-    private static func isPlainSpaceKey(_ event: NSEvent) -> Bool {
-        let disallowedModifiers: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
-        guard event.modifierFlags.intersection(disallowedModifiers).isEmpty else { return false }
-        return event.keyCode == 49 || event.charactersIgnoringModifiers == " "
-    }
-
-    private func isWorkspaceKeyEvent(_ event: NSEvent) -> Bool {
-        guard let workspaceWindowNumber else { return false }
-        return event.windowNumber == workspaceWindowNumber
-    }
-
-    private static func shouldPreserveSpaceKey(for responder: NSResponder?) -> Bool {
-        guard let responder else { return false }
-
-        if responder is NSTextView || responder is NSTextField || responder is NSButton {
-            return true
+        guard !nodes.isEmpty, context.snapshotSource.allowsLivePathActions,
+              nodes.allSatisfy({ $0.supportsFileActions && $0.url.isFileURL }) else {
+            closePreview()
+            if reportsErrors {
+                delegate?.appQuickLookController(
+                    self, didFailWith: nodes.isEmpty ? FileActionError.noSelection : FileActionError.unsupported
+                )
+            }
+            return
         }
 
-        if responder is NSTableView || responder is NSOutlineView || responder is NSCollectionView {
-            return false
+        let urls = nodes.map(\.url)
+        let preferredURL = reportsErrors ? context.primaryURL : (session?.selection ?? context.primaryURL)
+        let selection = preferredURL.flatMap { urls.contains($0) ? $0 : nil } ?? urls[0]
+        let next = Session(urls: urls, selection: selection)
+        requestedScope = scope
+        guard next != session else { return }
+
+        let validateSelection = self.validateSelection
+        preparation = Task { [weak self] in
+            do {
+                try await validateSelection(nodes, context.snapshotSource)
+                guard !Task.isCancelled, let self else { return }
+                preparation = nil
+                session = next
+            } catch {
+                guard !Task.isCancelled, let self else { return }
+                closePreview()
+                if reportsErrors {
+                    delegate?.appQuickLookController(self, didFailWith: error)
+                }
+            }
         }
-
-        return responder is NSControl
-    }
-
-    private func canPreview(_ node: FileNodeRecord, in context: AppQuickLookSelectionContext) -> Bool {
-        node.actionAvailability(
-            activeTarget: context.activeTarget,
-            trashSafetyPolicy: context.trashSafetyPolicy,
-            snapshotSource: context.snapshotSource
-        ).canPreviewWithQuickLook
     }
 }

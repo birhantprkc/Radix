@@ -15,6 +15,7 @@ struct DiscardPileDragPayload: Codable, Hashable, Transferable {
 
 struct WorkspaceActions {
     let makeFileBrowserModel: () -> FileBrowserModel
+    let quickLook: () -> Bool
     let chooseFolder: () -> Void
     let startScan: (ScanTarget) -> Void
     let stopScan: () -> Void

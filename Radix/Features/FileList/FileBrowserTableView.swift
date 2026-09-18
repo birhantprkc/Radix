@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct FileBrowserActions {
+    let quickLook: () -> Bool
     let selectNode: (String?) -> Void
     let selectNodes: (Set<String>, String?) -> Void
     let selectNodesAfterViewUpdate: (Set<String>, String?) -> Void
@@ -258,6 +259,10 @@ struct FileBrowserTableView: View {
             performPrimaryAction(for: selectedIDs)
         }
         .tableKeyboardFocus($focusedWorkspaceTarget, equals: .contents)
+        .onKeyPress(.space, phases: .down) { press in
+            guard press.modifiers.isEmpty else { return .ignored }
+            return actions.quickLook() ? .handled : .ignored
+        }
     }
 
     private var tourFolder: FileNodeRecord? {
@@ -423,6 +428,12 @@ struct FileBrowserTableView: View {
 
     @ViewBuilder
     private func bulkFileContextMenu(for selection: FileBrowserSelectionContext) -> some View {
+        Button(FileNodeAction.quickLook.title, systemImage: FileNodeAction.quickLook.systemImageName) {
+            actions.selectNodes(selection.ids, selection.primaryID)
+            actions.selectedFileActions.quickLook()
+        }
+        .disabled(!selection.actionAvailability.canPreviewWithQuickLook)
+
         Button("Reveal in Finder", systemImage: FileNodeAction.revealInFinder.systemImageName) {
             actions.selectNodes(selection.ids, selection.primaryID)
             actions.bulkFileActions.revealInFinder(selection.nodes)

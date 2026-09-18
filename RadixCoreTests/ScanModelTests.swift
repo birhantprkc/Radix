@@ -204,12 +204,13 @@ struct ScanModelTests {
 
         let availability = FileNodeActionAvailability(nodes: [first, second], activeTarget: nil)
         #expect(!(availability.canOpen))
-        #expect(!(availability.canPreviewWithQuickLook))
+        #expect(availability.canPreviewWithQuickLook)
         #expect(availability.canRevealInFinder)
         #expect(availability.canCopyPath)
         #expect(availability.canMoveToTrash)
 
         let mixedAvailability = FileNodeActionAvailability(nodes: [first, syntheticNode], activeTarget: nil)
+        #expect(!(mixedAvailability.canPreviewWithQuickLook))
         #expect(!(mixedAvailability.canRevealInFinder))
         #expect(!(mixedAvailability.canCopyPath))
         #expect(!(mixedAvailability.canMoveToTrash))

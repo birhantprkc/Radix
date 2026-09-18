@@ -7,61 +7,12 @@ import AppKit
 import Combine
 import Foundation
 
-@MainActor
-struct AppQuickLookActions {
-    var isPreviewVisible: () -> Bool
-    var isPreviewPanelKeyWindow: () -> Bool
-    var present: (URL) throws -> Void
-    var toggle: (URL) throws -> Void
-    var updateVisiblePreview: (URL?) -> Void
-    var close: () -> Void
-
-    static let live = AppQuickLookActions(
-        isPreviewVisible: { SystemIntegration.isQuickLookPreviewVisible },
-        isPreviewPanelKeyWindow: { SystemIntegration.isQuickLookPreviewPanelKeyWindow },
-        present: { try SystemIntegration.presentQuickLookPreview(for: $0) },
-        toggle: { try SystemIntegration.toggleQuickLookPreview(for: $0) },
-        updateVisiblePreview: { SystemIntegration.updateVisibleQuickLookPreview(for: $0) },
-        close: { SystemIntegration.closeQuickLookPreview() }
-    )
-
-    static let disabled = AppQuickLookActions(
-        isPreviewVisible: { false },
-        isPreviewPanelKeyWindow: { false },
-        present: { _ in },
-        toggle: { _ in },
-        updateVisiblePreview: { _ in },
-        close: {}
-    )
-}
-
 nonisolated enum TrashIdentityVerificationResult: Equatable, Sendable {
     case matches
     case missingScannedIdentity
     case missingCurrentItem
     case mismatch
     case metadataUnavailable(String)
-}
-
-@MainActor
-final class AppEventMonitorToken {
-    private var removeAction: (() -> Void)?
-
-    init(remove: @escaping () -> Void) {
-        removeAction = remove
-    }
-
-    func remove() {
-        guard let removeAction else { return }
-        self.removeAction = nil
-        removeAction()
-    }
-
-    deinit {
-        MainActor.assumeIsolated {
-            remove()
-        }
-    }
 }
 
 @MainActor
@@ -73,7 +24,7 @@ struct AppSystemActions {
     var copyPath: (URL) throws -> Void
     var copyPaths: ([URL]) throws -> Void
     var moveToTrash: @MainActor (FileNodeRecord) async throws -> TrashIdentityVerificationResult
-    var quickLook: AppQuickLookActions
+    var validateQuickLookSelection: ([FileNodeRecord], ScanSnapshotSource) async throws -> Void
     var prepareAndOpenFullDiskAccessSettings: () -> Bool
     var fullDiskAccessStatus: @MainActor () async -> FullDiskAccessStatus
     var defaultTargets: () -> [ScanTarget]
@@ -89,7 +40,6 @@ struct AppSystemActions {
     var isExistingDirectory: (URL) -> Bool
     var preferredSmartTargetIDs: () -> [String]
     var mountedVolumeEvents: () -> AnyPublisher<Void, Never>
-    var installQuickLookKeyMonitor: (@escaping (NSEvent) -> Bool) -> AppEventMonitorToken?
 
     static let live = AppSystemActions(
         open: { try SystemIntegration.open($0) },
@@ -103,7 +53,24 @@ struct AppSystemActions {
                 try SystemIntegration.moveToTrash(node)
             }.value
         },
-        quickLook: .live,
+        validateQuickLookSelection: { nodes, source in
+            let validation = Task.detached(priority: .userInitiated) {
+                for node in nodes {
+                    try Task.checkCancellation()
+                    try FileActionValidation.validateLivePath(
+                        node,
+                        source: source,
+                        fileExists: { FileManager.default.fileExists(atPath: $0.path) },
+                        verifyIdentity: { SystemIntegration.verifyTrashIdentity($0) }
+                    )
+                }
+            }
+            try await withTaskCancellationHandler {
+                try await validation.value
+            } onCancel: {
+                validation.cancel()
+            }
+        },
         prepareAndOpenFullDiskAccessSettings: {
             SystemIntegration.prepareAndOpenFullDiskAccessSettings()
         },
@@ -159,16 +126,6 @@ struct AppSystemActions {
                 .merge(with: workspaceNotifications.publisher(for: NSWorkspace.didRenameVolumeNotification))
                 .map { _ in () }
                 .eraseToAnyPublisher()
-        },
-        installQuickLookKeyMonitor: { handler in
-            guard let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
-                handler(event) ? nil : event
-            }) else {
-                return nil
-            }
-            return AppEventMonitorToken {
-                NSEvent.removeMonitor(monitor)
-            }
         }
     )
 
@@ -180,7 +137,7 @@ struct AppSystemActions {
         copyPath: { _ in },
         copyPaths: { _ in },
         moveToTrash: { _ in .matches },
-        quickLook: .disabled,
+        validateQuickLookSelection: { _, _ in },
         prepareAndOpenFullDiskAccessSettings: { true },
         fullDiskAccessStatus: { .unknown },
         defaultTargets: { [] },
@@ -197,8 +154,7 @@ struct AppSystemActions {
         verifyTrashIdentity: { _ in .matches },
         isExistingDirectory: { _ in false },
         preferredSmartTargetIDs: { [] },
-        mountedVolumeEvents: { Empty().eraseToAnyPublisher() },
-        installQuickLookKeyMonitor: { _ in nil }
+        mountedVolumeEvents: { Empty().eraseToAnyPublisher() }
     )
 
     private static func defaultPreferredSmartTargetIDs() -> [String] {

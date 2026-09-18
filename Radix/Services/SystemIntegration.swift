@@ -69,7 +69,6 @@ enum SystemIntegration {
         case openFailed(path: String)
         case openInTerminalFailed(path: String)
         case copyPathFailed(path: String)
-        case quickLookUnavailable(path: String)
         case protectedTrashLocation(path: String)
 
         var errorDescription: String? {
@@ -80,8 +79,6 @@ enum SystemIntegration {
                 return String(localized: "macOS could not open Terminal at \(path).", comment: "Error shown when Terminal cannot open at the selected folder.")
             case .copyPathFailed(let path):
                 return String(localized: "macOS could not copy the path for \(path).", comment: "Error shown when copying a selected file path fails.")
-            case .quickLookUnavailable(let path):
-                return String(localized: "The item at \(path) is no longer available for Quick Look.", comment: "Error shown when Quick Look cannot preview a selected item.")
             case .protectedTrashLocation(let path):
                 return String(localized: "Radix will not move the protected location at \(path) to the Trash.", comment: "Safety error shown when a protected scan root is selected for deletion.")
             }

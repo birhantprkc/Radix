@@ -92,6 +92,7 @@ struct ActiveWorkspaceView: View {
                     discardPileRootNodeIDs: visualizationPresentation.discardPileRootNodeIDs,
                     movingToTrashRootNodeIDs: visualizationPresentation.movingToTrashRootNodeIDs,
                     onSelect: actions.selectNode,
+                    onQuickLook: actions.quickLook,
                     onZoom: actions.selectAndFocusNode,
                     onSegmentClick: actions.recordSunburstSegmentClick,
                     onNavigateToParent: actions.navigateToParent,
@@ -112,6 +113,7 @@ struct ActiveWorkspaceView: View {
                     discardPileRootNodeIDs: visualizationPresentation.discardPileRootNodeIDs,
                     movingToTrashRootNodeIDs: visualizationPresentation.movingToTrashRootNodeIDs,
                     onSelect: actions.selectNode,
+                    onQuickLook: actions.quickLook,
                     onZoom: actions.selectAndFocusNode,
                     onDiscardPileDragActiveChange: actions.setDiscardPileDragActive
                 )
@@ -162,6 +164,7 @@ struct ActiveWorkspaceView: View {
 
     private var fileBrowserActions: FileBrowserActions {
         FileBrowserActions(
+            quickLook: actions.quickLook,
             selectNode: actions.selectNodeImmediately,
             selectNodes: actions.selectNodesImmediately,
             selectNodesAfterViewUpdate: actions.selectNodes,

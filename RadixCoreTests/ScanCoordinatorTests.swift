@@ -1929,27 +1929,11 @@ struct ScanCoordinatorTests {
     }
 
     @Test
-    func testAppModelSuspendingBackgroundActivityKeepsActiveScanAndClosesQuickLook() async throws {
+    func testAppModelSuspendingBackgroundActivityKeepsActiveScan() async throws {
         let service = ControlledScanService()
-        let recorder = CoordinatorLifecycleActionRecorder()
-        var actions = AppSystemActions.inert
-        actions.quickLook = AppQuickLookActions(
-            isPreviewVisible: { true },
-            isPreviewPanelKeyWindow: { false },
-            present: { _ in },
-            toggle: { _ in },
-            updateVisiblePreview: { _ in },
-            close: { recorder.quickLookCloseCount += 1 }
-        )
-        actions.installQuickLookKeyMonitor = { _ in
-            AppEventMonitorToken {
-                recorder.quickLookMonitorRemovalCount += 1
-            }
-        }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
-                scanService: service,
-                systemActions: actions
+                scanService: service
             )
         )
         let target = makeCoordinatorTarget("/app/background-suspend")
@@ -1967,32 +1951,14 @@ struct ScanCoordinatorTests {
         #expect(service.terminationCount == 0)
         #expect(model.scanState.phase == .scanning)
         #expect(model.scanState.canStopScan)
-        #expect(recorder.quickLookCloseCount == 1)
-        #expect(recorder.quickLookMonitorRemovalCount == 0)
     }
 
     @Test
-    func testAppModelSuspendingMainWindowActivityCancelsActiveScanAndClosesQuickLook() async throws {
+    func testAppModelSuspendingMainWindowActivityCancelsActiveScan() async throws {
         let service = ControlledScanService()
-        let recorder = CoordinatorLifecycleActionRecorder()
-        var actions = AppSystemActions.inert
-        actions.quickLook = AppQuickLookActions(
-            isPreviewVisible: { true },
-            isPreviewPanelKeyWindow: { false },
-            present: { _ in },
-            toggle: { _ in },
-            updateVisiblePreview: { _ in },
-            close: { recorder.quickLookCloseCount += 1 }
-        )
-        actions.installQuickLookKeyMonitor = { _ in
-            AppEventMonitorToken {
-                recorder.quickLookMonitorRemovalCount += 1
-            }
-        }
         let model = AppModel(
             dependencies: makeCoordinatorAppDependencies(
-                scanService: service,
-                systemActions: actions
+                scanService: service
             )
         )
         let target = makeCoordinatorTarget("/app/window-suspend")
@@ -2011,8 +1977,6 @@ struct ScanCoordinatorTests {
 
         #expect(model.scanState.phase == .idle)
         #expect(!(model.scanState.canStopScan))
-        #expect(recorder.quickLookCloseCount == 1)
-        #expect(recorder.quickLookMonitorRemovalCount == 0)
     }
 
     @Test
@@ -2577,12 +2541,6 @@ private func exclusionScanPreferences(patterns: [String]) -> AppScanPreferences 
     preferences.useScanExclusions = true
     preferences.exclusionPatterns = patterns
     return preferences
-}
-
-@MainActor
-private final class CoordinatorLifecycleActionRecorder {
-    var quickLookCloseCount = 0
-    var quickLookMonitorRemovalCount = 0
 }
 
 private func makeCoordinatorTarget(_ path: String) -> ScanTarget {
