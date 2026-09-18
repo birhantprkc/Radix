@@ -1099,7 +1099,10 @@ actor ScanEngine {
             diagnostics: diagnostics
         )
         metrics.completedItems = max(metrics.completedItems, metrics.discoveredItems)
-        metrics.currentPath = "Summarizing results…"
+        metrics.currentPath = String(
+            localized: "Summarizing results…",
+            comment: "Progress text shown while a scan is finalizing."
+        )
         metrics.isFinalizing = true
         continuation.yield(.progress(metrics))
 
@@ -2080,7 +2083,10 @@ actor ScanEngine {
 
         // Phase 2: Assemble the tree bottom-up from completed results.
         // Process keys in reverse order (children always have higher keys than parents).
-        metrics.currentPath = "Summarizing results…"
+        metrics.currentPath = String(
+            localized: "Summarizing results…",
+            comment: "Progress text shown while a scan is finalizing."
+        )
         metrics.isFinalizing = true
         metrics.finalizationFraction = 0
         metrics.recalculateProgress()

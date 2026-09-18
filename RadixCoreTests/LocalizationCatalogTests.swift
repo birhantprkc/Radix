@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 struct LocalizationCatalogTests {
-    private let supportedLocales = ["de", "es", "fr", "it", "zh-Hans"]
+    private let supportedLocales = ["de", "es", "fr", "it", "ru", "zh-Hans"]
 
     private struct LocalizedSourceLiteral {
         let value: String
@@ -121,6 +121,21 @@ struct LocalizationCatalogTests {
                 source.range(of: pattern, options: .regularExpression) != nil,
                 "Interface key must explicitly select its string table: \(key)")
         }
+    }
+
+    @Test
+    func testScanProgressStatusLiteralsAreLocalized() throws {
+        let url = repositoryRoot.appendingPathComponent("Radix/Services/ScanEngine.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let rawStatusLiterals = matches(
+            in: source,
+            pattern: #"\bmetrics\.currentPath\s*=\s*"((?:\\.|[^"\\])*)""#
+        ).map(\.value)
+
+        #expect(
+            rawStatusLiterals.isEmpty,
+            "Scan progress status literals must use String(localized:): \(rawStatusLiterals)"
+        )
     }
 
     @Test

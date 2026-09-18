@@ -40,6 +40,12 @@
             "state": "translated",
             "value": "Radix"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
         }
       }
     },
@@ -78,6 +84,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radix"
+          }
+        },
+        "ru": {
           "stringUnit": {
             "state": "translated",
             "value": "Radix"
@@ -124,6 +136,12 @@
             "state": "translated",
             "value": "Copyright © 2026 Colin Kim."
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copyright © 2026 Colin Kim."
+          }
         }
       }
     },
@@ -165,6 +183,12 @@
             "state": "translated",
             "value": "Radix 待处理列表拖放数据"
           }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Данные перетаскивания списка на удаление Radix"
+          }
         }
       }
     },
@@ -205,6 +229,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radix 扫描快照"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Снимок сканирования Radix"
           }
         }
       }
