@@ -17,7 +17,15 @@ struct RadixCommands: Commands {
         )
 
         SidebarCommands()
-        InspectorCommands()
+        if appModel.canUseWorkspaceCommands, scanState.snapshot != nil {
+            InspectorCommands()
+        } else {
+            CommandGroup(after: .sidebar) {
+                Button("Show Inspector", systemImage: "sidebar.trailing") {}
+                    .keyboardShortcut("i", modifiers: [.command, .control])
+                    .disabled(true)
+            }
+        }
 
         CommandGroup(after: .help) {
             Button("Take a Quick Tour") {

@@ -10478,7 +10478,7 @@
       }
     },
     "Hide Inspector" : {
-      "comment" : "Command for hiding the inspector sidebar.\nToolbar action for hiding the inspector sidebar.",
+      "comment" : "Toolbar action for hiding the inspector sidebar.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -20374,7 +20374,7 @@
       }
     },
     "Show Inspector" : {
-      "comment" : "Command for showing the inspector sidebar.\nToolbar action for showing the inspector sidebar.",
+      "comment" : "Toolbar action for showing the inspector sidebar.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
