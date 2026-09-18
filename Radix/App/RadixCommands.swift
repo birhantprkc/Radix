@@ -5,7 +5,9 @@ struct RadixCommands: Commands {
     @ObservedObject var scanState: ScanCoordinator
     @ObservedObject var navigation: WorkspaceNavigationModel
     @ObservedObject var workspaceTour: WorkspaceTourController
+    @FocusedValue(\.isWorkspaceWindowFocused) private var isWorkspaceWindowFocused
     @FocusedValue(\.fileListFilterAction) private var fileListFilterAction
+    @FocusedValue(\.isFileListSearchActive) private var isFileListSearchActive
     @FocusedValue(\.chartViewportAction) private var chartViewportAction
 
     var body: some Commands {
@@ -17,7 +19,7 @@ struct RadixCommands: Commands {
         )
 
         SidebarCommands()
-        if appModel.canUseWorkspaceCommands, scanState.snapshot != nil {
+        if canUseWorkspaceCommands, scanState.snapshot != nil {
             InspectorCommands()
         } else {
             CommandGroup(after: .sidebar) {
@@ -31,12 +33,12 @@ struct RadixCommands: Commands {
             Button("Take a Quick Tour") {
                 appModel.startWorkspaceTour()
             }
-            .disabled(!appModel.canStartWorkspaceTour)
+            .disabled(isWorkspaceWindowFocused != true || !appModel.canStartWorkspaceTour)
 
             Button("Stop Tour") {
                 workspaceTour.stop()
             }
-            .disabled(!workspaceTour.isActive)
+            .disabled(isWorkspaceWindowFocused != true || !workspaceTour.isActive)
         }
 
         CommandGroup(after: .toolbar) {
@@ -45,7 +47,7 @@ struct RadixCommands: Commands {
             }
             .keyboardShortcut("+", modifiers: [.command])
             .disabled(
-                !appModel.canUseWorkspaceCommands ||
+                !canUseWorkspaceCommands ||
                     chartViewportAction == nil ||
                     scanState.snapshot == nil
             )
@@ -55,7 +57,7 @@ struct RadixCommands: Commands {
             }
             .keyboardShortcut("-", modifiers: [.command])
             .disabled(
-                !appModel.canUseWorkspaceCommands ||
+                !canUseWorkspaceCommands ||
                     chartViewportAction == nil ||
                     scanState.snapshot == nil
             )
@@ -65,7 +67,7 @@ struct RadixCommands: Commands {
             }
             .keyboardShortcut("0", modifiers: [.command])
             .disabled(
-                !appModel.canUseWorkspaceCommands ||
+                !canUseWorkspaceCommands ||
                     chartViewportAction == nil ||
                     scanState.snapshot == nil
             )
@@ -76,19 +78,19 @@ struct RadixCommands: Commands {
                 appModel.presentOpenPanelAndScan()
             }
             .keyboardShortcut("o")
-            .disabled(scanState.isScanOperationInProgress)
+            .disabled(isWorkspaceWindowFocused != true || scanState.isScanOperationInProgress)
 
             Button("Import Snapshot…", systemImage: "square.and.arrow.down") {
                 appModel.importScanSnapshot()
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
-            .disabled(!appModel.canImportScanSnapshot)
+            .disabled(isWorkspaceWindowFocused != true || !appModel.canImportScanSnapshot)
 
             Button("Export Snapshot…", systemImage: "square.and.arrow.up") {
                 appModel.exportCurrentScan()
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
-            .disabled(!appModel.canExportCurrentScan)
+            .disabled(isWorkspaceWindowFocused != true || !appModel.canExportCurrentScan)
 
             Divider()
 
@@ -96,7 +98,7 @@ struct RadixCommands: Commands {
                 appModel.compareScanSnapshots()
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
-            .disabled(!appModel.canCompareScanSnapshots)
+            .disabled(isWorkspaceWindowFocused != true || !appModel.canCompareScanSnapshots)
 
             Divider()
 
@@ -104,19 +106,19 @@ struct RadixCommands: Commands {
                 appModel.rescan()
             }
             .keyboardShortcut("r")
-            .disabled(!appModel.canRescanCurrentFolder)
+            .disabled(!canUseWorkspaceCommands || !appModel.canRescanCurrentFolder)
 
             Button("Rescan Entire Scan") {
                 appModel.rescanEntireScan()
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
-            .disabled(!appModel.canRescanEntireScan)
+            .disabled(!canUseWorkspaceCommands || !appModel.canRescanEntireScan)
 
             Button("Stop Scan", systemImage: "stop") {
                 appModel.stopScan()
             }
             .keyboardShortcut(".")
-            .disabled(!scanState.canStopScan)
+            .disabled(isWorkspaceWindowFocused != true || !scanState.canStopScan)
 
             Divider()
 
@@ -141,7 +143,7 @@ struct RadixCommands: Commands {
                 commandSelectedFileActions.perform(.openInTerminal)
             }
             .disabled(
-                !appModel.canUseWorkspaceCommands ||
+                !canUseWorkspaceCommands ||
                     !FileNodeAction.openInTerminal.isEnabled(in: selectedActionAvailability)
             )
 
@@ -163,7 +165,7 @@ struct RadixCommands: Commands {
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
             .disabled(
-                !appModel.canUseWorkspaceCommands ||
+                !canUseWorkspaceCommands ||
                     (!appModel.selectionIncludesHiddenNodes
                         && !selectedActionAvailability.canMoveToTrash)
             )
@@ -191,13 +193,13 @@ struct RadixCommands: Commands {
                     fileListFilterAction?(.currentContents)
                 }
                 .keyboardShortcut("f")
-                .disabled(fileListFilterAction == nil)
+                .disabled(!canUseWorkspaceCommands || fileListFilterAction == nil)
 
                 Button("Search Entire Scan") {
                     fileListFilterAction?(.entireScan)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
-                .disabled(fileListFilterAction == nil)
+                .disabled(!canUseWorkspaceCommands || fileListFilterAction == nil)
             }
         }
 
@@ -206,13 +208,13 @@ struct RadixCommands: Commands {
                 appModel.navigateBack()
             }
             .keyboardShortcut("[", modifiers: [.command])
-            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canNavigateBack)
+            .disabled(!canUseWorkspaceCommands || !navigation.canNavigateBack)
 
             Button("Forward", systemImage: "chevron.forward") {
                 appModel.navigateForward()
             }
             .keyboardShortcut("]", modifiers: [.command])
-            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canNavigateForward)
+            .disabled(!canUseWorkspaceCommands || !navigation.canNavigateForward)
 
             Divider()
 
@@ -220,7 +222,7 @@ struct RadixCommands: Commands {
                 appModel.navigateToParent()
             }
             .keyboardShortcut(.upArrow, modifiers: [.command])
-            .disabled(!appModel.canUseWorkspaceCommands || !navigation.canNavigateToParent)
+            .disabled(!canUseWorkspaceCommands || !navigation.canNavigateToParent)
 
             Divider()
 
@@ -228,13 +230,17 @@ struct RadixCommands: Commands {
                 appModel.zoomIntoSelection()
             }
             .keyboardShortcut(.downArrow, modifiers: [.command])
-            .disabled(!appModel.canUseWorkspaceCommands || !appModel.canZoomIntoSelection)
+            .disabled(!canUseWorkspaceCommands || !appModel.canZoomIntoSelection)
 
             Button("Back to Scan Root") {
                 appModel.resetFocusToRoot()
             }
-            .disabled(!appModel.canUseWorkspaceCommands || navigation.isFocusedAtRoot)
+            .disabled(!canUseWorkspaceCommands || navigation.isFocusedAtRoot)
         }
+    }
+
+    private var canUseWorkspaceCommands: Bool {
+        isWorkspaceWindowFocused == true && appModel.canUseWorkspaceCommands
     }
 
     private var addSelectionToDiscardPileTitle: String {
@@ -273,9 +279,10 @@ struct RadixCommands: Commands {
         }
         .keyboardShortcut(shortcut, modifiers: modifiers)
         .disabled(
-            !appModel.canUseWorkspaceCommands ||
+            !canUseWorkspaceCommands ||
                 !action.isEnabled(in: availability) ||
-                (action == .moveToTrash && appModel.selectionIncludesHiddenNodes)
+                (action == .moveToTrash &&
+                    (appModel.selectionIncludesHiddenNodes || isFileListSearchActive == true))
         )
     }
 }

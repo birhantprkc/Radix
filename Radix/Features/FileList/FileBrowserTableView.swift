@@ -154,6 +154,10 @@ struct FileBrowserTableView: View {
             model.setSearchScope(target)
             isSearchFieldFocused = true
         }
+        .focusedSceneValue(
+            \.isFileListSearchActive,
+            isSearchFieldFocused || model.activeQuery.isActive
+        )
         .onExitCommand(perform: handleExitCommand)
         .task(id: contentRefreshID) {
             await Task.yield()

@@ -70,6 +70,7 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .focusedSceneValue(\.isWorkspaceWindowFocused, true)
         .background {
             WorkspaceTourHost(
                 tour: appModel.workspaceTour,
