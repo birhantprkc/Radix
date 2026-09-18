@@ -151,6 +151,7 @@
 				"zh-Hans",
 				de,
 				it,
+				ru,
 				Base,
 			);
 			mainGroup = 3BF007F52F7E285500DA9E45;

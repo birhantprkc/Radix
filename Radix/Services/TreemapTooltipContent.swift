@@ -77,9 +77,7 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
                 relativeTo: rootNode,
                 treeStore: treeStore
             ),
-            metadata: itemCount == 1
-                ? String(localized: "1 grouped item", comment: "Tooltip metadata for one item represented by an aggregate segment.")
-                : String(localized: "\(itemCount.formatted(.number)) grouped items", comment: "Tooltip metadata for multiple items represented by an aggregate segment."),
+            metadata: String(localized: "\(itemCount) grouped items", comment: "Tooltip metadata counting items represented by an aggregate segment."),
             status: discardPileRole?.statusText
         )
     }
@@ -116,8 +114,6 @@ nonisolated struct TreemapTooltipContent: Equatable, Sendable {
     }
 
     private static func fileCountDescription(_ count: Int) -> String {
-        count == 1
-            ? String(localized: "1 file", comment: "Tooltip metadata for a directory containing one file.")
-            : String(localized: "\(count.formatted(.number)) files", comment: "Tooltip metadata for a directory containing multiple files.")
+        String(localized: "\(count) files", comment: "Tooltip metadata counting files in a directory.")
     }
 }
