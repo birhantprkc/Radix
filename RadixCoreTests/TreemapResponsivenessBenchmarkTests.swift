@@ -8,12 +8,7 @@ private typealias ChartBenchmarkSupport = ChartResponsivenessBenchmarkSupport
 
 @MainActor
 struct TreemapResponsivenessBenchmarkTests {
-    @Test(
-        .tags(.benchmark),
-        .enabled(
-            if: ProcessInfo.processInfo.environment["RADIX_BENCH_TREEMAP"] == "1",
-            "Set RADIX_BENCH_TREEMAP=1 to run the large-scan Treemap benchmark."))
-    func testLargeScanTreemapResponsivenessBenchmark() async throws {
+    func run() async throws {
         let directoryCount = 200
         let filesPerDirectory = 5_000
         let denseFileCount = 8_000
@@ -124,8 +119,17 @@ struct TreemapResponsivenessBenchmarkTests {
                 + "fingerprint=\(expectedFlatFingerprint)"
         )
 
+        let preparationMeasurement = try BenchmarkSupport.measure {
+            try TreemapChartLayout(segments: denseSegments)
+        }
+        Self.report(
+            phase: "render_state_preparation",
+            seconds: preparationMeasurement.seconds,
+            count: denseSegments.count,
+            peakRSS: BenchmarkSupport.peakResidentBytes()
+        )
         let publicationModel = TreemapChartModel(
-            layoutService: PrecomputedTreemapLayoutService(segments: denseSegments)
+            layoutService: PrecomputedTreemapLayoutService(prepared: preparationMeasurement.value)
         )
         let publicationMeasurement = await ChartBenchmarkSupport.measureAsync {
             await publicationModel.loadLayout(
@@ -339,7 +343,7 @@ struct TreemapResponsivenessBenchmarkTests {
         diskMapStore: DiskMapTreeStore
     ) async throws -> ChartBenchmarkSupport.RequestSequenceMeasurement {
         let probe = ChartBenchmarkSupport.LayoutProbe()
-        let service = InstrumentedTreemapLayoutService(probe: probe)
+        let service = InstrumentedTreemapLayoutService(probe: probe, suspendedRequestCount: requests.count - 1)
         let model = TreemapChartModel(layoutService: service)
         return try await ChartBenchmarkSupport.measureRequestSequence(
             requests,
@@ -661,18 +665,24 @@ struct TreemapResponsivenessBenchmarkTests {
 private actor InstrumentedTreemapLayoutService: TreemapLayouting {
     let probe: ChartBenchmarkSupport.LayoutProbe
 
-    init(probe: ChartBenchmarkSupport.LayoutProbe) {
+    let suspendedRequestCount: Int
+
+    init(probe: ChartBenchmarkSupport.LayoutProbe, suspendedRequestCount: Int) {
         self.probe = probe
+        self.suspendedRequestCount = suspendedRequestCount
     }
 
-    func segments(
+    func layout(
         in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
-    ) async throws -> [TreemapSegment] {
-        await probe.recordStarted()
+    ) async throws -> TreemapChartLayout {
+        let requestNumber = await probe.recordStarted()
         do {
+            if requestNumber <= suspendedRequestCount {
+                try await ChartBenchmarkSupport.waitForCancellation()
+            }
             let segments = try TreemapLayout.segments(
                 in: treeStore,
                 rootID: rootID,
@@ -680,8 +690,9 @@ private actor InstrumentedTreemapLayoutService: TreemapLayouting {
                 size: size,
                 cancellationCheck: Task.checkCancellation
             )
+            let layout = try TreemapChartLayout(segments: segments)
             await probe.recordCompleted()
-            return segments
+            return layout
         } catch is CancellationError {
             await probe.recordCancelled()
             throw CancellationError()
@@ -690,15 +701,15 @@ private actor InstrumentedTreemapLayoutService: TreemapLayouting {
 }
 
 private struct PrecomputedTreemapLayoutService: TreemapLayouting {
-    let segments: [TreemapSegment]
+    let prepared: TreemapChartLayout
 
-    func segments(
+    func layout(
         in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
-    ) async throws -> [TreemapSegment] {
-        segments
+    ) async throws -> TreemapChartLayout {
+        prepared
     }
 }
 

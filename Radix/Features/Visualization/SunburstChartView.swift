@@ -155,6 +155,7 @@ struct SunburstChartView: View {
             ZStack {
                 SunburstRenderedChartLayer(
                     segments: chartModel.renderedSegments,
+                    colors: chartModel.renderedColors,
                     renderVersion: chartModel.renderedLayoutVersion,
                     selectionSegments: chartModel.selectionOverlaySegments(
                         selectedNodeID: selectedNodeID,
@@ -661,6 +662,7 @@ private struct SunburstLayoutTaskID: Hashable {
 
 private struct SunburstRenderedChartLayer: View {
     let segments: [SunburstSegment]
+    let colors: [Color]
     let renderVersion: Int
     let selectionSegments: [SunburstSelectionOverlaySegment]
     let discardPileOverlay: DiscardPileVisualizationOverlay
@@ -670,6 +672,7 @@ private struct SunburstRenderedChartLayer: View {
         ZStack {
             SunburstBaseCanvas(
                 segments: segments,
+                colors: colors,
                 renderVersion: renderVersion
             )
             .equatable()

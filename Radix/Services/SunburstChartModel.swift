@@ -48,6 +48,8 @@ final class SunburstChartModel: ObservableObject {
         self.layoutService = layoutService
     }
 
+    var renderedColors: [Color] { renderState.colors }
+
     var renderedSegments: [SunburstSegment] {
         renderState.segments
     }
@@ -240,6 +242,7 @@ struct SunburstSelectionOverlaySegment: Identifiable, Equatable, Sendable {
 
 private struct SunburstChartRenderState {
     let segments: [SunburstSegment]
+    let colors: [Color]
     var hoveredSegmentID: SunburstSegment.ID?
     let version: Int
 
@@ -253,6 +256,7 @@ private struct SunburstChartRenderState {
         segmentIndex: SunburstSegmentIndex? = nil
     ) {
         self.segments = segments
+        colors = segments.map { SunburstColorResolver.color(for: $0.colorToken) }
         self.hoveredSegmentID = hoveredSegmentID
         self.version = version
         let segmentIndex = segmentIndex ?? SunburstSegmentIndex(segments: segments)

@@ -8,8 +8,7 @@ private typealias ChartBenchmarkSupport = ChartResponsivenessBenchmarkSupport
 
 @MainActor
 struct SunburstResponsivenessBenchmarkTests {
-    @Test(.tags(.benchmark), .enabled(if: ProcessInfo.processInfo.environment["RADIX_BENCH_SUNBURST"] == "1"))
-    func testLargeScanSunburstResponsivenessBenchmark() async throws {
+    func run() async throws {
         guard ProcessInfo.processInfo.environment["RADIX_BENCH_SUNBURST"] == "1" else {
             throw TestFixtureError(
                 "Set RADIX_BENCH_SUNBURST=1 to run the large-scan Sunburst benchmark."
@@ -635,10 +634,7 @@ private actor InstrumentedSunburstLayoutService: SunburstLayouting {
         let requestNumber = await probe.recordStarted()
         do {
             if requestNumber <= suspendedRequestCount {
-                try await Task.sleep(for: .seconds(5))
-                throw ChartBenchmarkSupport.TimeoutError(
-                    message: "Expected Sunburst request \(requestNumber) to be superseded."
-                )
+                try await ChartBenchmarkSupport.waitForCancellation()
             }
             let segments = try SunburstLayout.segments(
                 in: treeStore,

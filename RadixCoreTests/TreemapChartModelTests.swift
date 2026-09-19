@@ -6,6 +6,43 @@ import Testing
 @MainActor
 struct TreemapChartModelTests {
     @Test
+    func testPreparedLayoutReplacesPaintAndLookupTogether() async {
+        let service = ControllableTreemapLayoutService()
+        let model = TreemapChartModel(layoutService: service)
+        let store = makeTreemapStore()
+        let old = makeTreemapSegment(id: "same", label: "Old", totalSize: 10)
+        let replacement = makeTreemapSegment(id: "same", label: "New name", totalSize: 1_000_000)
+        for (index, segment) in [old, replacement].enumerated() {
+            let load = Task {
+                await model.loadLayout(treeStore: store, rootID: store.rootID, depthLimit: 1,
+                                       size: CGSize(width: 600, height: 300), layoutID: "layout-\(index)")
+            }
+            await service.waitForIssuedRequestCount(index + 1)
+            #expect(await service.completeRequest(id: index, with: [segment]))
+            #expect(await load.value)
+            #expect(model.renderedLayout.paint.count == model.renderedSegments.count)
+            #expect(model.renderedLayout.paint.first?.sizeLabel == RadixFormatters.size(segment.totalSize))
+            #expect(model.renderedLayout.paint.first?.labelCharacterCount == segment.label.count)
+            #expect(model.selectedSegment(nodeID: "same") == segment)
+            #expect(model.segment(at: CGPoint(x: 100, y: 100), in: CGSize(width: 600, height: 300)) == segment)
+        }
+    }
+
+    @Test
+    func testPreparationCanCancelWhileBuildingHitTestBuckets() {
+        let segments = (0..<8).map { makeTreemapSegment(id: "node-\($0)") }
+        var checks = 0
+        #expect(throws: CancellationError.self) {
+            _ = try TreemapChartLayout(segments: segments) {
+                checks += 1
+                // Initial check and paint preparation finish before bucket indexing.
+                if checks == segments.count + 4 { throw CancellationError() }
+            }
+        }
+        #expect(checks == segments.count + 4)
+    }
+
+    @Test
     func testSpatialSelectionStartsAmongTopLevelTiles() async {
         let topLevel = makeTreemapSegment(
             id: "top-level",
@@ -555,13 +592,13 @@ private actor ImmediateTreemapLayoutService: TreemapLayouting {
         renderedSegments = segments
     }
 
-    func segments(
+    func layout(
         in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
-    ) async throws -> [TreemapSegment] {
-        renderedSegments
+    ) async throws -> TreemapChartLayout {
+        try TreemapChartLayout(segments: renderedSegments)
     }
 }
 
@@ -587,16 +624,16 @@ private actor ControllableTreemapLayoutService: TreemapLayouting {
         self.resumesOnCancellation = resumesOnCancellation
     }
 
-    func segments(
+    func layout(
         in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
-    ) async throws -> [TreemapSegment] {
+    ) async throws -> TreemapChartLayout {
         let requestID = issuedRequestCount
         issuedRequestCount += 1
         resumeSatisfiedWaiters()
-        return try await withTaskCancellationHandler {
+        let segments: [TreemapSegment] = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 if cancelledRequestIDs.contains(requestID) {
                     continuation.resume(throwing: CancellationError())
@@ -609,6 +646,8 @@ private actor ControllableTreemapLayoutService: TreemapLayouting {
                 await self.handleCancellation(id: requestID)
             }
         }
+        // This fake deliberately permits late successful replies after cancellation.
+        return try TreemapChartLayout(segments: segments, cancellationCheck: {})
     }
 
     func waitForIssuedRequestCount(_ requestCount: Int) async {
@@ -687,17 +726,19 @@ private func makeTreemapSegment(
     rect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
     depth: Int = 0,
     containerNodeID: String = "/root",
-    showsContainerHeader: Bool? = nil
+    showsContainerHeader: Bool? = nil,
+    label: String? = nil,
+    totalSize: Int64 = 1
 ) -> TreemapSegment {
     TreemapSegment(
         id: id,
         nodeID: id,
         containerNodeID: containerNodeID,
-        label: id,
+        label: label ?? id,
         rect: rect,
         depth: depth,
         colorToken: .single(id: id, depth: depth),
-        totalSize: 1,
+        totalSize: totalSize,
         isAggregate: false,
         groupedItemCount: nil,
         isDirectory: depth == 0,

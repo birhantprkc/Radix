@@ -3,6 +3,27 @@ import Testing
 
 struct BenchmarkSupportTests {
     @Test
+    func testSupersededRequestGateHandlesCancellationBeforeOrDuringWait() async {
+        let cancelledImmediately = Task { try await ChartResponsivenessBenchmarkSupport.waitForCancellation() }
+        cancelledImmediately.cancel()
+        do {
+            try await cancelledImmediately.value
+            Issue.record("A cancelled gate must throw.")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        let waiting = Task { try await ChartResponsivenessBenchmarkSupport.waitForCancellation() }
+        await Task.yield()
+        waiting.cancel()
+        do {
+            try await waiting.value
+            Issue.record("A waiting gate must throw when superseded.")
+        } catch {
+            #expect(error is CancellationError)
+        }
+    }
+
+    @Test
     func testMedianHandlesEmptyOddAndEvenSamples() {
         #expect(BenchmarkSupport.median([]) == nil)
         #expect(BenchmarkSupport.median([3, 1, 2]) == 2)

@@ -13,7 +13,8 @@ struct SunburstSegmentDrawingStyle {
 
 enum SunburstChartStyler {
     static func baseStyle(
-        for segment: SunburstSegment
+        for segment: SunburstSegment,
+        cachedColor: Color? = nil
     ) -> SunburstSegmentDrawingStyle {
         if segment.isAggregate {
             return SunburstSegmentDrawingStyle(
@@ -27,7 +28,9 @@ enum SunburstChartStyler {
         let baseOpacity = standardOpacity(for: segment)
 
         return SunburstSegmentDrawingStyle(
-            fillBaseColor: baseColor(for: segment),
+            fillBaseColor: segment.colorToken.role == .normal
+                ? (cachedColor ?? baseColor(for: segment))
+                : baseColor(for: segment),
             fillOpacity: baseOpacity,
             strokeColor: Color(nsColor: .separatorColor).opacity(0.4),
             strokeWidth: 1

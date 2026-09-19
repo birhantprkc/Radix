@@ -6,30 +6,32 @@
 import Combine
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 nonisolated protocol TreemapLayouting: Sendable {
-    func segments(
+    func layout(
         in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
-    ) async throws -> [TreemapSegment]
+    ) async throws -> TreemapChartLayout
 }
 
 actor TreemapLayoutService: TreemapLayouting {
-    func segments(
+    func layout(
         in treeStore: DiskMapTreeStore,
         rootID: String,
         depthLimit: Int,
         size: CGSize
-    ) async throws -> [TreemapSegment] {
-        try TreemapLayout.segments(
+    ) async throws -> TreemapChartLayout {
+        let segments = try TreemapLayout.segments(
             in: treeStore,
             rootID: rootID,
             depthLimit: depthLimit,
             size: size,
             cancellationCheck: Task.checkCancellation
         )
+        return try TreemapChartLayout(segments: segments)
     }
 }
 
@@ -39,13 +41,15 @@ final class TreemapChartModel: ObservableObject {
     @Published private(set) var layoutReadiness = ChartLayoutReadiness()
 
     private let layoutService: any TreemapLayouting
-    private let layoutRequests = ChartLayoutRequestCoordinator<[TreemapSegment]>()
+    private let layoutRequests = ChartLayoutRequestCoordinator<TreemapChartLayout>()
     private var spatialSelectionCache = TreemapSpatialSelectionCache()
     private var discardPileOverlayCache = DiscardPileVisualizationOverlayCache()
 
     init(layoutService: any TreemapLayouting = TreemapLayoutService()) {
         self.layoutService = layoutService
     }
+
+    var renderedLayout: TreemapChartLayout { renderState.layout }
 
     var renderedSegments: [TreemapSegment] {
         renderState.segments
@@ -130,7 +134,7 @@ final class TreemapChartModel: ObservableObject {
         layoutID: String
     ) async -> Bool {
         let request = layoutRequests.start(layoutID: layoutID) { [layoutService] in
-            try await layoutService.segments(
+            try await layoutService.layout(
                 in: treeStore,
                 rootID: rootID,
                 depthLimit: depthLimit,
@@ -141,8 +145,8 @@ final class TreemapChartModel: ObservableObject {
         layoutReadiness.start()
 
         switch await layoutRequests.outcome(for: request) {
-        case let .success(segments):
-            apply(segments)
+        case let .success(layout):
+            apply(layout)
             layoutReadiness.succeed(layoutID: layoutID)
             return true
         case let .failure(error):
@@ -173,9 +177,10 @@ final class TreemapChartModel: ObservableObject {
         )
     }
 
-    private func apply(_ segments: [TreemapSegment]) {
+    private func apply(_ layout: TreemapChartLayout) {
+        BackgroundReleaseQueue.shared.discard(renderState.layout)
         renderState = TreemapChartRenderState(
-            segments: segments,
+            layout: layout,
             version: renderState.version + 1
         )
         spatialSelectionCache = TreemapSpatialSelectionCache()
@@ -234,43 +239,99 @@ private struct TreemapSpatialSelectionCache {
 }
 
 private struct TreemapChartRenderState {
-    var segments: [TreemapSegment]
+    var layout = TreemapChartLayout.empty
     var hoveredSegmentID: TreemapSegment.ID?
-    var version: Int
+    var version = 0
 
-    private var segmentLookup: [TreemapSegment.ID: TreemapSegment]
-    private var segmentByNodeID: [String: TreemapSegment]
-    private var hitTestIndex: TreemapHitTestIndex
-
-    init(
-        segments: [TreemapSegment] = [],
-        hoveredSegmentID: TreemapSegment.ID? = nil,
-        version: Int = 0
-    ) {
-        self.segments = segments
-        self.hoveredSegmentID = hoveredSegmentID
-        self.version = version
-        segmentLookup = segments.reduce(into: [:]) { lookup, segment in
-            lookup[segment.id] = segment
-        }
-        segmentByNodeID = segments.reduce(into: [:]) { lookup, segment in
-            guard let nodeID = segment.nodeID else { return }
-            lookup[nodeID] = segment
-        }
-        hitTestIndex = TreemapHitTestIndex(segments: segments)
-    }
+    var segments: [TreemapSegment] { layout.segments }
 
     var hoveredSegment: TreemapSegment? {
         guard let hoveredSegmentID else { return nil }
-        return segmentLookup[hoveredSegmentID]
+        return layout.segment(id: hoveredSegmentID)
+    }
+
+    func segment(at point: CGPoint, in size: CGSize) -> TreemapSegment? {
+        layout.segment(at: point, in: size)
+    }
+
+    func segment(nodeID: String?) -> TreemapSegment? {
+        layout.segment(nodeID: nodeID)
+    }
+}
+
+/// Immutable geometry, paint data, and lookup tables prepared by the layout actor.
+/// Publishing a layout only replaces this payload; it never builds render indexes.
+nonisolated struct TreemapChartLayout: Sendable {
+    static let empty = TreemapChartLayout()
+
+    let segments: [TreemapSegment]
+    let paint: [TreemapSegmentPaint]
+    private let indexByID: [TreemapSegment.ID: Int]
+    private let indexByNodeID: [String: Int]
+    private let hitTestIndex: TreemapHitTestIndex
+
+    private init() {
+        segments = []
+        paint = []
+        indexByID = [:]
+        indexByNodeID = [:]
+        hitTestIndex = TreemapHitTestIndex(segments: [])
+    }
+
+    init(
+        segments: [TreemapSegment],
+        cancellationCheck: () throws -> Void = Task.checkCancellation
+    ) throws {
+        var indexByID: [TreemapSegment.ID: Int] = [:]
+        var indexByNodeID: [String: Int] = [:]
+        var paint: [TreemapSegmentPaint] = []
+        indexByID.reserveCapacity(segments.count)
+        indexByNodeID.reserveCapacity(segments.count)
+        paint.reserveCapacity(segments.count)
+        var sizeLabels: [Int64: String] = [:]
+        try cancellationCheck()
+        for (index, segment) in segments.enumerated() {
+            try cancellationCheck()
+            indexByID[segment.id] = index
+            if let nodeID = segment.nodeID { indexByNodeID[nodeID] = index }
+            let sizeLabel: String
+            if let cached = sizeLabels[segment.totalSize] {
+                sizeLabel = cached
+            } else {
+                sizeLabel = RadixFormatters.size(segment.totalSize)
+                sizeLabels[segment.totalSize] = sizeLabel
+            }
+            paint.append(TreemapSegmentPaint(
+                lightFill: TreemapColorResolver.color(for: segment.colorToken, appearance: .light),
+                darkFill: TreemapColorResolver.color(for: segment.colorToken, appearance: .dark),
+                sizeLabel: sizeLabel,
+                labelCharacterCount: segment.label.count
+            ))
+        }
+        self.segments = segments
+        self.paint = paint
+        self.indexByID = indexByID
+        self.indexByNodeID = indexByNodeID
+        hitTestIndex = try TreemapHitTestIndex(segments: segments, cancellationCheck: cancellationCheck)
+    }
+
+    func segment(id: TreemapSegment.ID) -> TreemapSegment? {
+        indexByID[id].map { segments[$0] }
+    }
+
+    func segment(nodeID: String?) -> TreemapSegment? {
+        guard let nodeID else { return nil }
+        return indexByNodeID[nodeID].map { segments[$0] }
     }
 
     func segment(at point: CGPoint, in size: CGSize) -> TreemapSegment? {
         hitTestIndex.segment(at: point, in: size)
     }
+}
 
-    func segment(nodeID: String?) -> TreemapSegment? {
-        guard let nodeID else { return nil }
-        return segmentByNodeID[nodeID]
-    }
+nonisolated struct TreemapSegmentPaint: Sendable {
+    let lightFill: Color
+    let darkFill: Color
+    let sizeLabel: String
+    let labelCharacterCount: Int
 }

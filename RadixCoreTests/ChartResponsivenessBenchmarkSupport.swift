@@ -4,6 +4,22 @@ import Testing
 
 @testable import RadixCore
 
+/// Timing runs share the main actor and must not overlap each other's fixtures.
+@Suite(.serialized)
+struct ChartResponsivenessBenchmarks {
+    @Test(.tags(.benchmark), .enabled(if: ProcessInfo.processInfo.environment["RADIX_BENCH_TREEMAP"] == "1"))
+    @MainActor
+    func testLargeScanTreemapResponsivenessBenchmark() async throws {
+        try await TreemapResponsivenessBenchmarkTests().run()
+    }
+
+    @Test(.tags(.benchmark), .enabled(if: ProcessInfo.processInfo.environment["RADIX_BENCH_SUNBURST"] == "1"))
+    @MainActor
+    func testLargeScanSunburstResponsivenessBenchmark() async throws {
+        try await SunburstResponsivenessBenchmarkTests().run()
+    }
+}
+
 enum ChartResponsivenessBenchmarkSupport {
     static let fnvOffsetBasis: UInt64 = 14_695_981_039_346_656_037
     private static let fnvPrime: UInt64 = 1_099_511_628_211
@@ -197,6 +213,31 @@ enum ChartResponsivenessBenchmarkSupport {
             selectionCount: hitCount,
             fingerprint: String(fingerprint, radix: 16)
         )
+    }
+
+    /// Hold superseded requests until cancellation instead of relying on layout
+    /// duration or a timer to keep them in flight while the next request starts.
+    nonisolated static func waitForCancellation() async throws {
+        let gate = CancellationGate()
+        try await withTaskCancellationHandler {
+            try await gate.wait()
+        } onCancel: {
+            Task { await gate.cancel() }
+        }
+    }
+
+    private actor CancellationGate {
+        private var continuation: CheckedContinuation<Void, any Error>?
+
+        func wait() async throws {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation = $0 }
+        }
+
+        func cancel() {
+            continuation?.resume(throwing: CancellationError())
+            continuation = nil
+        }
     }
 
     actor LayoutProbe {

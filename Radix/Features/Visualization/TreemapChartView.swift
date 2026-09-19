@@ -117,7 +117,7 @@ struct TreemapChartView: View {
                 && !chartModel.renderedSegments.isEmpty
             ZStack {
                 TreemapRenderedChartLayer(
-                    segments: chartModel.renderedSegments,
+                    layout: chartModel.renderedLayout,
                     renderVersion: chartModel.renderedLayoutVersion,
                     selectedSegment: chartModel.selectedSegment(nodeID: selectedNodeID),
                     hoveredSegment: layoutPresentation.canUseRenderedLayout
@@ -675,7 +675,8 @@ private struct TreemapLayoutTaskID: Hashable {
 }
 
 private struct TreemapRenderedChartLayer: View {
-    let segments: [TreemapSegment]
+    let layout: TreemapChartLayout
+    private var segments: [TreemapSegment] { layout.segments }
     let renderVersion: Int
     let selectedSegment: TreemapSegment?
     let hoveredSegment: TreemapSegment?
@@ -688,7 +689,7 @@ private struct TreemapRenderedChartLayer: View {
     var body: some View {
         ZStack {
             TreemapBaseCanvas(
-                segments: segments,
+                layout: layout,
                 renderVersion: renderVersion,
                 colorScheme: colorScheme,
                 contentFrame: contentFrame
@@ -704,7 +705,7 @@ private struct TreemapRenderedChartLayer: View {
                 .allowsHitTesting(false)
 
             TreemapLabelCanvas(
-                segments: segments,
+                layout: layout,
                 renderVersion: renderVersion,
                 colorScheme: colorScheme,
                 contentFrame: contentFrame

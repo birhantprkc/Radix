@@ -26,10 +26,11 @@ struct TreemapHoverDrawingStyle {
 enum TreemapChartStyler {
     static func baseStyle(
         for segment: TreemapSegment,
-        colorScheme: ColorScheme
+        colorScheme: ColorScheme,
+        cachedFill: Color? = nil
     ) -> TreemapTileDrawingStyle {
         TreemapTileDrawingStyle(
-            fillColor: TreemapColorResolver.color(
+            fillColor: cachedFill ?? TreemapColorResolver.color(
                 for: segment.colorToken,
                 appearance: appearance(for: colorScheme)
             ),

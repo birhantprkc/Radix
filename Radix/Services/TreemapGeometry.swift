@@ -598,6 +598,14 @@ nonisolated struct TreemapHitTestIndex: Sendable {
     private let segmentIndexesByBucket: [[Int]]
 
     nonisolated init(segments: [TreemapSegment]) {
+        self.init(segments: segments, cancellationCheck: {})
+    }
+
+    nonisolated init(
+        segments: [TreemapSegment],
+        cancellationCheck: () throws -> Void
+    ) rethrows {
+        try cancellationCheck()
         self.segments = segments
         var buckets = Array(
             repeating: [Int](),
@@ -605,6 +613,7 @@ nonisolated struct TreemapHitTestIndex: Sendable {
         )
 
         for (segmentIndex, segment) in segments.enumerated() {
+            if segmentIndex.isMultiple(of: 256) { try cancellationCheck() }
             let columns = Self.bucketRange(
                 minimum: segment.rect.minX,
                 maximum: segment.rect.maxX,
@@ -623,6 +632,7 @@ nonisolated struct TreemapHitTestIndex: Sendable {
         }
 
         for bucketIndex in buckets.indices {
+            try cancellationCheck()
             buckets[bucketIndex].sort { lhs, rhs in
                 let left = segments[lhs]
                 let right = segments[rhs]

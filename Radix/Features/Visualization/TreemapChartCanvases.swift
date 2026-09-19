@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TreemapBaseCanvas: View, Equatable {
-    let segments: [TreemapSegment]
+    let layout: TreemapChartLayout
     let renderVersion: Int
     let colorScheme: ColorScheme
     let contentFrame: CGRect
@@ -17,7 +17,7 @@ struct TreemapBaseCanvas: View, Equatable {
             let viewportBounds = CGRect(origin: .zero, size: size)
             context.clip(to: Path(viewportBounds))
 
-            for segment in segments {
+            for (index, segment) in layout.segments.enumerated() {
                 let displayRect = TreemapRenderer.displayRect(
                     for: segment,
                     in: contentFrame
@@ -25,9 +25,11 @@ struct TreemapBaseCanvas: View, Equatable {
                 guard displayRect.intersects(viewportBounds) else { continue }
 
                 let path = tilePath(in: displayRect)
+                let paint = layout.paint[index]
                 let style = TreemapChartStyler.baseStyle(
                     for: segment,
-                    colorScheme: colorScheme
+                    colorScheme: colorScheme,
+                    cachedFill: colorScheme == .dark ? paint.darkFill : paint.lightFill
                 )
                 context.fill(path, with: .color(style.fillColor))
                 context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
@@ -37,7 +39,7 @@ struct TreemapBaseCanvas: View, Equatable {
 }
 
 struct TreemapLabelCanvas: View, Equatable {
-    let segments: [TreemapSegment]
+    let layout: TreemapChartLayout
     let renderVersion: Int
     let colorScheme: ColorScheme
     let contentFrame: CGRect
@@ -53,9 +55,10 @@ struct TreemapLabelCanvas: View, Equatable {
             let viewportBounds = CGRect(origin: .zero, size: size)
             context.clip(to: Path(viewportBounds))
 
-            for segment in segments {
+            for (index, segment) in layout.segments.enumerated() {
                 drawLabel(
                     for: segment,
+                    paint: layout.paint[index],
                     in: contentFrame,
                     viewportBounds: viewportBounds,
                     context: &context
@@ -66,6 +69,7 @@ struct TreemapLabelCanvas: View, Equatable {
 
     private func drawLabel(
         for segment: TreemapSegment,
+        paint: TreemapSegmentPaint,
         in contentFrame: CGRect,
         viewportBounds: CGRect,
         context: inout GraphicsContext
@@ -82,7 +86,7 @@ struct TreemapLabelCanvas: View, Equatable {
         guard availableWidth > 18 else { return }
 
         let labelStyle = TreemapChartStyler.labelStyle(colorScheme: colorScheme)
-        let name = truncated(segment.label, for: availableWidth, averageCharacterWidth: 6.1)
+        let name = truncated(segment.label, characterCount: paint.labelCharacterCount, for: availableWidth, averageCharacterWidth: 6.1)
         let nameText = context.resolve(
             Text(name)
                 .font(.system(size: 11, weight: segment.showsContainerHeader ? .semibold : .medium))
@@ -109,7 +113,7 @@ struct TreemapLabelCanvas: View, Equatable {
         }
 
         let sizeText = context.resolve(
-            Text(RadixFormatters.size(segment.totalSize))
+            Text(paint.sizeLabel)
                 .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(labelStyle.secondaryColor)
         )
@@ -122,11 +126,12 @@ struct TreemapLabelCanvas: View, Equatable {
 
     private func truncated(
         _ text: String,
+        characterCount: Int,
         for width: CGFloat,
         averageCharacterWidth: CGFloat
     ) -> String {
         let maximumCount = max(Int(width / averageCharacterWidth), 1)
-        guard text.count > maximumCount, maximumCount > 1 else { return text }
+        guard characterCount > maximumCount, maximumCount > 1 else { return text }
         return String(text.prefix(maximumCount - 1)) + "…"
     }
 }
@@ -180,61 +185,63 @@ struct TreemapDiscardPileOverlay: View, Equatable {
     }
 
     var body: some View {
-        Canvas { context, size in
-            let viewportBounds = CGRect(origin: .zero, size: size)
-            context.clip(to: Path(viewportBounds))
+        if overlay != .empty {
+            Canvas { context, size in
+                let viewportBounds = CGRect(origin: .zero, size: size)
+                context.clip(to: Path(viewportBounds))
 
-            for segment in segments {
-                let aggregateContainerNodeID = segment.isAggregate
-                    ? segment.containerNodeID
-                    : nil
-                guard let role = overlay.role(
-                    for: segment.nodeID,
-                    aggregateContainerNodeID: aggregateContainerNodeID
-                ) else { continue }
-                let displayRect = TreemapRenderer.displayRect(for: segment, in: contentFrame)
-                guard displayRect.intersects(viewportBounds) else { continue }
-                let path = tilePath(in: displayRect)
+                for segment in segments {
+                    let aggregateContainerNodeID = segment.isAggregate
+                        ? segment.containerNodeID
+                        : nil
+                    guard let role = overlay.role(
+                        for: segment.nodeID,
+                        aggregateContainerNodeID: aggregateContainerNodeID
+                    ) else { continue }
+                    let displayRect = TreemapRenderer.displayRect(for: segment, in: contentFrame)
+                    guard displayRect.intersects(viewportBounds) else { continue }
+                    let path = tilePath(in: displayRect)
 
-                switch role {
-                case .queuedRoot:
-                    context.fill(
-                        path,
-                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
-                    )
-                    context.stroke(
-                        path,
-                        with: .color(Color.accentColor.opacity(0.9)),
-                        style: StrokeStyle(lineWidth: 2, dash: [5, 3])
-                    )
-                case .queuedDescendant:
-                    // The queued root tile already covers nested treemap content.
-                    break
-                case .containsQueuedItem:
-                    context.stroke(
-                        path,
-                        with: .color(Color.accentColor.opacity(0.72)),
-                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
-                    )
-                case .movingToTrashRoot:
-                    context.fill(
-                        path,
-                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
-                    )
-                    context.stroke(
-                        path,
-                        with: .color(Color.secondary.opacity(0.8)),
-                        lineWidth: 1.5
-                    )
-                case .movingToTrashDescendant:
-                    // The moving root tile already covers nested treemap content.
-                    break
-                case .containsMovingToTrashItem:
-                    context.stroke(
-                        path,
-                        with: .color(Color.secondary.opacity(0.72)),
-                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
-                    )
+                    switch role {
+                    case .queuedRoot:
+                        context.fill(
+                            path,
+                            with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                        )
+                        context.stroke(
+                            path,
+                            with: .color(Color.accentColor.opacity(0.9)),
+                            style: StrokeStyle(lineWidth: 2, dash: [5, 3])
+                        )
+                    case .queuedDescendant:
+                        // The queued root tile already covers nested treemap content.
+                        break
+                    case .containsQueuedItem:
+                        context.stroke(
+                            path,
+                            with: .color(Color.accentColor.opacity(0.72)),
+                            style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                        )
+                    case .movingToTrashRoot:
+                        context.fill(
+                            path,
+                            with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                        )
+                        context.stroke(
+                            path,
+                            with: .color(Color.secondary.opacity(0.8)),
+                            lineWidth: 1.5
+                        )
+                    case .movingToTrashDescendant:
+                        // The moving root tile already covers nested treemap content.
+                        break
+                    case .containsMovingToTrashItem:
+                        context.stroke(
+                            path,
+                            with: .color(Color.secondary.opacity(0.72)),
+                            style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                        )
+                    }
                 }
             }
         }

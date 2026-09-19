@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SunburstBaseCanvas: View, Equatable {
     let segments: [SunburstSegment]
+    let colors: [Color]
     let renderVersion: Int
 
     static func == (lhs: SunburstBaseCanvas, rhs: SunburstBaseCanvas) -> Bool {
@@ -10,9 +11,9 @@ struct SunburstBaseCanvas: View, Equatable {
 
     var body: some View {
         Canvas { context, size in
-            for segment in segments {
+            for (index, segment) in segments.enumerated() {
                 let path = SunburstRenderer.path(for: segment, in: size)
-                let style = SunburstChartStyler.baseStyle(for: segment)
+                let style = SunburstChartStyler.baseStyle(for: segment, cachedColor: colors[index])
                 context.fill(path, with: .color(style.fillColor))
                 context.stroke(path, with: .color(style.strokeColor), lineWidth: style.strokeWidth)
             }
@@ -52,59 +53,61 @@ struct SunburstDiscardPileOverlay: View, Equatable {
     }
 
     var body: some View {
-        Canvas { context, size in
-            for segment in segments {
-                let aggregateContainerNodeID = segment.isAggregate
-                    ? segment.containerNodeID
-                    : nil
-                guard let role = overlay.role(
-                    for: segment.nodeID,
-                    aggregateContainerNodeID: aggregateContainerNodeID
-                ) else { continue }
-                let path = SunburstRenderer.path(for: segment, in: size)
-                switch role {
-                case .queuedRoot:
-                    context.fill(
-                        path,
-                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
-                    )
-                    context.stroke(
-                        path,
-                        with: .color(Color.accentColor.opacity(0.9)),
-                        style: StrokeStyle(lineWidth: 2, dash: [5, 3])
-                    )
-                case .queuedDescendant:
-                    context.fill(
-                        path,
-                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
-                    )
-                case .containsQueuedItem:
-                    context.stroke(
-                        path,
-                        with: .color(Color.accentColor.opacity(0.72)),
-                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
-                    )
-                case .movingToTrashRoot:
-                    context.fill(
-                        path,
-                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
-                    )
-                    context.stroke(
-                        path,
-                        with: .color(Color.secondary.opacity(0.8)),
-                        lineWidth: 1.5
-                    )
-                case .movingToTrashDescendant:
-                    context.fill(
-                        path,
-                        with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
-                    )
-                case .containsMovingToTrashItem:
-                    context.stroke(
-                        path,
-                        with: .color(Color.secondary.opacity(0.72)),
-                        style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
-                    )
+        if overlay != .empty {
+            Canvas { context, size in
+                for segment in segments {
+                    let aggregateContainerNodeID = segment.isAggregate
+                        ? segment.containerNodeID
+                        : nil
+                    guard let role = overlay.role(
+                        for: segment.nodeID,
+                        aggregateContainerNodeID: aggregateContainerNodeID
+                    ) else { continue }
+                    let path = SunburstRenderer.path(for: segment, in: size)
+                    switch role {
+                    case .queuedRoot:
+                        context.fill(
+                            path,
+                            with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                        )
+                        context.stroke(
+                            path,
+                            with: .color(Color.accentColor.opacity(0.9)),
+                            style: StrokeStyle(lineWidth: 2, dash: [5, 3])
+                        )
+                    case .queuedDescendant:
+                        context.fill(
+                            path,
+                            with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                        )
+                    case .containsQueuedItem:
+                        context.stroke(
+                            path,
+                            with: .color(Color.accentColor.opacity(0.72)),
+                            style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                        )
+                    case .movingToTrashRoot:
+                        context.fill(
+                            path,
+                            with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                        )
+                        context.stroke(
+                            path,
+                            with: .color(Color.secondary.opacity(0.8)),
+                            lineWidth: 1.5
+                        )
+                    case .movingToTrashDescendant:
+                        context.fill(
+                            path,
+                            with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.66))
+                        )
+                    case .containsMovingToTrashItem:
+                        context.stroke(
+                            path,
+                            with: .color(Color.secondary.opacity(0.72)),
+                            style: StrokeStyle(lineWidth: 1.75, dash: [4, 3])
+                        )
+                    }
                 }
             }
         }
