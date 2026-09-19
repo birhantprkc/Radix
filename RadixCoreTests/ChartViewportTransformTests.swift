@@ -5,6 +5,19 @@ import Testing
 
 struct ChartViewportTransformTests {
     @Test
+    func testControlZoomKeepsPannedViewportCenterStable() throws {
+        let frame = CGRect(x: 10, y: 20, width: 200, height: 100)
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let original = ChartViewportTransform(scale: 2, offset: CGSize(width: 60, height: -20))
+        let zoomed = original.zoomed(by: 1.25, anchor: nil, in: frame)
+        let before = try #require(original.localChartPoint(for: center, in: frame))
+        let after = try #require(zoomed.localChartPoint(for: center, in: frame))
+        #expect(abs(before.point.x / before.size.width - after.point.x / after.size.width) < 0.000_001)
+        #expect(abs(before.point.y / before.size.height - after.point.y / after.size.height) < 0.000_001)
+        #expect(zoomed.zoomed(by: 0.8, anchor: nil, in: frame) == original)
+    }
+
+    @Test
     func testZoomExpandsChartAroundBaseCenter() {
         let baseFrame = CGRect(x: 10, y: 20, width: 200, height: 100)
         let transform = ChartViewportTransform().zoomed(

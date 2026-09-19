@@ -141,6 +141,7 @@ struct TreemapChartView: View {
             .contentShape(Rectangle())
             .overlay {
                 TreemapInteractionOverlay(
+                    attachViewport: viewport.attach,
                     onHover: { location in
                         guard layoutPresentation.canUseRenderedLayout else { return }
                         updateHover(at: location, in: baseChartFrame)
@@ -260,6 +261,7 @@ struct TreemapChartView: View {
                 }
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
+            .onDisappear { viewport.stopAnimation() }
             .onChange(of: baseChartFrame) { _, nextFrame in
                 viewport.setTransform(
                     viewport.transform.constrained(
@@ -394,7 +396,8 @@ struct TreemapChartView: View {
         in frame: CGRect,
         using transform: ChartViewportTransform? = nil
     ) {
-        guard let location,
+        guard !viewport.isAnimating,
+              let location,
               let segment = hitTest(
                 at: location,
                 in: frame,

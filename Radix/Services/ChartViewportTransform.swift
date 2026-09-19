@@ -61,22 +61,20 @@ nonisolated struct ChartViewportTransform: Equatable {
             return .identity
         }
 
-        var nextOffset = offset
-        if let anchor {
-            let currentCenter = CGPoint(
-                x: baseFrame.midX + offset.width,
-                y: baseFrame.midY + offset.height
-            )
-            let scaleRatio = nextScale / scale
-            let nextCenter = CGPoint(
-                x: anchor.x - ((anchor.x - currentCenter.x) * scaleRatio),
-                y: anchor.y - ((anchor.y - currentCenter.y) * scaleRatio)
-            )
-            nextOffset = CGSize(
-                width: nextCenter.x - baseFrame.midX,
-                height: nextCenter.y - baseFrame.midY
-            )
-        }
+        let anchor = anchor ?? CGPoint(x: baseFrame.midX, y: baseFrame.midY)
+        let currentCenter = CGPoint(
+            x: baseFrame.midX + offset.width,
+            y: baseFrame.midY + offset.height
+        )
+        let scaleRatio = nextScale / scale
+        let nextCenter = CGPoint(
+            x: anchor.x - ((anchor.x - currentCenter.x) * scaleRatio),
+            y: anchor.y - ((anchor.y - currentCenter.y) * scaleRatio)
+        )
+        let nextOffset = CGSize(
+            width: nextCenter.x - baseFrame.midX,
+            height: nextCenter.y - baseFrame.midY
+        )
 
         return ChartViewportTransform(scale: nextScale, offset: nextOffset)
             .constrained(to: baseFrame, maximumScale: maximumScale)

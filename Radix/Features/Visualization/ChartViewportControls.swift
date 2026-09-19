@@ -1,19 +1,22 @@
+import AppKit
+import Combine
+import QuartzCore
 import SwiftUI
 
 /// Keeps viewport state and animation policy local to each chart view.
 struct ChartViewportState: DynamicProperty {
-    @State private(set) var transform = ChartViewportTransform.identity
+    @StateObject private var animator = ChartViewportAnimator()
     @State private var settledLayoutID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    var transform: ChartViewportTransform { animator.transform }
+    var isAnimating: Bool { animator.isAnimating }
+
+    func attach(to view: NSView) { animator.interactionView = view }
+    func stopAnimation() { animator.stop() }
+
     func setTransform(_ nextTransform: ChartViewportTransform, animated: Bool = false) {
-        guard transform != nextTransform else { return }
-        let update = { transform = nextTransform }
-        if animated {
-            withAnimation(reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.16), update)
-        } else {
-            update()
-        }
+        animator.move(to: nextTransform, duration: animated && !reduceMotion ? 0.16 : 0)
     }
 
     /// Initial presentation keeps its viewport; a different layout resets it.
@@ -32,7 +35,7 @@ struct ChartViewportState: DynamicProperty {
         switch action {
         case .zoomIn, .zoomOut:
             guard canZoom else { return false }
-            nextTransform = transform.zoomed(
+            nextTransform = animator.target.zoomed(
                 by: action == .zoomIn ? ChartViewportTransform.zoomInFactor : ChartViewportTransform.zoomOutFactor,
                 anchor: nil,
                 in: frame
@@ -42,6 +45,84 @@ struct ChartViewportState: DynamicProperty {
         }
         setTransform(nextTransform, animated: true)
         return true
+    }
+}
+
+/// Drives both charts from the display's clock. The same published transform is
+/// used by Canvas and the native event callbacks, including during button zoom.
+@MainActor
+private final class ChartViewportAnimator: ObservableObject {
+    @Published private var motion = ChartViewportMotion()
+    weak var interactionView: NSView?
+    private var displayLink: CADisplayLink?
+
+    var transform: ChartViewportTransform { motion.transform }
+    var target: ChartViewportTransform { motion.target }
+    var isAnimating: Bool { motion.isAnimating }
+
+    func move(to target: ChartViewportTransform, duration: Double) {
+        guard motion.transform != target || motion.isAnimating else { return }
+        if duration > 0, motion.isAnimating, motion.target == target { return }
+        var next = motion
+        next.move(to: target, at: CACurrentMediaTime(), duration: duration)
+        publish(next)
+        guard motion.isAnimating else {
+            invalidateDisplayLink()
+            return
+        }
+        guard displayLink == nil else { return }
+        let receiver = DisplayLinkReceiver(owner: self)
+        let link = interactionView?.displayLink(target: receiver, selector: #selector(DisplayLinkReceiver.tick(_:)))
+            ?? NSScreen.main?.displayLink(target: receiver, selector: #selector(DisplayLinkReceiver.tick(_:)))
+        guard let link else {
+            var settled = motion
+            settled.move(to: target, at: CACurrentMediaTime(), duration: 0)
+            publish(settled)
+            return
+        }
+        displayLink = link
+        link.add(to: .main, forMode: .common)
+    }
+
+    func stop() {
+        invalidateDisplayLink()
+        var next = motion
+        next.stop()
+        publish(next)
+    }
+
+    private func tick(_ link: CADisplayLink) {
+        var next = motion
+        next.advance(to: link.targetTimestamp)
+        publish(next)
+        if !motion.isAnimating { invalidateDisplayLink() }
+    }
+
+    private func publish(_ next: ChartViewportMotion) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { motion = next }
+    }
+
+    private func invalidateDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    // CADisplayLink retains its target. Keep the chart's lifetime independent of
+    // the display link, including if its window disappears mid-animation.
+    private final class DisplayLinkReceiver: NSObject {
+        weak var owner: ChartViewportAnimator?
+
+        init(owner: ChartViewportAnimator) { self.owner = owner }
+
+        @objc func tick(_ link: CADisplayLink) {
+            guard let owner else {
+                link.invalidate()
+                return
+            }
+            owner.tick(link)
+        }
     }
 }
 

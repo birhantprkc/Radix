@@ -8,6 +8,7 @@ struct TreemapDiscardPileDragItem {
 }
 
 struct TreemapInteractionOverlay: NSViewRepresentable {
+    let attachViewport: (NSView) -> Void
     let onHover: (CGPoint?) -> Void
     let onClick: (CGPoint, Int) -> Void
     let onQuickLook: () -> Bool
@@ -30,6 +31,7 @@ struct TreemapInteractionOverlay: NSViewRepresentable {
     }
 
     private func update(_ view: InteractionView) {
+        attachViewport(view)
         view.onHover = onHover
         view.onClick = onClick
         view.onMove = onMove

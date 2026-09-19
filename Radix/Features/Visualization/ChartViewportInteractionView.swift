@@ -12,8 +12,6 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
     var isPanEnabled = false
 
     private static let dragThreshold: CGFloat = 3
-    private static let lineScrollScale: CGFloat = 10
-    private static let maximumScrollPanDelta: CGFloat = 80
 
     private var trackingArea: NSTrackingArea?
     private var mouseDownLocation: CGPoint?
@@ -137,12 +135,12 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
         let zoomModifiers: NSEvent.ModifierFlags = [.command, .option]
 
         if !event.modifierFlags.isDisjoint(with: zoomModifiers) {
-            let scrollDelta = event.scrollingDeltaY != 0
-                ? event.scrollingDeltaY
-                : -event.scrollingDeltaX
-            guard scrollDelta != 0 else { return }
-
-            onMagnify(location, pow(1.0025, scrollDelta))
+            let factor = ChartScrollInput.zoomFactor(
+                CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY),
+                isPrecise: event.hasPreciseScrollingDeltas
+            )
+            guard factor != 1 else { return }
+            onMagnify(location, factor)
             toolTip = nil
             return
         }
@@ -192,36 +190,10 @@ class ChartViewportInteractionView: ChartKeyboardInteractionView, NSDraggingSour
     }
 
     private func panDelta(for event: NSEvent) -> CGSize? {
-        var delta = CGSize(
-            width: event.scrollingDeltaX,
-            height: event.scrollingDeltaY
+        let delta = ChartScrollInput.panDelta(
+            CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY),
+            isPrecise: event.hasPreciseScrollingDeltas
         )
-
-        guard delta != .zero else { return nil }
-
-        if !event.isDirectionInvertedFromDevice {
-            delta.width *= -1
-            delta.height *= -1
-        }
-
-        if !event.hasPreciseScrollingDeltas {
-            delta.width *= Self.lineScrollScale
-            delta.height *= Self.lineScrollScale
-        }
-
-        return CGSize(
-            width: delta.width.clamped(
-                to: -Self.maximumScrollPanDelta...Self.maximumScrollPanDelta
-            ),
-            height: delta.height.clamped(
-                to: -Self.maximumScrollPanDelta...Self.maximumScrollPanDelta
-            )
-        )
-    }
-}
-
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+        return delta == .zero ? nil : delta
     }
 }

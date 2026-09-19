@@ -181,18 +181,18 @@ struct SunburstChartView: View {
                 .allowsHitTesting(false)
 
                 if parentNode != nil,
-                   isHoveringCenter,
                    layoutPresentation.canUseRenderedLayout,
                    !chartModel.renderedSegments.isEmpty {
                     SunburstCenterAffordance()
                         .equatable()
+                        .opacity(isHoveringCenter ? 1 : 0)
+                        .animation(centerHoverAnimation, value: isHoveringCenter)
                         .frame(
                             width: centerAffordanceSize(in: chartFrame),
                             height: centerAffordanceSize(in: chartFrame)
                         )
                         .position(x: chartFrame.midX, y: chartFrame.midY)
                         .allowsHitTesting(false)
-                        .transition(.opacity)
                 }
 
                 ChartLoadingOverlay(
@@ -205,6 +205,7 @@ struct SunburstChartView: View {
             .contentShape(Rectangle())
             .overlay {
                 SunburstInteractionOverlay(
+                    attachViewport: viewport.attach,
                     onHover: { location in
                         guard layoutPresentation.canUseRenderedLayout else { return }
                         updateHover(at: location, in: baseChartFrame)
@@ -324,12 +325,13 @@ struct SunburstChartView: View {
                 }
             }
             .animation(chartTransitionAnimation, value: chartModel.renderedLayoutVersion)
-            .animation(centerHoverAnimation, value: isHoveringCenter)
+            .onDisappear { viewport.stopAnimation() }
             .onChange(of: baseChartFrame) { _, nextFrame in
                 viewport.setTransform(viewport.transform.constrained(to: nextFrame))
+                clearHover()
             }
             .onChange(of: layoutID, initial: true) { _, _ in
-                viewport.reset(for: layoutID)
+                if viewport.reset(for: layoutID) { clearHover() }
             }
             .focusedSceneValue(\.chartViewportAction) { action in
                 handleViewportAction(action, in: baseChartFrame)
@@ -389,9 +391,8 @@ struct SunburstChartView: View {
         in frame: CGRect,
         using transform: ChartViewportTransform? = nil
     ) {
-        guard let location else {
-            isHoveringCenter = false
-            chartModel.setHoveredSegmentID(nil)
+        guard !viewport.isAnimating, let location else {
+            clearHover()
             return
         }
 
@@ -629,11 +630,18 @@ struct SunburstChartView: View {
         _ action: ChartViewportAction,
         in baseFrame: CGRect
     ) {
-        viewport.perform(
+        if viewport.perform(
             action,
             in: baseFrame,
             canZoom: canAdjustViewport
-        )
+        ) {
+            clearHover()
+        }
+    }
+
+    private func clearHover() {
+        isHoveringCenter = false
+        chartModel.setHoveredSegmentID(nil)
     }
 }
 
